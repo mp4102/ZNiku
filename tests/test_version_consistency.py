@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import zniku
+from zniku.agent import AGENT_TOOL_CONTRACT_VERSION
+from zniku.application import APPLICATION_CONTRACT_VERSION
 from zniku.authoring import (
     AUTHORING_CONTRACT_VERSION,
     COMPILER_CONTRACT_VERSION,
@@ -50,6 +52,8 @@ def test_all_local_version_authorities_are_0_1_0() -> None:
     assert EXECUTION_PLAN_CONTRACT_VERSION == "0.1.0"
     assert RUNTIME_CONTRACT_VERSION == "0.1.0"
     assert DEFAULT_PIPELINE_CONTRACT_VERSION == "0.1.0"
+    assert APPLICATION_CONTRACT_VERSION == "0.1.0"
+    assert AGENT_TOOL_CONTRACT_VERSION == "0.1.0"
 
     projection_manifest: dict[str, Any] = json.loads(
         (ROOT / "apps" / "studio" / "src" / "generated" / "projection-manifest.json").read_text(
