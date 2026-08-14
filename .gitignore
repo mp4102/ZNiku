@@ -1,0 +1,54 @@
+# Node / Studio
+**/node_modules/
+**/dist/
+**/coverage/
+*.tsbuildinfo
+
+# Python / Runtime（后续阶段）
+.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+*.py[cod]
+
+# 编辑器与系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 本地配置、日志与临时文件
+.env
+.env.*
+*.log
+*.tmp
+*.work
+local-config.json
+
+# 正式任务与媒体产物
+*.AVEnhance/
+artifacts/
+runtime-data/
+workspace/
+*.avi
+*.dv
+*.m2ts
+*.mkv
+*.mov
+*.mp4
+*.mpeg
+*.mpg
+*.mts
+*.mxf
+*.vob
+*.webm
+*.wmv
+
+# 不得全局忽略 *.ts：它同时是 TypeScript 源码扩展名。
+
+# 凭据与密钥
+*.key
+*.pem
+*.pfx
+*.p12
+auth.tpz

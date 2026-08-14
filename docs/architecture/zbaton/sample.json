@@ -1,0 +1,249 @@
+{
+  "zbaton": {
+    "type": "media-history",
+    "version": "1.0.0-draft.2",
+    "id": "zbaton:sample-001:final-B",
+    "status": "draft",
+    "created_at": "2026-08-14T12:30:00+08:00",
+    "producer": {
+      "name": "ZMediaFlow",
+      "version": "0.1.0"
+    },
+    "subject": {
+      "title": "SAMPLE-001",
+      "release_year": 2020
+    }
+  },
+  "current_media": {
+    "workflow": "B",
+    "final_generation": 2,
+    "snapshot": {
+      "media_id": "B.final",
+      "filename": "SAMPLE-001 (2020) - VRE-B.mkv",
+      "size_bytes": 23012345678,
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "container": "matroska",
+      "timeline": {
+        "duration": "01:40:06.000"
+      },
+      "video": {
+        "codec": "hevc",
+        "profile": "Main 10",
+        "pixel_format": "yuv420p10le",
+        "bit_depth": 10,
+        "width": 3840,
+        "height": 2160,
+        "sample_aspect_ratio": "1:1",
+        "frame_rate": "60000/1001",
+        "frame_count": 360000,
+        "scan": "progressive",
+        "color": {
+          "range": "limited",
+          "primaries": "bt709",
+          "transfer": "bt709",
+          "matrix": "bt709"
+        }
+      },
+      "audio": [
+        {
+          "track_id": "audio.main",
+          "codec": "aac",
+          "profile": "LC",
+          "sample_rate": 48000,
+          "channels": 2,
+          "channel_layout": "stereo",
+          "language": "jpn",
+          "default": true
+        }
+      ]
+    }
+  },
+  "processing_history": [
+    {
+      "record_id": "A.enhancement.001",
+      "sequence": 1,
+      "workflow": "A",
+      "final_generation": 1,
+      "stage": "Enhancement",
+      "model": {
+        "name": "Starlight Precise",
+        "version": "2.6"
+      },
+      "inputs": [
+        "source.original"
+      ],
+      "outputs": [
+        "A.enhanced"
+      ],
+      "effects": [
+        "quality-restoration",
+        "super-resolution"
+      ],
+      "changes": {
+        "video.resolution": {
+          "from": "1920x1080",
+          "to": "3840x2160"
+        }
+      },
+      "preserved": [
+        "video.frame_rate",
+        "video.frame_count",
+        "timeline.duration",
+        "audio"
+      ]
+    },
+    {
+      "record_id": "A.frame-interpolation.001",
+      "sequence": 2,
+      "workflow": "A",
+      "final_generation": 1,
+      "stage": "Frame interpolation",
+      "model": {
+        "name": "Aion",
+        "version": null
+      },
+      "inputs": [
+        "A.enhanced"
+      ],
+      "outputs": [
+        "A.final"
+      ],
+      "effects": [
+        "frame-interpolation"
+      ],
+      "changes": {
+        "video.frame_rate": {
+          "from": "30000/1001",
+          "to": "60000/1001"
+        },
+        "video.frame_count": {
+          "from": 180000,
+          "to": 360000
+        }
+      },
+      "preserved": [
+        "video.resolution",
+        "timeline.duration",
+        "audio"
+      ]
+    },
+    {
+      "record_id": "B.decensoring.001",
+      "sequence": 3,
+      "workflow": "B",
+      "final_generation": 2,
+      "stage": "Decensoring",
+      "model": {
+        "name": "Jasna",
+        "version": "0.10.0"
+      },
+      "inputs": [
+        "A.final"
+      ],
+      "outputs": [
+        "B.final"
+      ],
+      "effects": [
+        "mosaic-removal"
+      ],
+      "changes": {},
+      "preserved": [
+        "video.resolution",
+        "video.frame_rate",
+        "video.frame_count",
+        "timeline.duration",
+        "audio"
+      ]
+    }
+  ],
+  "final_history": [
+    {
+      "workflow": "A",
+      "final_generation": 1,
+      "snapshot": {
+        "media_id": "A.final",
+        "filename": "SAMPLE-001 (2020) - VRE-A.mkv",
+        "size_bytes": 22548778112,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "container": "matroska",
+        "timeline": {
+          "duration": "01:40:06.000"
+        },
+        "video": {
+          "codec": "hevc",
+          "profile": "Main 10",
+          "pixel_format": "yuv420p10le",
+          "bit_depth": 10,
+          "width": 3840,
+          "height": 2160,
+          "sample_aspect_ratio": "1:1",
+          "frame_rate": "60000/1001",
+          "frame_count": 360000,
+          "scan": "progressive",
+          "color": {
+            "range": "limited",
+            "primaries": "bt709",
+            "transfer": "bt709",
+            "matrix": "bt709"
+          }
+        },
+        "audio": [
+          {
+            "track_id": "audio.main",
+            "codec": "aac",
+            "profile": "LC",
+            "sample_rate": 48000,
+            "channels": 2,
+            "channel_layout": "stereo",
+            "language": "jpn",
+            "default": true
+          }
+        ]
+      }
+    }
+  ],
+  "source_media": [
+    {
+      "snapshot": {
+        "media_id": "source.original",
+        "filename": "SAMPLE-001.source.mkv",
+        "size_bytes": 8442450944,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "container": "matroska",
+        "timeline": {
+          "duration": "01:40:06.000"
+        },
+        "video": {
+          "codec": "hevc",
+          "profile": "Main 10",
+          "pixel_format": "yuv420p10le",
+          "bit_depth": 10,
+          "width": 1920,
+          "height": 1080,
+          "sample_aspect_ratio": "1:1",
+          "frame_rate": "30000/1001",
+          "frame_count": 180000,
+          "scan": "progressive",
+          "color": {
+            "range": "limited",
+            "primaries": "bt709",
+            "transfer": "bt709",
+            "matrix": "bt709"
+          }
+        },
+        "audio": [
+          {
+            "track_id": "audio.main",
+            "codec": "aac",
+            "profile": "LC",
+            "sample_rate": 48000,
+            "channels": 2,
+            "channel_layout": "stereo",
+            "language": "jpn",
+            "default": true
+          }
+        ]
+      }
+    }
+  ]
+}
