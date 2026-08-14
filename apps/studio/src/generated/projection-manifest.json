@@ -39,6 +39,18 @@
     {
       "file_digest": "sha256:0d0fadf44a6ebb8f28059bb529af068a54ba70c6afe85298a1a8b0790a8560f4",
       "path": "generated/projection-manifest.schema.json"
+    },
+    {
+      "file_digest": "sha256:3477f663a482d49f010b7fd9753b70ae6df1caf52919e3e639f5b87452058cc3",
+      "path": "generated/studio-authority.generated.ts"
+    },
+    {
+      "file_digest": "sha256:36ef8483608f36d727f94b8fb60e2ba568c08b005497c565e2d1a44dbe0d00ae",
+      "path": "generated/studio-authority.json"
+    },
+    {
+      "file_digest": "sha256:c2adebf30ac9c329a9f7db37bb38bccf62cce2d5992a2af68e3a3b323db3b19b",
+      "path": "generated/studio-authority.schema.json"
     }
   ],
   "generator_version": "zniku-projection/0.1.0",
@@ -59,6 +71,10 @@
     {
       "name": "projection-manifest.schema.json",
       "schema_digest": "sha256:2809a54b27bdea8fb2132f968d5f508590327e289b2fb9d3ba64f81defdc3749"
+    },
+    {
+      "name": "studio-authority.schema.json",
+      "schema_digest": "sha256:8961ca1e7896f334eb534c77a1dca48f9d025248cbd32f340a2411206d31a965"
     }
   ],
   "workflow_contract_version": "0.1.0"

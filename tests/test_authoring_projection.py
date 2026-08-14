@@ -16,6 +16,7 @@ from zniku.authoring.projection import (
     generate_projection,
 )
 from zniku.contracts import EngineManifest
+from zniku.studio import build_studio_authority_projection
 
 
 def test_wire_schema_requires_versions_and_discriminators() -> None:
@@ -51,6 +52,7 @@ def test_projection_manifest_binds_all_source_and_file_digests() -> None:
         "core-node-contracts.schema.json",
         "engine-manifest.schema.json",
         "projection-manifest.schema.json",
+        "studio-authority.schema.json",
     }
     assert {item.path for item in manifest.files} == {f"generated/{name}" for name in files}
 
@@ -81,6 +83,17 @@ def test_core_projection_is_exact_python_data(tmp_path: Path) -> None:
 
     assert core_payload == CoreNodeContractSet.phase_2a().to_data()
     assert manifest.core_node_contract_digest == CoreNodeContractSet.phase_2a().sha256_digest()
+
+
+def test_studio_authority_projects_default_workflow_plan_and_runtime(tmp_path: Path) -> None:
+    generate_projection(tmp_path)
+    payload = json.loads((tmp_path / "studio-authority.json").read_text(encoding="utf-8"))
+    expected = build_studio_authority_projection()
+
+    assert payload == expected.to_data()
+    assert payload["workflow_spec"]["workflow_contract_version"] == "0.2.0"
+    assert len(payload["operator_contracts"]) == 12
+    assert len(payload["execution_plan"]["nodes"]) == 13
 
 
 def test_checked_in_studio_fixture_is_a_python_authority_transcript(

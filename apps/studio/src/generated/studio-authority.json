@@ -1,0 +1,1504 @@
+{
+  "chapter_plan": {
+    "chapter_plan_id": "chapter_plan.studio.synthetic",
+    "coverage": {
+      "end": 300,
+      "start": 0,
+      "unit": "frame"
+    },
+    "members": [
+      {
+        "coverage": {
+          "end": 100,
+          "start": 0,
+          "unit": "frame"
+        },
+        "member_id": "chapter.001",
+        "scope_id": "scope.chapter.001"
+      },
+      {
+        "coverage": {
+          "end": 200,
+          "start": 100,
+          "unit": "frame"
+        },
+        "member_id": "chapter.002",
+        "scope_id": "scope.chapter.002"
+      },
+      {
+        "coverage": {
+          "end": 300,
+          "start": 200,
+          "unit": "frame"
+        },
+        "member_id": "chapter.003",
+        "scope_id": "scope.chapter.003"
+      }
+    ]
+  },
+  "execution_plan": {
+    "binding_digest": "sha256:bda80abf930ef54cc83608c40c452252ef5eaf313890f454856bb97a2cdcc7ba",
+    "core_operator_contract_version": "0.1.0",
+    "execution_plan_id": "execution_plan.a2d22063c3d3aab2c37f60ec",
+    "nodes": [
+      {
+        "dependencies": [
+          "plan.node.source"
+        ],
+        "engine": {
+          "engine_id": "zniku.builtin.synthetic-demux",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:67bc34a7dd7530530b6253b0a465cab5626ebc1e1078a31a33d8aeef5de3a014"
+        },
+        "operator_kind": null,
+        "parameters": {},
+        "plan_node_id": "plan.node.demux",
+        "scope": "program",
+        "scope_id": "program.bound",
+        "stage_spec_id": "node.demux",
+        "subject_kind": "engine"
+      },
+      {
+        "dependencies": [
+          "plan.node.partition"
+        ],
+        "engine": {
+          "engine_id": "zniku.builtin.manual-enhancement",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:4bc5e6231436b66a23ac7cccfc791d216d0a4c829ec00e45e746e61ceff3102c"
+        },
+        "operator_kind": null,
+        "parameters": {
+          "model_name": "Starlight Precise",
+          "model_version": "2.6",
+          "scale": 2
+        },
+        "plan_node_id": "plan.node.enhancement.chapter.001",
+        "scope": "chapter",
+        "scope_id": "scope.chapter.001",
+        "stage_spec_id": "node.enhancement",
+        "subject_kind": "engine"
+      },
+      {
+        "dependencies": [
+          "plan.node.partition"
+        ],
+        "engine": {
+          "engine_id": "zniku.builtin.manual-enhancement",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:4bc5e6231436b66a23ac7cccfc791d216d0a4c829ec00e45e746e61ceff3102c"
+        },
+        "operator_kind": null,
+        "parameters": {
+          "model_name": "Starlight Precise",
+          "model_version": "2.6",
+          "scale": 2
+        },
+        "plan_node_id": "plan.node.enhancement.chapter.002",
+        "scope": "chapter",
+        "scope_id": "scope.chapter.002",
+        "stage_spec_id": "node.enhancement",
+        "subject_kind": "engine"
+      },
+      {
+        "dependencies": [
+          "plan.node.partition"
+        ],
+        "engine": {
+          "engine_id": "zniku.builtin.manual-enhancement",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:4bc5e6231436b66a23ac7cccfc791d216d0a4c829ec00e45e746e61ceff3102c"
+        },
+        "operator_kind": null,
+        "parameters": {
+          "model_name": "Starlight Precise",
+          "model_version": "2.6",
+          "scale": 2
+        },
+        "plan_node_id": "plan.node.enhancement.chapter.003",
+        "scope": "chapter",
+        "scope_id": "scope.chapter.003",
+        "stage_spec_id": "node.enhancement",
+        "subject_kind": "engine"
+      },
+      {
+        "dependencies": [
+          "plan.node.mux"
+        ],
+        "engine": null,
+        "operator_kind": null,
+        "parameters": {},
+        "plan_node_id": "plan.node.final",
+        "scope": "program",
+        "scope_id": "program.bound",
+        "stage_spec_id": "node.final",
+        "subject_kind": "final"
+      },
+      {
+        "dependencies": [
+          "plan.node.enhancement.chapter.001"
+        ],
+        "engine": {
+          "engine_id": "zniku.builtin.manual-frame-interpolation",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:37ea014d9a08434fa3af6faf5aa56b0f2e92caaf547e89ffff4a7381e90bd766"
+        },
+        "operator_kind": null,
+        "parameters": {
+          "fps_multiplier": 2,
+          "model_name": "Chronos Fast",
+          "model_version": "3"
+        },
+        "plan_node_id": "plan.node.frame_interpolation.chapter.001",
+        "scope": "chapter",
+        "scope_id": "scope.chapter.001",
+        "stage_spec_id": "node.frame_interpolation",
+        "subject_kind": "engine"
+      },
+      {
+        "dependencies": [
+          "plan.node.enhancement.chapter.002"
+        ],
+        "engine": {
+          "engine_id": "zniku.builtin.manual-frame-interpolation",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:37ea014d9a08434fa3af6faf5aa56b0f2e92caaf547e89ffff4a7381e90bd766"
+        },
+        "operator_kind": null,
+        "parameters": {
+          "fps_multiplier": 2,
+          "model_name": "Chronos Fast",
+          "model_version": "3"
+        },
+        "plan_node_id": "plan.node.frame_interpolation.chapter.002",
+        "scope": "chapter",
+        "scope_id": "scope.chapter.002",
+        "stage_spec_id": "node.frame_interpolation",
+        "subject_kind": "engine"
+      },
+      {
+        "dependencies": [
+          "plan.node.enhancement.chapter.003"
+        ],
+        "engine": {
+          "engine_id": "zniku.builtin.manual-frame-interpolation",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:37ea014d9a08434fa3af6faf5aa56b0f2e92caaf547e89ffff4a7381e90bd766"
+        },
+        "operator_kind": null,
+        "parameters": {
+          "fps_multiplier": 2,
+          "model_name": "Chronos Fast",
+          "model_version": "3"
+        },
+        "plan_node_id": "plan.node.frame_interpolation.chapter.003",
+        "scope": "chapter",
+        "scope_id": "scope.chapter.003",
+        "stage_spec_id": "node.frame_interpolation",
+        "subject_kind": "engine"
+      },
+      {
+        "dependencies": [
+          "plan.node.demux",
+          "plan.node.video_encode"
+        ],
+        "engine": {
+          "engine_id": "zniku.builtin.synthetic-mux",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:dbec81d0fe79dcd33f4677dd5afefefb5e3f285623163234f550636a3ab22004"
+        },
+        "operator_kind": null,
+        "parameters": {
+          "container": "matroska"
+        },
+        "plan_node_id": "plan.node.mux",
+        "scope": "program",
+        "scope_id": "program.bound",
+        "stage_spec_id": "node.mux",
+        "subject_kind": "engine"
+      },
+      {
+        "dependencies": [
+          "plan.node.demux"
+        ],
+        "engine": null,
+        "operator_kind": "partition",
+        "parameters": {},
+        "plan_node_id": "plan.node.partition",
+        "scope": "program",
+        "scope_id": "program.bound",
+        "stage_spec_id": "node.partition",
+        "subject_kind": "operator"
+      },
+      {
+        "dependencies": [
+          "plan.node.frame_interpolation.chapter.001",
+          "plan.node.frame_interpolation.chapter.002",
+          "plan.node.frame_interpolation.chapter.003"
+        ],
+        "engine": null,
+        "operator_kind": "reduce",
+        "parameters": {},
+        "plan_node_id": "plan.node.reduce",
+        "scope": "program",
+        "scope_id": "program.bound",
+        "stage_spec_id": "node.reduce",
+        "subject_kind": "operator"
+      },
+      {
+        "dependencies": [],
+        "engine": null,
+        "operator_kind": null,
+        "parameters": {},
+        "plan_node_id": "plan.node.source",
+        "scope": "program",
+        "scope_id": "artifact.studio.synthetic.source",
+        "stage_spec_id": "node.source",
+        "subject_kind": "source"
+      },
+      {
+        "dependencies": [
+          "plan.node.reduce"
+        ],
+        "engine": {
+          "engine_id": "zniku.builtin.synthetic-video-encode",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:9eebe76cfdc2e0383e197ced80aea311c4a098bf2bca230dbb5a0194d1f6cfde"
+        },
+        "operator_kind": null,
+        "parameters": {
+          "codec": "hevc-main10",
+          "crf": 18,
+          "one_shot": true
+        },
+        "plan_node_id": "plan.node.video_encode",
+        "scope": "program",
+        "scope_id": "program.bound",
+        "stage_spec_id": "node.video_encode",
+        "subject_kind": "engine"
+      }
+    ],
+    "plan_contract_version": "0.1.0",
+    "workflow_id": "workflow.default.0.1.0",
+    "workflow_spec_digest": "sha256:3d284e1c15b393a8d112d6b85e97b9306a4ac5191367399a1ba00f3c2b8ca79c"
+  },
+  "manifests": [
+    {
+      "contract_version": "0.1.0",
+      "display_name": "ZNIKU Synthetic Demux",
+      "engine_id": "zniku.builtin.synthetic-demux",
+      "engine_version": "0.1.0",
+      "execution_mode": "automatic",
+      "inputs": [
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "program_media",
+            "port_id": "program_in",
+            "scope": "program"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "audio_stream_ids": {
+                "items": {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array"
+              },
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames",
+              "audio_stream_ids"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "lifecycle": {
+        "supports_acceptance": true,
+        "supports_publication": false,
+        "supports_recovery": false
+      },
+      "outputs": [
+        {
+          "attribute_rules": [],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_out",
+            "scope": "program"
+          }
+        },
+        {
+          "attribute_rules": [],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "stream_id": {
+                "maxLength": 64,
+                "type": "string"
+              }
+            },
+            "required": [
+              "duration_frames",
+              "stream_id"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "set",
+            "media_kind": "audio",
+            "port_id": "audio_out",
+            "scope": "program"
+          }
+        }
+      ],
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "supported_scopes": [
+        "program"
+      ]
+    },
+    {
+      "contract_version": "0.1.0",
+      "display_name": "ZNIKU Manual Enhancement",
+      "engine_id": "zniku.builtin.manual-enhancement",
+      "engine_version": "0.1.0",
+      "execution_mode": "manual_external",
+      "inputs": [
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_in",
+            "scope": "chapter"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "lifecycle": {
+        "supports_acceptance": true,
+        "supports_publication": true,
+        "supports_recovery": true
+      },
+      "outputs": [
+        {
+          "attribute_rules": [],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_out",
+            "scope": "chapter"
+          }
+        }
+      ],
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "model_name": {
+            "enum": [
+              "Starlight Precise"
+            ],
+            "type": "string"
+          },
+          "model_version": {
+            "enum": [
+              "2.6"
+            ],
+            "type": "string"
+          },
+          "scale": {
+            "enum": [
+              2
+            ],
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model_name",
+          "model_version",
+          "scale"
+        ],
+        "type": "object"
+      },
+      "supported_scopes": [
+        "chapter"
+      ]
+    },
+    {
+      "contract_version": "0.1.0",
+      "display_name": "ZNIKU Manual Frame Interpolation",
+      "engine_id": "zniku.builtin.manual-frame-interpolation",
+      "engine_version": "0.1.0",
+      "execution_mode": "manual_external",
+      "inputs": [
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_in",
+            "scope": "chapter"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "lifecycle": {
+        "supports_acceptance": true,
+        "supports_publication": true,
+        "supports_recovery": true
+      },
+      "outputs": [
+        {
+          "attribute_rules": [],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_out",
+            "scope": "chapter"
+          }
+        }
+      ],
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "fps_multiplier": {
+            "enum": [
+              2
+            ],
+            "type": "integer"
+          },
+          "model_name": {
+            "enum": [
+              "Chronos Fast"
+            ],
+            "type": "string"
+          },
+          "model_version": {
+            "enum": [
+              "3"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_name",
+          "model_version",
+          "fps_multiplier"
+        ],
+        "type": "object"
+      },
+      "supported_scopes": [
+        "chapter"
+      ]
+    },
+    {
+      "contract_version": "0.1.0",
+      "display_name": "ZNIKU Synthetic One-shot Video Encode",
+      "engine_id": "zniku.builtin.synthetic-video-encode",
+      "engine_version": "0.1.0",
+      "execution_mode": "automatic",
+      "inputs": [
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_in",
+            "scope": "program"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "lifecycle": {
+        "supports_acceptance": true,
+        "supports_publication": true,
+        "supports_recovery": false
+      },
+      "outputs": [
+        {
+          "attribute_rules": [],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_out",
+            "scope": "program"
+          }
+        }
+      ],
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "codec": {
+            "enum": [
+              "hevc-main10"
+            ],
+            "type": "string"
+          },
+          "crf": {
+            "maximum": 51,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "one_shot": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "codec",
+          "crf",
+          "one_shot"
+        ],
+        "type": "object"
+      },
+      "supported_scopes": [
+        "program"
+      ]
+    },
+    {
+      "contract_version": "0.1.0",
+      "display_name": "ZNIKU Synthetic Mux",
+      "engine_id": "zniku.builtin.synthetic-mux",
+      "engine_version": "0.1.0",
+      "execution_mode": "automatic",
+      "inputs": [
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_in",
+            "scope": "program"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "set",
+            "media_kind": "audio",
+            "port_id": "audio_in",
+            "scope": "program"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "stream_id": {
+                "maxLength": 64,
+                "type": "string"
+              }
+            },
+            "required": [
+              "duration_frames",
+              "stream_id"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "lifecycle": {
+        "supports_acceptance": true,
+        "supports_publication": false,
+        "supports_recovery": false
+      },
+      "outputs": [
+        {
+          "attribute_rules": [],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "audio_stream_ids": {
+                "items": {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array"
+              },
+              "container": {
+                "enum": [
+                  "matroska"
+                ],
+                "type": "string"
+              },
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames",
+              "audio_stream_ids",
+              "container"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "program_media",
+            "port_id": "program_out",
+            "scope": "program"
+          }
+        }
+      ],
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "container": {
+            "enum": [
+              "matroska"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "container"
+        ],
+        "type": "object"
+      },
+      "supported_scopes": [
+        "program"
+      ]
+    }
+  ],
+  "operator_contracts": [
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "one",
+          "media_kind": "video",
+          "port_id": "in",
+          "scope": "program"
+        }
+      ],
+      "media_kind": "video",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "partition",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "out",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "one",
+          "media_kind": "audio",
+          "port_id": "in",
+          "scope": "program"
+        }
+      ],
+      "media_kind": "audio",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "partition",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "out",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "in",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "video",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "map",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "out",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "in",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "audio",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "map",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "out",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "in",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "video",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "select",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "selected",
+          "scope": "chapter"
+        },
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "remainder",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "in",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "audio",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "select",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "selected",
+          "scope": "chapter"
+        },
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "remainder",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "in",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "video",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "passthrough",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "out",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "in",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "audio",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "passthrough",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "out",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "processed",
+          "scope": "chapter"
+        },
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "remainder",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "video",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "collect",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "out",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "processed",
+          "scope": "chapter"
+        },
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "remainder",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "audio",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "collect",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "out",
+          "scope": "chapter"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "video",
+          "port_id": "in",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "video",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "reduce",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "one",
+          "media_kind": "video",
+          "port_id": "out",
+          "scope": "program"
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "set",
+          "media_kind": "audio",
+          "port_id": "in",
+          "scope": "chapter"
+        }
+      ],
+      "media_kind": "audio",
+      "operator_contract_version": "0.1.0",
+      "operator_kind": "reduce",
+      "outputs": [
+        {
+          "artifact_type": "media",
+          "cardinality": "one",
+          "media_kind": "audio",
+          "port_id": "out",
+          "scope": "program"
+        }
+      ]
+    }
+  ],
+  "runtime_snapshot": {
+    "audio_proof": {
+      "artifact_set_id": "artifact_set.workflow_run.studio.synthetic.original_audio",
+      "demux_plan_node_id": "plan.node.demux",
+      "mux_plan_node_id": "plan.node.mux",
+      "ordered_stream_ids": [
+        "audio.japanese",
+        "audio.english"
+      ],
+      "stream_copy": true
+    },
+    "chapter_plan": {
+      "chapter_plan_id": "chapter_plan.studio.synthetic",
+      "coverage": {
+        "end": 300,
+        "start": 0,
+        "unit": "frame"
+      },
+      "members": [
+        {
+          "coverage": {
+            "end": 100,
+            "start": 0,
+            "unit": "frame"
+          },
+          "member_id": "chapter.001",
+          "scope_id": "scope.chapter.001"
+        },
+        {
+          "coverage": {
+            "end": 200,
+            "start": 100,
+            "unit": "frame"
+          },
+          "member_id": "chapter.002",
+          "scope_id": "scope.chapter.002"
+        },
+        {
+          "coverage": {
+            "end": 300,
+            "start": 200,
+            "unit": "frame"
+          },
+          "member_id": "chapter.003",
+          "scope_id": "scope.chapter.003"
+        }
+      ]
+    },
+    "full_verification": null,
+    "handoffs": [],
+    "pipeline_contract_version": "0.1.0",
+    "publications": [
+      {
+        "artifact_digest": "sha256:c7f9ad6acee2394872e2043368bc7c1ea87de932cdabdc279e126c0732a00d95",
+        "artifact_id": "artifact.workflow_run.studio.synthetic.plan.node.source.1",
+        "evidence_id": "evidence.workflow_run.studio.synthetic.plan.node.source.1",
+        "frame_count": 300,
+        "no_replace": true,
+        "plan_node_id": "plan.node.source",
+        "publication_id": "publication.workflow_run.studio.synthetic.plan.node.source.1",
+        "source_authority_digest": "sha256:372d7404e3dfddee27a2edb71fbb8e35f6b90fc321c4525b5521f48418c24c88",
+        "verification_mode": "full"
+      }
+    ],
+    "runtime": {
+      "evidence": [
+        {
+          "attempt": 1,
+          "evidence_id": "evidence.workflow_run.studio.synthetic.plan.node.source.1",
+          "output_identity": "output.workflow_run.studio.synthetic.plan.node.source.1",
+          "plan_node_id": "plan.node.source",
+          "verified": true
+        }
+      ],
+      "execution_plan_digest": "sha256:692d1029f57155bd4cc2406ef9ae1534af804f40a701e9e1bed74c696e630f15",
+      "final_output_identity": null,
+      "nodes": [
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.demux",
+          "state": "ready"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.enhancement.chapter.001",
+          "state": "blocked"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.enhancement.chapter.002",
+          "state": "blocked"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.enhancement.chapter.003",
+          "state": "blocked"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.final",
+          "state": "blocked"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.frame_interpolation.chapter.001",
+          "state": "blocked"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.frame_interpolation.chapter.002",
+          "state": "blocked"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.frame_interpolation.chapter.003",
+          "state": "blocked"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.mux",
+          "state": "blocked"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.partition",
+          "state": "blocked"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.reduce",
+          "state": "blocked"
+        },
+        {
+          "attempt": 1,
+          "evidence_id": "evidence.workflow_run.studio.synthetic.plan.node.source.1",
+          "plan_node_id": "plan.node.source",
+          "state": "complete"
+        },
+        {
+          "attempt": 0,
+          "evidence_id": null,
+          "plan_node_id": "plan.node.video_encode",
+          "state": "blocked"
+        }
+      ],
+      "revision_id": "revision.692d1029f57155bd4cc2406e",
+      "runtime_contract_version": "0.1.0",
+      "workflow_run_id": "workflow_run.studio.synthetic"
+    },
+    "source_artifact": {
+      "artifact_id": "artifact.studio.synthetic.source",
+      "artifact_type": "media",
+      "attributes": {
+        "audio_stream_ids": [
+          "audio.japanese",
+          "audio.english"
+        ],
+        "duration_frames": 300
+      },
+      "media_kind": "program_media",
+      "producer_stage_run_id": null,
+      "scope": "program",
+      "scope_id": "program.studio.synthetic"
+    }
+  },
+  "studio_projection_contract_version": "0.1.0",
+  "workflow_revision": {
+    "binding_digest": "sha256:bda80abf930ef54cc83608c40c452252ef5eaf313890f454856bb97a2cdcc7ba",
+    "execution_plan_digest": "sha256:692d1029f57155bd4cc2406ef9ae1534af804f40a701e9e1bed74c696e630f15",
+    "revision_contract_version": "0.1.0",
+    "revision_id": "revision.692d1029f57155bd4cc2406e",
+    "workflow_id": "workflow.default.0.1.0",
+    "workflow_spec_digest": "sha256:3d284e1c15b393a8d112d6b85e97b9306a4ac5191367399a1ba00f3c2b8ca79c"
+  },
+  "workflow_spec": {
+    "edges": [
+      {
+        "edge_id": "edge.demux-partition",
+        "source": {
+          "node_id": "node.demux",
+          "port_id": "video_out"
+        },
+        "target": {
+          "node_id": "node.partition",
+          "port_id": "in"
+        }
+      },
+      {
+        "edge_id": "edge.encode-mux",
+        "source": {
+          "node_id": "node.video_encode",
+          "port_id": "video_out"
+        },
+        "target": {
+          "node_id": "node.mux",
+          "port_id": "video_in"
+        }
+      },
+      {
+        "edge_id": "edge.enhancement-interpolation",
+        "source": {
+          "node_id": "node.enhancement",
+          "port_id": "out"
+        },
+        "target": {
+          "node_id": "node.frame_interpolation",
+          "port_id": "in"
+        }
+      },
+      {
+        "edge_id": "edge.interpolation-reduce",
+        "source": {
+          "node_id": "node.frame_interpolation",
+          "port_id": "out"
+        },
+        "target": {
+          "node_id": "node.reduce",
+          "port_id": "in"
+        }
+      },
+      {
+        "edge_id": "edge.mux-final",
+        "source": {
+          "node_id": "node.mux",
+          "port_id": "program_out"
+        },
+        "target": {
+          "node_id": "node.final",
+          "port_id": "program"
+        }
+      },
+      {
+        "edge_id": "edge.original-audio-mux",
+        "source": {
+          "node_id": "node.demux",
+          "port_id": "audio_out"
+        },
+        "target": {
+          "node_id": "node.mux",
+          "port_id": "audio_in"
+        }
+      },
+      {
+        "edge_id": "edge.partition-enhancement",
+        "source": {
+          "node_id": "node.partition",
+          "port_id": "out"
+        },
+        "target": {
+          "node_id": "node.enhancement",
+          "port_id": "in"
+        }
+      },
+      {
+        "edge_id": "edge.reduce-encode",
+        "source": {
+          "node_id": "node.reduce",
+          "port_id": "out"
+        },
+        "target": {
+          "node_id": "node.video_encode",
+          "port_id": "video_in"
+        }
+      },
+      {
+        "edge_id": "edge.source-demux",
+        "source": {
+          "node_id": "node.source",
+          "port_id": "program"
+        },
+        "target": {
+          "node_id": "node.demux",
+          "port_id": "program_in"
+        }
+      }
+    ],
+    "nodes": [
+      {
+        "engine": {
+          "engine_id": "zniku.builtin.synthetic-demux",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:67bc34a7dd7530530b6253b0a465cab5626ebc1e1078a31a33d8aeef5de3a014"
+        },
+        "kind": "engine_stage",
+        "node_id": "node.demux",
+        "parameters": {}
+      },
+      {
+        "engine": {
+          "engine_id": "zniku.builtin.manual-enhancement",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:4bc5e6231436b66a23ac7cccfc791d216d0a4c829ec00e45e746e61ceff3102c"
+        },
+        "kind": "core_operator",
+        "media_kind": "video",
+        "node_id": "node.enhancement",
+        "operator_kind": "map",
+        "parameters": {
+          "model_name": "Starlight Precise",
+          "model_version": "2.6",
+          "scale": 2
+        },
+        "selected_member_ids": []
+      },
+      {
+        "kind": "final",
+        "node_id": "node.final"
+      },
+      {
+        "engine": {
+          "engine_id": "zniku.builtin.manual-frame-interpolation",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:37ea014d9a08434fa3af6faf5aa56b0f2e92caaf547e89ffff4a7381e90bd766"
+        },
+        "kind": "core_operator",
+        "media_kind": "video",
+        "node_id": "node.frame_interpolation",
+        "operator_kind": "map",
+        "parameters": {
+          "fps_multiplier": 2,
+          "model_name": "Chronos Fast",
+          "model_version": "3"
+        },
+        "selected_member_ids": []
+      },
+      {
+        "engine": {
+          "engine_id": "zniku.builtin.synthetic-mux",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:dbec81d0fe79dcd33f4677dd5afefefb5e3f285623163234f550636a3ab22004"
+        },
+        "kind": "engine_stage",
+        "node_id": "node.mux",
+        "parameters": {
+          "container": "matroska"
+        }
+      },
+      {
+        "engine": null,
+        "kind": "core_operator",
+        "media_kind": "video",
+        "node_id": "node.partition",
+        "operator_kind": "partition",
+        "parameters": {},
+        "selected_member_ids": []
+      },
+      {
+        "engine": null,
+        "kind": "core_operator",
+        "media_kind": "video",
+        "node_id": "node.reduce",
+        "operator_kind": "reduce",
+        "parameters": {},
+        "selected_member_ids": []
+      },
+      {
+        "kind": "source",
+        "node_id": "node.source"
+      },
+      {
+        "engine": {
+          "engine_id": "zniku.builtin.synthetic-video-encode",
+          "engine_version": "0.1.0",
+          "manifest_digest": "sha256:9eebe76cfdc2e0383e197ced80aea311c4a098bf2bca230dbb5a0194d1f6cfde"
+        },
+        "kind": "engine_stage",
+        "node_id": "node.video_encode",
+        "parameters": {
+          "codec": "hevc-main10",
+          "crf": 18,
+          "one_shot": true
+        }
+      }
+    ],
+    "workflow_contract_version": "0.2.0",
+    "workflow_id": "workflow.default.0.1.0"
+  }
+}

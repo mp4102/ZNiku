@@ -20,6 +20,11 @@ import type {
 import { parseAuthoringCommand } from './formal/contracts'
 import { FormalWorkflowNodeCard } from './formal/FormalWorkflowNodeCard'
 import {
+  ExpandedPlanView,
+  OperatorPaletteProjection,
+  RunMonitorView,
+} from './formal/StudioAuthorityViews'
+import {
   createWindowAuthoringGateway,
   GatewayUnavailableError,
   type AuthorityState,
@@ -29,7 +34,7 @@ import { projectAuthorityGraph } from './formal/graph'
 import type { FormalWorkflowEdge, FormalWorkflowNode } from './formal/graph-model'
 
 const nodeTypes = { formalWorkflow: FormalWorkflowNodeCard }
-const DEFAULT_DRAFT_ID = 'draft.synthetic.program'
+const DEFAULT_DRAFT_ID = 'draft.default'
 
 interface AppProps {
   readonly gateway?: AuthoringGateway
@@ -50,6 +55,22 @@ function parseEndpoint(value: string): PortEndpoint {
   return { node_id: nodeId, port_id: portId }
 }
 
+interface ParameterSchemaField {
+  readonly type?: string
+  readonly enum?: ReadonlyArray<unknown>
+  readonly minimum?: number
+  readonly maximum?: number
+}
+
+function parameterFields(schema: Readonly<Record<string, unknown>> | undefined): ReadonlyArray<[string, ParameterSchemaField]> {
+  const properties = schema?.properties
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return []
+  return Object.entries(properties).filter(
+    (item): item is [string, ParameterSchemaField] =>
+      typeof item[1] === 'object' && item[1] !== null && !Array.isArray(item[1]),
+  )
+}
+
 function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: AppProps) {
   const effectiveGateway = useMemo(() => gateway ?? createWindowAuthoringGateway(), [gateway])
   const nextCommandId = commandIdFactory ?? defaultCommandId
@@ -65,6 +86,7 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
   const [targetEndpoint, setTargetEndpoint] = useState('')
   const [parameterText, setParameterText] = useState('{}')
   const [bottomOpen, setBottomOpen] = useState(true)
+  const [mode, setMode] = useState<'designer' | 'plan' | 'run'>('designer')
   const revisionRef = useRef(-1)
 
   const projection = useMemo(
@@ -165,7 +187,7 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
   const selectedEdge = projection.edges.find((edge) => edge.id === selectedEdgeId) ?? null
 
   useEffect(() => {
-    if (selectedNode?.data.category === 'engine') {
+    if (selectedNode?.data.engine) {
       setParameterText(JSON.stringify(selectedNode.data.parameters ?? {}, null, 2))
     }
   }, [selectedNode])
@@ -205,7 +227,7 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
   }
 
   const replaceParameters = () => {
-    if (!selectedNode || selectedNode.data.category !== 'engine') return
+    if (!selectedNode || !selectedNode.data.engine) return
     try {
       const parsed: unknown = JSON.parse(parameterText)
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -219,6 +241,15 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
       })
     } catch {
       setClientHint('参数不是合法 JSON；该输入尚未提交到 Python authority。')
+    }
+  }
+
+  const updateParameterDraft = (key: string, value: unknown) => {
+    try {
+      const current = JSON.parse(parameterText) as Record<string, unknown>
+      setParameterText(JSON.stringify({ ...current, [key]: value }, null, 2))
+    } catch {
+      setClientHint('先修复专家 JSON，再使用 Schema 表单。')
     }
   }
 
@@ -244,9 +275,9 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
         </div>
 
         <nav className="mode-tabs" aria-label="工作区视图">
-          <button type="button" className="is-active">Designer</button>
-          <button type="button" disabled>Expanded Plan</button>
-          <button type="button" disabled>Run Monitor</button>
+          <button type="button" className={mode === 'designer' ? 'is-active' : ''} onClick={() => setMode('designer')}>Designer</button>
+          <button type="button" className={mode === 'plan' ? 'is-active' : ''} onClick={() => setMode('plan')}>Expanded Plan</button>
+          <button type="button" className={mode === 'run' ? 'is-active' : ''} onClick={() => setMode('run')}>Run Monitor</button>
         </nav>
 
         <div className="top-actions">
@@ -279,26 +310,32 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
             </button>
           ))}
         </div>
+        <OperatorPaletteProjection />
         <div className="palette-note">
-          <span>Phase 2A boundary</span>
-          <p>Source 与 Final 端口来自 Python CoreNodeContractSet；本切片不创建新节点。</p>
+          <span>Phase 5 formal boundary</span>
+          <p>Engine 与 Operator typed ports 均来自 Python projection；Canvas 不维护第二套合同。</p>
         </div>
       </aside>
 
-      <section className="canvas-panel" aria-label="Designer 画布">
+      <section className="canvas-panel" aria-label={mode === 'designer' ? 'Designer 画布' : mode === 'plan' ? 'Expanded Plan 画布' : 'Run Monitor 画布'}>
         <div className="canvas-context">
           <div>
-            <span className="context-mode">Designer</span>
-            <strong>正式 Draft · typed ports · Compiler diagnostics</strong>
+            <span className="context-mode">{mode === 'designer' ? 'Designer' : mode === 'plan' ? 'Expanded Plan' : 'Run Monitor'}</span>
+            <strong>{mode === 'designer' ? '正式 Draft · typed ports · Compiler diagnostics' : mode === 'plan' ? '冻结 Plan · chapter expansion · exact Engine binding' : 'fresh snapshot · Evidence-derived state · read only'}</strong>
           </div>
           <div className="canvas-legend">
             <span><i className="legend-dot source" /> Source</span>
             <span><i className="legend-dot engine" /> Engine</span>
+            <span><i className="legend-dot operator" /> Operator</span>
             <span><i className="legend-dot final" /> Final</span>
           </div>
         </div>
 
-        {unavailable && !authority ? (
+        {mode === 'plan' ? (
+          <ExpandedPlanView />
+        ) : mode === 'run' ? (
+          <RunMonitorView />
+        ) : unavailable && !authority ? (
           <div className="authority-empty" role="alert">
             <strong>Python Authoring authority 不可用</strong>
             <p>{unavailable}</p>
@@ -313,8 +350,8 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
             onConnect={handleConnect}
             onNodeClick={handleNodeClick}
             onEdgeClick={handleEdgeClick}
-            nodesDraggable={!busy}
-            nodesConnectable={!busy}
+            nodesDraggable={!busy && mode === 'designer'}
+            nodesConnectable={!busy && mode === 'designer'}
             edgesReconnectable={false}
             deleteKeyCode={null}
             fitView
@@ -331,7 +368,7 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
               zoomable
               nodeColor={(item) => {
                 const category = (item.data as FormalWorkflowNode['data']).category
-                return { source: '#53a5c9', engine: '#d89b45', final: '#5fb98a' }[category]
+                return { source: '#53a5c9', engine: '#d89b45', operator: '#9c7bd8', final: '#5fb98a' }[category]
               }}
             />
           </ReactFlow>
@@ -373,8 +410,21 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
                   </div>
                 ))}
               </section>
-              {selectedNode.data.category === 'engine' && (
+              {selectedNode.data.engine && (
                 <section>
+                  <h3>Manifest Schema 参数</h3>
+                  <div className="schema-form">
+                    {parameterFields(selectedNode.data.parameterSchema).map(([name, field]) => {
+                      const current = selectedNode.data.parameters?.[name]
+                      if (field.enum) {
+                        return <label key={name}>{name}<select value={String(current ?? field.enum[0] ?? '')} onChange={(event) => updateParameterDraft(name, field.type === 'integer' || field.type === 'number' ? Number(event.target.value) : event.target.value)}>{field.enum.map((value) => <option key={String(value)} value={String(value)}>{String(value)}</option>)}</select></label>
+                      }
+                      if (field.type === 'boolean') {
+                        return <label key={name}>{name}<select value={String(current ?? false)} onChange={(event) => updateParameterDraft(name, event.target.value === 'true')}><option value="true">true</option><option value="false">false</option></select></label>
+                      }
+                      return <label key={name}>{name}<input type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'} min={field.minimum} max={field.maximum} value={String(current ?? '')} onChange={(event) => updateParameterDraft(name, field.type === 'integer' || field.type === 'number' ? Number(event.target.value) : event.target.value)} /></label>
+                    })}
+                  </div>
                   <h3>完整参数对象</h3>
                   <textarea aria-label="Engine 参数 JSON" value={parameterText} onChange={(event) => setParameterText(event.target.value)} rows={7} />
                   <button className="button button--primary inspector-action" type="button" onClick={replaceParameters} disabled={busy}>替换参数并验证</button>
@@ -421,7 +471,7 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
         </button>
         {bottomOpen && (
           <div className="diagnostic-list">
-            {diagnostics.length === 0 ? <div className="diagnostic-empty">authoring_valid · 无阻塞诊断</div> : diagnostics.map((diagnostic) => (
+            {diagnostics.length === 0 ? <div className="diagnostic-empty">{authority ? 'authoring_valid · 无阻塞诊断' : '等待 Python authority · 尚无正式诊断'}</div> : diagnostics.map((diagnostic) => (
               <article className={`diagnostic diagnostic--${diagnostic.severity}`} key={diagnostic.diagnostic_id}>
                 <span className="diagnostic-icon">{diagnostic.severity === 'error' ? '×' : diagnostic.severity === 'warning' ? '!' : 'i'}</span>
                 <div><span className="diagnostic-code">{diagnostic.stable_code}</span><strong>{diagnostic.phase}</strong><p>{diagnostic.message}</p></div>

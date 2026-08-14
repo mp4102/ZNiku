@@ -19,13 +19,14 @@ export interface GraphPort {
 export interface FormalNodeData extends Record<string, unknown> {
   readonly label: string
   readonly nodeId: string
-  readonly category: 'source' | 'engine' | 'final'
+  readonly category: 'source' | 'engine' | 'operator' | 'final'
   readonly scope: Scope
   readonly inputs: ReadonlyArray<GraphPort>
   readonly outputs: ReadonlyArray<GraphPort>
   readonly engine?: EngineBinding
   readonly executionMode?: ExecutionMode
   readonly parameters?: Readonly<Record<string, JsonValue>>
+  readonly parameterSchema?: Readonly<Record<string, JsonValue>>
   readonly description: string
 }
 

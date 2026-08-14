@@ -5,6 +5,8 @@ import coreNodeSchema from '../generated/core-node-contracts.schema.json'
 import engineManifestSchema from '../generated/engine-manifest.schema.json'
 import projectionManifestJson from '../generated/projection-manifest.json'
 import projectionManifestSchema from '../generated/projection-manifest.schema.json'
+import studioAuthorityJson from '../generated/studio-authority.json'
+import studioAuthoritySchema from '../generated/studio-authority.schema.json'
 import type {
   AuthoringCommand,
   AuthoringCommandRejected,
@@ -15,6 +17,7 @@ import type {
 import type { CoreNodeContractSet } from '../generated/core-node-contracts.generated'
 import type { EngineManifest } from '../generated/engine-manifest.generated'
 import type { ProjectionManifest } from '../generated/projection-manifest.generated'
+import type { StudioAuthorityProjection } from '../generated/studio-authority.generated'
 
 export type AuthoringResponse = WorkflowDraftSnapshot | AuthoringCommandRejected | WireParseFailure
 
@@ -30,6 +33,7 @@ const validateAuthoringDocument = ajv.compile(authoringSchema)
 const validateEngineManifest = ajv.compile(engineManifestSchema)
 const validateCoreNodeContracts = ajv.compile(coreNodeSchema)
 const validateProjectionManifest = ajv.compile(projectionManifestSchema)
+const validateStudioAuthority = ajv.compile(studioAuthoritySchema)
 
 function validationMessage(errors: ErrorObject[] | null | undefined): string {
   if (!errors || errors.length === 0) return 'unknown schema violation'
@@ -101,8 +105,18 @@ function parseProjectionManifest(value: unknown): ProjectionManifest {
   return value as unknown as ProjectionManifest
 }
 
+export function parseStudioAuthority(value: unknown): StudioAuthorityProjection {
+  if (!validateStudioAuthority(value)) {
+    throw new ContractBoundaryError(
+      `Studio authority 不符合 Python Schema：${validationMessage(validateStudioAuthority.errors)}`,
+    )
+  }
+  return value as unknown as StudioAuthorityProjection
+}
+
 export const coreNodeContracts = parseCoreNodeContracts(coreNodeContractsJson)
 export const projectionManifest = parseProjectionManifest(projectionManifestJson)
+export const studioAuthority = parseStudioAuthority(studioAuthorityJson)
 
 function canonicalize(value: unknown): string {
   if (value === null || typeof value === 'boolean' || typeof value === 'string') {

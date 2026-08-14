@@ -2,8 +2,8 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { FormalWorkflowNode } from './graph-model'
 
 export function FormalWorkflowNodeCard({ data, selected }: NodeProps<FormalWorkflowNode>) {
-  const categoryLabel = { source: 'SOURCE', engine: 'ENGINE', final: 'FINAL' }[data.category]
-  const icon = { source: '◉', engine: '◆', final: '✓' }[data.category]
+  const categoryLabel = { source: 'SOURCE', engine: 'ENGINE', operator: 'OPERATOR', final: 'FINAL' }[data.category]
+  const icon = { source: '◉', engine: '◆', operator: '◇', final: '✓' }[data.category]
   const portTop = (index: number, total: number) => `${58 + (index - (total - 1) / 2) * 22}%`
 
   return (

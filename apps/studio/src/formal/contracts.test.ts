@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import fixture from '../test/fixtures/python-authority.json'
+import studioAuthorityFixture from '../generated/studio-authority.json'
 import {
   ContractBoundaryError,
   parseAuthoringCommand,
   parseAuthoringResponse,
   parseEngineManifest,
+  parseStudioAuthority,
   sha256Digest,
   verifyManifestBinding,
   verifyProjectionAuthority,
   verifySnapshot,
 } from './contracts'
+import { projectDefaultWorkflowGraph } from './graph'
 
 describe('Python wire Schema runtime boundary', () => {
   it('解析并复核 Python 生成的 snapshot、Manifest 与 digest', async () => {
@@ -59,5 +62,32 @@ describe('Python wire Schema runtime boundary', () => {
     await expect(sha256Digest({ value: true })).resolves.not.toBe(
       await sha256Digest({ value: 1 }),
     )
+  })
+
+  it('解析 Python 生成的 Core Operator、Plan 与 Runtime Studio authority', () => {
+    const authority = parseStudioAuthority(studioAuthorityFixture)
+    expect(authority.workflow_spec.workflow_contract_version).toBe('0.2.0')
+    expect(authority.operator_contracts).toHaveLength(12)
+    expect(authority.execution_plan.nodes).toHaveLength(13)
+    expect(authority.runtime_snapshot.runtime.nodes.find((node) => node.state === 'ready')?.plan_node_id).toBe('plan.node.demux')
+    expect(() => parseStudioAuthority({ ...studioAuthorityFixture, shell: 'unsafe' })).toThrow(
+      ContractBoundaryError,
+    )
+  })
+
+  it('默认 Designer 图使用 Python operator ports 和显式原始音轨边', () => {
+    const graph = projectDefaultWorkflowGraph()
+    expect(graph.nodes.filter((node) => node.data.category === 'operator')).toHaveLength(4)
+    expect(graph.nodes.find((node) => node.id === 'node.partition')?.data.outputs[0]).toMatchObject({
+      portId: 'out',
+      scope: 'chapter',
+      cardinality: 'set',
+    })
+    expect(graph.edges.find((edge) => edge.id === 'edge.original-audio-mux')).toMatchObject({
+      source: 'node.demux',
+      sourceHandle: 'audio_out',
+      target: 'node.mux',
+      targetHandle: 'audio_in',
+    })
   })
 })

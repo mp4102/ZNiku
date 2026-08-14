@@ -8,13 +8,13 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
 以确定性 **ZNIKU Runtime** 为执行与状态权威，并允许 Agent 作为可选的编排、诊断和运维助手。
 
 - 当前版本：`0.1.0`
-- 当前阶段：产品 Phase 1–4 已完成；产品 Phase 5 正在实施
+- 当前阶段：产品 Phase 1–5 已完成；后续产品 Phase 6 待单独实施
 - 当前能力：Contract Kernel、Engine SDK/Installed Catalog、纯合成 Demux/Mux conformance、Workflow
   Authoring、Core Operators、Preflight、ExecutionPlan、Freeze、默认工作流、人工 handoff、full
-  verification、合成 Runtime、Application Service、受控 Agent 工具与 Studio 合同投影均由 Python
-  提供唯一领域语义
-- 当前限制：Runtime 与默认工作流仍使用纯合成媒体 authority；尚未执行真实媒体，也未实现产品 CLI
-  或 `.zniku` 工程格式
+  verification、合成 Runtime、Application Service、受控 Agent 工具，以及正式 Studio
+  Designer/Expanded Plan/Run Monitor 均由 Python 提供唯一领域语义
+- 当前限制：Runtime 与默认工作流仍使用纯合成媒体 authority；尚未执行真实媒体，也未实现产品 CLI、
+  `.zniku` 工程格式、durable Runtime 服务或 Tauri 桌面封装
 
 ## 正式命名
 
@@ -74,6 +74,7 @@ ZNiku/
 ├── src/zniku/pipelines/         # Phase 3 默认工作流与验证发布纵向切片
 ├── src/zniku/application/       # Phase 4 Studio/Agent 共用 Application Service
 ├── src/zniku/agent/             # Phase 4 无状态、窄化 Agent adapter
+├── src/zniku/studio/            # Phase 5 Python→Studio 正式 authority 投影
 ├── tests/                       # 纯合成合同、Compiler 与 authority 回归测试
 ├── apps/
 │   └── studio/                  # 正式 Designer 最小切片及 Python 单向投影
@@ -135,4 +136,5 @@ Engine Contract 的模型职责、引用关系、失败语义和正式决策见
 [Engine SDK 基线](docs/architecture/engine-sdk-baseline.md)；执行与 Runtime 语义见
 [Workflow Execution 与 Runtime Core](docs/architecture/execution-runtime-baseline.md)；默认流程见
 [默认工作流与验证发布基线](docs/architecture/default-workflow-baseline.md)；Agent 工具边界见
-[Application Service 与 Agent 工具基线](docs/architecture/agent-application-baseline.md)。
+[Application Service 与 Agent 工具基线](docs/architecture/agent-application-baseline.md)；正式 GUI 见
+[Studio 正式工作区基线](docs/architecture/studio-formal-baseline.md)。

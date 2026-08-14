@@ -98,4 +98,31 @@ describe('Studio → live Python Authoring bridge', () => {
     expect('result_kind' in stale && stale.result_kind).toBe('command_rejected')
     expect('current_revision' in stale && stale.current_revision).toBe(1)
   })
+
+  it('加载并编辑含 Core Operator 的 0.2.0 默认工作流', async () => {
+    const initial = await gateway.loadDraft('draft.default')
+    expect(initial.snapshot.spec.workflow_contract_version).toBe('0.2.0')
+    expect(initial.snapshot.spec.nodes.filter((node) => node.kind === 'core_operator')).toHaveLength(4)
+    expect(initial.manifests).toHaveLength(5)
+
+    const response = await gateway.applyCommand({
+      authoring_contract_version: '0.1.0',
+      command_id: 'command.integration.default.parameters',
+      draft_id: 'draft.default',
+      base_revision: 0,
+      intent: {
+        intent_kind: 'replace_parameters',
+        node_id: 'node.enhancement',
+        parameters: {
+          model_name: 'Starlight Precise',
+          model_version: '2.6',
+          scale: 2,
+        },
+      },
+    })
+    expect('snapshot' in response && response.snapshot.spec_revision).toBe(1)
+    expect(
+      'snapshot' in response && response.snapshot.spec.workflow_contract_version,
+    ).toBe('0.2.0')
+  })
 })

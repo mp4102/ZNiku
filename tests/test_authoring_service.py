@@ -19,6 +19,7 @@ from zniku.authoring import (
     WorkflowDraftSnapshot,
     WorkflowSpec,
 )
+from zniku.pipelines import build_default_workflow
 
 
 def make_service(
@@ -207,3 +208,30 @@ def test_wire_facade_rejects_duplicate_keys_without_fabricating_snapshot(
     assert isinstance(response, WireParseFailure)
     assert response.diagnostics[0].phase.value == "parse"
     assert service.get_snapshot("draft.synthetic.program").spec_revision == 0
+
+
+def test_executable_workflow_keeps_version_and_map_parameters_are_authorable() -> None:
+    bundle = build_default_workflow()
+    service = AuthoringService(bundle.compiler)
+    initial = service.create_draft("draft.default", bundle.spec)
+    response = service.apply(
+        AuthoringCommand(
+            authoring_contract_version="0.1.0",
+            command_id="command.default.parameters",
+            draft_id="draft.default",
+            base_revision=initial.spec_revision,
+            intent=ReplaceParametersIntent(
+                intent_kind="replace_parameters",
+                node_id="node.enhancement",
+                parameters={
+                    "model_name": "Starlight Precise",
+                    "model_version": "2.6",
+                    "scale": 2,
+                },
+            ),
+        )
+    )
+
+    assert isinstance(response, WorkflowDraftSnapshot)
+    assert response.spec.workflow_contract_version == "0.2.0"
+    assert response.validation.result.outcome is ValidationOutcome.AUTHORING_VALID

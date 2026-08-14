@@ -91,8 +91,11 @@ export class WindowAuthoringGateway implements AuthoringGateway {
   private async hydrateSnapshot(snapshot: WorkflowDraftSnapshot): Promise<AuthorityState> {
     await verifySnapshot(snapshot)
     const bindings = snapshot.spec.nodes
-      .filter((node) => node.kind === 'engine_stage')
-      .map((node) => node.engine)
+      .flatMap((node) => {
+        if (node.kind === 'engine_stage') return [node.engine]
+        if (node.kind === 'core_operator' && node.engine != null) return [node.engine]
+        return []
+      })
     const unique = new Map(bindings.map((binding) => [binding.manifest_digest, binding]))
     const manifests = await Promise.all(
       Array.from(unique.values(), async (binding) => {

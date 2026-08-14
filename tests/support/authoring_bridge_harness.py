@@ -16,6 +16,7 @@ from zniku.authoring import (
     WorkflowDraftSnapshot,
 )
 from zniku.contracts import EngineBinding, EngineManifest
+from zniku.pipelines import build_default_workflow
 
 
 def main() -> None:
@@ -26,9 +27,11 @@ def main() -> None:
     fixture = cast(dict[str, Any], json.loads(fixture_path.read_text(encoding="utf-8")))
     manifest = EngineManifest.from_data(fixture["manifest"])
     initial = WorkflowDraftSnapshot.from_data(fixture["initial"])
-    catalog = InMemoryManifestCatalog((manifest,))
+    default = build_default_workflow()
+    catalog = InMemoryManifestCatalog((manifest, *default.manifests))
     service = AuthoringService(WorkflowCompiler(catalog, CoreNodeContractSet.phase_2a()))
     service.create_draft(initial.draft_id, initial.spec)
+    service.create_draft("draft.default", default.spec)
 
     for line in sys.stdin:
         request = cast(dict[str, Any], json.loads(line))

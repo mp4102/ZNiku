@@ -1103,6 +1103,132 @@ button {
   margin-top: 22px;
 }
 
+.operator-projection {
+  margin: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: #0a121c;
+}
+
+.operator-projection > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid #172332;
+  font-size: 10px;
+}
+
+.operator-projection > div:last-child { border-bottom: 0; }
+.operator-projection strong { color: #bca5ea; text-transform: capitalize; }
+.operator-projection code { color: var(--quiet); font-size: 8px; }
+
+.authority-view {
+  position: absolute;
+  inset: 58px 0 0;
+  overflow: auto;
+  padding: 24px;
+  background: radial-gradient(circle at 80% 0, rgba(72, 52, 112, 0.12), transparent 36%), #091018;
+}
+
+.authority-view__header,
+.authority-digest {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.authority-view__header h2 { margin: 5px 0 0; font-size: 20px; }
+.authority-view__header code,
+.authority-digest code { color: #87bcd3; font: 9px/1.5 'IBM Plex Mono', monospace; }
+
+.authority-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin: 18px 0;
+}
+
+.authority-metrics span {
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: #0d1621;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.authority-metrics strong { margin-right: 6px; color: var(--text); font-size: 17px; }
+.state-metric--complete { border-left: 2px solid var(--green) !important; }
+.state-metric--ready { border-left: 2px solid var(--amber) !important; }
+.state-metric--failed { border-left: 2px solid var(--red) !important; }
+
+.chapter-strip,
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.chapter-strip article,
+.plan-card,
+.audio-authority-card {
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: #0c151f;
+}
+
+.chapter-strip span,
+.chapter-strip code { display: block; margin-top: 5px; color: var(--quiet); font-size: 9px; }
+.plan-grid { margin-top: 14px; }
+.plan-card { min-height: 112px; border-top: 2px solid #40536b; }
+.plan-card--engine { border-top-color: var(--amber); }
+.plan-card--operator { border-top-color: var(--violet); }
+.plan-card--source { border-top-color: var(--cyan); }
+.plan-card--final { border-top-color: var(--green); }
+.plan-card > div { display: flex; justify-content: space-between; color: var(--quiet); font-size: 8px; }
+.plan-card em { color: #d7a75e; font-style: normal; }
+.plan-card strong, .plan-card code, .plan-card p, .plan-card small { display: block; margin-top: 7px; }
+.plan-card code, .plan-card small { color: #8197ad; font-size: 8px; }
+.plan-card p { color: var(--muted); font-size: 9px; line-height: 1.45; }
+
+.run-list { display: grid; gap: 7px; }
+.run-row {
+  display: grid;
+  grid-template-columns: 10px minmax(190px, 1fr) 80px minmax(180px, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: #0c151f;
+}
+.run-row i { width: 7px; height: 7px; border-radius: 50%; background: #506174; }
+.run-row--complete i { background: var(--green); }
+.run-row--ready i { background: var(--amber); box-shadow: 0 0 10px rgba(216, 155, 69, 0.6); }
+.run-row--failed i { background: var(--red); }
+.run-row div span { display: block; margin-top: 3px; color: var(--quiet); font-size: 8px; }
+.run-row em { color: var(--muted); font: 9px 'IBM Plex Mono', monospace; }
+.run-row code { overflow: hidden; color: #71869c; font-size: 8px; text-overflow: ellipsis; }
+.audio-authority-card { margin-top: 14px; border-left: 2px solid var(--cyan); }
+.audio-authority-card strong, .audio-authority-card code { display: block; margin-top: 7px; }
+.audio-authority-card p { color: var(--cyan); }
+.audio-authority-card code { color: var(--quiet); font-size: 8px; }
+.authority-digest { margin-top: 16px; padding: 12px; border-top: 1px solid var(--border-soft); }
+
+.schema-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.schema-form label { color: var(--muted); font-size: 9px; }
+.schema-form input,
+.schema-form select { width: 100%; margin-top: 4px; }
+
 @media (max-width: 1400px) {
   .app-shell {
     grid-template-columns: 220px minmax(480px, 1fr) 260px;

@@ -17,11 +17,12 @@ from typing import cast
 import rfc8785
 from pydantic import ValidationError
 
+from zniku.workflow import CoreOperatorKind, CoreOperatorNodeSpec
+
 from .compiler import WorkflowCompiler
 from .models import (
     AUTHORING_CONTRACT_VERSION,
     DIAGNOSTIC_CONTRACT_VERSION,
-    WORKFLOW_CONTRACT_VERSION,
     AddEngineStageNodeIntent,
     AddFinalNodeIntent,
     AddSourceNodeIntent,
@@ -255,7 +256,7 @@ class AuthoringService:
             raise _ApplyRejected("E_INTENT_UNSUPPORTED", "未知 authoring intent。")
 
         return WorkflowSpec(
-            workflow_contract_version=WORKFLOW_CONTRACT_VERSION,
+            workflow_contract_version=spec.workflow_contract_version,
             workflow_id=spec.workflow_id,
             nodes=tuple(nodes),
             edges=tuple(edges),
@@ -275,7 +276,10 @@ class AuthoringService:
     def _replace_engine_node(
         nodes: list[WorkflowNodeSpec],
         node_id: str,
-        replace: Callable[[EngineStageNodeSpec], EngineStageNodeSpec],
+        replace: Callable[
+            [EngineStageNodeSpec | CoreOperatorNodeSpec],
+            EngineStageNodeSpec | CoreOperatorNodeSpec,
+        ],
     ) -> list[WorkflowNodeSpec]:
         replaced = False
         result: list[WorkflowNodeSpec] = []
@@ -283,7 +287,10 @@ class AuthoringService:
             if node.node_id != node_id:
                 result.append(node)
                 continue
-            if not isinstance(node, EngineStageNodeSpec):
+            if not isinstance(node, EngineStageNodeSpec) and not (
+                isinstance(node, CoreOperatorNodeSpec)
+                and node.operator_kind is CoreOperatorKind.MAP
+            ):
                 raise _ApplyRejected("E_NODE_NOT_ENGINE_STAGE", "目标 node 不是 EngineStage。")
             result.append(replace(node))
             replaced = True

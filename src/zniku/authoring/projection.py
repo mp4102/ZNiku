@@ -17,6 +17,7 @@ import rfc8785
 from pydantic import TypeAdapter
 
 from zniku.contracts import EngineBinding, EngineManifest
+from zniku.studio import StudioAuthorityProjection, build_studio_authority_projection
 
 from .compiler import InMemoryManifestCatalog, WorkflowCompiler
 from .models import (
@@ -104,6 +105,11 @@ def build_source_schemas() -> dict[str, dict[str, Any]]:
             TypeAdapter(ProjectionManifest),
             title="ProjectionManifest",
             schema_id="urn:zniku:schema:projection-manifest:0.1.0",
+        ),
+        "studio-authority.schema.json": _schema(
+            TypeAdapter(StudioAuthorityProjection),
+            title="StudioAuthorityProjection",
+            schema_id="urn:zniku:schema:studio-authority:0.1.0",
         ),
     }
 
@@ -236,6 +242,10 @@ def build_projection_files(core_contracts: CoreNodeContractSet) -> dict[str, byt
         files[ts_name] = schema_to_typescript(schema).encode("utf-8")
     files["core-node-contracts.json"] = (
         json.dumps(core_contracts.to_data(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    studio_authority = build_studio_authority_projection()
+    files["studio-authority.json"] = (
+        json.dumps(studio_authority.to_data(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")
     return files
 

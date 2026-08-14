@@ -11,7 +11,7 @@ function commandIds(...ids: string[]): () => string {
   return () => ids[index++] ?? `command.ui.${index}`
 }
 
-describe('ZNIKU Studio Phase 2A formal Designer', () => {
+describe('ZNIKU Studio Phase 5 formal workspace', () => {
   it('Python bridge 缺失时 fail closed，且不回退 GUI-0 mock', async () => {
     render(<App />)
 
@@ -28,12 +28,31 @@ describe('ZNIKU Studio Phase 2A formal Designer', () => {
     expect(screen.getByText('revision 0', { exact: false })).toBeInTheDocument()
     expect(screen.getAllByText('Synthetic Program Filter').length).toBeGreaterThan(0)
     expect(screen.getByText('E_GRAPH_INPUT_CARDINALITY')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Expanded Plan' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Run Monitor' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Expanded Plan' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Run Monitor' })).toBeEnabled()
 
     await userEvent.click(screen.getByRole('button', { name: /Synthetic Program Filter/ }))
     expect(screen.getAllByText('media/program_media · program · one')).toHaveLength(2)
     expect(screen.getByText('example.synthetic.program_filter')).toBeInTheDocument()
+  })
+
+  it('展示 Python 投影的默认三章节 Plan 与 fresh Runtime snapshot', async () => {
+    const user = userEvent.setup()
+    render(<App gateway={new PythonFixtureGateway()} />)
+    await screen.findByText('workflow.synthetic.program')
+
+    await user.click(screen.getByRole('button', { name: 'Expanded Plan' }))
+    expect(screen.getByRole('heading', { name: '默认工作流 · 三章节展开' })).toBeInTheDocument()
+    expect(
+      screen.getByText((_content, element) => element?.textContent === '13 planned nodes'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('chapter.003')).toBeInTheDocument()
+    expect(screen.getAllByText('MANUAL HANDOFF')).toHaveLength(6)
+
+    await user.click(screen.getByRole('button', { name: 'Run Monitor' }))
+    expect(screen.getByRole('heading', { name: 'workflow_run.studio.synthetic' })).toBeInTheDocument()
+    expect(screen.getByText('artifact_set.workflow_run.studio.synthetic.original_audio')).toBeInTheDocument()
+    expect(screen.getByText('Demux → Mux · stream_copy=true')).toBeInTheDocument()
   })
 
   it('通过 typed command 连接端口并接受 Python authoring-valid revision', async () => {
