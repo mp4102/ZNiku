@@ -1,15 +1,15 @@
 # ZNIKU 0.1.0 Engine Contract Kernel
 
-- 状态：**Phase 1A 实现设计，待本轮审阅后冻结**
+- 状态：**已批准的正式基线；Phase 1 Contract Kernel 已实现**
 - 日期：2026-08-14
 - 实现入口：`src/zniku/contracts/`
 - 上位基线：[`product-framework.md`](./product-framework.md)
 
 ## 1. 定位
 
-Engine Contract Kernel 是 ZNIKU Studio、未来 Compiler、ZNIKU Runtime 和 ZNIKU Engine SDK
-共享的 Python 领域语义来源。本阶段只建立可运行、可测试的值对象和跨对象校验，不执行 Engine，
-不读取媒体，也不建立 Runtime 状态机。
+Engine Contract Kernel 是 ZNIKU Studio、Compiler、ZNIKU Runtime 和 ZNIKU Engine SDK 共享的 Python
+领域语义来源。本内核只建立可运行、可测试的值对象和跨对象校验；Engine package、安装解析与候选输出
+调用边界由 [`engine-sdk-baseline.md`](./engine-sdk-baseline.md) 继续冻结，Runtime 状态机仍不属于本文件。
 
 Studio 的 TypeScript mock 不属于本合同。未来前端类型只能由 Python Schema 或正式 API 投影，不能
 复制本模块后独立演化。
@@ -82,11 +82,11 @@ producer 和 preserved 规则。它不从目录或文件名猜测任何身份。
 `ContractViolation`。0.1.0 尚未把两类错误统一成一个公共诊断信封，调用方不得解析中文消息作为
 长期协议。
 
-## 5. 当前明确不处理
+## 5. 本内核明确不处理
 
 - WorkflowSpec、WorkflowRevision、DAG、Compiler 或 ExecutionPlan；
 - Runtime 状态机、ready set、并发、lease、重试、恢复执行或副作用；
-- Engine Registry、安装发现、allowlist、entrypoint、进程隔离或真实 Engine；
+- Engine package、Installed Catalog、allowlist 和调用 adapter；这些由 Engine SDK 基线独立负责；
 - Evidence、receipt、Final、ZBaton producer 或历史继承；
 - 媒体路径、媒体探测、解码、哈希、文件发布或任何媒体 I/O；
 - Studio/GUI 连接、CLI、`.zniku` 工程格式或 TypeScript 类型生成；
@@ -95,9 +95,9 @@ producer 和 preserved 规则。它不从目录或文件名猜测任何身份。
 当前 `StageRun` 是 Engine-backed 最小子集。未来 Runtime 内建的 Partition、Map、Select、Collect、
 Reduce 与 Final 不得伪装成 Engine；其执行主体判别联合须在 Runtime/ExecutionPlan 专题中另行冻结。
 
-## 6. 本轮需要审阅的协议决策
+## 6. 已冻结的 0.1.0 协议决策
 
-以下选择由 Phase 1A 为形成可运行内核而提出，不是上位基线已经规定的精确字段：
+以下选择已经作为 ZNIKU 0.1.0 Contract Kernel 的正式协议冻结：
 
 - `ArtifactType` / `MediaKind` 的首批枚举和 Engine ID grammar；
 - SemVer 允许 prerelease/build，但拒绝版本范围；
@@ -111,5 +111,5 @@ Reduce 与 Final 不得伪装成 Engine；其执行主体判别联合须在 Runt
 - 输出缺省不表示状态，StageRun 状态与 Runtime operator identity 后续另行建模；
 - 当前公共 Python 导入面以及 `ValidationError` / `ContractViolation` 两层失败 API。
 
-上述项目在本轮审阅确认前只作为 ZNIKU 0.1.0 Contract Kernel 的候选冻结内容。改变其中任一序列化
-语义都必须同步提升合同版本并更新模型、Schema、fixtures 与测试。
+改变上述任一序列化语义都必须同步提升相应合同版本，并更新模型、Schema、fixtures、Python→Studio
+投影和测试；不得在同一个精确合同版本下静默改变。

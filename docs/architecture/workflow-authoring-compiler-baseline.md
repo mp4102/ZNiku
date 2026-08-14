@@ -6,7 +6,8 @@
 - 目标阶段：Phase 2A
 - 上位基线：[`product-framework.md`](./product-framework.md)、
   [`studio-framework.md`](./studio-framework.md)
-- 已实现候选依赖：[`engine-contract.md`](./engine-contract.md)
+- 正式依赖：[`engine-contract.md`](./engine-contract.md)、
+  [`engine-sdk-baseline.md`](./engine-sdk-baseline.md)
 
 ## 1. 文档定位
 
@@ -33,8 +34,9 @@ GUI-0 仍是 mock-only 交互原型。本文不把其 TypeScript 类型、React 
 本文末尾的 Studio 最小切片只是 GUI-2 的合同接入前段，不宣称已经完成正式 Registry、保存／导入导出
 或完整 GUI-2 验收。
 
-产品框架 Phase 1 中“包装少量内建 Engine”的真实 Engine work item 仍未完成。Phase 2A 只使用纯合成
-Manifest fixture 验证合同链，不宣称 Phase 1 已全部结束，也不借此引入真实 Engine。Studio 正式切片只有在
+产品 Phase 1 已以纯合成 Demux/Mux conformance package 验证 Engine SDK 与 Installed Catalog；真实
+媒体执行仍留给 Runtime 稳定后的 Phase 3。Phase 2A 继续只使用纯合成 Manifest fixture，不借此引入
+媒体 I/O。Studio 正式切片只有在
 所需 GUI-1 基础设施门禁通过后才能进入；第 12 节把该最小基础子集列入 2A-4，但不把它冒充完整 GUI-1
 或完整 GUI-2。
 
@@ -53,16 +55,11 @@ Phase 2A 采用“合同驱动的最小纵向切片”，而不是继续 GUI-fir
 “Compiler front-end 通过”只表示 Draft 满足本阶段静态 authoring 规则，不表示它已经完成 source
 preflight、可冻结或可执行。
 
-### 2.1 Phase 1A 前置依赖
+### 2.1 Phase 1 前置依赖
 
-本文按当前 Phase 1A 实现精确引用 `EngineBinding`、PortSpec、单 scope、cardinality、参数 Schema、
-JCS 与 digest 语义，但 [`engine-contract.md`](./engine-contract.md) 仍标记为“待审阅后冻结”。批准、提交或
-推送 Phase 1A 代码不自动等于逐项冻结该文档第 6 节的协议选择。开始 Phase 2A 实现前，用户必须明确：
-
-- 一并采纳当前 Phase 1A 候选协议；或
-- 先列出需要修改的 Phase 1A 决策并完成合同版本／测试同步。
-
-在该决定完成前，本文只能作为待审草案，不能宣称其 typed port 或 digest 依赖已正式冻结。
+本文按 Phase 1 正式实现精确引用 `EngineBinding`、PortSpec、单 scope、cardinality、参数 Schema、JCS
+与 digest。`engine-contract.md` 第 6 节已经冻结；任何变更必须提升对应合同版本，并同步模型、Schema、
+fixtures、投影和测试。
 
 ## 3. Authority 与数据流
 
@@ -751,8 +748,7 @@ generated types、fixtures 和测试。
 
 批准本文意味着接受以下候选冻结项：
 
-1. 下一阶段专题命名为 Phase 2A，先做 authoring contract 与 Compiler front-end，只使用合成 Manifest，
-   不宣称产品 Phase 1 的真实 Engine work item 已完成；
+1. 本专题是产品 Phase 2 的 authoring contract 与 Compiler front-end 子成果，只使用合成 Manifest；
 2. WorkflowDraft aggregate 指向不可变、结构合法但可暂时语义无效的 WorkflowSpec，并为每个 revision
    同步绑定 validation envelope；
 3. Python Authoring Service 是 WorkflowDraft authority；Studio 不直接保存正式领域事实；
@@ -775,7 +771,7 @@ generated types、fixtures 和测试。
 14. Core Operator、ExecutionPlan、Freeze、Runtime 与媒体 I/O 明确延期；
 15. Studio 只在所需 GUI-1 基础门禁通过后接 Designer 最小正式切片，Plan / Freeze / Run 继续
     mock-only 或禁用；
-16. Phase 1A 候选协议是否随本文一并正式冻结，必须由用户单独明确。
+16. Phase 1 Contract Kernel 的精确协议由 `engine-contract.md` 独立冻结，本文只引用、不复制。
 
 本文已于 2026-08-14 获明确审阅批准；Phase 2A 实现位于 `src/zniku/authoring/`，Python→Studio
 投影位于 `apps/studio/src/generated/`，Studio 正式 Designer 接入位于 `apps/studio/src/formal/`。

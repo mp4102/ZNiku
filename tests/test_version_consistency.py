@@ -1,4 +1,4 @@
-"""确保产品、Python package 与 Engine Contract Kernel 保持 0.1.0。"""
+"""确保产品、Python package 与各正式合同版本保持 0.1.0。"""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from zniku.authoring import (
     PROJECTION_CONTRACT_VERSION,
     WORKFLOW_CONTRACT_VERSION,
 )
+from zniku.engines import ENGINE_SDK_CONTRACT_VERSION
 
 ROOT = Path(__file__).parents[1]
 
@@ -35,6 +36,7 @@ def test_all_local_version_authorities_are_0_1_0() -> None:
     assert DIAGNOSTIC_CONTRACT_VERSION == "0.1.0"
     assert AUTHORING_CONTRACT_VERSION == "0.1.0"
     assert PROJECTION_CONTRACT_VERSION == "0.1.0"
+    assert ENGINE_SDK_CONTRACT_VERSION == "0.1.0"
 
     projection_manifest: dict[str, Any] = json.loads(
         (ROOT / "apps" / "studio" / "src" / "generated" / "projection-manifest.json").read_text(
