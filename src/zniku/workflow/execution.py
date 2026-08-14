@@ -356,6 +356,11 @@ def compile_execution_plan(
                     and source_node.operator_kind is CoreOperatorKind.SELECT
                 ):
                     selected_ids = set(source_node.selected_member_ids)
+            selected_members = tuple(
+                member
+                for member in chapter_plan.members
+                if selected_ids is None or member.member_id in selected_ids
+            )
             planned_nodes = tuple(
                 PlannedNode(
                     plan_node_id=f"plan.{node.node_id}.{member.member_id}",
@@ -363,12 +368,16 @@ def compile_execution_plan(
                     subject_kind=PlannedSubjectKind.ENGINE,
                     scope=Scope.CHAPTER,
                     scope_id=member.scope_id,
-                    dependencies=dependency_ids,
+                    dependencies=_member_dependencies(
+                        member.scope_id,
+                        incoming[node.node_id],
+                        expanded,
+                        dependency_ids,
+                    ),
                     engine=node.engine,
                     parameters=node.parameters,
                 )
-                for member in chapter_plan.members
-                if selected_ids is None or member.member_id in selected_ids
+                for member in selected_members
             )
         elif isinstance(node, CoreOperatorNodeSpec):
             planned_nodes = (
@@ -440,6 +449,33 @@ def _topological_nodes(spec: WorkflowSpec) -> tuple[Any, ...]:
     if len(ordered) != len(nodes):
         raise ContractViolation("E_PLAN_GRAPH_CYCLE", "ExecutionPlan 输入图包含 cycle")
     return tuple(ordered)
+
+
+def _member_dependencies(
+    scope_id: str,
+    incoming_stage_ids: set[str],
+    expanded: Mapping[str, tuple[PlannedNode, ...]],
+    fallback: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Map→Map 时只连接同一 chapter 实例，集合级上游仍作为共享依赖。
+
+    这项配对必须由展开器根据冻结 scope authority 完成；若某个成员级上游缺少同 scope 实例，
+    不在这里猜测替代成员，而保留完整上游依赖，让后续集合门禁失败关闭。
+    """
+
+    dependencies: list[str] = []
+    matched_member_source = False
+    for stage_id in sorted(incoming_stage_ids):
+        candidates = expanded[stage_id]
+        member_candidates = tuple(item for item in candidates if item.scope is Scope.CHAPTER)
+        if len(member_candidates) > 1:
+            matching = tuple(item for item in member_candidates if item.scope_id == scope_id)
+            if len(matching) == 1:
+                dependencies.append(matching[0].plan_node_id)
+                matched_member_source = True
+                continue
+        dependencies.extend(item.plan_node_id for item in candidates)
+    return tuple(sorted(set(dependencies))) if dependencies or matched_member_source else fallback
 
 
 class WorkflowRevision(ContractModel):
