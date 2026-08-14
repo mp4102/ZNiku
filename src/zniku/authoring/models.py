@@ -36,6 +36,7 @@ from zniku.contracts import (
 )
 from zniku.contracts.base import ensure_no_executable_keys, freeze_json_object, thaw_json
 from zniku.contracts.errors import fail
+from zniku.workflow.operators import CoreOperatorNodeSpec
 
 WORKFLOW_CONTRACT_VERSION: Literal["0.1.0"] = "0.1.0"
 AUTHORING_CONTRACT_VERSION: Literal["0.1.0"] = "0.1.0"
@@ -104,7 +105,7 @@ class FinalNodeSpec(ContractModel):
 
 
 type WorkflowNodeSpec = Annotated[
-    SourceNodeSpec | EngineStageNodeSpec | FinalNodeSpec,
+    SourceNodeSpec | EngineStageNodeSpec | CoreOperatorNodeSpec | FinalNodeSpec,
     Field(discriminator="kind"),
 ]
 
@@ -127,7 +128,7 @@ class WorkflowEdgeSpec(ContractModel):
 class WorkflowSpec(ContractModel):
     """保存与 Studio 布局无关、按稳定 ID 归一化的语义编排图。"""
 
-    workflow_contract_version: Literal["0.1.0"]
+    workflow_contract_version: Literal["0.1.0", "0.2.0"]
     workflow_id: StableId
     nodes: tuple[WorkflowNodeSpec, ...]
     edges: tuple[WorkflowEdgeSpec, ...]
@@ -139,6 +140,13 @@ class WorkflowSpec(ContractModel):
 
     @model_validator(mode="after")
     def validate_and_sort_graph(self) -> WorkflowSpec:
+        if self.workflow_contract_version == "0.1.0" and any(
+            isinstance(node, CoreOperatorNodeSpec) for node in self.nodes
+        ):
+            fail(
+                "E_WORKFLOW_VERSION_OPERATOR_UNSUPPORTED",
+                "0.1.0 WorkflowSpec 不接受 Core Operator；必须使用 0.2.0",
+            )
         node_ids = tuple(node.node_id for node in self.nodes)
         edge_ids = tuple(edge.edge_id for edge in self.edges)
         if len(node_ids) != len(set(node_ids)):
@@ -423,7 +431,7 @@ _SEVERITY_ORDER = {
 class SpecValidationResult(ContractModel):
     """纯 Compiler 结果；不感知 Draft，也不复制 WorkflowSpec。"""
 
-    workflow_contract_version: Literal["0.1.0"]
+    workflow_contract_version: Literal["0.1.0", "0.2.0"]
     compiler_contract_version: Literal["0.1.0"]
     diagnostic_contract_version: Literal["0.1.0"]
     spec_digest: Sha256Digest

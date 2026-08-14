@@ -16,6 +16,12 @@ from zniku.authoring import (
     WORKFLOW_CONTRACT_VERSION,
 )
 from zniku.engines import ENGINE_SDK_CONTRACT_VERSION
+from zniku.workflow import CORE_OPERATOR_CONTRACT_VERSION, EXECUTABLE_WORKFLOW_CONTRACT_VERSION
+from zniku.workflow.execution import (
+    EXECUTION_PLAN_CONTRACT_VERSION,
+    PREFLIGHT_CONTRACT_VERSION,
+    RUNTIME_CONTRACT_VERSION,
+)
 
 ROOT = Path(__file__).parents[1]
 
@@ -37,6 +43,11 @@ def test_all_local_version_authorities_are_0_1_0() -> None:
     assert AUTHORING_CONTRACT_VERSION == "0.1.0"
     assert PROJECTION_CONTRACT_VERSION == "0.1.0"
     assert ENGINE_SDK_CONTRACT_VERSION == "0.1.0"
+    assert CORE_OPERATOR_CONTRACT_VERSION == "0.1.0"
+    assert EXECUTABLE_WORKFLOW_CONTRACT_VERSION == "0.2.0"
+    assert PREFLIGHT_CONTRACT_VERSION == "0.1.0"
+    assert EXECUTION_PLAN_CONTRACT_VERSION == "0.1.0"
+    assert RUNTIME_CONTRACT_VERSION == "0.1.0"
 
     projection_manifest: dict[str, Any] = json.loads(
         (ROOT / "apps" / "studio" / "src" / "generated" / "projection-manifest.json").read_text(

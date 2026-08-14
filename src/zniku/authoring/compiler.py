@@ -12,12 +12,19 @@ from collections.abc import Iterable, Mapping
 from typing import Protocol
 
 from zniku.contracts import (
+    ArtifactType,
     Cardinality,
     ContractViolation,
     EngineBinding,
     EngineManifest,
     PortSpec,
     assert_ports_compatible,
+)
+from zniku.workflow import (
+    CoreOperatorKind,
+    CoreOperatorNodeSpec,
+    operator_input_ports,
+    operator_output_ports,
 )
 
 from .models import (
@@ -182,28 +189,36 @@ class WorkflowCompiler:
         manifests: dict[str, EngineManifest | None] = {}
 
         for node in spec.nodes:
-            if not isinstance(node, EngineStageNodeSpec):
+            if isinstance(node, EngineStageNodeSpec) or (
+                isinstance(node, CoreOperatorNodeSpec)
+                and node.operator_kind is CoreOperatorKind.MAP
+                and node.engine is not None
+            ):
+                engine_binding = node.engine
+                parameters = node.parameters
+            else:
                 continue
-            manifest = self._manifest_catalog.resolve(node.engine)
+            assert engine_binding is not None
+            manifest = self._manifest_catalog.resolve(engine_binding)
             manifests[node.node_id] = manifest
             if manifest is None:
                 diagnostics.append(
                     _error(
                         code="E_ENGINE_BINDING_UNKNOWN",
-                        occurrence=_occurrence(node.node_id, node.engine.manifest_digest),
+                        occurrence=_occurrence(node.node_id, engine_binding.manifest_digest),
                         phase=DiagnosticPhase.MANIFEST,
                         entity=NodeEntityRef(kind="node", node_id=node.node_id),
                         message="EngineBinding 无法解析到精确 Manifest authority。",
                         details={
-                            "engine_id": node.engine.engine_id,
-                            "engine_version": node.engine.engine_version,
-                            "manifest_digest": node.engine.manifest_digest,
+                            "engine_id": engine_binding.engine_id,
+                            "engine_version": engine_binding.engine_version,
+                            "manifest_digest": engine_binding.manifest_digest,
                         },
                     )
                 )
                 continue
             try:
-                manifest.validate_parameters(node.parameters)
+                manifest.validate_parameters(parameters)
             except ContractViolation as error:
                 diagnostics.append(
                     _error(
@@ -215,6 +230,20 @@ class WorkflowCompiler:
                         ),
                         message="Engine 参数不满足绑定 Manifest 的 Schema。",
                         details={"reason_code": error.code},
+                    )
+                )
+            if isinstance(node, CoreOperatorNodeSpec) and not self._map_manifest_compatible(
+                node, manifest
+            ):
+                diagnostics.append(
+                    _error(
+                        code="E_OPERATOR_MAP_ENGINE_CONTRACT",
+                        occurrence=_occurrence(node.node_id, manifest.sha256_digest()),
+                        phase=DiagnosticPhase.MANIFEST,
+                        entity=NodeEntityRef(kind="node", node_id=node.node_id),
+                        message=(
+                            "Map Engine 必须是同 media kind、chapter scope 的单值一入一出合同。"
+                        ),
                     )
                 )
 
@@ -481,7 +510,7 @@ class WorkflowCompiler:
             else ValidationOutcome.AUTHORING_VALID
         )
         return SpecValidationResult(
-            workflow_contract_version="0.1.0",
+            workflow_contract_version=spec.workflow_contract_version,
             compiler_contract_version="0.1.0",
             diagnostic_contract_version="0.1.0",
             spec_digest=spec.sha256_digest(),
@@ -504,6 +533,12 @@ class WorkflowCompiler:
             ports = self._core_contracts.source_outputs if direction is PortDirection.OUTPUT else ()
         elif isinstance(node, FinalNodeSpec):
             ports = self._core_contracts.final_inputs if direction is PortDirection.INPUT else ()
+        elif isinstance(node, CoreOperatorNodeSpec):
+            ports = (
+                operator_input_ports(node)
+                if direction is PortDirection.INPUT
+                else operator_output_ports(node)
+            )
         else:
             manifest = manifests.get(node.node_id)
             if manifest is None:
@@ -521,6 +556,8 @@ class WorkflowCompiler:
             return ()
         if isinstance(node, FinalNodeSpec):
             return self._core_contracts.final_inputs
+        if isinstance(node, CoreOperatorNodeSpec):
+            return operator_input_ports(node)
         manifest = manifests.get(node.node_id)
         if manifest is None:
             return ()
@@ -532,6 +569,19 @@ class WorkflowCompiler:
         manifests: Mapping[str, EngineManifest | None],
     ) -> bool:
         return not isinstance(node, EngineStageNodeSpec) or manifests.get(node.node_id) is not None
+
+    @staticmethod
+    def _map_manifest_compatible(node: CoreOperatorNodeSpec, manifest: EngineManifest) -> bool:
+        if len(manifest.inputs) != 1 or len(manifest.outputs) != 1:
+            return False
+        ports = (manifest.inputs[0].port, manifest.outputs[0].port)
+        return all(
+            port.artifact_type is ArtifactType.MEDIA
+            and port.media_kind is node.media_kind
+            and port.scope.value == "chapter"
+            and port.cardinality is Cardinality.ONE
+            for port in ports
+        )
 
     def _append_cycle_diagnostics(self, spec: WorkflowSpec, diagnostics: list[Diagnostic]) -> None:
         self_edges = {

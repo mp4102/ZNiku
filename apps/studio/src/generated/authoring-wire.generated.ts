@@ -55,6 +55,20 @@ export interface ConnectPortsIntent {
   readonly "target": PortEndpoint
 }
 
+/** 首版闭合的 Runtime 图操作集合。 */
+export type CoreOperatorKind = "partition" | "map" | "select" | "passthrough" | "collect" | "reduce"
+
+/** WorkflowSpec 中一个不执行媒体算法的 Core Operator node。 */
+export interface CoreOperatorNodeSpec {
+  readonly "engine"?: EngineBinding | null
+  readonly "kind": "core_operator"
+  readonly "media_kind": MediaKind
+  readonly "node_id": string
+  readonly "operator_kind": CoreOperatorKind
+  readonly "parameters"?: Readonly<Record<string, JsonValue>>
+  readonly "selected_member_ids"?: ReadonlyArray<string>
+}
+
 /** 删除 node 及与之相连的 edge。 */
 export interface DeleteNodeIntent {
   readonly "intent_kind": "delete_node"
@@ -132,6 +146,9 @@ export interface FinalNodeSpec {
 
 export type JsonValue = unknown
 
+/** 媒体 Artifact 的首批受控媒体类别。 */
+export type MediaKind = "program_media" | "video" | "audio" | "subtitle" | "attachment"
+
 /** 定位一个稳定 node。 */
 export interface NodeEntityRef {
   readonly "kind": "node"
@@ -190,7 +207,7 @@ export interface SpecValidationResult {
   readonly "diagnostics": ReadonlyArray<Diagnostic>
   readonly "outcome": ValidationOutcome
   readonly "spec_digest": string
-  readonly "workflow_contract_version": "0.1.0"
+  readonly "workflow_contract_version": "0.1.0" | "0.2.0"
 }
 
 /** 首版只允许刷新 authority；不得承载任意命令。 */
@@ -233,13 +250,13 @@ export interface WorkflowEntityRef {
   readonly "workflow_id": string
 }
 
-export type WorkflowNodeSpec = SourceNodeSpec | EngineStageNodeSpec | FinalNodeSpec
+export type WorkflowNodeSpec = SourceNodeSpec | EngineStageNodeSpec | CoreOperatorNodeSpec | FinalNodeSpec
 
 /** 保存与 Studio 布局无关、按稳定 ID 归一化的语义编排图。 */
 export interface WorkflowSpec {
   readonly "edges": ReadonlyArray<WorkflowEdgeSpec>
   readonly "nodes": ReadonlyArray<WorkflowNodeSpec>
-  readonly "workflow_contract_version": "0.1.0"
+  readonly "workflow_contract_version": "0.1.0" | "0.2.0"
   readonly "workflow_id": string
 }
 

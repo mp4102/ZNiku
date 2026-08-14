@@ -22,7 +22,7 @@ export function projectAuthorityGraph(authority: AuthorityState): GraphProjectio
   const manifestByDigest = new Map(
     authority.manifests.map((resolved) => [resolved.binding.manifest_digest, resolved.manifest]),
   )
-  const kindOrder = { source: 0, engine_stage: 1, final: 2 } as const
+  const kindOrder = { source: 0, engine_stage: 1, core_operator: 2, final: 3 } as const
   const orderedNodes = [...authority.snapshot.spec.nodes].sort(
     (left, right) => kindOrder[left.kind] - kindOrder[right.kind] || left.node_id.localeCompare(right.node_id),
   )
@@ -58,6 +58,9 @@ export function projectAuthorityGraph(authority: AuthorityState): GraphProjectio
           description: '唯一终端类别；Phase 2A 不执行发布。',
         },
       }
+    }
+    if (node.kind === 'core_operator') {
+      throw new Error('当前 Studio projection 尚未接入 Core Operator contract，已失败关闭。')
     }
     const manifest = manifestByDigest.get(node.engine.manifest_digest)
     if (!manifest) throw new Error(`缺少 EngineManifest projection：${node.engine.manifest_digest}`)

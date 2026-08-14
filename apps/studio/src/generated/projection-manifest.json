@@ -5,11 +5,11 @@
   "diagnostic_contract_version": "0.1.0",
   "files": [
     {
-      "file_digest": "sha256:c1c5e3ebc141430f68931defef03215590e817982ff05240381e91481668236a",
+      "file_digest": "sha256:08652442b7f161cab290e1ad1c4ad4bee4a42004cddc83f4d45912f5ce85ce18",
       "path": "generated/authoring-wire.generated.ts"
     },
     {
-      "file_digest": "sha256:ee9159f567a5d2d8a864e7aa2979cd2ba68d8e59c69b6291743dd9e34ff021db",
+      "file_digest": "sha256:792dc0beae4549fd7f0a4dee3e3533ab5127514ccfc51a207c9ad7c2e3318393",
       "path": "generated/authoring-wire.schema.json"
     },
     {
@@ -46,7 +46,7 @@
   "source_schemas": [
     {
       "name": "authoring-wire.schema.json",
-      "schema_digest": "sha256:5d788dfa9f162dc0e4b3de275b19bdc1de5b7843de0c8cf2954ada54c72936b8"
+      "schema_digest": "sha256:6047d36bc12142e7ecd19759618f743e8f808f79ae97896140172c2f040cd61f"
     },
     {
       "name": "core-node-contracts.schema.json",

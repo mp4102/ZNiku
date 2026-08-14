@@ -271,6 +271,80 @@
       "title": "ConnectPortsIntent",
       "type": "object"
     },
+    "CoreOperatorKind": {
+      "description": "首版闭合的 Runtime 图操作集合。",
+      "enum": [
+        "partition",
+        "map",
+        "select",
+        "passthrough",
+        "collect",
+        "reduce"
+      ],
+      "title": "CoreOperatorKind",
+      "type": "string"
+    },
+    "CoreOperatorNodeSpec": {
+      "additionalProperties": false,
+      "description": "WorkflowSpec 中一个不执行媒体算法的 Core Operator node。",
+      "properties": {
+        "engine": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EngineBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "core_operator",
+          "title": "Kind",
+          "type": "string"
+        },
+        "media_kind": {
+          "$ref": "#/$defs/MediaKind"
+        },
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "operator_kind": {
+          "$ref": "#/$defs/CoreOperatorKind"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "selected_member_ids": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Selected Member Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "node_id",
+        "operator_kind",
+        "media_kind"
+      ],
+      "title": "CoreOperatorNodeSpec",
+      "type": "object"
+    },
     "DeleteNodeIntent": {
       "additionalProperties": false,
       "description": "删除 node 及与之相连的 edge。",
@@ -624,6 +698,18 @@
       "type": "object"
     },
     "JsonValue": {},
+    "MediaKind": {
+      "description": "媒体 Artifact 的首批受控媒体类别。",
+      "enum": [
+        "program_media",
+        "video",
+        "audio",
+        "subtitle",
+        "attachment"
+      ],
+      "title": "MediaKind",
+      "type": "string"
+    },
     "NodeEntityRef": {
       "additionalProperties": false,
       "description": "定位一个稳定 node。",
@@ -870,7 +956,10 @@
           "type": "string"
         },
         "workflow_contract_version": {
-          "const": "0.1.0",
+          "enum": [
+            "0.1.0",
+            "0.2.0"
+          ],
           "title": "Workflow Contract Version",
           "type": "string"
         }
@@ -1066,6 +1155,9 @@
           "$ref": "#/$defs/EngineStageNodeSpec"
         },
         {
+          "$ref": "#/$defs/CoreOperatorNodeSpec"
+        },
+        {
           "$ref": "#/$defs/FinalNodeSpec"
         }
       ]
@@ -1089,7 +1181,10 @@
           "type": "array"
         },
         "workflow_contract_version": {
-          "const": "0.1.0",
+          "enum": [
+            "0.1.0",
+            "0.2.0"
+          ],
           "title": "Workflow Contract Version",
           "type": "string"
         },

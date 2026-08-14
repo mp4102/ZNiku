@@ -8,11 +8,11 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
 以确定性 **ZNIKU Runtime** 为执行与状态权威，并允许 Agent 作为可选的编排、诊断和运维助手。
 
 - 当前版本：`0.1.0`
-- 当前阶段：产品 Phase 1 已完成；产品 Phase 2 正在实施
+- 当前阶段：产品 Phase 1–2 已完成；产品 Phase 3 正在实施
 - 当前能力：Contract Kernel、Engine SDK/Installed Catalog、纯合成 Demux/Mux conformance、Workflow
-  Authoring、Compiler diagnostics 与 Studio 合同投影均由 Python 提供唯一领域语义
-- 当前限制：尚未实现 ExecutionPlan、Freeze、Runtime、Engine Registry、真实 Engine、CLI 或 `.zniku`
-  工程格式，也不执行媒体 I/O
+  Authoring、Core Operators、Preflight、ExecutionPlan、Freeze、合成 Runtime 与 Studio 合同投影均由
+  Python 提供唯一领域语义
+- 当前限制：Runtime 仍为纯合成 executor；尚未执行真实媒体，也未实现产品 CLI 或 `.zniku` 工程格式
 
 ## 正式命名
 
@@ -68,6 +68,7 @@ ZNiku/
 ├── src/zniku/contracts/         # Phase 1A Python 领域合同内核
 ├── src/zniku/engines/           # Phase 1 Engine SDK、Installed Catalog 与 conformance Engine
 ├── src/zniku/authoring/         # Phase 2A Draft authority 与 Compiler front-end
+├── src/zniku/workflow/          # Phase 2 Core Operators、Plan、Freeze 与 Runtime Core
 ├── tests/                       # 纯合成合同、Compiler 与 authority 回归测试
 ├── apps/
 │   └── studio/                  # 正式 Designer 最小切片及 Python 单向投影
@@ -126,4 +127,5 @@ uv run --locked --extra dev ruff format --check src tests tools
 
 Engine Contract 的模型职责、引用关系、失败语义和正式决策见
 [Engine Contract Kernel](docs/architecture/engine-contract.md)；Engine package 与调用边界见
-[Engine SDK 基线](docs/architecture/engine-sdk-baseline.md)。
+[Engine SDK 基线](docs/architecture/engine-sdk-baseline.md)；执行与 Runtime 语义见
+[Workflow Execution 与 Runtime Core](docs/architecture/execution-runtime-baseline.md)。
