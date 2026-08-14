@@ -1,76 +1,141 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
-import { initialDesignerEdges, planNodes } from './mock-data'
+import { PythonFixtureGateway } from './test/formal-gateway'
 
 afterEach(cleanup)
 
-describe('ZNIKU Studio GUI-0 workflow prototype', () => {
-  it('把原始音轨保存为独立的 Demux 到 Mux 数据边', () => {
-    const audioEdge = initialDesignerEdges.find(
-      (edge) => edge.source === 'demux' && edge.target === 'mux',
-    )
+function commandIds(...ids: string[]): () => string {
+  let index = 0
+  return () => ids[index++] ?? `command.ui.${index}`
+}
 
-    expect(audioEdge).toMatchObject({
-      sourceHandle: 'audio',
-      targetHandle: 'audio',
-      type: 'audioLane',
-    })
-    expect(planNodes).toHaveLength(18)
-  })
-
-  it('显著标记 mock 边界并展示默认编排', () => {
+describe('ZNIKU Studio Phase 2A formal Designer', () => {
+  it('Python bridge 缺失时 fail closed，且不回退 GUI-0 mock', async () => {
     render(<App />)
 
-    expect(screen.getByText('ZNIKU')).toBeInTheDocument()
-    expect(screen.getByText('MOCK · NO MEDIA I/O')).toBeInTheDocument()
-    expect(screen.getByText('电影级编排 DAG')).toBeInTheDocument()
-    expect(screen.getAllByText('Enhancement').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Demux').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Mux').length).toBeGreaterThan(0)
-    expect(screen.getByText('Audio lane')).toBeInTheDocument()
-    expect(screen.getByText('Video + original audio')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Python Authoring authority 不可用')
+    expect(screen.getByText('AUTHORITY UNAVAILABLE')).toBeInTheDocument()
+    expect(screen.queryByText('MOCK · NO MEDIA I/O')).not.toBeInTheDocument()
+    expect(screen.queryByText('编译预览')).not.toBeInTheDocument()
+  })
+
+  it('加载 Python authority、精确 typed ports 与阻塞诊断', async () => {
+    render(<App gateway={new PythonFixtureGateway()} />)
+
+    expect(await screen.findByText('workflow.synthetic.program')).toBeInTheDocument()
+    expect(screen.getByText('revision 0', { exact: false })).toBeInTheDocument()
+    expect(screen.getAllByText('Synthetic Program Filter').length).toBeGreaterThan(0)
+    expect(screen.getByText('E_GRAPH_INPUT_CARDINALITY')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expanded Plan' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Run Monitor' })).toBeDisabled()
+
+    await userEvent.click(screen.getByRole('button', { name: /Synthetic Program Filter/ }))
+    expect(screen.getAllByText('media/program_media · program · one')).toHaveLength(2)
+    expect(screen.getByText('example.synthetic.program_filter')).toBeInTheDocument()
   })
 
-  it('编译后允许审阅冻结并进入模拟 Run Monitor', async () => {
+  it('通过 typed command 连接端口并接受 Python authoring-valid revision', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    render(
+      <App
+        gateway={new PythonFixtureGateway()}
+        commandIdFactory={commandIds('command.ui.connect')}
+      />,
+    )
+    await screen.findByText('workflow.synthetic.program')
 
-    await user.click(screen.getByRole('button', { name: '编译预览' }))
-    expect(screen.getByText('Compiler 展开的章节执行图')).toBeInTheDocument()
-    expect(screen.getByText('模拟编译完成')).toBeInTheDocument()
+    await user.selectOptions(
+      screen.getByLabelText('Source endpoint'),
+      'node.engine.filter|program_out',
+    )
+    await user.selectOptions(
+      screen.getByLabelText('Target endpoint'),
+      'node.final.program|program',
+    )
+    await user.click(screen.getByRole('button', { name: '提交连接' }))
 
-    await user.click(screen.getByRole('button', { name: '审阅并冻结' }))
-    expect(screen.getByRole('dialog', { name: '冻结 WorkflowRevision？' })).toBeInTheDocument()
-    expect(screen.getByText('18 instances')).toBeInTheDocument()
-    expect(screen.getByText('2 / 2 tracks · ordered · stream copy')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '冻结并开始模拟运行' }))
-    expect(screen.getByText('Mock run · step 1/4')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Run Monitor' })).toBeEnabled()
+    expect(await screen.findByText('revision 1', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('authoring_valid · 无阻塞诊断')).toBeInTheDocument()
+    expect(screen.queryByText('E_GRAPH_INPUT_CARDINALITY')).not.toBeInTheDocument()
   })
 
-  it('可以从 mock Registry 添加 Draft 节点', async () => {
+  it('完整替换参数并展示 Python Manifest diagnostic，可定位到 EngineStage', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    render(
+      <App
+        gateway={new PythonFixtureGateway()}
+        commandIdFactory={commandIds('command.ui.connect', 'command.ui.parameters')}
+      />,
+    )
+    await screen.findByText('workflow.synthetic.program')
+    await user.selectOptions(
+      screen.getByLabelText('Source endpoint'),
+      'node.engine.filter|program_out',
+    )
+    await user.selectOptions(
+      screen.getByLabelText('Target endpoint'),
+      'node.final.program|program',
+    )
+    await user.click(screen.getByRole('button', { name: '提交连接' }))
+    await screen.findByText('authoring_valid · 无阻塞诊断')
 
-    const buttons = screen.getAllByRole('button', { name: /Decensoring/ })
-    await user.click(buttons[0])
+    await user.click(screen.getByRole('button', { name: /Synthetic Program Filter/ }))
+    const editor = screen.getByLabelText('Engine 参数 JSON')
+    fireEvent.change(editor, { target: { value: '{"strength":99}' } })
+    await user.click(screen.getByRole('button', { name: '替换参数并验证' }))
 
-    expect(screen.getByText('New draft node')).toBeInTheDocument()
-    expect(screen.getByText('mock.decensoring')).toBeInTheDocument()
+    expect(await screen.findByText('E_ENGINE_PARAMETERS_INVALID')).toBeInTheDocument()
+    const diagnostic = screen.getByText('E_ENGINE_PARAMETERS_INVALID').closest('article')
+    expect(diagnostic).not.toBeNull()
+    await user.click(screen.getByRole('button', { name: /Program Source/ }))
+    await user.click(within(diagnostic!).getByRole('button', { name: '定位' }))
+    expect(screen.getByRole('heading', { name: 'Synthetic Program Filter' })).toBeInTheDocument()
   })
 
-  it('在 Mux Inspector 中分别展示视频和音频输入端口', async () => {
-    render(<App />)
+  it('通过正式 edge ID 断开连接并接收新 revision', async () => {
+    const user = userEvent.setup()
+    render(
+      <App
+        gateway={new PythonFixtureGateway()}
+        commandIdFactory={commandIds('command.ui.connect', 'command.ui.disconnect')}
+      />,
+    )
+    await screen.findByText('workflow.synthetic.program')
+    await user.selectOptions(
+      screen.getByLabelText('Source endpoint'),
+      'node.engine.filter|program_out',
+    )
+    await user.selectOptions(
+      screen.getByLabelText('Target endpoint'),
+      'node.final.program|program',
+    )
+    await user.click(screen.getByRole('button', { name: '提交连接' }))
+    await screen.findByText('revision 1', { exact: false })
 
-    fireEvent.click(screen.getByLabelText('Mux 节点'))
+    const disconnectButtons = screen.getAllByRole('button', { name: /^断开 edge\./ })
+    const generated = disconnectButtons.find((button) => !button.textContent?.includes('source.filter'))
+    expect(generated).toBeDefined()
+    await user.click(generated!)
 
-    expect(screen.getByText('engine.mux')).toBeInTheDocument()
-    expect(screen.getByText('encoded_video · one')).toBeInTheDocument()
-    expect(screen.getByText('audio_artifact_set · set')).toBeInTheDocument()
-    expect(screen.getByText('program_media · one')).toBeInTheDocument()
+    expect(await screen.findByText('revision 2', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('E_GRAPH_INPUT_CARDINALITY')).toBeInTheDocument()
+  })
+
+  it('显示 stale command rejection 并要求刷新 authority', async () => {
+    const user = userEvent.setup()
+    render(
+      <App
+        gateway={new PythonFixtureGateway()}
+        commandIdFactory={commandIds('command.fixture.stale')}
+      />,
+    )
+    await screen.findByText('workflow.synthetic.program')
+    await user.click(screen.getByRole('button', { name: '提交连接' }))
+
+    expect(await screen.findByText('E_DRAFT_REVISION_STALE')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('请刷新 authority')
+    await waitFor(() => expect(screen.getByText('revision 0', { exact: false })).toBeInTheDocument())
   })
 })

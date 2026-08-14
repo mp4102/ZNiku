@@ -1,0 +1,119 @@
+{
+  "$defs": {
+    "ArtifactType": {
+      "description": "Artifact 的顶层语义类别。",
+      "enum": [
+        "media",
+        "metadata",
+        "control"
+      ],
+      "title": "ArtifactType",
+      "type": "string"
+    },
+    "Cardinality": {
+      "description": "端口绑定单值、可选单值或正式集合。",
+      "enum": [
+        "one",
+        "optional",
+        "set"
+      ],
+      "title": "Cardinality",
+      "type": "string"
+    },
+    "MediaKind": {
+      "description": "媒体 Artifact 的首批受控媒体类别。",
+      "enum": [
+        "program_media",
+        "video",
+        "audio",
+        "subtitle",
+        "attachment"
+      ],
+      "title": "MediaKind",
+      "type": "string"
+    },
+    "PortSpec": {
+      "additionalProperties": false,
+      "description": "Engine 端口的稳定 ID、类型、scope 与基数声明。",
+      "properties": {
+        "artifact_type": {
+          "$ref": "#/$defs/ArtifactType"
+        },
+        "cardinality": {
+          "$ref": "#/$defs/Cardinality"
+        },
+        "media_kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MediaKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "port_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        }
+      },
+      "required": [
+        "port_id",
+        "artifact_type",
+        "media_kind",
+        "scope",
+        "cardinality"
+      ],
+      "title": "PortSpec",
+      "type": "object"
+    },
+    "Scope": {
+      "description": "Artifact 或 Engine 端口的处理范围。",
+      "enum": [
+        "program",
+        "chapter",
+        "leaf"
+      ],
+      "title": "Scope",
+      "type": "string"
+    }
+  },
+  "$id": "urn:zniku:schema:core-node-contracts:0.1.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "提供 Source/Final exact PortSpec，并作为 Python 与 Studio 的共同投影 authority。",
+  "properties": {
+    "final_inputs": {
+      "items": {
+        "$ref": "#/$defs/PortSpec"
+      },
+      "title": "Final Inputs",
+      "type": "array"
+    },
+    "source_outputs": {
+      "items": {
+        "$ref": "#/$defs/PortSpec"
+      },
+      "title": "Source Outputs",
+      "type": "array"
+    },
+    "workflow_contract_version": {
+      "const": "0.1.0",
+      "title": "Workflow Contract Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workflow_contract_version",
+    "source_outputs",
+    "final_inputs"
+  ],
+  "title": "CoreNodeContractSet",
+  "type": "object"
+}

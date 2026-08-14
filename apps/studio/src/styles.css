@@ -181,7 +181,8 @@ button {
   padding: 0 16px;
 }
 
-.mock-badge {
+.mock-badge,
+.authority-badge {
   margin-right: 4px;
   padding: 5px 8px;
   border: 1px solid #4e3b24;
@@ -190,6 +191,108 @@ button {
   color: #e8b86f;
   font: 600 9px/1 'IBM Plex Mono', monospace;
   letter-spacing: 0.06em;
+}
+
+.authority-badge {
+  border-color: #315947;
+  background: #11231c;
+  color: #76c99e;
+}
+
+.authority-badge.is-unavailable {
+  border-color: #704044;
+  background: #291719;
+  color: #ee8d94;
+}
+
+.authority-empty {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: min(520px, 80%);
+  padding: 28px;
+  transform: translate(-50%, -50%);
+  border: 1px solid #704044;
+  border-radius: 12px;
+  background: #171115;
+  color: var(--muted);
+  text-align: center;
+}
+
+.authority-empty strong {
+  color: #ee8d94;
+}
+
+.formal-node-list {
+  margin-top: 14px;
+}
+
+.inspector-content textarea,
+.connection-editor select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0a1119;
+  color: var(--text);
+  font: 11px/1.5 'IBM Plex Mono', monospace;
+}
+
+.inspector-content textarea {
+  resize: vertical;
+  padding: 9px;
+}
+
+.connection-editor label {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.connection-editor select {
+  height: 32px;
+  padding: 0 7px;
+}
+
+.inspector-action,
+.connection-editor .button {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.authority-edge-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.authority-edge-list button {
+  overflow: hidden;
+  padding: 6px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  background: #101923;
+  color: var(--muted);
+  font: 9px/1.3 'IBM Plex Mono', monospace;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.client-hint {
+  padding: 9px;
+  border: 1px solid #6a542f;
+  border-radius: 6px;
+  background: #261f14;
+  color: #e5bd7b;
+  font-size: 11px;
+}
+
+.diagnostic-empty {
+  padding: 12px 16px;
+  color: var(--green);
+  font: 11px/1.4 'IBM Plex Mono', monospace;
 }
 
 .button {

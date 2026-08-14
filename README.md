@@ -8,11 +8,11 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
 以确定性 **ZNIKU Runtime** 为执行与状态权威，并允许 Agent 作为可选的编排、诊断和运维助手。
 
 - 当前版本：`0.1.0`
-- 当前阶段：Phase 1A 领域合同内核 + GUI-0 交互原型
-- 当前能力：Python Contract Kernel 已实现 typed ports、Artifact / ArtifactSet、EngineManifest、
-  Engine 媒体合同、StageRun 最小绑定、确定性序列化和纯合成测试
-- 当前限制：尚未实现 WorkflowSpec、Compiler、Runtime、Engine Registry、CLI 或 `.zniku` 工程格式，
-  也不执行媒体 I/O
+- 当前阶段：Phase 1A 领域合同内核 + Phase 2A Workflow Authoring / Compiler front-end
+- 当前能力：Python 已成为 Workflow Draft、Compiler validation、diagnostics 与 Studio 合同投影的唯一
+  领域权威；Studio 已接入 Source → Engine → Final 正式 Designer 最小切片
+- 当前限制：尚未实现 ExecutionPlan、Freeze、Runtime、Engine Registry、真实 Engine、CLI 或 `.zniku`
+  工程格式，也不执行媒体 I/O
 
 ## 正式命名
 
@@ -26,8 +26,9 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
 | CLI / Python package | `zniku` |
 | 工程文件扩展名 | `.zniku` |
 
-当前仓库已建立 `zniku.contracts` 领域内核，并保留 Studio GUI-0 原型；`zniku` CLI 与 `.zniku`
-工程格式仍只是已经冻结、等待后续实现的正式标识。
+当前仓库已建立 `zniku.contracts` 领域内核与 `zniku.authoring` 正式编排前端。Studio Designer 只通过
+受控 authoring gateway 消费 Python 权威响应；宿主未提供桥接时明确显示 authority unavailable，绝不
+回退 GUI-0 mock。`zniku` CLI 与 `.zniku` 工程格式仍只是等待后续实现的正式标识。
 
 ## 产品边界
 
@@ -64,20 +65,21 @@ Agent 可以通过受控接口创建草稿、解释诊断、辅助人工 handoff
 
 ```text
 ZNiku/
-├── src/zniku/contracts/          # Phase 1A Python 领域合同内核
-├── tests/                        # 纯合成合同 fixtures 与回归测试
+├── src/zniku/contracts/         # Phase 1A Python 领域合同内核
+├── src/zniku/authoring/         # Phase 2A Draft authority 与 Compiler front-end
+├── tests/                       # 纯合成合同、Compiler 与 authority 回归测试
 ├── apps/
-│   └── studio/                  # React + TypeScript + React Flow GUI-0
+│   └── studio/                  # 正式 Designer 最小切片及 Python 单向投影
 ├── docs/
 │   ├── brand-baseline.md        # 品牌、产品与代码标识权威
 │   └── architecture/            # 产品与 Studio 正式框架基线
 ├── pyproject.toml                # Python package 与质量门禁
-├── .github/workflows/           # Studio 持续集成门禁
+├── .github/workflows/           # Python 合同/投影与 Studio 持续集成门禁
 ├── AGENTS.md                    # 项目协作红线
 └── VERSION                      # 产品版本
 ```
 
-## 运行 GUI-0
+## 运行 Studio Designer
 
 需要 Node.js `24.14.0`：
 
@@ -86,6 +88,9 @@ cd apps/studio
 npm ci
 npm run dev
 ```
+
+浏览器应用需要宿主注入 `window.znikuAuthoringBridge`。未注入时 Designer 会 fail closed 并显示
+`AUTHORITY UNAVAILABLE`；测试专用 Python bridge 只用于端到端合同验证，不是产品 CLI 或正式 API。
 
 验证命令：
 
@@ -101,6 +106,7 @@ npm audit --audit-level=low
 - [品牌与命名基线](docs/brand-baseline.md)
 - [产品整体框架](docs/architecture/product-framework.md)
 - [ZNIKU Studio 整体框架](docs/architecture/studio-framework.md)
+- [Workflow Authoring 与 Compiler 基线](docs/architecture/workflow-authoring-compiler-baseline.md)
 - [ZBaton vNext 设计基线](docs/architecture/zbaton/design-baseline.md)
 
 当前仓库为私有开发仓库，未授予开源许可证。
@@ -112,9 +118,9 @@ npm audit --audit-level=low
 ```powershell
 uv sync --locked --extra dev
 uv run --locked --extra dev pytest
-uv run --locked --extra dev mypy --no-incremental src tests
-uv run --locked --extra dev ruff check src tests
-uv run --locked --extra dev ruff format --check src tests
+uv run --locked --extra dev mypy --no-incremental src tests tools
+uv run --locked --extra dev ruff check src tests tools
+uv run --locked --extra dev ruff format --check src tests tools
 ```
 
 Engine Contract 的模型职责、引用关系、失败语义和当前待审决策见

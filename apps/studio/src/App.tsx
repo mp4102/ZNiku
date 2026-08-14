@@ -1,131 +1,225 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addEdge,
   Background,
   BackgroundVariant,
   Controls,
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
-  useEdgesState,
   useNodesState,
   type Connection,
+  type EdgeMouseHandler,
   type NodeMouseHandler,
 } from '@xyflow/react'
-import { FreezeDialog } from './components/FreezeDialog'
-import { AudioLaneEdge } from './components/AudioLaneEdge'
-import { WorkflowNodeCard } from './components/WorkflowNodeCard'
-import {
-  compiledDiagnostics,
-  draftDiagnostics,
-  getRunNodes,
-  initialDesignerEdges,
-  initialDesignerNodes,
-  paletteItems,
-  planEdges,
-  planNodes,
-} from './mock-data'
 import type {
+  AuthoringCommand,
+  AuthoringIntent,
   Diagnostic,
-  PaletteItem,
-  WorkflowEdge,
-  WorkflowNode,
-  WorkflowNodeData,
-  WorkspaceMode,
-} from './model'
+  PortEndpoint,
+} from './generated/authoring-wire.generated'
+import { parseAuthoringCommand } from './formal/contracts'
+import { FormalWorkflowNodeCard } from './formal/FormalWorkflowNodeCard'
+import {
+  createWindowAuthoringGateway,
+  GatewayUnavailableError,
+  type AuthorityState,
+  type AuthoringGateway,
+} from './formal/gateway'
+import { projectAuthorityGraph } from './formal/graph'
+import type { FormalWorkflowEdge, FormalWorkflowNode } from './formal/graph-model'
 
-const nodeTypes = { workflow: WorkflowNodeCard }
-const edgeTypes = { audioLane: AudioLaneEdge }
+const nodeTypes = { formalWorkflow: FormalWorkflowNodeCard }
+const DEFAULT_DRAFT_ID = 'draft.synthetic.program'
 
-const modeLabels: Record<WorkspaceMode, string> = {
-  designer: 'Designer',
-  plan: 'Expanded Plan',
-  run: 'Run Monitor',
+interface AppProps {
+  readonly gateway?: AuthoringGateway
+  readonly draftId?: string
+  readonly commandIdFactory?: () => string
 }
 
-function AppContent() {
-  const [mode, setMode] = useState<WorkspaceMode>('designer')
-  const [designerNodes, setDesignerNodes, onDesignerNodesChange] = useNodesState(initialDesignerNodes)
-  const [designerEdges, setDesignerEdges, onDesignerEdgesChange] = useEdgesState(initialDesignerEdges)
-  const [selectedNode, setSelectedNode] = useState<WorkflowNode | null>(
-    initialDesignerNodes.find((item) => item.id === 'enhance') ?? null,
-  )
-  const [compiled, setCompiled] = useState(false)
-  const [frozen, setFrozen] = useState(false)
-  const [showFreeze, setShowFreeze] = useState(false)
-  const [runStep, setRunStep] = useState(0)
+function defaultCommandId(): string {
+  return `command.studio.${globalThis.crypto.randomUUID()}`
+}
+
+function endpointKey(endpoint: PortEndpoint): string {
+  return `${endpoint.node_id}|${endpoint.port_id}`
+}
+
+function parseEndpoint(value: string): PortEndpoint {
+  const [nodeId, portId] = value.split('|')
+  return { node_id: nodeId, port_id: portId }
+}
+
+function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: AppProps) {
+  const effectiveGateway = useMemo(() => gateway ?? createWindowAuthoringGateway(), [gateway])
+  const nextCommandId = commandIdFactory ?? defaultCommandId
+  const [authority, setAuthority] = useState<AuthorityState | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [unavailable, setUnavailable] = useState<string | null>(null)
+  const [clientHint, setClientHint] = useState<string | null>(null)
+  const [commandDiagnostics, setCommandDiagnostics] = useState<ReadonlyArray<Diagnostic>>([])
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [sourceEndpoint, setSourceEndpoint] = useState('')
+  const [targetEndpoint, setTargetEndpoint] = useState('')
+  const [parameterText, setParameterText] = useState('{}')
   const [bottomOpen, setBottomOpen] = useState(true)
-  const [query, setQuery] = useState('')
-  const addedNodeCount = useRef(0)
+  const revisionRef = useRef(-1)
 
-  const runNodes = useMemo(() => getRunNodes(runStep), [runStep])
-  const activeNodes = mode === 'designer' ? designerNodes : mode === 'plan' ? planNodes : runNodes
-  const activeEdges = mode === 'designer' ? designerEdges : planEdges
-  const diagnostics: Diagnostic[] = compiled ? compiledDiagnostics : draftDiagnostics
+  const projection = useMemo(
+    () => (authority ? projectAuthorityGraph(authority) : { nodes: [], edges: [] }),
+    [authority],
+  )
+  const [viewNodes, setViewNodes, onNodesChange] = useNodesState<FormalWorkflowNode>(projection.nodes)
 
-  const filteredPalette = paletteItems.filter((item) =>
-    `${item.label} ${item.description}`.toLowerCase().includes(query.toLowerCase()),
+  useEffect(() => {
+    setViewNodes(projection.nodes)
+  }, [projection.nodes, setViewNodes])
+
+  const acceptAuthority = useCallback((next: AuthorityState) => {
+    if (next.snapshot.spec_revision < revisionRef.current) return
+    revisionRef.current = next.snapshot.spec_revision
+    setAuthority(next)
+    setCommandDiagnostics([])
+    setUnavailable(null)
+  }, [])
+
+  const loadAuthority = useCallback(async () => {
+    setLoading(true)
+    setClientHint(null)
+    try {
+      acceptAuthority(await effectiveGateway.loadDraft(draftId))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知 authoring gateway 错误'
+      setUnavailable(message)
+      if (!(error instanceof GatewayUnavailableError)) console.error(error)
+    } finally {
+      setLoading(false)
+    }
+  }, [acceptAuthority, draftId, effectiveGateway])
+
+  useEffect(() => {
+    void loadAuthority()
+  }, [loadAuthority])
+
+  const submitIntent = useCallback(
+    async (intent: AuthoringIntent) => {
+      if (!authority || busy) return
+      setBusy(true)
+      setClientHint(null)
+      const command = parseAuthoringCommand({
+        authoring_contract_version: '0.1.0',
+        command_id: nextCommandId(),
+        draft_id: authority.snapshot.draft_id,
+        base_revision: authority.snapshot.spec_revision,
+        intent,
+      }) as AuthoringCommand
+      try {
+        const reply = await effectiveGateway.applyCommand(command)
+        if ('snapshot' in reply) {
+          acceptAuthority(reply)
+        } else {
+          setCommandDiagnostics(reply.diagnostics)
+          if (
+            reply.result_kind === 'command_rejected' &&
+            reply.current_revision !== undefined &&
+            reply.current_revision !== null &&
+            reply.current_revision > authority.snapshot.spec_revision
+          ) {
+            setClientHint('Draft revision 已变化，请刷新 authority 后重试。')
+          }
+        }
+      } catch (error) {
+        setUnavailable(error instanceof Error ? error.message : 'Authoring command 失败')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [acceptAuthority, authority, busy, effectiveGateway, nextCommandId],
   )
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      if (mode !== 'designer' || frozen || connection.source === connection.target) return
-      setDesignerEdges((edges) => addEdge({ ...connection, type: 'smoothstep' }, edges))
-      setCompiled(false)
+      if (!connection.sourceHandle || !connection.targetHandle) return
+      void submitIntent({
+        intent_kind: 'connect_ports',
+        source: { node_id: connection.source, port_id: connection.sourceHandle },
+        target: { node_id: connection.target, port_id: connection.targetHandle },
+      })
     },
-    [frozen, mode, setDesignerEdges],
+    [submitIntent],
   )
 
-  const handleNodeClick: NodeMouseHandler<WorkflowNode> = useCallback((_event, clickedNode) => {
-    setSelectedNode(clickedNode)
+  const handleNodeClick: NodeMouseHandler<FormalWorkflowNode> = useCallback((_event, node) => {
+    setSelectedNodeId(node.id)
+    setSelectedEdgeId(null)
   }, [])
 
-  const addPaletteNode = (item: PaletteItem) => {
-    if (frozen) return
-    addedNodeCount.current += 1
-    const id = `draft-${item.id}-${addedNodeCount.current}`
-    const data: WorkflowNodeData = {
-      label: item.label,
-      protocolId: `mock.${item.id}`,
-      subtitle: 'New draft node',
-      category: item.category,
-      icon: item.icon,
-      scope: item.scope,
-      description: item.description,
-      inputs: item.inputs.map((port) => ({ ...port })),
-      outputs: item.outputs.map((port) => ({ ...port })),
-      execution: item.category === 'engine' ? 'manual external' : 'runtime operator',
-      mediaChanges: [{ label: '媒体合同', value: '待配置', tone: 'warning' }],
+  const handleEdgeClick: EdgeMouseHandler<FormalWorkflowEdge> = useCallback((_event, edge) => {
+    setSelectedEdgeId(edge.id)
+    setSelectedNodeId(null)
+  }, [])
+
+  const selectedNode = projection.nodes.find((node) => node.id === selectedNodeId) ?? null
+  const selectedEdge = projection.edges.find((edge) => edge.id === selectedEdgeId) ?? null
+
+  useEffect(() => {
+    if (selectedNode?.data.category === 'engine') {
+      setParameterText(JSON.stringify(selectedNode.data.parameters ?? {}, null, 2))
     }
-    const newNode: WorkflowNode = {
-      id,
-      type: 'workflow',
-      position: { x: 780 + addedNodeCount.current * 28, y: 620 + addedNodeCount.current * 20 },
-      data,
+  }, [selectedNode])
+
+  const outputEndpoints = projection.nodes.flatMap((node) =>
+    node.data.outputs.map((port) => ({
+      key: endpointKey({ node_id: node.id, port_id: port.portId }),
+      label: `${node.data.label}.${port.portId}`,
+    })),
+  )
+  const inputEndpoints = projection.nodes.flatMap((node) =>
+    node.data.inputs.map((port) => ({
+      key: endpointKey({ node_id: node.id, port_id: port.portId }),
+      label: `${node.data.label}.${port.portId}`,
+    })),
+  )
+
+  useEffect(() => {
+    if (!sourceEndpoint && outputEndpoints[0]) setSourceEndpoint(outputEndpoints[0].key)
+    if (!targetEndpoint && inputEndpoints[0]) setTargetEndpoint(inputEndpoints[0].key)
+  }, [inputEndpoints, outputEndpoints, sourceEndpoint, targetEndpoint])
+
+  const diagnostics = [
+    ...(authority?.snapshot.validation.result.diagnostics ?? []),
+    ...commandDiagnostics,
+  ]
+
+  const locateDiagnostic = (diagnostic: Diagnostic) => {
+    const reference = diagnostic.entity_ref
+    if ('node_id' in reference) {
+      setSelectedNodeId(reference.node_id)
+      setSelectedEdgeId(null)
+    } else if (reference.kind === 'edge') {
+      setSelectedEdgeId(reference.edge_id)
+      setSelectedNodeId(null)
     }
-    setDesignerNodes((nodes) => [...nodes, newNode])
-    setSelectedNode(newNode)
-    setCompiled(false)
-    setMode('designer')
   }
 
-  const compilePreview = () => {
-    setCompiled(true)
-    setMode('plan')
-    setSelectedNode(planNodes[0])
-  }
-
-  const confirmFreeze = () => {
-    setShowFreeze(false)
-    setFrozen(true)
-    setMode('run')
-    setSelectedNode(getRunNodes(0)[2])
-  }
-
-  const advanceRun = () => {
-    const next = Math.min(runStep + 1, 3)
-    setRunStep(next)
-    setSelectedNode(getRunNodes(next).find((item) => item.data.runStatus !== 'complete') ?? getRunNodes(next).at(-1)!)
+  const replaceParameters = () => {
+    if (!selectedNode || selectedNode.data.category !== 'engine') return
+    try {
+      const parsed: unknown = JSON.parse(parameterText)
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        setClientHint('参数必须是 JSON object。')
+        return
+      }
+      void submitIntent({
+        intent_kind: 'replace_parameters',
+        node_id: selectedNode.id,
+        parameters: parsed as Record<string, unknown>,
+      })
+    } catch {
+      setClientHint('参数不是合法 JSON；该输入尚未提交到 Python authority。')
+    }
   }
 
   return (
@@ -140,261 +234,207 @@ function AppContent() {
         </div>
 
         <div className="workflow-identity">
-          <span className="eyebrow">WORKFLOW</span>
-          <strong>Chapter A Decensor · Demo</strong>
-          <span className="identity-meta">draft-004 · local mock</span>
+          <span className="eyebrow">WORKFLOW AUTHORITY</span>
+          <strong>{authority?.snapshot.spec.workflow_id ?? '等待 Python Authoring Service'}</strong>
+          <span className="identity-meta">
+            {authority
+              ? `${authority.snapshot.draft_id} · revision ${authority.snapshot.spec_revision}`
+              : draftId}
+          </span>
         </div>
 
         <nav className="mode-tabs" aria-label="工作区视图">
-          {(Object.keys(modeLabels) as WorkspaceMode[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={mode === item ? 'is-active' : ''}
-              onClick={() => setMode(item)}
-              disabled={item === 'run' && !frozen}
-            >
-              {modeLabels[item]}
-            </button>
-          ))}
+          <button type="button" className="is-active">Designer</button>
+          <button type="button" disabled>Expanded Plan</button>
+          <button type="button" disabled>Run Monitor</button>
         </nav>
 
         <div className="top-actions">
-          <span className="mock-badge">MOCK · NO MEDIA I/O</span>
-          {mode === 'run' ? (
-            <button className="button button--primary" type="button" onClick={advanceRun} disabled={runStep >= 3}>
-              {runStep >= 3 ? '模拟运行已完成' : '推进模拟状态'}
-            </button>
-          ) : (
-            <>
-              <button className="button button--ghost" type="button" onClick={compilePreview}>
-                {compiled ? '重新编译预览' : '编译预览'}
-              </button>
-              <button
-                className="button button--primary"
-                type="button"
-                onClick={() => setShowFreeze(true)}
-                disabled={!compiled || frozen}
-              >
-                {frozen ? 'Revision 已冻结' : '审阅并冻结'}
-              </button>
-            </>
-          )}
+          <span className={`authority-badge ${unavailable ? 'is-unavailable' : ''}`}>
+            {unavailable ? 'AUTHORITY UNAVAILABLE' : 'FORMAL CONTRACT · NO MEDIA I/O'}
+          </span>
+          <button className="button button--ghost" type="button" onClick={() => void loadAuthority()} disabled={loading || busy}>
+            刷新 authority
+          </button>
         </div>
       </header>
 
       <aside className="palette-panel">
         <div className="panel-heading">
-          <span className="eyebrow">REGISTRY</span>
-          <h2>节点面板</h2>
-          <span className="registry-state"><i /> {paletteItems.length} mock entries</span>
+          <span className="eyebrow">PYTHON PROJECTION</span>
+          <h2>正式节点</h2>
+          <span className="registry-state"><i /> {projection.nodes.length} projected</span>
         </div>
-
-        <label className="search-box">
-          <span>⌕</span>
-          <input
-            aria-label="搜索节点"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索 Engine 或 Operator"
-          />
-        </label>
-
-        <div className="palette-list">
-          {filteredPalette.map((item) => (
+        <div className="palette-list formal-node-list">
+          {projection.nodes.map((node) => (
             <button
-              className={`palette-item palette-item--${item.category}`}
+              className={`palette-item palette-item--${node.data.category}`}
               type="button"
-              key={item.id}
-              onClick={() => addPaletteNode(item)}
-              disabled={frozen}
+              key={node.id}
+              onClick={() => setSelectedNodeId(node.id)}
             >
-              <span className="palette-icon">{item.icon}</span>
-              <span>
-                <strong>{item.label}</strong>
-                <small>{item.description}</small>
-              </span>
-              <em>{item.scope}</em>
+              <span className="palette-icon">{node.data.category === 'engine' ? '◆' : node.data.category === 'source' ? '◉' : '✓'}</span>
+              <span><strong>{node.data.label}</strong><small>{node.id}</small></span>
+              <em>{node.data.scope}</em>
             </button>
           ))}
         </div>
-
         <div className="palette-note">
-          <span>Prototype boundary</span>
-          <p>节点清单来自内存中的 mock Registry，不代表已冻结 EngineManifest。</p>
+          <span>Phase 2A boundary</span>
+          <p>Source 与 Final 端口来自 Python CoreNodeContractSet；本切片不创建新节点。</p>
         </div>
       </aside>
 
-      <section className="canvas-panel" aria-label={`${modeLabels[mode]} 画布`}>
+      <section className="canvas-panel" aria-label="Designer 画布">
         <div className="canvas-context">
           <div>
-            <span className="context-mode">{modeLabels[mode]}</span>
-            <strong>
-              {mode === 'designer' && (frozen ? 'Revision 只读视图' : '电影级编排 DAG')}
-              {mode === 'plan' && 'Compiler 展开的章节执行图'}
-              {mode === 'run' && `Mock run · step ${runStep + 1}/4`}
-            </strong>
+            <span className="context-mode">Designer</span>
+            <strong>正式 Draft · typed ports · Compiler diagnostics</strong>
           </div>
           <div className="canvas-legend">
             <span><i className="legend-dot source" /> Source</span>
-            <span><i className="legend-dot operator" /> Graph</span>
             <span><i className="legend-dot engine" /> Engine</span>
             <span><i className="legend-dot final" /> Final</span>
-            <span><i className="legend-line audio" /> Audio lane</span>
           </div>
         </div>
 
-        <ReactFlow
-          key={mode}
-          nodes={activeNodes}
-          edges={activeEdges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodesChange={mode === 'designer' && !frozen ? onDesignerNodesChange : undefined}
-          onEdgesChange={mode === 'designer' && !frozen ? onDesignerEdgesChange : undefined}
-          onConnect={handleConnect}
-          onNodeClick={handleNodeClick}
-          nodesDraggable={mode === 'designer' && !frozen}
-          nodesConnectable={mode === 'designer' && !frozen}
-          edgesReconnectable={mode === 'designer' && !frozen}
-          deleteKeyCode={mode === 'designer' && !frozen ? ['Backspace', 'Delete'] : null}
-          defaultViewport={
-            mode === 'designer'
-              ? { x: 42, y: 0, zoom: 0.72 }
-              : { x: 28, y: 35, zoom: 0.58 }
-          }
-          minZoom={0.2}
-          maxZoom={1.8}
-          colorMode="dark"
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} color="#263344" />
-          <Controls position="bottom-left" showInteractive={false} />
-          <MiniMap
-            position="bottom-right"
-            pannable
-            zoomable
-            nodeColor={(item) => {
-              const category = (item.data as WorkflowNodeData).category
-              return { source: '#53a5c9', operator: '#8d7dc7', engine: '#d89b45', final: '#5fb98a' }[category]
-            }}
-          />
-        </ReactFlow>
+        {unavailable && !authority ? (
+          <div className="authority-empty" role="alert">
+            <strong>Python Authoring authority 不可用</strong>
+            <p>{unavailable}</p>
+            <p>正式模式不会回退 mock Registry、浏览器内 Compiler、Freeze 或 Run。</p>
+          </div>
+        ) : (
+          <ReactFlow
+            nodes={viewNodes}
+            edges={projection.edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onConnect={handleConnect}
+            onNodeClick={handleNodeClick}
+            onEdgeClick={handleEdgeClick}
+            nodesDraggable={!busy}
+            nodesConnectable={!busy}
+            edgesReconnectable={false}
+            deleteKeyCode={null}
+            fitView
+            minZoom={0.3}
+            maxZoom={1.8}
+            colorMode="dark"
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} color="#263344" />
+            <Controls position="bottom-left" showInteractive={false} />
+            <MiniMap
+              position="bottom-right"
+              pannable
+              zoomable
+              nodeColor={(item) => {
+                const category = (item.data as FormalWorkflowNode['data']).category
+                return { source: '#53a5c9', engine: '#d89b45', final: '#5fb98a' }[category]
+              }}
+            />
+          </ReactFlow>
+        )}
       </section>
 
       <aside className="inspector-panel">
         <div className="panel-heading inspector-heading">
           <span className="eyebrow">INSPECTOR</span>
-          <h2>{selectedNode?.data.label ?? '未选择节点'}</h2>
-          {selectedNode && <code>{selectedNode.data.protocolId}</code>}
+          <h2>{selectedNode?.data.label ?? (selectedEdge ? 'Data edge' : '未选择实体')}</h2>
+          {(selectedNode || selectedEdge) && <code>{selectedNode?.id ?? selectedEdge?.id}</code>}
         </div>
 
-        {selectedNode ? (
-          <div className="inspector-content">
-            <section>
-              <h3>节点摘要</h3>
-              <p>{selectedNode.data.description}</p>
-              <dl className="property-list">
-                <div><dt>Category</dt><dd>{selectedNode.data.category}</dd></div>
-                <div><dt>Scope</dt><dd>{selectedNode.data.scope}</dd></div>
-                <div><dt>Execution</dt><dd>{selectedNode.data.execution ?? 'n/a'}</dd></div>
-                {selectedNode.data.engineVersion && (
-                  <div><dt>Version</dt><dd>{selectedNode.data.engineVersion}</dd></div>
-                )}
-              </dl>
-            </section>
-
-            <section>
-              <h3>Typed ports</h3>
-              <div className="port-group">
-                <span className="port-group-label"><i className="port-dot input" /> inputs</span>
-                {selectedNode.data.inputs.length > 0 ? (
-                  selectedNode.data.inputs.map((port) => (
-                    <div className="port-summary" key={`input-${port.id}`}>
-                      <span>{port.label}</span>
-                      <code>{port.artifactType} · {port.cardinality}</code>
-                    </div>
-                  ))
-                ) : (
-                  <div className="port-empty">none</div>
-                )}
-              </div>
-              <div className="port-group">
-                <span className="port-group-label"><i className="port-dot output" /> outputs</span>
-                {selectedNode.data.outputs.length > 0 ? (
-                  selectedNode.data.outputs.map((port) => (
-                    <div className="port-summary" key={`output-${port.id}`}>
-                      <span>{port.label}</span>
-                      <code>{port.artifactType} · {port.cardinality}</code>
-                    </div>
-                  ))
-                ) : (
-                  <div className="port-empty">none</div>
-                )}
-              </div>
-            </section>
-
-            <section>
-              <h3>媒体变化</h3>
-              <div className="media-change-list">
-                {selectedNode.data.mediaChanges.map((change) => (
-                  <div className={`media-change media-change--${change.tone ?? 'neutral'}`} key={`${change.label}-${change.value}`}>
-                    <span>{change.label}</span>
-                    <strong>{change.value}</strong>
+        <div className="inspector-content">
+          {selectedNode ? (
+            <>
+              <section>
+                <h3>节点摘要</h3>
+                <p>{selectedNode.data.description}</p>
+                <dl className="property-list">
+                  <div><dt>Category</dt><dd>{selectedNode.data.category}</dd></div>
+                  <div><dt>Scope</dt><dd>{selectedNode.data.scope}</dd></div>
+                  {selectedNode.data.engine && (
+                    <><div><dt>Engine</dt><dd>{selectedNode.data.engine.engine_id}</dd></div><div><dt>Version</dt><dd>{selectedNode.data.engine.engine_version}</dd></div></>
+                  )}
+                </dl>
+              </section>
+              <section>
+                <h3>Typed ports</h3>
+                {[['inputs', selectedNode.data.inputs], ['outputs', selectedNode.data.outputs]].map(([label, ports]) => (
+                  <div className="port-group" key={label as string}>
+                    <span className="port-group-label">{label as string}</span>
+                    {(ports as typeof selectedNode.data.inputs).map((port) => (
+                      <div className="port-summary" key={port.portId}>
+                        <span>{port.portId}</span>
+                        <code>{port.artifactType}/{port.mediaKind ?? 'none'} · {port.scope} · {port.cardinality}</code>
+                      </div>
+                    ))}
                   </div>
+                ))}
+              </section>
+              {selectedNode.data.category === 'engine' && (
+                <section>
+                  <h3>完整参数对象</h3>
+                  <textarea aria-label="Engine 参数 JSON" value={parameterText} onChange={(event) => setParameterText(event.target.value)} rows={7} />
+                  <button className="button button--primary inspector-action" type="button" onClick={replaceParameters} disabled={busy}>替换参数并验证</button>
+                </section>
+              )}
+            </>
+          ) : selectedEdge ? (
+            <section>
+              <h3>正式 Edge</h3>
+              <p>{selectedEdge.source}.{selectedEdge.sourceHandle} → {selectedEdge.target}.{selectedEdge.targetHandle}</p>
+              <button className="button button--primary" type="button" disabled={busy} onClick={() => void submitIntent({ intent_kind: 'disconnect_ports', edge_id: selectedEdge.id })}>断开正式 Edge</button>
+            </section>
+          ) : (
+            <div className="empty-inspector">选择 node、edge 或 diagnostic 查看权威引用。</div>
+          )}
+
+          {authority && (
+            <section className="connection-editor">
+              <h3>连接端口</h3>
+              <label>Output<select aria-label="Source endpoint" value={sourceEndpoint} onChange={(event) => setSourceEndpoint(event.target.value)}>{outputEndpoints.map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}</select></label>
+              <label>Input<select aria-label="Target endpoint" value={targetEndpoint} onChange={(event) => setTargetEndpoint(event.target.value)}>{inputEndpoints.map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}</select></label>
+              <button className="button button--primary" type="button" disabled={busy || !sourceEndpoint || !targetEndpoint} onClick={() => void submitIntent({ intent_kind: 'connect_ports', source: parseEndpoint(sourceEndpoint), target: parseEndpoint(targetEndpoint) })}>提交连接</button>
+              <div className="authority-edge-list">
+                {projection.edges.map((edge) => (
+                  <button
+                    type="button"
+                    key={edge.id}
+                    disabled={busy}
+                    onClick={() => void submitIntent({ intent_kind: 'disconnect_ports', edge_id: edge.id })}
+                  >
+                    断开 {edge.id}
+                  </button>
                 ))}
               </div>
             </section>
-
-            {selectedNode.data.runStatus && (
-              <section>
-                <h3>Runtime snapshot</h3>
-                <div className={`runtime-status runtime-status--${selectedNode.data.runStatus}`}>
-                  {selectedNode.data.runStatus.replace('_', ' ')}
-                </div>
-                <p className="muted">状态来自模拟事件序列，不是正式 authority。</p>
-              </section>
-            )}
-          </div>
-        ) : (
-          <div className="empty-inspector">在画布中选择一个节点查看属性。</div>
-        )}
+          )}
+          {clientHint && <p className="client-hint" role="status">{clientHint}</p>}
+        </div>
       </aside>
 
       <section className={`bottom-drawer ${bottomOpen ? 'is-open' : ''}`}>
         <button className="drawer-toggle" type="button" onClick={() => setBottomOpen((open) => !open)}>
-          <span>Diagnostics</span>
-          <strong>{diagnostics.length}</strong>
-          <i>{bottomOpen ? '收起' : '展开'}</i>
+          <span>Python Diagnostics</span><strong>{diagnostics.length}</strong><i>{bottomOpen ? '收起' : '展开'}</i>
         </button>
         {bottomOpen && (
           <div className="diagnostic-list">
-            {diagnostics.map((diagnostic) => (
-              <article className={`diagnostic diagnostic--${diagnostic.severity}`} key={diagnostic.code}>
-                <span className="diagnostic-icon">
-                  {diagnostic.severity === 'warning' ? '!' : diagnostic.severity === 'error' ? '×' : 'i'}
-                </span>
-                <div>
-                  <span className="diagnostic-code">{diagnostic.code}</span>
-                  <strong>{diagnostic.title}</strong>
-                  <p>{diagnostic.message}</p>
-                </div>
-                {diagnostic.entity && <button type="button">定位 {diagnostic.entity}</button>}
+            {diagnostics.length === 0 ? <div className="diagnostic-empty">authoring_valid · 无阻塞诊断</div> : diagnostics.map((diagnostic) => (
+              <article className={`diagnostic diagnostic--${diagnostic.severity}`} key={diagnostic.diagnostic_id}>
+                <span className="diagnostic-icon">{diagnostic.severity === 'error' ? '×' : diagnostic.severity === 'warning' ? '!' : 'i'}</span>
+                <div><span className="diagnostic-code">{diagnostic.stable_code}</span><strong>{diagnostic.phase}</strong><p>{diagnostic.message}</p></div>
+                <button type="button" onClick={() => locateDiagnostic(diagnostic)}>定位</button>
               </article>
             ))}
           </div>
         )}
       </section>
-
-      {showFreeze && <FreezeDialog onCancel={() => setShowFreeze(false)} onConfirm={confirmFreeze} />}
     </main>
   )
 }
 
-export function App() {
-  return (
-    <ReactFlowProvider>
-      <AppContent />
-    </ReactFlowProvider>
-  )
+export function App(props: AppProps) {
+  return <ReactFlowProvider><AppContent {...props} /></ReactFlowProvider>
 }

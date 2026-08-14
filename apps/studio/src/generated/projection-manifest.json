@@ -1,0 +1,65 @@
+{
+  "authoring_contract_version": "0.1.0",
+  "compiler_contract_version": "0.1.0",
+  "core_node_contract_digest": "sha256:132f4333c1747e41a5177150a684cd45e4e8f9105fd3a36ce04e25c92ff32d08",
+  "diagnostic_contract_version": "0.1.0",
+  "files": [
+    {
+      "file_digest": "sha256:c1c5e3ebc141430f68931defef03215590e817982ff05240381e91481668236a",
+      "path": "generated/authoring-wire.generated.ts"
+    },
+    {
+      "file_digest": "sha256:ee9159f567a5d2d8a864e7aa2979cd2ba68d8e59c69b6291743dd9e34ff021db",
+      "path": "generated/authoring-wire.schema.json"
+    },
+    {
+      "file_digest": "sha256:7a8b8001dfac2b1a468397b7d28e111050ec8e9759c8a5eeedf1f84e5093e2aa",
+      "path": "generated/core-node-contracts.generated.ts"
+    },
+    {
+      "file_digest": "sha256:17c9d44fb9b7977ebdd03ab05be8a754f4dff096973bee780c11ddccf7ea4bb2",
+      "path": "generated/core-node-contracts.json"
+    },
+    {
+      "file_digest": "sha256:bff933be6f8686d0b8cb1f4c23c1e134654893e1a71dde7f9815ae1cd60ba2d9",
+      "path": "generated/core-node-contracts.schema.json"
+    },
+    {
+      "file_digest": "sha256:9352361ff1d7b3d80aa924bf4025d5537576a4412751b4b8ee4d966957cf32b6",
+      "path": "generated/engine-manifest.generated.ts"
+    },
+    {
+      "file_digest": "sha256:e10f31cddf219e96c9897f001106fbfbf45417958d697a36cac8f300a29ae3d4",
+      "path": "generated/engine-manifest.schema.json"
+    },
+    {
+      "file_digest": "sha256:0272916d6a2469ff1e0914f7d994079aca521d6164089d37d199e02eae188f77",
+      "path": "generated/projection-manifest.generated.ts"
+    },
+    {
+      "file_digest": "sha256:0d0fadf44a6ebb8f28059bb529af068a54ba70c6afe85298a1a8b0790a8560f4",
+      "path": "generated/projection-manifest.schema.json"
+    }
+  ],
+  "generator_version": "zniku-projection/0.1.0",
+  "projection_contract_version": "0.1.0",
+  "source_schemas": [
+    {
+      "name": "authoring-wire.schema.json",
+      "schema_digest": "sha256:5d788dfa9f162dc0e4b3de275b19bdc1de5b7843de0c8cf2954ada54c72936b8"
+    },
+    {
+      "name": "core-node-contracts.schema.json",
+      "schema_digest": "sha256:bcacf735bb978b66c1bcf087ecfbc87c362574e79dc4c20e2ade82b77a0893c7"
+    },
+    {
+      "name": "engine-manifest.schema.json",
+      "schema_digest": "sha256:11698cde37f6b87e304bed71c573d9fcef4afe00b320a848f51b056eabb1edf2"
+    },
+    {
+      "name": "projection-manifest.schema.json",
+      "schema_digest": "sha256:2809a54b27bdea8fb2132f968d5f508590327e289b2fb9d3ba64f81defdc3749"
+    }
+  ],
+  "workflow_contract_version": "0.1.0"
+}

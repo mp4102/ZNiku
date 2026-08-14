@@ -8,6 +8,17 @@ from typing import Any, cast
 
 import pytest
 
+from zniku.authoring import (
+    CoreNodeContractSet,
+    EngineStageNodeSpec,
+    FinalNodeSpec,
+    InMemoryManifestCatalog,
+    PortEndpoint,
+    SourceNodeSpec,
+    WorkflowCompiler,
+    WorkflowEdgeSpec,
+    WorkflowSpec,
+)
 from zniku.contracts import (
     Artifact,
     ArtifactRef,
@@ -26,6 +37,7 @@ from zniku.contracts import (
 )
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "valid-engine-manifest.json"
+PROGRAM_MANIFEST_PATH = Path(__file__).parent / "fixtures" / "program-media-engine-manifest.json"
 
 
 @pytest.fixture
@@ -36,6 +48,60 @@ def manifest_payload() -> dict[str, Any]:
 @pytest.fixture
 def valid_manifest() -> EngineManifest:
     return EngineManifest.from_json(FIXTURE_PATH.read_bytes())
+
+
+@pytest.fixture
+def program_manifest() -> EngineManifest:
+    return EngineManifest.from_json(PROGRAM_MANIFEST_PATH.read_bytes())
+
+
+@pytest.fixture
+def workflow_compiler(program_manifest: EngineManifest) -> WorkflowCompiler:
+    return WorkflowCompiler(
+        InMemoryManifestCatalog((program_manifest,)),
+        CoreNodeContractSet.phase_2a(),
+    )
+
+
+@pytest.fixture
+def initial_workflow_spec(program_manifest: EngineManifest) -> WorkflowSpec:
+    return WorkflowSpec(
+        workflow_contract_version="0.1.0",
+        workflow_id="workflow.synthetic.program",
+        nodes=(
+            SourceNodeSpec(kind="source", node_id="node.source.program"),
+            EngineStageNodeSpec(
+                kind="engine_stage",
+                node_id="node.engine.filter",
+                engine=EngineBinding.from_manifest(program_manifest),
+                parameters={"strength": 5},
+            ),
+            FinalNodeSpec(kind="final", node_id="node.final.program"),
+        ),
+        edges=(
+            WorkflowEdgeSpec(
+                edge_id="edge.source.filter",
+                source=PortEndpoint(node_id="node.source.program", port_id="program"),
+                target=PortEndpoint(node_id="node.engine.filter", port_id="program_in"),
+            ),
+        ),
+    )
+
+
+@pytest.fixture
+def valid_workflow_spec(initial_workflow_spec: WorkflowSpec) -> WorkflowSpec:
+    return initial_workflow_spec.model_copy(
+        update={
+            "edges": (
+                *initial_workflow_spec.edges,
+                WorkflowEdgeSpec(
+                    edge_id="edge.filter.final",
+                    source=PortEndpoint(node_id="node.engine.filter", port_id="program_out"),
+                    target=PortEndpoint(node_id="node.final.program", port_id="program"),
+                ),
+            )
+        }
+    )
 
 
 @pytest.fixture

@@ -1,16 +1,20 @@
-# ZNIKU Studio GUI-0 原型
+# ZNIKU Studio Phase 2A 正式 Designer 切片
 
-这是 [`studio-framework.md`](../../docs/architecture/studio-framework.md) 的首个可点击交互原型，用于验证：
+本应用依据 [`workflow-authoring-compiler-baseline.md`](../../docs/architecture/workflow-authoring-compiler-baseline.md)
+接入 Python 正式权威，当前验证：
 
-- Workflow Designer、Expanded Plan 与 Run Monitor 三种图形视图；
-- Engine / Operator 节点、多命名 typed ports、章节分支和 program 汇合；
-- Demux、独立原始 AudioArtifactSet 支线、一次 Video encode、Mux 与 Final 分责；
-- Palette、Inspector、Diagnostics 与冻结确认的信息密度；
-- 冻结后只读和模拟 Runtime 状态叠加。
+- Source → Engine → Final 的最小正式图子集；
+- Python `WorkflowDraftSnapshot`、Compiler diagnostics 与 revision authority；
+- typed port 连线、断线、完整参数替换及 stale revision 失败语义；
+- Python Schema 生成的 TypeScript DTO、Ajv runtime validator 与投影 digest 对账；
+- Diagnostic 到 node、edge、port 或 parameter 的定位。
 
-原型中的 Registry、Compiler、ExecutionPlan、digest 和 Runtime event 全部是内存中的 `mock` 数据。
-它不读取或写入媒体，不生成正式 WorkflowSpec、Evidence、receipt 或 ZBaton，也不连接
-AVEnhanceFlow v2.3.1 生产工作流。
+Studio 不是领域权威。宿主必须注入 `window.znikuAuthoringBridge`；缺少桥接、未知字段、版本或 digest
+不一致时均 fail closed，不回退 `mock-data.ts`。测试 harness 会启动真实 Python authority 进程验证传输链，
+但它不是产品 CLI、FastAPI 路由或正式持久化服务。
+
+当前不实现 Registry、ExecutionPlan、Freeze、Runtime、真实 Engine 或媒体 I/O，也不生成 Evidence、
+receipt、Final publication 或 ZBaton。
 
 ## 本地运行
 
@@ -30,8 +34,8 @@ npm run build
 
 ## 供应链边界
 
-直接运行依赖已经锁定为 React 19.2.8、React DOM 19.2.8 与 `@xyflow/react` 12.11.3，许可证均为
-MIT。构建与测试工具锁定为 Vite 8.2.1、TypeScript 7.0.2、Vitest 4.1.10、jsdom 29.1.1 及
+直接运行依赖已经锁定为 React 19.2.8、React DOM 19.2.8、`@xyflow/react` 12.11.3 与 Ajv 8.20.0。
+构建与测试工具锁定为 Vite 8.2.1、TypeScript 7.0.2、Vitest 4.1.10、jsdom 29.1.1 及
 Testing Library；直接开发依赖使用 MIT 或 Apache-2.0 许可证。`package-lock.json` 固定完整传递依赖树，
 安装后应保留 `npm audit` 为零漏洞的验证门。
 

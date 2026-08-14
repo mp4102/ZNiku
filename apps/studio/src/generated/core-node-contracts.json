@@ -1,0 +1,21 @@
+{
+  "final_inputs": [
+    {
+      "artifact_type": "media",
+      "cardinality": "one",
+      "media_kind": "program_media",
+      "port_id": "program",
+      "scope": "program"
+    }
+  ],
+  "source_outputs": [
+    {
+      "artifact_type": "media",
+      "cardinality": "one",
+      "media_kind": "program_media",
+      "port_id": "program",
+      "scope": "program"
+    }
+  ],
+  "workflow_contract_version": "0.1.0"
+}
