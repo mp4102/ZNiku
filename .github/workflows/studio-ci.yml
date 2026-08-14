@@ -1,4 +1,4 @@
-name: Studio CI
+name: ZNIKU Studio CI
 
 on:
   push:

@@ -1,4 +1,4 @@
-# ZMediaFlow Studio GUI-0 原型
+# ZNIKU Studio GUI-0 原型
 
 这是 [`studio-framework.md`](../../docs/architecture/studio-framework.md) 的首个可点击交互原型，用于验证：
 

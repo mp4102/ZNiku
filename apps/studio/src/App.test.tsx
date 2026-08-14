@@ -6,7 +6,7 @@ import { initialDesignerEdges, planNodes } from './mock-data'
 
 afterEach(cleanup)
 
-describe('ZMediaFlow Studio GUI-0 workflow prototype', () => {
+describe('ZNIKU Studio GUI-0 workflow prototype', () => {
   it('把原始音轨保存为独立的 Demux 到 Mux 数据边', () => {
     const audioEdge = initialDesignerEdges.find(
       (edge) => edge.source === 'demux' && edge.target === 'mux',
@@ -23,7 +23,7 @@ describe('ZMediaFlow Studio GUI-0 workflow prototype', () => {
   it('显著标记 mock 边界并展示默认编排', () => {
     render(<App />)
 
-    expect(screen.getByText('ZMediaFlow')).toBeInTheDocument()
+    expect(screen.getByText('ZNIKU')).toBeInTheDocument()
     expect(screen.getByText('MOCK · NO MEDIA I/O')).toBeInTheDocument()
     expect(screen.getByText('电影级编排 DAG')).toBeInTheDocument()
     expect(screen.getAllByText('Enhancement').length).toBeGreaterThan(0)

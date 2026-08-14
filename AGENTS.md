@@ -1,7 +1,9 @@
-# ZMediaFlow 项目约束
+# ZNIKU 项目约束
 
 - 默认使用中文沟通、文档、模块说明、业务注释和测试说明；代码标识、协议字段及第三方名称保留英文。
-- 产品定位固定为：Workflow Studio 是主要控制界面，Compiler 负责合法性与冻结，Runtime 是执行和状态
+- 正式命名固定为：品牌 `ZNIKU`、产品 `ZNIKU Studio`、执行核心 `ZNIKU Runtime`、扩展体系
+  `ZNIKU Engine SDK`、仓库 `ZNiku`、CLI／Python package `zniku`、工程文件扩展名 `.zniku`。
+- 产品定位固定为：ZNIKU Studio 是主要控制界面，Compiler 负责合法性与冻结，ZNIKU Runtime 是执行和状态
   权威，Engine 只实现版本化媒体能力，Agent 是可选客户端。
 - Studio 不得直接调用 Engine、写正式状态、判定节点完成或绕过 Compiler／Runtime。
 - WorkflowSpec、EngineManifest、ExecutionPlan、Runtime state 与 Evidence 必须各有唯一权威实现；前端 mock

@@ -1,6 +1,6 @@
 # ZBaton vNext `processing_history` 设计草案
 
-状态：已采纳的从属设计说明，供后续 ZBaton 与 ZMediaFlow 设计使用。整体结构、继承规则与
+状态：已采纳的从属设计说明，供后续 ZBaton 与 ZNIKU 设计使用。整体结构、继承规则与
 实现边界以 [`design-baseline.md`](./design-baseline.md) 为准。
 
 本文只定义 ZBaton.json 中 `processing_history` 的业务记录方案，不修改或替代当前

@@ -132,10 +132,10 @@ function AppContent() {
     <main className={`app-shell ${bottomOpen ? 'has-bottom-drawer' : ''}`}>
       <header className="topbar">
         <div className="brand-lockup">
-          <div className="brand-mark">ZM</div>
+          <div className="brand-mark">ZN</div>
           <div>
-            <span className="brand-name">ZMediaFlow</span>
-            <span className="brand-subtitle">Workflow Studio</span>
+            <span className="brand-name">ZNIKU</span>
+            <span className="brand-subtitle">Studio</span>
           </div>
         </div>
 

@@ -3,12 +3,12 @@
 - 状态：**已采纳的设计基线**
 - 基线修订：1
 - 日期：2026-08-14
-- 目标版本：ZBaton vNext、ZMediaFlow
+- 目标版本：ZBaton vNext、ZNIKU
 
 ## 1. 文档定位
 
 本文冻结 ZBaton vNext 的业务定位、整体结构、处理历史模型、媒体快照、Workflow 继承、DAG
-约束和版本边界，作为后续规范、Schema、SDK、Producer、Consumer 与 ZMediaFlow
+约束和版本边界，作为后续规范、Schema、SDK、Producer、Consumer 与 ZNIKU
 实现的共同设计依据。
 
 本文是设计基线，不是当前生产合同。它不修改、不替代，也不追溯解释当前的：
@@ -19,7 +19,7 @@
 - 已发布的 ZBaton、Evidence、receipt 或 final 文件。
 
 正式实施时，规范性协议、JSON Schema、validator 与 SDK 应由 `ZBatonProtocol-Media` 仓库统一
-发布；本文件负责冻结 ZMediaFlow 对 vNext 的业务需求与跨仓库设计边界。
+发布；本文件负责冻结 ZNIKU 对 vNext 的业务需求与跨仓库设计边界。
 
 本文中的“必须”“不得”表示 vNext 实现必须满足的基线要求；“应”表示默认要求，只有记录明确的
 设计理由时才可偏离。
@@ -112,7 +112,7 @@ ZBaton vNext 首版不负责：
   "status": "draft",
   "created_at": "2026-08-14T12:30:00+08:00",
   "producer": {
-    "name": "ZMediaFlow",
+    "name": "ZNIKU",
     "version": "0.1.0"
   },
   "subject": {
@@ -127,7 +127,7 @@ ZBaton vNext 首版不负责：
 | 字段 | 规则 |
 | --- | --- |
 | `type` | 固定为 `media-history`，不得用自然语言变体 |
-| `version` | ZBaton vNext 文档结构版本，不是 ZMediaFlow 或 Workflow 版本 |
+| `version` | ZBaton vNext 文档结构版本，不是 ZNIKU 或 Workflow 版本 |
 | `id` | 当前这份历史文档的稳定唯一 ID；生成下游 final 时创建新 ID |
 | `status` | 草案使用 `draft`；正式状态词表在协议实现前冻结 |
 | `created_at` | 带时区偏移的 RFC 3339 时间 |
@@ -139,7 +139,7 @@ ZBaton vNext 首版不负责：
 - `zbaton.version`：文档结构版本；
 - `zbaton.producer.version`：生成文档的软件版本；
 - `processing_history[].model.version`：实际处理模型版本；
-- ZMediaFlow workflow contract 版本：执行流程合同版本，后续由实现层记录和约束。
+- ZNIKU workflow contract 版本：执行流程合同版本，后续由实现层记录和约束。
 
 `workflow` 是本文件内的 Workflow Run 简明标识，不是版本号。
 
@@ -185,7 +185,7 @@ snapshot
 - `width`、`height`、`bit_depth` 与 `frame_count` 使用整数。
 - `sample_aspect_ratio` 使用 `N:D` 字符串。
 - `color` 只记录可稳定解释的重要颜色字段；未知值不得根据分辨率或 codec 猜测。
-- 本基线首先覆盖 ZMediaFlow 起始范围内的确定帧率媒体；VFR 的完整表达留待正式 Profile 设计。
+- 本基线首先覆盖 ZNIKU 起始范围内的确定帧率媒体；VFR 的完整表达留待正式 Profile 设计。
 
 ### 7.3 音频
 
@@ -499,10 +499,10 @@ vNext validator 必须验证文档本身是否自洽，包括：
 - AVEnhanceFlow v2.3.1 package 继续按 v2.3.0 workflow contract、Core 0.3.0 及其现有 Profile 生产，
   不受本文影响。
 - 已发布旧 ZBaton、Evidence、receipt 和 final 保持原样，不迁移、不补写、不重排。
-- ZMediaFlow 不得直接用 vNext loader 续跑 AVEnhanceFlow v2.3.0 task root。
+- ZNIKU 不得直接用 vNext loader 续跑 AVEnhanceFlow v2.3.0 task root。
 - 如未来提供旧文档导入，只能作为显式迁移功能；未知事实必须保持未知，不能从文件名、日志或品牌
   文本推测。
-- 是否并存旧 Manifest 与 vNext history、文件命名及一次性迁移策略，留待 ZMediaFlow 专题设计确定。
+- 是否并存旧 Manifest 与 vNext history、文件命名及一次性迁移策略，留待 ZNIKU 专题设计确定。
 
 ## 15. 跨仓库职责
 
@@ -518,7 +518,7 @@ vNext validator 必须验证文档本身是否自洽，包括：
 
 Schema、validator 与 fixtures 必须是规范的同步投影，不能各自发展出不同语义。
 
-### 15.2 ZMediaFlow
+### 15.2 ZNIKU
 
 负责：
 
@@ -535,9 +535,9 @@ Schema、validator 与 fixtures 必须是规范的同步投影，不能各自发
 - 下游 Producer 生成新 final 时负责继承完整上游历史、去重记录并追加本地处理。
 - 不理解的合法上游扩展必须保留，不能静默删除。
 
-## 16. ZMediaFlow 实施准入条件
+## 16. ZNIKU 实施准入条件
 
-进入正式 ZMediaFlow Producer 实现前，至少应完成：
+进入正式 ZNIKU Producer 实现前，至少应完成：
 
 1. 在 ZBatonProtocol-Media 中冻结 vNext 规范版本和 Profile ID；
 2. 冻结根结构、统一 snapshot、记录字段及 null/optional 规则；
@@ -545,9 +545,9 @@ Schema、validator 与 fixtures 必须是规范的同步投影，不能各自发
 4. 冻结多父 DAG 的 canonical 排序与继承去重规则；
 5. 实现 Schema、数据模型、确定性序列化和无媒体 I/O 的一致性 validator；
 6. 用 canonical fixtures 覆盖线性处理、下游继承、分支汇合、多源、音频变化和未知扩展；
-7. 明确 AVEnhanceFlow v2.3.0 task root 与 ZMediaFlow project root 的严格版本隔离；
+7. 明确 AVEnhanceFlow v2.3.0 task root 与 ZNIKU project root 的严格版本隔离；
 8. 明确 final 与相邻 ZBaton 的事务发布顺序、失败语义和 no-replace 行为；
-9. 以真实短任务验证一条完整 ZMediaFlow 历史，再决定正式发布。
+9. 以真实短任务验证一条完整 ZNIKU 历史，再决定正式发布。
 
 实现验收至少必须证明：
 
@@ -583,7 +583,7 @@ Schema、validator 与 fixtures 必须是规范的同步投影，不能各自发
 - 多父 DAG canonical 排序、记录冲突和来源去重算法；
 - 已发布文档的纠错、替代与 `supersedes` 机制；
 - 独立验证文档的结构及关联方式；
-- AVEnhanceFlow 与 ZMediaFlow 的并存、导入和文件命名策略。
+- AVEnhanceFlow 与 ZNIKU 的并存、导入和文件命名策略。
 
 待定事项不得由单个 Producer 临时私有化后当作公共协议；必须先回到规范层冻结，再同步 Schema、
 validator、fixtures 和各 Producer。

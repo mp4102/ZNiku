@@ -1,15 +1,15 @@
-# ZMediaFlow 0.1.0 产品整体框架
+# ZNIKU 0.1.0 产品整体框架
 
 - 状态：**已采纳的产品框架基线，细节按专题冻结**
 - 框架修订：1
 - 日期：2026-08-14
-- 起始版本：ZMediaFlow 0.1.0
+- 起始版本：ZNIKU 0.1.0
 - 孵化来源：AVEnhanceFlow v3.0 架构设计
 
 ## 1. 文档定位
 
-本文定义 ZMediaFlow 的整体产品方向、系统分层、核心角色、工作流生命周期和实施边界，
-作为后续 WorkflowSpec、Engine Contract、Runtime、Agent Skill、图形化编辑器及 ZBaton vNext 集成的
+本文定义 ZNIKU 的整体产品方向、系统分层、核心角色、工作流生命周期和实施边界，
+作为后续 WorkflowSpec、Engine Contract、ZNIKU Runtime、Agent Skill、图形化编辑器及 ZBaton vNext 集成的
 共同起点。
 
 本文只冻结总体框架，不提前冻结具体 JSON 字段、Python API、GUI 技术栈、Engine 打包格式或调度
@@ -20,9 +20,9 @@
 
 ## 2. 产品定位
 
-ZMediaFlow 定位为：
+ZNIKU 定位为：
 
-> 以 Workflow Studio 为主要控制界面、以确定性 Runtime 为执行权威、可由 Agent 辅助编排和运维的
+> 以 ZNIKU Studio 为主要控制界面、以确定性 ZNIKU Runtime 为执行权威、可由 Agent 辅助编排和运维的
 > 本地媒体工作流平台。
 
 目标不是让 Studio、Agent 或 Engine 在运行时临时发明流程，而是把人的设计意图保存为可校验、
@@ -50,7 +50,7 @@ ZMediaFlow 定位为：
 
 ```mermaid
 flowchart TD
-    USER["人工操作者"] --> STUDIO["Workflow Studio"]
+    USER["人工操作者"] --> STUDIO["ZNIKU Studio"]
     AGENT["可选 Agent Copilot"] --> APP["Application Service"]
     STUDIO --> APP
 
@@ -60,7 +60,7 @@ flowchart TD
     SPEC --> COMPILER
     COMPILER --> PLAN["冻结的 ExecutionPlan"]
 
-    PLAN --> RUNTIME["确定性 Workflow Runtime"]
+    PLAN --> RUNTIME["ZNIKU Runtime"]
     APP <--> RUNTIME
     RUNTIME --> ENGINES["已注册的媒体 Engines"]
     ENGINES --> RECORDS["Artifacts + Evidence + Stage receipts"]
@@ -216,7 +216,7 @@ flowchart LR
     PUBLISH --> COMPLETE["StageRun complete"]
 ```
 
-当前“人工 Enhancement + build-enhancement-master”在 ZMediaFlow 中应表现为一个 Enhancement Engine 的完整
+当前“人工 Enhancement + build-enhancement-master”在 ZNIKU 中应表现为一个 Enhancement Engine 的完整
 生命周期；“人工 Frame interpolation + bind-frame-interpolation”同理。验证和 publication 是节点
 完成机制，不需要成为用户编排图中的独立业务节点。
 
@@ -306,7 +306,7 @@ WorkflowRun。Agent 自身上下文不得成为恢复所必需的 authority。
 
 ### 12.3 Agent 工具面
 
-Agent 不应直接获得无限制 shell 或任意 Engine 私有入口。ZMediaFlow 应向 Agent 提供稳定、窄化的 Runtime
+Agent 不应直接获得无限制 shell 或任意 Engine 私有入口。ZNIKU 应向 Agent 提供稳定、窄化的 Runtime
 工具面，例如：
 
 ```text
@@ -356,7 +356,7 @@ Engine 可以先作为同一仓库内的版本化 package/plugin 实现；是否
 
 ## 15. Evidence、恢复与发布
 
-ZMediaFlow 必须继承当前已经验证有效的安全性质：
+ZNIKU 必须继承当前已经验证有效的安全性质：
 
 - 正式任务使用 full 验证，不静默降级；
 - 人工完成消息只触发验收；
@@ -389,11 +389,11 @@ Engine 私自扩展公共格式。
 ## 17. 与 AVEnhanceFlow 的兼容和迁移边界
 
 - AVEnhanceFlow v2.3.1 package、v2.3.0 workflow contract、目录、CLI、Skill 和证据合同保持不变。
-- `tools/AVSplitTool` 继续留在 AVEnhanceFlow 仓库，ZMediaFlow 不复制其生产权威。
-- ZMediaFlow 使用新的 workflow identity、项目合同和 Runtime，不读取后直接续跑 AVEnhanceFlow task root。
+- `tools/AVSplitTool` 继续留在 AVEnhanceFlow 仓库，ZNIKU 不复制其生产权威。
+- ZNIKU 使用新的 workflow identity、项目合同和 Runtime，不读取后直接续跑 AVEnhanceFlow task root。
 - 首个默认 WorkflowSpec 应复现当前生产流程的业务效果，但不能把固定 stage 顺序重新写死进 Runtime。
-- 现有媒体函数可以逐步封装为 ZMediaFlow Engine；只有通过新的 Engine Contract 和回归门后，才属于
-  ZMediaFlow 执行面。
+- 现有媒体函数可以逐步封装为 ZNIKU Engine；只有通过新的 Engine Contract 和回归门后，才属于
+  ZNIKU 执行面。
 - 旧任务只读导入、Artifact 继承或迁移如有需要，必须设计为显式功能，不能静默发生。
 - AVEnhanceFlow 的 README、已安装生产 Skill、tag 与 release 不因本仓库建立而改变。
 
@@ -473,7 +473,7 @@ Engine 私自扩展公共格式。
 - GUI 交互、模板、版本管理和运行监控；
 - Evidence / receipt 在任意 DAG 下的通用结构；
 - ZBaton vNext 的处理 scope 与 DAG 投影；
-- AVEnhanceFlow 到 ZMediaFlow 的代码复用、测试门和正式发布计划。
+- AVEnhanceFlow 到 ZNIKU 的代码复用、测试门和正式发布计划。
 
 任何专题实现不得绕过本文已经确认的角色边界。若后续发现总体框架需要改变，应先修订并重新审阅
 本文件，再同步实现、测试、Agent adapter 和 Studio。

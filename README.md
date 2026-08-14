@@ -1,26 +1,44 @@
-# ZMediaFlow
+# ZNIKU
 
-ZMediaFlow 是面向本地专业媒体处理的可编排工作流平台：以 **Workflow Studio** 为主要控制界面，
-以确定性 **Runtime** 为执行与状态权威，并允许 Agent 作为可选的编排、诊断和运维助手。
+*Flesh out every frame.*
+
+**让每一帧有血有肉。**
+
+ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU Studio** 为主要控制界面，
+以确定性 **ZNIKU Runtime** 为执行与状态权威，并允许 Agent 作为可选的编排、诊断和运维助手。
 
 - 当前版本：`0.1.0`
 - 当前阶段：产品架构基线与 GUI-0 交互原型
 - 当前能力：可视化演示电影级 DAG、章节展开、音视频独立支线、冻结与模拟运行
 - 当前限制：尚未接入正式 Compiler、Runtime、Engine Registry，也不执行媒体 I/O
 
+## 正式命名
+
+| 对象 | 名称 |
+| --- | --- |
+| 品牌 | `ZNIKU` |
+| 产品 | `ZNIKU Studio` |
+| 执行核心 | `ZNIKU Runtime` |
+| 扩展体系 | `ZNIKU Engine SDK` |
+| GitHub 仓库 | `ZNiku` |
+| CLI / Python package | `zniku` |
+| 工程文件扩展名 | `.zniku` |
+
+当前仓库只实现 Studio GUI-0 原型；`zniku` 与 `.zniku` 是已经冻结、等待后续实现的正式标识。
+
 ## 产品边界
 
-ZMediaFlow 不是任意脚本工作流编辑器。它围绕媒体 Artifact、typed ports、scope、集合完整性、
+ZNIKU 不是任意脚本工作流编辑器。它围绕媒体 Artifact、typed ports、scope、集合完整性、
 证据、恢复和唯一 Final 建立领域约束。
 
 ```text
-Workflow Studio
+ZNIKU Studio
       ↓
 Application Service
       ↓
 Workflow Compiler → Frozen ExecutionPlan
       ↓
-Deterministic Runtime
+ZNIKU Runtime
       ↓
 Registered Media Engines
       ↓
@@ -32,20 +50,21 @@ Agent 可以通过受控接口创建草稿、解释诊断、辅助人工 handoff
 
 ## 仓库来源与隔离
 
-本仓库由 AVEnhanceFlow 的 v3 架构与 GUI-0 孵化成果独立演进而来。`0.1.0` 是 ZMediaFlow 自身的
+本仓库由 AVEnhanceFlow 的 v3 架构与 GUI-0 孵化成果独立演进而来。`0.1.0` 是 ZNIKU 自身的
 起始版本，不继承 AVEnhanceFlow 的版本号。
 
 - AVEnhanceFlow v2.3.1 继续保留其生产工作流、Skill、工具、任务合同与发布历史；
 - 本仓库不迁移 v2 Runtime、真实任务、媒体文件、Evidence、receipt、final 或本机配置；
-- 后续复用媒体能力时，应通过 ZMediaFlow Engine Contract 接入，而不是复制固定流水线。
+- 后续复用媒体能力时，应通过 ZNIKU Engine SDK 与 Engine Contract 接入，而不是复制固定流水线。
 
 ## 仓库结构
 
 ```text
-ZMediaFlow/
+ZNiku/
 ├── apps/
 │   └── studio/                  # React + TypeScript + React Flow GUI-0
 ├── docs/
+│   ├── brand-baseline.md        # 品牌、产品与代码标识权威
 │   └── architecture/            # 产品与 Studio 正式框架基线
 ├── .github/workflows/           # Studio 持续集成门禁
 ├── AGENTS.md                    # 项目协作红线
@@ -73,8 +92,9 @@ npm audit --audit-level=low
 
 ## 设计基线
 
+- [品牌与命名基线](docs/brand-baseline.md)
 - [产品整体框架](docs/architecture/product-framework.md)
-- [Workflow Studio 整体框架](docs/architecture/studio-framework.md)
+- [ZNIKU Studio 整体框架](docs/architecture/studio-framework.md)
 - [ZBaton vNext 设计基线](docs/architecture/zbaton/design-baseline.md)
 
 当前仓库为私有开发仓库，未授予开源许可证。

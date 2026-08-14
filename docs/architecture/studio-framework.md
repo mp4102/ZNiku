@@ -1,15 +1,15 @@
-# ZMediaFlow Studio 0.1.0 整体框架
+# ZNIKU Studio 0.1.0 整体框架
 
 - 状态：**正式框架基线；已审阅通过并授权实施**
 - Studio 框架修订：1
 - 日期：2026-08-14
-- 起始版本：ZMediaFlow 0.1.0
+- 起始版本：ZNIKU 0.1.0
 - 上位基线：[`product-framework.md`](./product-framework.md)
 - 孵化来源：AVEnhanceFlow v3.0.0 GUI 正式框架
 
 ## 1. 文档定位
 
-本文定义 ZMediaFlow Workflow Studio 的产品职责、技术路线、信息架构、交互模型、数据边界、
+本文定义 ZNIKU Studio 的产品职责、技术路线、信息架构、交互模型、数据边界、
 进程边界、安全边界和实施顺序，作为后续交互原型及正式 Studio 开发的共同基线。
 
 本文重点回答以下问题：
@@ -21,7 +21,7 @@
 5. 工作流何时可编辑、何时冻结、如何创建新修订；
 6. 如何先讨论和验证 GUI，又不让原型反向成为未经设计的运行协议。
 
-本文已经审阅通过，是 ZMediaFlow Studio 设计与实施的正式框架基线。后续实现必须遵守本文
+本文已经审阅通过，是 ZNIKU Studio 设计与实施的正式框架基线。后续实现必须遵守本文
 冻结的职责、边界和实施顺序；本文尚未冻结的示例对象、接口名称和技术细节，仍需在相应专题设计中
 明确后再形成代码 API。实施不得修改 AVEnhanceFlow v2.3.1 package 对 v2.3.0 workflow contract 的
 生产行为。
@@ -31,7 +31,7 @@
 
 ## 2. 技术路线结论
 
-ZMediaFlow Studio 采用前后端分离的本地桌面应用架构：
+ZNIKU Studio 采用前后端分离的本地桌面应用架构：
 
 | 层 | 首选技术 | 职责 |
 | --- | --- | --- |
@@ -57,13 +57,13 @@ Tkinter 可以完成表单、文件选择和小型固定流程工具，也能用
 - 节点属性表单、诊断定位和运行状态叠加；
 - UI 线程与长时间任务、事件流之间的隔离。
 
-这些工作不会增强 ZMediaFlow 的媒体合同、证据或调度能力，因此 Tkinter 不作为正式节点编辑器
+这些工作不会增强 ZNIKU 的媒体合同、证据或调度能力，因此 Tkinter 不作为正式节点编辑器
 技术底座，也不为“临时原型”新增一套最终必须废弃的 Canvas 实现。
 
 ### 2.2 为什么选择 React Flow
 
 React Flow 已提供节点式 UI 所需的基础交互和可扩展自定义节点机制，使开发重点可以放在
-ZMediaFlow 的 typed media ports、scope、ArtifactSet、编译诊断和运行监控上。
+ZNIKU 的 typed media ports、scope、ArtifactSet、编译诊断和运行监控上。
 
 React Flow 只是视图层，不成为 WorkflowSpec 格式，也不成为 DAG 正确性权威。前端内部的
 React Flow `Node` / `Edge` 必须由适配器从正式领域对象投影，不能直接序列化后冒充执行协议。
@@ -109,7 +109,7 @@ GUI 应让操作者在不手写 JSON 的情况下完成：
 
 ## 4. 设计原则
 
-1. **业务优先于画布库**：React Flow 服务于 ZMediaFlow，不反向定义领域协议。
+1. **业务优先于画布库**：React Flow 服务于 ZNIKU，不反向定义领域协议。
 2. **一个正式 Compiler**：GUI 可做即时提示，但正式合法性只由 Python Compiler 判定。
 3. **编辑图与执行图分层**：操作者编辑可读的电影级 DAG，Runtime 执行展开后的确定性 DAG。
 4. **数据边表达媒体流**：首版编排边表示 Artifact / ArtifactSet 流动，不开放任意控制依赖线。
@@ -918,7 +918,7 @@ GUI 框架至少通过以下场景，才说明技术路线和交互模型成立�
 7. 是否接受交互原型可以提前，但不得连接真实媒体执行；
 8. 是否接受本文列出的首版范围、非目标和实施阶段。
 
-GUI-0 原型已作为 ZMediaFlow 0.1.0 起始资产迁入本仓库。它仍保持 mock-only，不得连接真实媒体执行；
+GUI-0 原型已作为 ZNIKU 0.1.0 起始资产迁入本仓库。它仍保持 mock-only，不得连接真实媒体执行；
 后续阶段依照本基线继续实施，Git 与发布动作仍遵守项目授权规则。
 
 ## 27. 参考资料
