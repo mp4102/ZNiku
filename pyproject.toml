@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=77,<83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zniku"
+version = "0.1.0"
+description = "ZNIKU 的领域合同内核"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "jsonschema>=4.26,<5",
+  "pydantic>=2.12,<3",
+  "rfc8785>=0.1.4,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.19,<2",
+  "pytest>=8.4,<9",
+  "ruff>=0.12,<1",
+  "types-jsonschema>=4.26,<5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+zniku = ["py.typed"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+show_error_codes = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "rfc8785"
+follow_imports = "skip"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["B", "C4", "E", "F", "I", "RUF", "SIM", "UP"]
+allowed-confusables = ["，", "；", "："]
+
+[tool.ruff.format]
+quote-style = "double"

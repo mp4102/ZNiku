@@ -1,0 +1,146 @@
+{
+  "contract_version": "0.1.0",
+  "engine_id": "example.synthetic.enhancement",
+  "engine_version": "1.2.3",
+  "display_name": "Synthetic Enhancement",
+  "execution_mode": "automatic",
+  "lifecycle": {
+    "supports_acceptance": true,
+    "supports_publication": true,
+    "supports_recovery": true
+  },
+  "supported_scopes": [
+    "program"
+  ],
+  "inputs": [
+    {
+      "port": {
+        "port_id": "video_in",
+        "artifact_type": "media",
+        "media_kind": "video",
+        "scope": "program",
+        "cardinality": "one"
+      },
+      "preconditions_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "frame_rate": {
+            "type": "string",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "width",
+          "height",
+          "frame_rate"
+        ],
+        "additionalProperties": true
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "port": {
+        "port_id": "video_out",
+        "artifact_type": "media",
+        "media_kind": "video",
+        "scope": "program",
+        "cardinality": "one"
+      },
+      "guarantees_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "minimum": 2
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 2
+          },
+          "frame_rate": {
+            "type": "string",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "width",
+          "height",
+          "frame_rate"
+        ],
+        "additionalProperties": true
+      },
+      "attribute_rules": [
+        {
+          "path": "frame_rate",
+          "disposition": "preserved",
+          "source": {
+            "port_id": "video_in",
+            "path": "frame_rate"
+          }
+        },
+        {
+          "path": "width",
+          "disposition": "changed",
+          "source": {
+            "port_id": "video_in",
+            "path": "width"
+          }
+        },
+        {
+          "path": "height",
+          "disposition": "changed",
+          "source": {
+            "port_id": "video_in",
+            "path": "height"
+          }
+        }
+      ]
+    }
+  ],
+  "parameter_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "scale": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4,
+        "default": 2
+      },
+      "model": {
+        "type": "string",
+        "enum": [
+          "synthetic-v1",
+          "synthetic-v2"
+        ]
+      },
+      "tuning": {
+        "type": "object",
+        "properties": {
+          "detail": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "scale",
+      "model"
+    ],
+    "additionalProperties": false
+  }
+}

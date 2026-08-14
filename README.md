@@ -8,9 +8,11 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
 以确定性 **ZNIKU Runtime** 为执行与状态权威，并允许 Agent 作为可选的编排、诊断和运维助手。
 
 - 当前版本：`0.1.0`
-- 当前阶段：产品架构基线与 GUI-0 交互原型
-- 当前能力：可视化演示电影级 DAG、章节展开、音视频独立支线、冻结与模拟运行
-- 当前限制：尚未接入正式 Compiler、Runtime、Engine Registry，也不执行媒体 I/O
+- 当前阶段：Phase 1A 领域合同内核 + GUI-0 交互原型
+- 当前能力：Python Contract Kernel 已实现 typed ports、Artifact / ArtifactSet、EngineManifest、
+  Engine 媒体合同、StageRun 最小绑定、确定性序列化和纯合成测试
+- 当前限制：尚未实现 WorkflowSpec、Compiler、Runtime、Engine Registry、CLI 或 `.zniku` 工程格式，
+  也不执行媒体 I/O
 
 ## 正式命名
 
@@ -24,7 +26,8 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
 | CLI / Python package | `zniku` |
 | 工程文件扩展名 | `.zniku` |
 
-当前仓库只实现 Studio GUI-0 原型；`zniku` 与 `.zniku` 是已经冻结、等待后续实现的正式标识。
+当前仓库已建立 `zniku.contracts` 领域内核，并保留 Studio GUI-0 原型；`zniku` CLI 与 `.zniku`
+工程格式仍只是已经冻结、等待后续实现的正式标识。
 
 ## 产品边界
 
@@ -61,11 +64,14 @@ Agent 可以通过受控接口创建草稿、解释诊断、辅助人工 handoff
 
 ```text
 ZNiku/
+├── src/zniku/contracts/          # Phase 1A Python 领域合同内核
+├── tests/                        # 纯合成合同 fixtures 与回归测试
 ├── apps/
 │   └── studio/                  # React + TypeScript + React Flow GUI-0
 ├── docs/
 │   ├── brand-baseline.md        # 品牌、产品与代码标识权威
 │   └── architecture/            # 产品与 Studio 正式框架基线
+├── pyproject.toml                # Python package 与质量门禁
 ├── .github/workflows/           # Studio 持续集成门禁
 ├── AGENTS.md                    # 项目协作红线
 └── VERSION                      # 产品版本
@@ -98,3 +104,18 @@ npm audit --audit-level=low
 - [ZBaton vNext 设计基线](docs/architecture/zbaton/design-baseline.md)
 
 当前仓库为私有开发仓库，未授予开源许可证。
+
+## 验证 Contract Kernel
+
+需要 Python 3.12 或更高版本及 `uv`：
+
+```powershell
+uv sync --locked --extra dev
+uv run --locked --extra dev pytest
+uv run --locked --extra dev mypy --no-incremental src tests
+uv run --locked --extra dev ruff check src tests
+uv run --locked --extra dev ruff format --check src tests
+```
+
+Engine Contract 的模型职责、引用关系、失败语义和当前待审决策见
+[Engine Contract Kernel](docs/architecture/engine-contract.md)。
