@@ -14,9 +14,12 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
   verification、合成 Runtime、Application Service、受控 Agent 工具、正式 Studio
   Designer/Expanded Plan/Run Monitor、可安装 Decensoring/`new01` 扩展示例、ZBaton vNext draft.2
   开发期投影，以及短真实媒体/目标存储/长片规模验证门均由 Python 提供唯一领域语义
-- 当前限制：已执行的真实媒体仅为 FFmpeg 生成的短验证 fixture；Decensoring/`new01` 仍是合成 Engine，
-  ZBaton vNext 尚待 `ZBatonProtocol-Media` 发布正式 SDK，且尚未实现产品 CLI、`.zniku` 工程格式、
-  durable Runtime 服务、Tauri 桌面封装、目标 NAS 认证或生产 release
+- 当前真实媒体候选：受信 FFmpeg Demux/HEVC Main10 encode/Mux、人工 handoff 验收 fixture、原始音频逐流
+  bitstream 证明、no-replace Final、canonical snapshot 恢复及 Studio loopback Monitor 已实现；fixture 只验证
+  人工生命周期，不冒充 Starlight/Chronos 画质结果
+- 当前限制：Decensoring/`new01` 仍是合成 Engine，ZBaton vNext 尚待 `ZBatonProtocol-Media` 发布正式 SDK，
+  且尚未实现生产模型授权/GPU 调度、产品 CLI、`.zniku` 工程格式、Tauri 桌面封装、目标 NAS 认证或
+  production release
 
 当前正在实施的真实媒体纵向候选及其 fail-closed 完成门见
 [Real Media Acceptance Candidate 基线](docs/architecture/real-media-acceptance-candidate-baseline.md)。
@@ -82,6 +85,7 @@ ZNiku/
 ├── src/zniku/studio/            # Phase 5 Python→Studio 正式 authority 投影
 ├── src/zniku/history/           # Phase 6 ZBaton vNext draft.2 开发期历史投影
 ├── src/zniku/validation/        # Phase 6 短媒体、no-replace publication 与性能门
+├── src/zniku/realmedia/         # 0.1.0 真实媒体候选、持久 Runtime 与 loopback host
 ├── tests/                       # 合同、Compiler、Runtime、媒体与 authority 回归测试
 ├── apps/
 │   └── studio/                  # 正式 Designer 最小切片及 Python 单向投影
@@ -106,6 +110,17 @@ npm run dev
 
 浏览器应用需要宿主注入 `window.znikuAuthoringBridge`。未注入时 Designer 会 fail closed 并显示
 `AUTHORITY UNAVAILABLE`；测试专用 Python bridge 只用于端到端合同验证，不是产品 CLI 或正式 API。
+
+真实媒体候选 host 只监听 loopback，参考源和工作根由启动参数固定：
+
+```powershell
+uv run --locked --extra dev python tools/run_real_media_candidate_host.py `
+  --reference "D:\ABP-811 (2018)\ABP-811.mkv" `
+  --root "D:\ZNIKU-runtime-data\real-media-acceptance"
+```
+
+Studio 的 `Real Acceptance` 视图通过 `http://127.0.0.1:8765` 启动、推进和监控该 Run。实际媒体、snapshot、
+Evidence 与 final 只存在于被 Git 忽略的本地工作根，不得提交仓库。
 
 验证命令：
 

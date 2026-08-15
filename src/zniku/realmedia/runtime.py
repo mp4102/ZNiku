@@ -422,6 +422,11 @@ class RealMediaCandidateRuntime:
             item.plan_node_id for item in self._snapshot.nodes if item.state is NodeRunState.READY
         )
 
+    def manifest_for(self, plan_node_id: str) -> EngineManifest | None:
+        """按冻结 binding 返回精确 Manifest；operator/source/final 返回 ``None``。"""
+
+        return self._manifest(self._planned(plan_node_id))
+
     def execute(self, plan_node_id: str, *, inject_failure: bool = False) -> RealRuntimeSnapshot:
         """执行一个 ready 自动节点；失败不产生 Evidence，retry 必须显式调用。"""
 

@@ -1197,6 +1197,15 @@ button {
 .plan-card p { color: var(--muted); font-size: 9px; line-height: 1.45; }
 
 .run-list { display: grid; gap: 7px; }
+
+.real-media-view { overflow: auto; }
+.real-media-start,
+.real-media-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.real-media-start { padding: 22px; border: 1px solid var(--line); background: rgba(12, 18, 27, .72); }
+.real-media-start p { margin: 0; flex: 1 1 420px; color: var(--muted); }
+.real-media-actions { margin: 14px 0; }
+.real-media-actions .button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.real-media-final { border-color: var(--green); }
 .run-row {
   display: grid;
   grid-template-columns: 10px minmax(190px, 1fr) 80px minmax(180px, 1fr);

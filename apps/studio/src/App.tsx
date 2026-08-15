@@ -31,6 +31,8 @@ import {
   type AuthorityState,
   type AuthoringGateway,
 } from './formal/gateway'
+import { RealMediaAcceptanceView } from './formal/RealMediaAcceptanceView'
+import type { RealMediaGateway } from './formal/real-media'
 import { projectAuthorityGraph } from './formal/graph'
 import type { FormalWorkflowEdge, FormalWorkflowNode } from './formal/graph-model'
 
@@ -41,6 +43,7 @@ interface AppProps {
   readonly gateway?: AuthoringGateway
   readonly draftId?: string
   readonly commandIdFactory?: () => string
+  readonly realMediaGateway?: RealMediaGateway
 }
 
 function defaultCommandId(): string {
@@ -72,7 +75,7 @@ function parameterFields(schema: Readonly<Record<string, unknown>> | undefined):
   )
 }
 
-function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: AppProps) {
+function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory, realMediaGateway }: AppProps) {
   const effectiveGateway = useMemo(() => gateway ?? createWindowAuthoringGateway(), [gateway])
   const nextCommandId = commandIdFactory ?? defaultCommandId
   const [authority, setAuthority] = useState<AuthorityState | null>(null)
@@ -87,7 +90,7 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
   const [targetEndpoint, setTargetEndpoint] = useState('')
   const [parameterText, setParameterText] = useState('{}')
   const [bottomOpen, setBottomOpen] = useState(true)
-  const [mode, setMode] = useState<'designer' | 'plan' | 'run'>('designer')
+  const [mode, setMode] = useState<'designer' | 'plan' | 'run' | 'acceptance'>('designer')
   const revisionRef = useRef(-1)
 
   const projection = useMemo(
@@ -279,6 +282,7 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
           <button type="button" className={mode === 'designer' ? 'is-active' : ''} onClick={() => setMode('designer')}>Designer</button>
           <button type="button" className={mode === 'plan' ? 'is-active' : ''} onClick={() => setMode('plan')}>Expanded Plan</button>
           <button type="button" className={mode === 'run' ? 'is-active' : ''} onClick={() => setMode('run')}>Run Monitor</button>
+          <button type="button" className={mode === 'acceptance' ? 'is-active' : ''} onClick={() => setMode('acceptance')}>Real Acceptance</button>
         </nav>
 
         <div className="top-actions">
@@ -319,11 +323,11 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
         </div>
       </aside>
 
-      <section className="canvas-panel" aria-label={mode === 'designer' ? 'Designer 画布' : mode === 'plan' ? 'Expanded Plan 画布' : 'Run Monitor 画布'}>
+      <section className="canvas-panel" aria-label={mode === 'designer' ? 'Designer 画布' : mode === 'plan' ? 'Expanded Plan 画布' : mode === 'run' ? 'Run Monitor 画布' : 'Real Media Acceptance 画布'}>
         <div className="canvas-context">
           <div>
-            <span className="context-mode">{mode === 'designer' ? 'Designer' : mode === 'plan' ? 'Expanded Plan' : 'Run Monitor'}</span>
-            <strong>{mode === 'designer' ? '正式 Draft · typed ports · Compiler diagnostics' : mode === 'plan' ? '冻结 Plan · chapter expansion · exact Engine binding' : 'fresh snapshot · Evidence-derived state · read only'}</strong>
+            <span className="context-mode">{mode === 'designer' ? 'Designer' : mode === 'plan' ? 'Expanded Plan' : mode === 'run' ? 'Run Monitor' : 'Real Acceptance'}</span>
+            <strong>{mode === 'designer' ? '正式 Draft · typed ports · Compiler diagnostics' : mode === 'plan' ? '冻结 Plan · chapter expansion · exact Engine binding' : mode === 'run' ? 'checked-in synthetic snapshot · Evidence-derived state · read only' : 'loopback host · durable Runtime · real media Evidence'}</strong>
           </div>
           <div className="canvas-legend">
             <span><i className="legend-dot source" /> Source</span>
@@ -333,7 +337,9 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
           </div>
         </div>
 
-        {mode === 'plan' ? (
+        {mode === 'acceptance' ? (
+          <RealMediaAcceptanceView gateway={realMediaGateway} />
+        ) : mode === 'plan' ? (
           <ExpandedPlanView />
         ) : mode === 'run' ? (
           <RunMonitorView />
