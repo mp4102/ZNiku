@@ -537,7 +537,7 @@ export const compiledDiagnostics: Diagnostic[] = [
     code: 'MOCK_COMPILE_OK',
     severity: 'info',
     title: '模拟编译完成',
-    message: '3 个章节已展开为 18 个只读执行节点，并保留独立原始音频支线；正式 Compiler 尚未接入。',
+    message: '当前浏览器内 Draft 已捕获为只读 mock snapshot；正式 Compiler 与章节展开尚未接入。',
   },
   {
     code: 'MOCK_NO_SIDE_EFFECTS',

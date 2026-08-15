@@ -35,6 +35,7 @@ import { RealMediaAcceptanceView } from './formal/RealMediaAcceptanceView'
 import type { RealMediaGateway } from './formal/real-media'
 import { projectAuthorityGraph } from './formal/graph'
 import type { FormalWorkflowEdge, FormalWorkflowNode } from './formal/graph-model'
+import { Gui0PrototypeWorkspace } from './gui0/Gui0PrototypeWorkspace'
 
 const nodeTypes = { formalWorkflow: FormalWorkflowNodeCard }
 const DEFAULT_DRAFT_ID = 'draft.default'
@@ -75,7 +76,13 @@ function parameterFields(schema: Readonly<Record<string, unknown>> | undefined):
   )
 }
 
-function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory, realMediaGateway }: AppProps) {
+function AppContent({
+  gateway,
+  draftId = DEFAULT_DRAFT_ID,
+  commandIdFactory,
+  realMediaGateway,
+  onOpenGui0,
+}: AppProps & { readonly onOpenGui0: () => void }) {
   const effectiveGateway = useMemo(() => gateway ?? createWindowAuthoringGateway(), [gateway])
   const nextCommandId = commandIdFactory ?? defaultCommandId
   const [authority, setAuthority] = useState<AuthorityState | null>(null)
@@ -283,6 +290,7 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory, rea
           <button type="button" className={mode === 'plan' ? 'is-active' : ''} onClick={() => setMode('plan')}>Expanded Plan</button>
           <button type="button" className={mode === 'run' ? 'is-active' : ''} onClick={() => setMode('run')}>Run Monitor</button>
           <button type="button" className={mode === 'acceptance' ? 'is-active' : ''} onClick={() => setMode('acceptance')}>Real Acceptance</button>
+          <button type="button" className="gui0-nav-entry" onClick={onOpenGui0}>GUI-0 Prototype</button>
         </nav>
 
         <div className="top-actions">
@@ -494,5 +502,15 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory, rea
 }
 
 export function App(props: AppProps) {
-  return <ReactFlowProvider><AppContent {...props} /></ReactFlowProvider>
+  const [workspace, setWorkspace] = useState<'formal' | 'gui0'>('formal')
+
+  return (
+    <ReactFlowProvider>
+      {workspace === 'gui0' ? (
+        <Gui0PrototypeWorkspace onExit={() => setWorkspace('formal')} />
+      ) : (
+        <AppContent {...props} onOpenGui0={() => setWorkspace('gui0')} />
+      )}
+    </ReactFlowProvider>
+  )
 }

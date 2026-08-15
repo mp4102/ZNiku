@@ -1,9 +1,11 @@
 interface FreezeDialogProps {
+  draftNodeCount: number
+  draftEdgeCount: number
   onCancel: () => void
   onConfirm: () => void
 }
 
-export function FreezeDialog({ onCancel, onConfirm }: FreezeDialogProps) {
+export function FreezeDialog({ draftNodeCount, draftEdgeCount, onCancel, onConfirm }: FreezeDialogProps) {
   return (
     <div className="dialog-backdrop" role="presentation">
       <section className="freeze-dialog" role="dialog" aria-modal="true" aria-labelledby="freeze-title">
@@ -11,6 +13,7 @@ export function FreezeDialog({ onCancel, onConfirm }: FreezeDialogProps) {
           <span className="eyebrow">MOCK FREEZE GATE</span>
           <h2 id="freeze-title">冻结 WorkflowRevision？</h2>
           <p>确认后 Designer 将切换为只读，并创建仅存在于浏览器内存的模拟 WorkflowRun。</p>
+          <p>当前 Draft snapshot 已捕获；后续 Run Monitor 仍使用固定视觉 fixture，不是正式编译结果。</p>
         </header>
 
         <div className="freeze-grid">
@@ -23,8 +26,8 @@ export function FreezeDialog({ onCancel, onConfirm }: FreezeDialogProps) {
             <strong>A · B · C</strong>
           </div>
           <div>
-            <span>Expanded nodes</span>
-            <strong>18 instances</strong>
+            <span>Draft snapshot</span>
+            <strong>{draftNodeCount} nodes · {draftEdgeCount} edges</strong>
           </div>
           <div>
             <span>Manual stages</span>

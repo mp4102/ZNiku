@@ -330,6 +330,41 @@ button {
   filter: brightness(1.08);
 }
 
+.button--danger {
+  border-color: #743f43;
+  background: #291719;
+  color: #ef999f;
+}
+
+.gui0-nav-entry {
+  color: var(--amber) !important;
+  box-shadow: inset 0 0 0 1px #554023;
+}
+
+.gui0-workspace .topbar {
+  background: linear-gradient(90deg, rgba(39, 27, 16, 0.98), rgba(10, 16, 24, 0.98) 36%);
+}
+
+.gui0-workspace .mock-badge {
+  box-shadow: 0 0 18px rgba(225, 164, 79, 0.14);
+}
+
+.gui0-boundary-note {
+  border: 1px solid #684b28;
+  border-left: 3px solid var(--amber);
+}
+
+.gui0-boundary-note p + p {
+  margin-top: 7px;
+}
+
+.gui0-compile-error {
+  display: block;
+  margin-top: 5px;
+  color: #ef999f;
+  font-size: 11px;
+}
+
 .palette-panel,
 .inspector-panel {
   min-height: 0;

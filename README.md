@@ -8,18 +8,19 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
 以确定性 **ZNIKU Runtime** 为执行与状态权威，并允许 Agent 作为可选的编排、诊断和运维助手。
 
 - 当前版本：`0.1.0`
-- 当前阶段：产品 Phase 1–6 开发成果已完成；生产发布仍需独立授权与外部 authority
+- 当前阶段：Phase 1–4 的 Python authority 与 Phase 6 开发门已建立；GUI-0 交互原型已恢复为显式
+  mock 工作区，产品 Phase 5 的正式自由编排、持久 Authoring host 与发布形态仍未完成
 - 当前能力：Contract Kernel、Engine SDK/Installed Catalog、纯合成 Demux/Mux conformance、Workflow
   Authoring、Core Operators、Preflight、ExecutionPlan、Freeze、默认工作流、人工 handoff、full
-  verification、合成 Runtime、Application Service、受控 Agent 工具、正式 Studio
-  Designer/Expanded Plan/Run Monitor、可安装 Decensoring/`new01` 扩展示例、ZBaton vNext draft.2
+  verification、合成 Runtime、Application Service、受控 Agent 工具、GUI-0 自由编排原型、Studio
+  正式 Designer 最小投影、Expanded Plan/Run Monitor、可安装 Decensoring/`new01` 扩展示例、ZBaton vNext draft.2
   开发期投影，以及短真实媒体/目标存储/长片规模验证门均由 Python 提供唯一领域语义
 - 当前真实媒体候选：受信 FFmpeg Demux/HEVC Main10 encode/Mux、人工 handoff 验收 fixture、原始音频逐流
   bitstream 证明、no-replace Final、canonical snapshot 恢复及 Studio loopback Monitor 已实现；fixture 只验证
   人工生命周期，不冒充 Starlight/Chronos 画质结果
-- 当前限制：Decensoring/`new01` 仍是合成 Engine，ZBaton vNext 尚待 `ZBatonProtocol-Media` 发布正式 SDK，
-  且尚未实现生产模型授权/GPU 调度、产品 CLI、`.zniku` 工程格式、Tauri 桌面封装、目标 NAS 认证或
-  production release
+- 当前限制：正式 Designer 尚无产品级 Authoring host、Draft/EditorState 持久化与完整自由增删节点体验；
+  Decensoring/`new01` 仍是合成 Engine，ZBaton vNext 尚待 `ZBatonProtocol-Media` 发布正式 SDK，且尚未
+  实现生产模型授权/GPU 调度、产品 CLI、`.zniku` 工程格式、Tauri 桌面封装、目标 NAS 认证或 production release
 
 当前正在实施的真实媒体纵向候选及其 fail-closed 完成门见
 [Real Media Acceptance Candidate 基线](docs/architecture/real-media-acceptance-candidate-baseline.md)。
@@ -36,9 +37,11 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
 | CLI / Python package | `zniku` |
 | 工程文件扩展名 | `.zniku` |
 
-当前仓库已建立 `zniku.contracts` 领域内核与 `zniku.authoring` 正式编排前端。Studio Designer 只通过
-受控 authoring gateway 消费 Python 权威响应；宿主未提供桥接时明确显示 authority unavailable，绝不
-回退 GUI-0 mock。`zniku` CLI 与 `.zniku` 工程格式仍只是等待后续实现的正式标识。
+当前仓库已建立 `zniku.contracts` 领域内核与 `zniku.authoring` 编排 authority。正式 Studio Designer
+只通过受控 authoring gateway 消费 Python 权威响应；宿主未提供桥接时明确显示 authority unavailable，
+绝不静默回退 mock。GUI-0 作为单独、显著标记 `MOCK · NO MEDIA I/O` 的交互原型保留，用于自由节点
+编排体验验证，但其状态不得冒充 WorkflowSpec、Compiler 或 Runtime authority。`zniku` CLI 与 `.zniku`
+工程格式仍只是等待后续实现的正式标识。
 
 ## 产品边界
 
@@ -110,6 +113,10 @@ npm run dev
 
 浏览器应用需要宿主注入 `window.znikuAuthoringBridge`。未注入时 Designer 会 fail closed 并显示
 `AUTHORITY UNAVAILABLE`；测试专用 Python bridge 只用于端到端合同验证，不是产品 CLI 或正式 API。
+
+需要体验自由节点编排时，在顶部进入 `GUI-0 Prototype`。该独立工作区支持从 mock Registry 添加节点、
+拖动、typed handle 连线、删除、编译预览、冻结和模拟 Run Monitor，并始终显示
+`MOCK · NO MEDIA I/O`；它不会静默替代正式 Designer，也不会执行媒体或写入 Python authority。
 
 真实媒体候选 host 只监听 loopback，参考源和工作根由启动参数固定：
 

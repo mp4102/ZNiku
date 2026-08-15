@@ -1,6 +1,6 @@
 # ZNIKU Studio 0.1.0 正式工作区基线
 
-- 状态：**已批准的正式基线；产品 Phase 5 已实现**
+- 状态：**已批准的正式基线；最小投影切片已实现，产品 Phase 5 尚未完整交付**
 - 日期：2026-08-15
 - 前端入口：`apps/studio/`
 - Python 投影入口：`src/zniku/studio/`
@@ -15,6 +15,11 @@ WorkflowSpec、typed port、Compiler 或状态机。
 
 Phase 5 交付开发期浏览器形态；Tauri 2 桌面封装、Windows 安装、签名、SBOM、后台服务发现和真实媒体
 GUI E2E 属于 Studio GUI-5/GUI-6 与产品 Phase 6，不在本阶段冒充完成。
+
+当前实现只闭合了合同投影、已有 Draft 的有限连线/参数命令、固定 Expanded Plan 与合成 Run Monitor。
+普通浏览器尚无产品级 Python Authoring host，正式 Designer 也尚未闭合 Palette 自由增删节点、EditorState
+持久化、保存/导入/导出及当前 Draft → Compile/Freeze 链。因此本文的 Phase 5 验收条目仍是未完成门禁；
+GUI-0 mock 原型必须以独立显式模式提供，不能被正式 Designer 静默回退或冒充正式 authority。
 
 ## 2. 单向合同投影
 
