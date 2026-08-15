@@ -18,6 +18,9 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
   ZBaton vNext 尚待 `ZBatonProtocol-Media` 发布正式 SDK，且尚未实现产品 CLI、`.zniku` 工程格式、
   durable Runtime 服务、Tauri 桌面封装、目标 NAS 认证或生产 release
 
+当前正在实施的真实媒体纵向候选及其 fail-closed 完成门见
+[Real Media Acceptance Candidate 基线](docs/architecture/real-media-acceptance-candidate-baseline.md)。
+
 ## 正式命名
 
 | 对象 | 名称 |
