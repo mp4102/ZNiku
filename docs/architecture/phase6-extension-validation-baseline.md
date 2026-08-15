@@ -1,6 +1,6 @@
 # ZNIKU 0.1.0 Phase 6 扩展、历史投影与发布验证基线
 
-- 状态：**Phase 6 实施基线**
+- 状态：**Phase 6 开发门已实现**
 - 日期：2026-08-15
 - 上位基线：[`product-framework.md`](./product-framework.md)
 - 版本：ZNIKU `0.1.0`

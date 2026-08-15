@@ -20,6 +20,7 @@ from zniku.contracts import (
     CoverageUnit,
     MediaKind,
     Scope,
+    Sha256Digest,
 )
 from zniku.pipelines import build_default_workflow
 from zniku.workflow.execution import (
@@ -52,7 +53,7 @@ class LongFilmGateResult(ContractModel):
     plan_node_count: int = Field(ge=1)
     canonical_bytes: int = Field(ge=1)
     compile_milliseconds: int = Field(ge=0)
-    plan_digest: str
+    plan_digest: Sha256Digest
 
 
 DEFAULT_EXECUTION_LIMITS = ExecutionResourceLimits(

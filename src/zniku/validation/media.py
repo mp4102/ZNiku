@@ -100,36 +100,41 @@ def generate_short_media(destination: Path) -> None:
         raise ContractViolation("E_MEDIA_TARGET_EXISTS", "短媒体目标已存在，禁止覆盖")
     if not destination.parent.is_dir():
         raise ContractViolation("E_MEDIA_TARGET_DIRECTORY", "短媒体目标目录不存在")
-    _run_checked(
-        [
-            _require_tool("ffmpeg"),
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=320x180:rate=24000/1001:duration=1",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=1000:sample_rate=48000:duration=1",
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-c:v",
-            "ffv1",
-            "-level",
-            "3",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "pcm_s16le",
-            "-shortest",
-            str(destination),
-        ]
-    )
+    try:
+        _run_checked(
+            [
+                _require_tool("ffmpeg"),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=24000/1001:duration=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=1000:sample_rate=48000:duration=1",
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "ffv1",
+                "-level",
+                "3",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "pcm_s16le",
+                "-shortest",
+                str(destination),
+            ]
+        )
+    except Exception:
+        if destination.exists():
+            destination.unlink()
+        raise
 
 
 def _sha256_file(path: Path) -> tuple[int, str]:
@@ -266,7 +271,7 @@ def publish_file_no_replace(
             content_digest=expected_digest,
         )
     except Exception:
-        if committed and target.exists():
+        if committed and target.exists() and os.path.samefile(stage, target):
             target.unlink()
         raise
     finally:

@@ -8,13 +8,15 @@ ZNIKU 是面向本地专业媒体处理的可编排工作流平台：以 **ZNIKU
 以确定性 **ZNIKU Runtime** 为执行与状态权威，并允许 Agent 作为可选的编排、诊断和运维助手。
 
 - 当前版本：`0.1.0`
-- 当前阶段：产品 Phase 1–5 已完成；后续产品 Phase 6 待单独实施
+- 当前阶段：产品 Phase 1–6 开发成果已完成；生产发布仍需独立授权与外部 authority
 - 当前能力：Contract Kernel、Engine SDK/Installed Catalog、纯合成 Demux/Mux conformance、Workflow
   Authoring、Core Operators、Preflight、ExecutionPlan、Freeze、默认工作流、人工 handoff、full
-  verification、合成 Runtime、Application Service、受控 Agent 工具，以及正式 Studio
-  Designer/Expanded Plan/Run Monitor 均由 Python 提供唯一领域语义
-- 当前限制：Runtime 与默认工作流仍使用纯合成媒体 authority；尚未执行真实媒体，也未实现产品 CLI、
-  `.zniku` 工程格式、durable Runtime 服务或 Tauri 桌面封装
+  verification、合成 Runtime、Application Service、受控 Agent 工具、正式 Studio
+  Designer/Expanded Plan/Run Monitor、可安装 Decensoring/`new01` 扩展示例、ZBaton vNext draft.2
+  开发期投影，以及短真实媒体/目标存储/长片规模验证门均由 Python 提供唯一领域语义
+- 当前限制：已执行的真实媒体仅为 FFmpeg 生成的短验证 fixture；Decensoring/`new01` 仍是合成 Engine，
+  ZBaton vNext 尚待 `ZBatonProtocol-Media` 发布正式 SDK，且尚未实现产品 CLI、`.zniku` 工程格式、
+  durable Runtime 服务、Tauri 桌面封装、目标 NAS 认证或生产 release
 
 ## 正式命名
 
@@ -75,7 +77,9 @@ ZNiku/
 ├── src/zniku/application/       # Phase 4 Studio/Agent 共用 Application Service
 ├── src/zniku/agent/             # Phase 4 无状态、窄化 Agent adapter
 ├── src/zniku/studio/            # Phase 5 Python→Studio 正式 authority 投影
-├── tests/                       # 纯合成合同、Compiler 与 authority 回归测试
+├── src/zniku/history/           # Phase 6 ZBaton vNext draft.2 开发期历史投影
+├── src/zniku/validation/        # Phase 6 短媒体、no-replace publication 与性能门
+├── tests/                       # 合同、Compiler、Runtime、媒体与 authority 回归测试
 ├── apps/
 │   └── studio/                  # 正式 Designer 最小切片及 Python 单向投影
 ├── docs/
@@ -138,3 +142,11 @@ Engine Contract 的模型职责、引用关系、失败语义和正式决策见
 [默认工作流与验证发布基线](docs/architecture/default-workflow-baseline.md)；Agent 工具边界见
 [Application Service 与 Agent 工具基线](docs/architecture/agent-application-baseline.md)；正式 GUI 见
 [Studio 正式工作区基线](docs/architecture/studio-formal-baseline.md)。
+
+Phase 6 的扩展 Registry、ZBaton draft authority 边界、短真实媒体、目标存储、故障注入和长片规模门见
+[Phase 6 扩展、历史投影与发布验证基线](docs/architecture/phase6-extension-validation-baseline.md)。独立
+开发门可运行：
+
+```powershell
+uv run --locked --extra dev python tools/run_phase6_validation.py
+```

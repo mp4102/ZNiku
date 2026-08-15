@@ -32,11 +32,21 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --extra dev
 
+      - name: Install Phase 6 media gate dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
       - name: Verify generated Studio projection
         run: uv run --locked --extra dev python tools/generate_authoring_projection.py --check
 
       - name: Test
         run: uv run --locked --extra dev pytest
+
+      - name: Verify Phase 6 real-media and long-film gates
+        run: uv run --locked --extra dev python tools/run_phase6_validation.py
 
       - name: Typecheck
         run: uv run --locked --extra dev mypy --no-incremental src tests tools
