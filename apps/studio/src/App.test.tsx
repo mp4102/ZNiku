@@ -55,6 +55,16 @@ describe('ZNIKU Studio Phase 5 formal workspace', () => {
     expect(screen.getByText('Demux → Mux · stream_copy=true')).toBeInTheDocument()
   })
 
+  it('从 Python Installed Registry 自动展示 Phase 6 扩展 Engine', async () => {
+    render(<App gateway={new PythonFixtureGateway()} />)
+    await screen.findByText('workflow.synthetic.program')
+
+    const registry = screen.getByRole('generic', { name: 'Installed Engine Registry' })
+    expect(within(registry).getByText('ZNIKU Synthetic Decensoring')).toBeInTheDocument()
+    expect(within(registry).getByText('ZNIKU Synthetic new01')).toBeInTheDocument()
+    expect(within(registry).getByText(/zniku\.extension\.synthetic-new01@0\.1\.0/)).toBeInTheDocument()
+  })
+
   it('通过 typed command 连接端口并接受 Python authoring-valid revision', async () => {
     const user = userEvent.setup()
     render(

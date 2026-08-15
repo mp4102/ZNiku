@@ -122,3 +122,17 @@ export function OperatorPaletteProjection() {
     </div>
   )
 }
+
+export function EngineRegistryProjection() {
+  return (
+    <div className="operator-projection" aria-label="Installed Engine Registry">
+      <span className="eyebrow">INSTALLED ENGINES · PYTHON REGISTRY</span>
+      {studioAuthority.registry_manifests.map((manifest) => (
+        <div key={`${manifest.engine_id}@${manifest.engine_version}`}>
+          <strong>{manifest.display_name}</strong>
+          <code>{manifest.engine_id}@{manifest.engine_version}</code>
+        </div>
+      ))}
+    </div>
+  )
+}

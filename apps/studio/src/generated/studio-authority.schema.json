@@ -238,6 +238,85 @@
       "title": "EngineLifecycleCapabilities",
       "type": "object"
     },
+    "EngineManifest": {
+      "additionalProperties": false,
+      "description": "Engine 身份、版本、端口、scope、参数与声明式媒体能力的唯一合同。",
+      "properties": {
+        "contract_version": {
+          "const": "0.1.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "display_name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Display Name",
+          "type": "string"
+        },
+        "engine_id": {
+          "maxLength": 128,
+          "minLength": 3,
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$",
+          "title": "Engine Id",
+          "type": "string"
+        },
+        "engine_version": {
+          "maxLength": 128,
+          "minLength": 5,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "execution_mode": {
+          "$ref": "#/$defs/ExecutionMode"
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/EngineInputContract"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/EngineLifecycleCapabilities"
+        },
+        "outputs": {
+          "items": {
+            "$ref": "#/$defs/EngineOutputContract"
+          },
+          "title": "Outputs",
+          "type": "array"
+        },
+        "parameter_schema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Parameter Schema",
+          "type": "object"
+        },
+        "supported_scopes": {
+          "items": {
+            "$ref": "#/$defs/Scope"
+          },
+          "title": "Supported Scopes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "engine_id",
+        "engine_version",
+        "display_name",
+        "execution_mode",
+        "lifecycle",
+        "supported_scopes",
+        "inputs",
+        "outputs",
+        "parameter_schema"
+      ],
+      "title": "EngineManifest",
+      "type": "object"
+    },
     "EngineOutputContract": {
       "additionalProperties": false,
       "description": "将输出 PortSpec、Artifact 属性保证和媒体属性变化声明绑定。",
@@ -845,83 +924,7 @@
     },
     "manifests": {
       "items": {
-        "additionalProperties": false,
-        "description": "Engine 身份、版本、端口、scope、参数与声明式媒体能力的唯一合同。",
-        "properties": {
-          "contract_version": {
-            "const": "0.1.0",
-            "title": "Contract Version",
-            "type": "string"
-          },
-          "display_name": {
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "engine_id": {
-            "maxLength": 128,
-            "minLength": 3,
-            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$",
-            "title": "Engine Id",
-            "type": "string"
-          },
-          "engine_version": {
-            "maxLength": 128,
-            "minLength": 5,
-            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$",
-            "title": "Engine Version",
-            "type": "string"
-          },
-          "execution_mode": {
-            "$ref": "#/$defs/ExecutionMode"
-          },
-          "inputs": {
-            "items": {
-              "$ref": "#/$defs/EngineInputContract"
-            },
-            "title": "Inputs",
-            "type": "array"
-          },
-          "lifecycle": {
-            "$ref": "#/$defs/EngineLifecycleCapabilities"
-          },
-          "outputs": {
-            "items": {
-              "$ref": "#/$defs/EngineOutputContract"
-            },
-            "title": "Outputs",
-            "type": "array"
-          },
-          "parameter_schema": {
-            "additionalProperties": {
-              "$ref": "#/$defs/JsonValue"
-            },
-            "title": "Parameter Schema",
-            "type": "object"
-          },
-          "supported_scopes": {
-            "items": {
-              "$ref": "#/$defs/Scope"
-            },
-            "title": "Supported Scopes",
-            "type": "array"
-          }
-        },
-        "required": [
-          "contract_version",
-          "engine_id",
-          "engine_version",
-          "display_name",
-          "execution_mode",
-          "lifecycle",
-          "supported_scopes",
-          "inputs",
-          "outputs",
-          "parameter_schema"
-        ],
-        "title": "EngineManifest",
-        "type": "object"
+        "$ref": "#/$defs/EngineManifest"
       },
       "title": "Manifests",
       "type": "array"
@@ -968,6 +971,13 @@
         "type": "object"
       },
       "title": "Operator Contracts",
+      "type": "array"
+    },
+    "registry_manifests": {
+      "items": {
+        "$ref": "#/$defs/EngineManifest"
+      },
+      "title": "Registry Manifests",
       "type": "array"
     },
     "runtime_snapshot": {
@@ -1590,6 +1600,7 @@
   "required": [
     "studio_projection_contract_version",
     "manifests",
+    "registry_manifests",
     "operator_contracts",
     "workflow_spec",
     "chapter_plan",

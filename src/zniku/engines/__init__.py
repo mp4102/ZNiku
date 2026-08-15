@@ -8,6 +8,13 @@ from .builtin import (
     synthetic_mux_manifest,
 )
 from .catalog import EngineAdapter, EnginePackage, InstalledEngineCatalog
+from .extensions import (
+    SyntheticDecensoringAdapter,
+    SyntheticNew01Adapter,
+    phase6_extension_packages,
+    synthetic_decensoring_manifest,
+    synthetic_new01_manifest,
+)
 from .models import (
     ENGINE_SDK_CONTRACT_VERSION,
     ArtifactSetValue,
@@ -33,9 +40,14 @@ __all__ = [
     "InstalledEngineCatalog",
     "InstalledEngineRecord",
     "InstalledEngineState",
+    "SyntheticDecensoringAdapter",
     "SyntheticDemuxAdapter",
     "SyntheticMuxAdapter",
+    "SyntheticNew01Adapter",
     "builtin_engine_packages",
+    "phase6_extension_packages",
+    "synthetic_decensoring_manifest",
     "synthetic_demux_manifest",
     "synthetic_mux_manifest",
+    "synthetic_new01_manifest",
 ]

@@ -94,6 +94,10 @@ def test_studio_authority_projects_default_workflow_plan_and_runtime(tmp_path: P
     assert payload["workflow_spec"]["workflow_contract_version"] == "0.2.0"
     assert len(payload["operator_contracts"]) == 12
     assert len(payload["execution_plan"]["nodes"]) == 13
+    assert {manifest["engine_id"] for manifest in payload["registry_manifests"]} >= {
+        "zniku.extension.synthetic-decensoring",
+        "zniku.extension.synthetic-new01",
+    }
 
 
 def test_checked_in_studio_fixture_is_a_python_authority_transcript(

@@ -41,15 +41,15 @@
       "path": "generated/projection-manifest.schema.json"
     },
     {
-      "file_digest": "sha256:3477f663a482d49f010b7fd9753b70ae6df1caf52919e3e639f5b87452058cc3",
+      "file_digest": "sha256:b8c34c2ba6a57be61a5c777cf12cc9272dbec97924849578586c427a89c7883d",
       "path": "generated/studio-authority.generated.ts"
     },
     {
-      "file_digest": "sha256:36ef8483608f36d727f94b8fb60e2ba568c08b005497c565e2d1a44dbe0d00ae",
+      "file_digest": "sha256:b95390f159fe57d64f2655d5bb7e11a189918812cee4b314af87f9123f1839a1",
       "path": "generated/studio-authority.json"
     },
     {
-      "file_digest": "sha256:c2adebf30ac9c329a9f7db37bb38bccf62cce2d5992a2af68e3a3b323db3b19b",
+      "file_digest": "sha256:92e571a0cc8d8e9d335a1c46bb019d290a3f63cad0b8a3f3ed20fa13055e8e71",
       "path": "generated/studio-authority.schema.json"
     }
   ],
@@ -74,7 +74,7 @@
     },
     {
       "name": "studio-authority.schema.json",
-      "schema_digest": "sha256:8961ca1e7896f334eb534c77a1dca48f9d025248cbd32f340a2411206d31a965"
+      "schema_digest": "sha256:e42c2bea12bf1363400d4674129e6af50ca53ed2425a9c975aee594d4fb572f4"
     }
   ],
   "workflow_contract_version": "0.1.0"

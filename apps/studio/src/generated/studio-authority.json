@@ -1113,6 +1113,435 @@
       ]
     }
   ],
+  "registry_manifests": [
+    {
+      "contract_version": "0.1.0",
+      "display_name": "ZNIKU Synthetic Demux",
+      "engine_id": "zniku.builtin.synthetic-demux",
+      "engine_version": "0.1.0",
+      "execution_mode": "automatic",
+      "inputs": [
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "program_media",
+            "port_id": "program_in",
+            "scope": "program"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "audio_stream_ids": {
+                "items": {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array"
+              },
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames",
+              "audio_stream_ids"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "lifecycle": {
+        "supports_acceptance": true,
+        "supports_publication": false,
+        "supports_recovery": false
+      },
+      "outputs": [
+        {
+          "attribute_rules": [],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_out",
+            "scope": "program"
+          }
+        },
+        {
+          "attribute_rules": [],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "stream_id": {
+                "maxLength": 64,
+                "type": "string"
+              }
+            },
+            "required": [
+              "duration_frames",
+              "stream_id"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "set",
+            "media_kind": "audio",
+            "port_id": "audio_out",
+            "scope": "program"
+          }
+        }
+      ],
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "supported_scopes": [
+        "program"
+      ]
+    },
+    {
+      "contract_version": "0.1.0",
+      "display_name": "ZNIKU Synthetic Mux",
+      "engine_id": "zniku.builtin.synthetic-mux",
+      "engine_version": "0.1.0",
+      "execution_mode": "automatic",
+      "inputs": [
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_in",
+            "scope": "program"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "set",
+            "media_kind": "audio",
+            "port_id": "audio_in",
+            "scope": "program"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "stream_id": {
+                "maxLength": 64,
+                "type": "string"
+              }
+            },
+            "required": [
+              "duration_frames",
+              "stream_id"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "lifecycle": {
+        "supports_acceptance": true,
+        "supports_publication": false,
+        "supports_recovery": false
+      },
+      "outputs": [
+        {
+          "attribute_rules": [],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "audio_stream_ids": {
+                "items": {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array"
+              },
+              "container": {
+                "enum": [
+                  "matroska"
+                ],
+                "type": "string"
+              },
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames",
+              "audio_stream_ids",
+              "container"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "program_media",
+            "port_id": "program_out",
+            "scope": "program"
+          }
+        }
+      ],
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "container": {
+            "enum": [
+              "matroska"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "container"
+        ],
+        "type": "object"
+      },
+      "supported_scopes": [
+        "program"
+      ]
+    },
+    {
+      "contract_version": "0.1.0",
+      "display_name": "ZNIKU Synthetic Decensoring",
+      "engine_id": "zniku.extension.synthetic-decensoring",
+      "engine_version": "0.1.0",
+      "execution_mode": "automatic",
+      "inputs": [
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_in",
+            "scope": "chapter"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "lifecycle": {
+        "supports_acceptance": true,
+        "supports_publication": true,
+        "supports_recovery": true
+      },
+      "outputs": [
+        {
+          "attribute_rules": [
+            {
+              "disposition": "preserved",
+              "path": "duration_frames",
+              "source": {
+                "path": "duration_frames",
+                "port_id": "video_in"
+              }
+            }
+          ],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_out",
+            "scope": "chapter"
+          }
+        }
+      ],
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "model_name": {
+            "enum": [
+              "Jasna Synthetic"
+            ],
+            "type": "string"
+          },
+          "model_version": {
+            "enum": [
+              "0.1.0"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_name",
+          "model_version"
+        ],
+        "type": "object"
+      },
+      "supported_scopes": [
+        "chapter"
+      ]
+    },
+    {
+      "contract_version": "0.1.0",
+      "display_name": "ZNIKU Synthetic new01",
+      "engine_id": "zniku.extension.synthetic-new01",
+      "engine_version": "0.1.0",
+      "execution_mode": "automatic",
+      "inputs": [
+        {
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_in",
+            "scope": "program"
+          },
+          "preconditions_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "lifecycle": {
+        "supports_acceptance": true,
+        "supports_publication": true,
+        "supports_recovery": true
+      },
+      "outputs": [
+        {
+          "attribute_rules": [
+            {
+              "disposition": "preserved",
+              "path": "duration_frames",
+              "source": {
+                "path": "duration_frames",
+                "port_id": "video_in"
+              }
+            }
+          ],
+          "guarantees_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": true,
+            "properties": {
+              "duration_frames": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "duration_frames"
+            ],
+            "type": "object"
+          },
+          "port": {
+            "artifact_type": "media",
+            "cardinality": "one",
+            "media_kind": "video",
+            "port_id": "video_out",
+            "scope": "program"
+          }
+        }
+      ],
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "enum": [
+              "phase6-demo"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile"
+        ],
+        "type": "object"
+      },
+      "supported_scopes": [
+        "program"
+      ]
+    }
+  ],
   "runtime_snapshot": {
     "audio_proof": {
       "artifact_set_id": "artifact_set.workflow_run.studio.synthetic.original_audio",

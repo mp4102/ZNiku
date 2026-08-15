@@ -20,6 +20,7 @@ import type {
 import { parseAuthoringCommand } from './formal/contracts'
 import { FormalWorkflowNodeCard } from './formal/FormalWorkflowNodeCard'
 import {
+  EngineRegistryProjection,
   ExpandedPlanView,
   OperatorPaletteProjection,
   RunMonitorView,
@@ -311,6 +312,7 @@ function AppContent({ gateway, draftId = DEFAULT_DRAFT_ID, commandIdFactory }: A
           ))}
         </div>
         <OperatorPaletteProjection />
+        <EngineRegistryProjection />
         <div className="palette-note">
           <span>Phase 5 formal boundary</span>
           <p>Engine 与 Operator typed ports 均来自 Python projection；Canvas 不维护第二套合同。</p>

@@ -24,7 +24,7 @@ from zniku.contracts import (
     PortSpec,
     Scope,
 )
-from zniku.pipelines import DefaultRunSnapshot
+from zniku.pipelines import DefaultRunSnapshot, build_phase6_extension_workflow
 from zniku.workflow import (
     CORE_OPERATOR_CONTRACT_VERSION,
     CoreOperatorKind,
@@ -62,6 +62,7 @@ class StudioAuthorityProjection(ContractModel):
 
     studio_projection_contract_version: Literal["0.1.0"]
     manifests: tuple[SkipValidation[EngineManifest], ...]
+    registry_manifests: tuple[SkipValidation[EngineManifest], ...]
     operator_contracts: tuple[SkipValidation[CoreOperatorProjection], ...]
     workflow_spec: SkipValidation[WorkflowSpec]
     chapter_plan: SkipValidation[ChapterPlan]
@@ -69,12 +70,12 @@ class StudioAuthorityProjection(ContractModel):
     workflow_revision: SkipValidation[WorkflowRevision]
     runtime_snapshot: SkipValidation[DefaultRunSnapshot]
 
-    @field_validator("manifests", "operator_contracts", mode="before")
+    @field_validator("manifests", "registry_manifests", "operator_contracts", mode="before")
     @classmethod
     def normalize_sequences(cls, value: Any, info: Any) -> Any:
         if not isinstance(value, list | tuple):
             return value
-        if info.field_name == "manifests":
+        if info.field_name in {"manifests", "registry_manifests"}:
             return tuple(
                 EngineManifest.from_data(cast(Mapping[str, JsonValue], item))
                 if isinstance(item, Mapping)
@@ -125,6 +126,12 @@ class StudioAuthorityProjection(ContractModel):
 
     @model_validator(mode="after")
     def validate_authorities(self) -> StudioAuthorityProjection:
+        registry_bindings = tuple(
+            (manifest.engine_id, manifest.engine_version, manifest.sha256_digest())
+            for manifest in self.registry_manifests
+        )
+        if len(registry_bindings) != len(set(registry_bindings)):
+            raise ValueError("E_STUDIO_REGISTRY_DUPLICATE: Registry manifest identity 不得重复")
         if self.execution_plan.workflow_spec_digest != self.workflow_spec.sha256_digest():
             raise ValueError("E_STUDIO_SPEC_PLAN_DRIFT: WorkflowSpec 与 Plan digest 不一致")
         if self.workflow_revision.execution_plan_digest != self.execution_plan.sha256_digest():
@@ -215,9 +222,21 @@ def build_studio_authority_projection() -> StudioAuthorityProjection:
         for operator_kind in CoreOperatorKind
         for media_kind in (MediaKind.VIDEO, MediaKind.AUDIO)
     )
+    extension = build_phase6_extension_workflow()
+    registry_manifests = tuple(
+        sorted(
+            (
+                package.manifest
+                for package in extension.packages
+                if extension.catalog.resolve(package.descriptor.engine) is not None
+            ),
+            key=lambda manifest: (manifest.engine_id, manifest.engine_version),
+        )
+    )
     return StudioAuthorityProjection(
         studio_projection_contract_version=STUDIO_PROJECTION_CONTRACT_VERSION,
         manifests=application.bundle.manifests,
+        registry_manifests=registry_manifests,
         operator_contracts=operator_contracts,
         workflow_spec=application.bundle.spec,
         chapter_plan=chapters,

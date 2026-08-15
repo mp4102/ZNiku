@@ -58,6 +58,20 @@ export interface EngineLifecycleCapabilities {
   readonly "supports_recovery": boolean
 }
 
+/** Engine 身份、版本、端口、scope、参数与声明式媒体能力的唯一合同。 */
+export interface EngineManifest {
+  readonly "contract_version": "0.1.0"
+  readonly "display_name": string
+  readonly "engine_id": string
+  readonly "engine_version": string
+  readonly "execution_mode": ExecutionMode
+  readonly "inputs": ReadonlyArray<EngineInputContract>
+  readonly "lifecycle": EngineLifecycleCapabilities
+  readonly "outputs": ReadonlyArray<EngineOutputContract>
+  readonly "parameter_schema": Readonly<Record<string, JsonValue>>
+  readonly "supported_scopes": ReadonlyArray<Scope>
+}
+
 /** 将输出 PortSpec、Artifact 属性保证和媒体属性变化声明绑定。 */
 export interface EngineOutputContract {
   readonly "attribute_rules"?: ReadonlyArray<MediaAttributeRule>
@@ -159,8 +173,9 @@ export type WorkflowNodeSpec = SourceNodeSpec | EngineStageNodeSpec | CoreOperat
 export interface StudioAuthorityProjection {
   readonly "chapter_plan": { readonly "chapter_plan_id": string; readonly "coverage": CoverageSpan; readonly "members": ReadonlyArray<ChapterMemberBinding> }
   readonly "execution_plan": { readonly "binding_digest": string; readonly "core_operator_contract_version": "0.1.0"; readonly "execution_plan_id": string; readonly "nodes": ReadonlyArray<{ readonly "dependencies": ReadonlyArray<string>; readonly "engine"?: EngineBinding | null; readonly "operator_kind"?: CoreOperatorKind | null; readonly "parameters"?: Readonly<Record<string, JsonValue>>; readonly "plan_node_id": string; readonly "scope": Scope; readonly "scope_id": string; readonly "stage_spec_id": string; readonly "subject_kind": PlannedSubjectKind }>; readonly "plan_contract_version": "0.1.0"; readonly "workflow_id": string; readonly "workflow_spec_digest": string }
-  readonly "manifests": ReadonlyArray<{ readonly "contract_version": "0.1.0"; readonly "display_name": string; readonly "engine_id": string; readonly "engine_version": string; readonly "execution_mode": ExecutionMode; readonly "inputs": ReadonlyArray<EngineInputContract>; readonly "lifecycle": EngineLifecycleCapabilities; readonly "outputs": ReadonlyArray<EngineOutputContract>; readonly "parameter_schema": Readonly<Record<string, JsonValue>>; readonly "supported_scopes": ReadonlyArray<Scope> }>
+  readonly "manifests": ReadonlyArray<EngineManifest>
   readonly "operator_contracts": ReadonlyArray<{ readonly "inputs": ReadonlyArray<PortSpec>; readonly "media_kind": MediaKind; readonly "operator_contract_version": "0.1.0"; readonly "operator_kind": CoreOperatorKind; readonly "outputs": ReadonlyArray<PortSpec> }>
+  readonly "registry_manifests": ReadonlyArray<EngineManifest>
   readonly "runtime_snapshot": { readonly "audio_proof": { readonly "artifact_set_id": string; readonly "demux_plan_node_id": "plan.node.demux"; readonly "mux_plan_node_id": "plan.node.mux"; readonly "ordered_stream_ids": ReadonlyArray<string>; readonly "stream_copy"?: true }; readonly "chapter_plan": { readonly "chapter_plan_id": string; readonly "coverage": CoverageSpan; readonly "members": ReadonlyArray<ChapterMemberBinding> }; readonly "full_verification"?: { readonly "audio_artifact_set_id": string; readonly "evidence_ids": ReadonlyArray<string>; readonly "final_artifact_digest": string; readonly "final_artifact_id": string; readonly "frame_count": number; readonly "mode"?: "full"; readonly "ordered_audio_stream_ids": ReadonlyArray<string>; readonly "source_authority_digest": string; readonly "verification_id": string; readonly "verified"?: true } | null; readonly "handoffs"?: ReadonlyArray<{ readonly "attempt": number; readonly "engine": { readonly "engine_id": string; readonly "engine_version": string; readonly "manifest_digest": string }; readonly "expected_output_frames": number; readonly "handoff_id": string; readonly "input_artifact_ids": ReadonlyArray<string>; readonly "leaf_ids": ReadonlyArray<string>; readonly "model_name": string; readonly "model_version": string; readonly "plan_node_id": string; readonly "source_authority_digest": string }>; readonly "pipeline_contract_version": "0.1.0"; readonly "publications"?: ReadonlyArray<{ readonly "artifact_digest": string; readonly "artifact_id": string; readonly "evidence_id": string; readonly "frame_count": number; readonly "no_replace"?: true; readonly "plan_node_id": string; readonly "publication_id": string; readonly "source_authority_digest": string; readonly "verification_mode"?: "full" }>; readonly "runtime": { readonly "evidence": ReadonlyArray<StageEvidence>; readonly "execution_plan_digest": string; readonly "final_output_identity"?: string | null; readonly "nodes": ReadonlyArray<NodeRunRecord>; readonly "revision_id": string; readonly "runtime_contract_version": "0.1.0"; readonly "workflow_run_id": string }; readonly "source_artifact": { readonly "artifact_id": string; readonly "artifact_type": ArtifactType; readonly "attributes"?: Readonly<Record<string, JsonValue>>; readonly "media_kind": MediaKind | null; readonly "producer_stage_run_id"?: string | null; readonly "scope": Scope; readonly "scope_id": string } }
   readonly "studio_projection_contract_version": "0.1.0"
   readonly "workflow_revision": { readonly "binding_digest": string; readonly "execution_plan_digest": string; readonly "revision_contract_version": "0.1.0"; readonly "revision_id": string; readonly "workflow_id": string; readonly "workflow_spec_digest": string }

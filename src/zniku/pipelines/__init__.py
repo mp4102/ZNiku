@@ -15,15 +15,18 @@ from .default import (
     PublicationRecord,
     build_default_workflow,
 )
+from .extension import ExtensionWorkflowBundle, build_phase6_extension_workflow
 
 __all__ = [
     "DEFAULT_PIPELINE_CONTRACT_VERSION",
     "DefaultRunSnapshot",
     "DefaultWorkflowBundle",
     "DefaultWorkflowRuntime",
+    "ExtensionWorkflowBundle",
     "ExternalOutputSubmission",
     "FullVerificationRecord",
     "ManualHandoff",
     "PublicationRecord",
     "build_default_workflow",
+    "build_phase6_extension_workflow",
 ]
