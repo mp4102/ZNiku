@@ -344,6 +344,8 @@ def extract_chapter(source: Path, output: Path, *, start_frame: int, end_frame: 
             "3",
             "-pix_fmt",
             "yuv420p",
+            "-fps_mode",
+            "passthrough",
             "-map_metadata",
             "-1",
         ],
@@ -413,6 +415,8 @@ def concat_video(inputs: tuple[Path, ...], output: Path) -> None:
             "3",
             "-pix_fmt",
             "yuv420p",
+            "-fps_mode",
+            "passthrough",
             "-map_metadata",
             "-1",
         ]
@@ -445,6 +449,8 @@ def encode_hevc_main10(source: Path, output: Path, *, crf: int = 28) -> None:
             str(crf),
             "-pix_fmt",
             "yuv420p10le",
+            "-fps_mode",
+            "passthrough",
             "-map_metadata",
             "-1",
         ],
@@ -471,7 +477,7 @@ def mux_original_audio(video: Path, audio: tuple[Path, ...], output: Path) -> No
     argv.extend(["-map", "0:v:0"])
     for index in range(len(audio)):
         argv.extend(["-map", f"{index + 1}:a:0"])
-    argv.extend(["-c", "copy", "-map_metadata", "-1"])
+    argv.extend(["-c", "copy", "-fps_mode", "passthrough", "-map_metadata", "-1"])
     _run_output(argv, output)
 
 

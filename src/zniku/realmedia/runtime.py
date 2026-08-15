@@ -72,6 +72,7 @@ class MediaFileArtifact(ContractModel):
 
     artifact_id: StableId
     plan_node_id: StableId
+    port_id: StableId
     scope: Scope
     scope_id: StableId
     media_kind: MediaKind
@@ -180,6 +181,15 @@ class RealRuntimeSnapshot(ContractModel):
         return value
 
 
+class RealInputBinding(ContractModel):
+    """把一个 planned input port 精确绑定到展开后的 source planned node/port。"""
+
+    plan_node_id: StableId
+    input_port_id: StableId
+    source_port_id: StableId
+    source_plan_node_ids: tuple[StableId, ...]
+
+
 class RealRunAuthority(ContractModel):
     """冻结候选 Run 所需的所有无副作用 authority。"""
 
@@ -192,6 +202,7 @@ class RealRunAuthority(ContractModel):
     source_artifact: SkipValidation[Artifact]
     chapter_plan: SkipValidation[ChapterPlan]
     reference_probe: SkipValidation[DetailedMediaProbe]
+    input_bindings: tuple[RealInputBinding, ...]
 
     @field_validator(
         "spec",
@@ -349,10 +360,12 @@ class RealMediaCandidateRuntime:
                 source_artifact=source_artifact,
                 chapter_plan=chapter_plan,
                 reference_probe=reference_probe,
+                input_bindings=_build_input_bindings(bundle.spec, plan),
             )
             source_record = MediaFileArtifact(
                 artifact_id=source_artifact.artifact_id,
                 plan_node_id="plan.node.source",
+                port_id="program",
                 scope=Scope.PROGRAM,
                 scope_id=source_artifact.scope_id,
                 media_kind=MediaKind.PROGRAM_MEDIA,
@@ -565,6 +578,7 @@ class RealMediaCandidateRuntime:
                 published,
                 MediaKind.VIDEO,
                 acceptance_fixture=True,
+                port_id="out",
             )
             self._complete(planned, handoff.attempt, (artifact,))
         except Exception:
@@ -613,8 +627,11 @@ class RealMediaCandidateRuntime:
         )
         demux_media(self._file(source), video_candidate, audio_candidates)
         candidates = (
-            (video_candidate, MediaKind.VIDEO, None),
-            *((path, MediaKind.AUDIO, ordinal) for ordinal, path in enumerate(audio_candidates)),
+            (video_candidate, MediaKind.VIDEO, None, "video_out"),
+            *(
+                (path, MediaKind.AUDIO, ordinal, "audio_out")
+                for ordinal, path in enumerate(audio_candidates)
+            ),
         )
         return self._publish_outputs(planned, attempt, candidates)
 
@@ -623,7 +640,7 @@ class RealMediaCandidateRuntime:
     ) -> tuple[MediaFileArtifact, ...]:
         video = self._first_dependency(planned, MediaKind.VIDEO)
         work = self._attempt_dir(planned, attempt)
-        candidates: list[tuple[Path, MediaKind, int | None]] = []
+        candidates: list[tuple[Path, MediaKind, int | None, str]] = []
         for index, member in enumerate(self._authority.chapter_plan.members, start=1):
             target = work / f"chapter-{index:03d}.mkv"
             extract_chapter(
@@ -632,7 +649,7 @@ class RealMediaCandidateRuntime:
                 start_frame=member.coverage.start,
                 end_frame=member.coverage.end,
             )
-            candidates.append((target, MediaKind.VIDEO, None))
+            candidates.append((target, MediaKind.VIDEO, None, "out"))
         return self._publish_outputs(planned, attempt, tuple(candidates), chapter_scopes=True)
 
     def _execute_reduce(self, planned: PlannedNode, attempt: int) -> tuple[MediaFileArtifact, ...]:
@@ -644,13 +661,19 @@ class RealMediaCandidateRuntime:
         work = self._attempt_dir(planned, attempt)
         candidate = work / "reduced.mkv"
         concat_video(tuple(self._file(item) for item in ordered), candidate)
-        return self._publish_outputs(planned, attempt, ((candidate, MediaKind.VIDEO, None),))
+        return self._publish_outputs(planned, attempt, ((candidate, MediaKind.VIDEO, None, "out"),))
 
     def _execute_encode(self, planned: PlannedNode, attempt: int) -> tuple[MediaFileArtifact, ...]:
         source = self._first_dependency(planned, MediaKind.VIDEO)
         candidate = self._attempt_dir(planned, attempt) / "encoded.mkv"
         encode_hevc_main10(self._file(source), candidate, crf=cast(int, planned.parameters["crf"]))
-        return self._publish_outputs(planned, attempt, ((candidate, MediaKind.VIDEO, None),))
+        outputs = self._publish_outputs(
+            planned, attempt, ((candidate, MediaKind.VIDEO, None, "video_out"),)
+        )
+        video = outputs[0].probe.video_streams[0]
+        if video.codec_name != "hevc" or video.pixel_format != "yuv420p10le":
+            raise ContractViolation("E_REAL_ENCODE_CONTRACT", "Encode 未产生 HEVC Main10 输出")
+        return outputs
 
     def _execute_mux(self, planned: PlannedNode, attempt: int) -> tuple[MediaFileArtifact, ...]:
         dependencies = self._dependency_artifacts(planned)
@@ -668,7 +691,7 @@ class RealMediaCandidateRuntime:
             if hash_audio_stream(self._file(source), 0) != hash_audio_stream(candidate, ordinal):
                 raise ContractViolation("E_REAL_AUDIO_DRIFT", "Mux 后原始音频 bitstream 不一致")
         return self._publish_outputs(
-            planned, attempt, ((candidate, MediaKind.PROGRAM_MEDIA, None),)
+            planned, attempt, ((candidate, MediaKind.PROGRAM_MEDIA, None, "program_out"),)
         )
 
     def _execute_final(self, planned: PlannedNode, attempt: int) -> tuple[MediaFileArtifact, ...]:
@@ -679,7 +702,12 @@ class RealMediaCandidateRuntime:
         final_path = self._root / "final" / receipt.target_name
         decode_verify(final_path)
         artifact = self._record_file(
-            planned, attempt, final_path, MediaKind.PROGRAM_MEDIA, artifact_suffix="final"
+            planned,
+            attempt,
+            final_path,
+            MediaKind.PROGRAM_MEDIA,
+            artifact_suffix="final",
+            port_id="program",
         )
         return (artifact,)
 
@@ -687,12 +715,12 @@ class RealMediaCandidateRuntime:
         self,
         planned: PlannedNode,
         attempt: int,
-        candidates: tuple[tuple[Path, MediaKind, int | None], ...],
+        candidates: tuple[tuple[Path, MediaKind, int | None, str], ...],
         *,
         chapter_scopes: bool = False,
     ) -> tuple[MediaFileArtifact, ...]:
         outputs: list[MediaFileArtifact] = []
-        for index, (candidate, kind, audio_ordinal) in enumerate(candidates, start=1):
+        for index, (candidate, kind, audio_ordinal, port_id) in enumerate(candidates, start=1):
             extension = candidate.suffix
             safe = planned.plan_node_id.replace(".", "-")
             target_name = f"{safe}-attempt-{attempt}-{index:03d}{extension}"
@@ -707,6 +735,7 @@ class RealMediaCandidateRuntime:
                     self._root / "artifacts" / receipt.target_name,
                     kind,
                     audio_ordinal=audio_ordinal,
+                    port_id=port_id,
                     artifact_suffix=f"{index:03d}",
                     scope_id=scope_id,
                 )
@@ -724,6 +753,7 @@ class RealMediaCandidateRuntime:
         acceptance_fixture: bool = False,
         artifact_suffix: str = "001",
         scope_id: str | None = None,
+        port_id: str,
     ) -> MediaFileArtifact:
         probe = probe_detailed(path)
         expected_streams = (
@@ -742,6 +772,7 @@ class RealMediaCandidateRuntime:
                 f"{attempt}.{artifact_suffix}"
             ),
             plan_node_id=planned.plan_node_id,
+            port_id=port_id,
             scope=planned.scope,
             scope_id=scope_id or planned.scope_id,
             media_kind=media_kind,
@@ -830,8 +861,30 @@ class RealMediaCandidateRuntime:
         return candidates[0]
 
     def _dependency_artifacts(self, planned: PlannedNode) -> tuple[MediaFileArtifact, ...]:
-        dependencies = set(planned.dependencies)
-        return tuple(item for item in self._snapshot.artifacts if item.plan_node_id in dependencies)
+        bindings = tuple(
+            item
+            for item in self._authority.input_bindings
+            if item.plan_node_id == planned.plan_node_id
+        )
+        selected: list[MediaFileArtifact] = []
+        for binding in bindings:
+            candidates = tuple(
+                item
+                for item in self._snapshot.artifacts
+                if item.plan_node_id in binding.source_plan_node_ids
+                and item.port_id == binding.source_port_id
+            )
+            if planned.scope is Scope.CHAPTER:
+                scoped = tuple(item for item in candidates if item.scope_id == planned.scope_id)
+                if scoped:
+                    candidates = scoped
+            selected.extend(candidates)
+        identities = tuple(item.artifact_id for item in selected)
+        if len(identities) != len(set(identities)):
+            raise ContractViolation(
+                "E_REAL_INPUT_BINDING_DUPLICATE", "直接输入绑定产生重复 Artifact"
+            )
+        return tuple(selected)
 
     def _first_dependency(self, planned: PlannedNode, kind: MediaKind) -> MediaFileArtifact:
         candidates = tuple(
@@ -974,3 +1027,37 @@ class RealMediaCandidateRuntime:
 
     def _persist(self) -> None:
         self._write_model("snapshot.json", self._snapshot)
+
+
+def _build_input_bindings(spec: WorkflowSpec, plan: ExecutionPlan) -> tuple[RealInputBinding, ...]:
+    """从正式 Spec edge 和 chapter 展开结果冻结 planned port binding。"""
+
+    result: list[RealInputBinding] = []
+    for target in plan.nodes:
+        incoming = tuple(edge for edge in spec.edges if edge.target.node_id == target.stage_spec_id)
+        for edge in incoming:
+            sources = tuple(
+                item for item in plan.nodes if item.stage_spec_id == edge.source.node_id
+            )
+            if target.scope is Scope.CHAPTER:
+                scoped = tuple(item for item in sources if item.scope_id == target.scope_id)
+                if scoped:
+                    sources = scoped
+            if not sources:
+                raise ContractViolation(
+                    "E_REAL_INPUT_BINDING_EMPTY", "planned port 缺少展开 source"
+                )
+            source_ids = tuple(item.plan_node_id for item in sources)
+            if not set(source_ids) <= set(target.dependencies):
+                raise ContractViolation(
+                    "E_REAL_INPUT_BINDING_DEPENDENCY", "port binding 越过 Plan dependency"
+                )
+            result.append(
+                RealInputBinding(
+                    plan_node_id=target.plan_node_id,
+                    input_port_id=edge.target.port_id,
+                    source_port_id=edge.source.port_id,
+                    source_plan_node_ids=source_ids,
+                )
+            )
+    return tuple(result)

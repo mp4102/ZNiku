@@ -1,5 +1,5 @@
 import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js'
-import realMediaHostSchema from '../generated/real-media-host.schema.json'
+import realMediaHostSchema from './real-media-host.schema.json'
 
 export interface RealMonitorNode {
   readonly plan_node_id: string

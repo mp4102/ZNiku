@@ -4,6 +4,7 @@
 WorkflowSpec、ExecutionPlan 或可共享 EngineManifest；任何失败均不得伪造 Evidence。
 """
 
+from .acceptance import RealMediaAcceptanceReport, run_real_media_acceptance
 from .host import RealMediaHostApplication, serve_real_media_host
 from .media import (
     DetailedMediaProbe,
@@ -33,6 +34,7 @@ from .projection import (
 from .runtime import (
     MediaFileArtifact,
     RealFullVerification,
+    RealInputBinding,
     RealManualHandoff,
     RealMediaCandidateRuntime,
     RealNodeRun,
@@ -47,7 +49,9 @@ __all__ = [
     "MediaStreamProbe",
     "RealFullVerification",
     "RealHostEnvelope",
+    "RealInputBinding",
     "RealManualHandoff",
+    "RealMediaAcceptanceReport",
     "RealMediaCandidateRuntime",
     "RealMediaHostApplication",
     "RealMediaWorkflowBundle",
@@ -73,5 +77,6 @@ __all__ = [
     "make_acceptance_fixture",
     "mux_original_audio",
     "probe_detailed",
+    "run_real_media_acceptance",
     "serve_real_media_host",
 ]

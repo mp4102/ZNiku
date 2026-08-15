@@ -8,7 +8,7 @@ from pathlib import Path
 from zniku.realmedia import RealHostEnvelope
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGET = ROOT / "apps" / "studio" / "src" / "generated" / "real-media-host.schema.json"
+TARGET = ROOT / "apps" / "studio" / "src" / "formal" / "real-media-host.schema.json"
 
 
 def main() -> None:

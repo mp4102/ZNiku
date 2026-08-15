@@ -1,8 +1,10 @@
 # ZNIKU 0.1.0 Real Media Acceptance Candidate 基线
 
-- 状态：**本地真实媒体候选实施基线**
+- 状态：**本地真实媒体候选已实现并通过参考媒体门**
 - 日期：2026-08-15
 - 产品版本：`0.1.0`
+- 实现入口：`src/zniku/realmedia/`
+- 完整门：`tools/run_real_media_acceptance.py`
 - 上位基线：[产品整体框架](./product-framework.md)、[Execution 与 Runtime](./execution-runtime-baseline.md)、
   [默认工作流](./default-workflow-baseline.md)、[Studio 正式工作区](./studio-formal-baseline.md)
 
@@ -40,7 +42,9 @@ Source(ProgramMedia)
 → unique Final(no replace)
 ```
 
-Demux、Encode 和 Mux 是具有精确 `EngineBinding` 的受信本地 FFmpeg adapter。Runtime 只按 Engine binding
+Demux、Encode 和 Mux 是具有精确 `EngineBinding` 的受信本地 FFmpeg adapter。候选 authority 还从正式
+Spec edge 冻结每个 planned node 的 source/target port binding，避免把同一上游节点未连接的其他输出误当
+直接输入。Runtime 只按 Engine binding
 解析已注入 adapter，不按 Engine ID 编写流程分支。Partition、Reduce 和 Final 仍由 Runtime operator
 执行器负责。参数和状态合同不得携带 shell、entrypoint 或任意 argv；FFmpeg argv 只由受信 adapter 内部
 固定构造，并始终以 `shell=False` 执行。
