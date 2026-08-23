@@ -1,4 +1,4 @@
-"""确保产品、Python package 与各正式合同版本保持 0.1.0。"""
+"""确保 Phase 0 尚未重写的 0.1.0 legacy implementation 内部版本一致。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from zniku.workflow.execution import (
 ROOT = Path(__file__).parents[1]
 
 
-def test_all_local_version_authorities_are_0_1_0() -> None:
+def test_all_legacy_implementation_versions_are_0_1_0() -> None:
     pyproject: dict[str, Any] = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
 
     assert (ROOT / "VERSION").read_text("utf-8").strip() == "0.1.0"

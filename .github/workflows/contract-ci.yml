@@ -1,5 +1,8 @@
 name: ZNIKU Contract CI
 
+# Phase 0 过渡门：本工作流只验证尚未重写的 0.1.0 legacy implementation，
+# 不构成 0.2.0 Graph Core 的架构权威或完成证明。
+
 on:
   push:
   pull_request:
@@ -32,20 +35,20 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --extra dev
 
-      - name: Install Phase 6 media gate dependencies
+      - name: Install legacy Phase 6 media gate dependencies
         run: |
           sudo apt-get update
           sudo apt-get install --yes ffmpeg
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
 
-      - name: Verify generated Studio projection
+      - name: Verify legacy generated Studio projection
         run: uv run --locked --extra dev python tools/generate_authoring_projection.py --check
 
       - name: Test
         run: uv run --locked --extra dev pytest
 
-      - name: Verify Phase 6 real-media and long-film gates
+      - name: Verify legacy Phase 6 real-media and long-film gates
         run: uv run --locked --extra dev python tools/run_phase6_validation.py
 
       - name: Typecheck

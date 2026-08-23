@@ -1,5 +1,9 @@
 # ZNIKU 0.1.0 默认工作流与验证发布基线
 
+> [!IMPORTANT]
+> **0.1.0 历史归档：** 本文只描述 `main@198d802` 的旧实现，对 0.2.0 没有规范权威。当前唯一目标架构
+> 见 [`graph-core-baseline.md`](../../architecture/graph-core-baseline.md)。
+
 - 状态：**已批准的正式基线；产品 Phase 3 已实现**
 - 日期：2026-08-15
 - 实现入口：`src/zniku/pipelines/default.py`
