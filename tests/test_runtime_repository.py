@@ -1686,6 +1686,9 @@ def test_missing_wrong_and_mode_mismatched_inputs_fail_before_node_start(
             occurred_at=valid_started_at,
         )
 
+    # 测试 fixture 的 ``C:/synthetic`` 在 POSIX 上是相对路径；先解析为宿主绝对路径，
+    # 确保越界目标在 Windows 与 Linux CI 上表达同一语义。
+    outside_target = str(Path(transform.work_dir).resolve(strict=False).parent / "outside.mkv")
     malformed = (
         valid_handoff.model_copy(update={"input_artifact_ids": (rid(998),)}),
         valid_handoff.model_copy(update={"output_targets": ()}),
@@ -1706,7 +1709,7 @@ def test_missing_wrong_and_mode_mismatched_inputs_fail_before_node_start(
                 "output_targets": (
                     ExternalOutputTarget(
                         port_id="video_out",
-                        path=f"{transform.work_dir}/../outside.mkv",
+                        path=outside_target,
                     ),
                 )
             }
