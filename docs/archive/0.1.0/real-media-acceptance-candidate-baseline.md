@@ -1,5 +1,9 @@
 # ZNIKU 0.1.0 Real Media Acceptance Candidate 基线
 
+> [!IMPORTANT]
+> **0.1.0 历史归档：** 本文只描述 `main@198d802` 的旧实现，对 0.2.0 没有规范权威。当前唯一目标架构
+> 见 [`graph-core-baseline.md`](../../architecture/graph-core-baseline.md)。
+
 - 状态：**本地真实媒体候选已实现并通过参考媒体门**
 - 日期：2026-08-15
 - 产品版本：`0.1.0`

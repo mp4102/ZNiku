@@ -1,5 +1,9 @@
 # ZBaton vNext 设计基线
 
+> [!IMPORTANT]
+> **0.1.0 历史归档：** 本文只描述旧 ZBaton 设计上下文，对 ZNIKU 0.2.0 没有规范权威。当前唯一目标
+> 架构见 [`graph-core-baseline.md`](../../../architecture/graph-core-baseline.md)。
+
 - 状态：**已采纳的设计基线**
 - 基线修订：1
 - 日期：2026-08-14

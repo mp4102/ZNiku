@@ -1,5 +1,9 @@
 # ZNIKU Studio 0.1.0 整体框架
 
+> [!IMPORTANT]
+> **0.1.0 历史归档：** 本文只描述 `main@198d802` 的旧实现，对 0.2.0 没有规范权威。当前唯一目标架构
+> 见 [`graph-core-baseline.md`](../../architecture/graph-core-baseline.md)。
+
 - 状态：**正式框架基线；已审阅通过并授权实施**
 - Studio 框架修订：1
 - 日期：2026-08-14

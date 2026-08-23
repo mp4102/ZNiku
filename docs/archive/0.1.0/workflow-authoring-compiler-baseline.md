@@ -1,5 +1,9 @@
 # ZNIKU 0.1.0 Workflow Authoring、Compiler Front-end 与 Studio Projection 基线
 
+> [!IMPORTANT]
+> **0.1.0 历史归档：** 本文只描述 `main@198d802` 的旧实现，对 0.2.0 没有规范权威。当前唯一目标架构
+> 见 [`graph-core-baseline.md`](../../architecture/graph-core-baseline.md)。
+
 - 状态：**已批准的正式基线；Phase 2A 已实现**
 - 草案修订：1
 - 日期：2026-08-14

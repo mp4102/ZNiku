@@ -1,5 +1,9 @@
 # ZBaton vNext `processing_history` 设计草案
 
+> [!IMPORTANT]
+> **0.1.0 历史归档：** 本文只描述旧 ZBaton 设计上下文，对 ZNIKU 0.2.0 没有规范权威。当前唯一目标
+> 架构见 [`graph-core-baseline.md`](../../../architecture/graph-core-baseline.md)。
+
 状态：已采纳的从属设计说明，供后续 ZBaton 与 ZNIKU 设计使用。整体结构、继承规则与
 实现边界以 [`design-baseline.md`](./design-baseline.md) 为准。
 
