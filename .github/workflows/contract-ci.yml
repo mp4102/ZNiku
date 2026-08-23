@@ -1,7 +1,7 @@
-name: ZNIKU Contract CI
+name: ZNIKU Core CI
 
-# Phase 0 过渡门：本工作流只验证尚未重写的 0.1.0 legacy implementation，
-# 不构成 0.2.0 Graph Core 的架构权威或完成证明。
+# Phase 1 Graph Core 与 SQLite Project Store 的正式 Python 门禁；尚未清理的 0.1.0
+# legacy implementation 继续作为过渡期回归，直到 Phase 5 删除。
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  verify-contracts:
+  verify-graph-core:
     runs-on: ubuntu-latest
 
     steps:
@@ -35,6 +35,60 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --extra dev
 
+      - name: Test Graph Core and Project Store
+        run: |
+          uv run --locked --extra dev pytest \
+            tests/test_graph_models.py \
+            tests/test_graph_validation.py \
+            tests/test_project_store.py \
+            tests/test_architecture_authority.py \
+            tests/test_version_consistency.py
+
+      - name: Typecheck Graph Core and Project Store
+        run: |
+          uv run --locked --extra dev mypy --no-incremental \
+            src/zniku/graph src/zniku/project \
+            tests/test_graph_models.py \
+            tests/test_graph_validation.py \
+            tests/test_project_store.py
+
+      - name: Lint Graph Core and Project Store
+        run: |
+          uv run --locked --extra dev ruff check \
+            src/zniku/graph src/zniku/project \
+            tests/test_graph_models.py \
+            tests/test_graph_validation.py \
+            tests/test_project_store.py
+
+      - name: Format check Graph Core and Project Store
+        run: |
+          uv run --locked --extra dev ruff format --check \
+            src/zniku/graph src/zniku/project \
+            tests/test_graph_models.py \
+            tests/test_graph_validation.py \
+            tests/test_project_store.py
+
+  verify-legacy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7.2.0
+        with:
+          version: "0.11.32"
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev
+
       - name: Install legacy Phase 6 media gate dependencies
         run: |
           sudo apt-get update
@@ -45,7 +99,7 @@ jobs:
       - name: Verify legacy generated Studio projection
         run: uv run --locked --extra dev python tools/generate_authoring_projection.py --check
 
-      - name: Test
+      - name: Test complete transitional repository
         run: uv run --locked --extra dev pytest
 
       - name: Verify legacy Phase 6 real-media and long-film gates

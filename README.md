@@ -10,13 +10,14 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 
 - 目标版本：`ZNIKU Studio 0.2.0`
 - 开发分支：`v0.2.0`
-- 当前阶段：**Phase 0 已完成——架构权威已切换；Phase 1 Graph Core 尚未实施**
+- 当前阶段：**Phase 0–1 已完成——Graph Core 与 SQLite Project Store 已建立；Phase 2 尚未实施**
 - 唯一目标架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
-- 当前可运行代码：`main@198d802` 的 `0.1.0` legacy implementation，仅用于重构期间的回归对照
+- 当前实现版本：`0.2.0`，公共入口为 `zniku.graph` 与 `zniku.project`
+- 过渡期代码：`main@198d802` 的 `0.1.0` legacy implementation 仍保留为回归对照，Phase 5 删除
 
-`VERSION`、Python package、旧合同常量和 Studio package 在 Phase 0 继续保持 `0.1.0`。这是刻意的版本
-边界：本阶段只切换架构权威，不能把尚未重写的 0.1.0 Compiler、Runtime、Evidence 或前端投影伪装成
-0.2.0。Phase 1 建立新的 Project 与 Graph Core 公共入口时再切换实现版本。
+Phase 1 已将 `VERSION`、Python package 与 Studio package 的产品实现版本切换为 `0.2.0`。尚未重写的
+Compiler、Runtime、Evidence 和前端投影继续保留各自的 `0.1.0` legacy contract version，不能作为
+0.2.0 能力入口。
 
 ## 产品核心
 
@@ -47,6 +48,20 @@ Graph Validator ──→ ZNIKU Runtime
 Graph Core 只校验 node／port／edge 存在、typed output→input、required input、单值 input 单入边、
 `ordered_many` ordinal 连续唯一和 DAG 无环。图允许多个 Source、多个 Output、零 Output，以及任意合法
 分支与汇合。
+
+## Phase 1 公共内核
+
+- `zniku.graph`：公开 `Graph`、`NodeDefinition`、`NodeInstance`、`Edge`、typed `PortSpec` 及
+  `GraphValidator`；首批类型是 `MediaFile`、`VideoFile`、`AudioFile`、`DataFile`，插件可增加开放字符串
+  类型，Phase 1 只接受大小写敏感的精确类型相等，不做隐式继承或转换。定义和实例使用精确版本，参数按
+  NodeDefinition 的 JSON Schema 验证。
+- `zniku.project`：公开 `Project` 与 `ProjectStore`；`.zniku` 是带 schema version 的单文件 SQLite
+  authority，保存当前 Graph、节点定义、参数和 Studio 位置。
+- Project 保存前与读取后都会执行同一 Graph Validator；非法图、未知工程 schema、损坏数据和缺失的精确
+  NodeDefinition 默认 fail closed。
+- `.zniku` 可能包含本地路径和节点配置，默认由 Git 忽略；测试只在临时目录创建纯合成工程。
+- 本阶段没有 Run、NodeRun、Artifact、Scheduler、attempt、日志或媒体 I/O；这些不在 Phase 1 Store 中预建
+  空表。
 
 ## 0.2.0 明确删除的旧宪法
 
@@ -83,23 +98,29 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | CLI / Python package | `zniku` |
 | 工程文件扩展名 | `.zniku` |
 
-## Phase 0 交付边界
+## Phase 0–1 交付边界
 
 本阶段已经完成：
 
 - 纳入并启用 0.2.0 Graph Core 基线；
 - 同步 `AGENTS.md`、README 与 Studio 开发说明；
 - 将全部 0.1.0 架构文档移入历史归档；
-- 用自动化测试锁定“单一新权威、旧文档只在归档”的目录与引用规则。
+- 用自动化测试锁定“单一新权威、旧文档只在归档”的目录与引用规则；
+- 实现最小 Project、Graph、NodeDefinition、NodeInstance、Edge 和严格参数模型；
+- 实现 typed ports、required input、`one`／`ordered_many` 与 DAG validator；
+- 实现事务化 SQLite `.zniku` Project Store 及损坏／未知输入失败语义。
 
-本阶段没有实现 Project、SQLite `.zniku` Store、新 Graph 模型、Scheduler、Node Runner、正式 Studio 或真实
-媒体节点；这些分别属于 Phase 1–4。旧实现和旧测试暂时保留为 legacy regression，最终清理属于 Phase 5。
+本阶段没有实现 Scheduler、Node Runner、Run／NodeRun／Artifact、正式 Studio 接入或真实媒体节点；这些分别
+属于 Phase 2–4。旧实现和旧测试暂时保留为 legacy regression，最终清理属于 Phase 5。
 
 ## 过渡期仓库结构
 
 ```text
 ZNiku/
-├── src/zniku/                   # 0.1.0 legacy implementation；后续按 Phase 1–5 重写
+├── src/zniku/
+│   ├── graph/                   # 0.2.0 Graph 模型与唯一 validator
+│   ├── project/                 # 0.2.0 SQLite .zniku Project Store
+│   └── 其余模块                 # 0.1.0 legacy regression；Phase 2–5 逐步替换
 ├── apps/studio/
 │   └── src/gui0/                # 0.2.0 正式 Studio 的交互起点，当前仍是 mock
 ├── tests/                       # legacy regression + 架构权威一致性门
@@ -109,13 +130,13 @@ ZNiku/
 │   ├── archive/0.1.0/           # 旧架构历史归档
 │   └── brand-baseline.md
 ├── AGENTS.md
-└── VERSION                      # Phase 0 仍为 0.1.0 legacy implementation version
+└── VERSION                      # 0.2.0 产品实现版本
 ```
 
 ## 本地验证
 
-Python 需要 3.12 或更高版本及 `uv`。以下门禁在 Phase 0 只证明旧实现未被权威切换破坏，不代表
-0.2.0 Graph Core 已经完成：
+Python 需要 3.12 或更高版本及 `uv`。以下门禁验证 0.2.0 Graph Core、Project Store 和过渡期 legacy
+regression：
 
 ```powershell
 uv lock --check
@@ -142,7 +163,7 @@ npm audit --audit-level=low
 
 ## 实施路线
 
-1. Phase 1：Project、Graph Core、typed ports、DAG validator 与 SQLite `.zniku` Store；
+1. Phase 1（已完成）：Project、Graph Core、typed ports、DAG validator 与 SQLite `.zniku` Store；
 2. Phase 2：Scheduler、Node Runner、attempt、rerun-from-start、结果复用与 stale；
 3. Phase 3：GUI-0 接入 Project Service 和 Runtime，形成唯一正式 Studio；
 4. Phase 4：首批真实媒体节点与 automatic／manual_external；

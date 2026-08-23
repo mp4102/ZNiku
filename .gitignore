@@ -30,6 +30,7 @@ local-config.json
 
 # 正式任务与媒体产物
 *.AVEnhance/
+*.zniku
 artifacts/
 runtime-data/
 workspace/

@@ -1,4 +1,4 @@
-"""锁定 0.2.0 Phase 0 的单一架构权威与 0.1.0 只读归档边界。"""
+"""锁定 0.2.0 Phase 1 的单一架构权威与 0.1.0 只读归档边界。"""
 
 from __future__ import annotations
 
@@ -38,8 +38,8 @@ def test_graph_core_is_the_only_active_architecture_document() -> None:
     assert active_files == {Path("graph-core-baseline.md")}
     baseline = (ACTIVE_ARCHITECTURE / "graph-core-baseline.md").read_text("utf-8")
     assert "已批准的唯一 0.2.0 目标架构基线" in baseline
-    assert "Phase 0 已实施" in baseline
-    assert "Phase 1" in baseline and "尚未实施" in baseline
+    assert "Phase 0\u20131 已实施" in baseline
+    assert "Phase 2\u20135 尚未实施" in baseline
 
 
 def test_all_legacy_architecture_documents_are_archived() -> None:
@@ -63,7 +63,8 @@ def test_active_guidance_points_only_to_the_graph_core_authority() -> None:
     assert "唯一目标架构权威" in agents
     assert "多个 Source、多个 Output、零 Output" in agents
     assert "目标版本：`ZNIKU Studio 0.2.0`" in readme
-    assert "当前可运行代码：`main@198d802` 的 `0.1.0` legacy implementation" in readme
+    assert "当前实现版本：`0.2.0`" in readme
+    assert "`zniku.graph`" in readme and "`zniku.project`" in readme
     assert "../../docs/architecture/graph-core-baseline.md" in studio_readme
 
     active_guidance = "\n".join((agents, readme, studio_readme))
