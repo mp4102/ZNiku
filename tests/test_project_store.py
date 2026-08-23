@@ -30,6 +30,7 @@ from zniku.project import (
     ProjectFormatError,
     ProjectSnapshot,
     ProjectStore,
+    ProjectStoreError,
     ProjectValidationError,
 )
 
@@ -115,7 +116,7 @@ def saved_store(path: Path) -> ProjectStore:
     return ProjectStore.create(path, valid_project(), definitions())
 
 
-def test_create_uses_sqlite_header_and_only_phase_1_tables(tmp_path: Path) -> None:
+def test_create_uses_sqlite_header_and_phase_2_project_runtime_tables(tmp_path: Path) -> None:
     path = tmp_path / "synthetic.zniku"
     store = saved_store(path)
 
@@ -130,7 +131,17 @@ def test_create_uses_sqlite_header_and_only_phase_1_tables(tmp_path: Path) -> No
                 "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
             )
         }
-    assert tables == {"project", "node_definitions", "graph_nodes", "graph_edges"}
+    assert tables == {
+        "project",
+        "node_definitions",
+        "graph_nodes",
+        "graph_edges",
+        "runs",
+        "node_runs",
+        "artifacts",
+        "node_results",
+        "latest_results",
+    }
     assert not path.with_suffix(".json").exists()
 
 
@@ -248,6 +259,135 @@ def test_unknown_schema_version_fails_without_migration(tmp_path: Path) -> None:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 999
 
 
+def test_phase_1_schema_migrates_transactionally_without_changing_project(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "phase-1.zniku"
+    store = saved_store(path)
+    before = store.load()
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        for table in ("latest_results", "artifacts", "node_results", "node_runs", "runs"):
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute("PRAGMA user_version = 1")
+
+    migrated = ProjectStore.open(path)
+
+    assert migrated.load() == before
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == PROJECT_SCHEMA_VERSION
+        runtime_tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_schema WHERE type = 'table' "
+                "AND name IN ('runs','node_runs','artifacts','node_results','latest_results')"
+            )
+        }
+    assert runtime_tables == {
+        "runs",
+        "node_runs",
+        "artifacts",
+        "node_results",
+        "latest_results",
+    }
+
+
+def test_corrupt_phase_1_model_is_rejected_before_any_migration_write(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "corrupt-phase-1.zniku"
+    saved_store(path)
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        for table in ("latest_results", "artifacts", "node_results", "node_runs", "runs"):
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute(
+            "UPDATE graph_nodes SET parameters_json = ? WHERE node_id = ?",
+            ('{"strength":99}', "node.transform"),
+        )
+        connection.execute("PRAGMA user_version = 1")
+
+    with pytest.raises(ProjectValidationError, match="E_PROJECT_GRAPH_INVALID"):
+        ProjectStore.open(path)
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        runtime_tables = connection.execute(
+            "SELECT count(*) FROM sqlite_schema WHERE type = 'table' "
+            "AND name IN ('runs','node_runs','artifacts','node_results','latest_results')"
+        ).fetchone()[0]
+    assert runtime_tables == 0
+
+
+def test_phase_1_migration_post_check_failure_rolls_back_ddl_and_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "phase-1-post-check-failure.zniku"
+    saved_store(path)
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        for table in ("latest_results", "artifacts", "node_results", "node_runs", "runs"):
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute("PRAGMA user_version = 1")
+
+    original = ProjectStore._assert_schema_shape
+
+    def fail_runtime_schema_post_check(
+        connection: sqlite3.Connection,
+        *,
+        expected_tables: frozenset[str],
+        expected_columns: Any,
+    ) -> None:
+        if "runs" in expected_tables:
+            raise ProjectFormatError("E_SYNTHETIC_MIGRATION_POST_CHECK", "合成迁移后检查失败")
+        original(
+            connection,
+            expected_tables=expected_tables,
+            expected_columns=expected_columns,
+        )
+
+    monkeypatch.setattr(
+        ProjectStore,
+        "_assert_schema_shape",
+        staticmethod(fail_runtime_schema_post_check),
+    )
+
+    with pytest.raises(ProjectFormatError, match="E_SYNTHETIC_MIGRATION_POST_CHECK"):
+        ProjectStore.open(path)
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        runtime_tables = connection.execute(
+            "SELECT count(*) FROM sqlite_schema WHERE type = 'table' "
+            "AND name IN ('runs','node_runs','artifacts','node_results','latest_results')"
+        ).fetchone()[0]
+    assert runtime_tables == 0
+
+
+def test_malformed_phase_1_schema_fails_without_partial_migration(tmp_path: Path) -> None:
+    path = tmp_path / "malformed-phase-1.zniku"
+    saved_store(path)
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        for table in ("latest_results", "artifacts", "node_results", "node_runs", "runs"):
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute("ALTER TABLE graph_edges RENAME TO malformed_graph_edges")
+        connection.execute("PRAGMA user_version = 1")
+
+    with pytest.raises(ProjectFormatError, match="E_PROJECT_SCHEMA_INVALID"):
+        ProjectStore.open(path)
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'runs'"
+            ).fetchone()[0]
+            == 0
+        )
+
+
 def test_arbitrary_sqlite_file_is_not_accepted_as_a_project(tmp_path: Path) -> None:
     path = tmp_path / "foreign.zniku"
     with sqlite3.connect(path) as connection:
@@ -339,3 +479,19 @@ def test_invalid_initial_project_does_not_leave_a_half_created_store(tmp_path: P
         ProjectStore.create(path, invalid, definitions())
 
     assert not path.exists()
+
+
+def test_save_cannot_replace_existing_project_identity(tmp_path: Path) -> None:
+    path = tmp_path / "immutable-project-id.zniku"
+    store = saved_store(path)
+    before = store.load()
+    replacement = Project(
+        project_id="project.replacement",
+        name=before.project.name,
+        graph=before.project.graph,
+    )
+
+    with pytest.raises(ProjectStoreError, match="E_PROJECT_ID_IMMUTABLE"):
+        store.save(replacement, before.definitions)
+
+    assert store.load() == before

@@ -1,6 +1,6 @@
 name: ZNIKU Studio CI
 
-# Phase 0 过渡门：本工作流只验证 0.1.0 legacy Studio 与 Python bridge 未被权威切换破坏，
+# Phase 2 仍保留的过渡门：本工作流只验证 0.1.0 legacy Studio 与 Python bridge 未被重构破坏，
 # 0.2.0 正式 Studio 门将在 Phase 3 建立。
 
 on:

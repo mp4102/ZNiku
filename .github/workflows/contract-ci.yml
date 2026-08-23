@@ -1,6 +1,6 @@
 name: ZNIKU Core CI
 
-# Phase 1 Graph Core 与 SQLite Project Store 的正式 Python 门禁；尚未清理的 0.1.0
+# Phase 2 Graph Core、SQLite Project Store 与 Runtime 的正式 Python 门禁；尚未清理的 0.1.0
 # legacy implementation 继续作为过渡期回归，直到 Phase 5 删除。
 
 on:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  verify-graph-core:
+  verify-core-runtime:
     runs-on: ubuntu-latest
 
     steps:
@@ -35,38 +35,58 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --extra dev
 
-      - name: Test Graph Core and Project Store
+      - name: Test Graph Core, Project Store and Runtime
         run: |
           uv run --locked --extra dev pytest \
             tests/test_graph_models.py \
             tests/test_graph_validation.py \
             tests/test_project_store.py \
+            tests/test_runtime_repository.py \
+            tests/test_runtime_scheduler.py \
+            tests/test_runtime_reuse.py \
+            tests/test_node_runner.py \
+            tests/test_runtime_service.py \
             tests/test_architecture_authority.py \
             tests/test_version_consistency.py
 
-      - name: Typecheck Graph Core and Project Store
+      - name: Typecheck Graph Core, Project Store and Runtime
         run: |
           uv run --locked --extra dev mypy --no-incremental \
-            src/zniku/graph src/zniku/project \
+            src/zniku/graph src/zniku/project src/zniku/runtime \
             tests/test_graph_models.py \
             tests/test_graph_validation.py \
-            tests/test_project_store.py
+            tests/test_project_store.py \
+            tests/test_runtime_repository.py \
+            tests/test_runtime_scheduler.py \
+            tests/test_runtime_reuse.py \
+            tests/test_node_runner.py \
+            tests/test_runtime_service.py
 
-      - name: Lint Graph Core and Project Store
+      - name: Lint Graph Core, Project Store and Runtime
         run: |
           uv run --locked --extra dev ruff check \
-            src/zniku/graph src/zniku/project \
+            src/zniku/graph src/zniku/project src/zniku/runtime \
             tests/test_graph_models.py \
             tests/test_graph_validation.py \
-            tests/test_project_store.py
+            tests/test_project_store.py \
+            tests/test_runtime_repository.py \
+            tests/test_runtime_scheduler.py \
+            tests/test_runtime_reuse.py \
+            tests/test_node_runner.py \
+            tests/test_runtime_service.py
 
-      - name: Format check Graph Core and Project Store
+      - name: Format check Graph Core, Project Store and Runtime
         run: |
           uv run --locked --extra dev ruff format --check \
-            src/zniku/graph src/zniku/project \
+            src/zniku/graph src/zniku/project src/zniku/runtime \
             tests/test_graph_models.py \
             tests/test_graph_validation.py \
-            tests/test_project_store.py
+            tests/test_project_store.py \
+            tests/test_runtime_repository.py \
+            tests/test_runtime_scheduler.py \
+            tests/test_runtime_reuse.py \
+            tests/test_node_runner.py \
+            tests/test_runtime_service.py
 
   verify-legacy:
     runs-on: ubuntu-latest

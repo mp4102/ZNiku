@@ -10,14 +10,14 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 
 - 目标版本：`ZNIKU Studio 0.2.0`
 - 开发分支：`v0.2.0`
-- 当前阶段：**Phase 0–1 已完成——Graph Core 与 SQLite Project Store 已建立；Phase 2 尚未实施**
+- 当前阶段：**Phase 0–2 已完成——Graph Core、Project Store、Scheduler 与 Node Runner 已建立；Phase 3 尚未实施**
 - 唯一目标架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
-- 当前实现版本：`0.2.0`，公共入口为 `zniku.graph` 与 `zniku.project`
+- 当前实现版本：`0.2.0`，公共入口为 `zniku.graph`、`zniku.project` 与 `zniku.runtime`
 - 过渡期代码：`main@198d802` 的 `0.1.0` legacy implementation 仍保留为回归对照，Phase 5 删除
 
-Phase 1 已将 `VERSION`、Python package 与 Studio package 的产品实现版本切换为 `0.2.0`。尚未重写的
-Compiler、Runtime、Evidence 和前端投影继续保留各自的 `0.1.0` legacy contract version，不能作为
-0.2.0 能力入口。
+Phase 1 已将 `VERSION`、Python package 与 Studio package 的产品实现版本切换为 `0.2.0`；Phase 2 已用
+新的最小 Run、NodeRun、Artifact 与 NodeResult 替换 Runtime 领域入口。尚未重写的 Compiler、Evidence
+和前端投影继续保留各自的 `0.1.0` legacy contract version，不能作为 0.2.0 能力入口。
 
 ## 产品核心
 
@@ -49,19 +49,22 @@ Graph Core 只校验 node／port／edge 存在、typed output→input、required
 `ordered_many` ordinal 连续唯一和 DAG 无环。图允许多个 Source、多个 Output、零 Output，以及任意合法
 分支与汇合。
 
-## Phase 1 公共内核
+## Phase 1–2 公共内核
 
 - `zniku.graph`：公开 `Graph`、`NodeDefinition`、`NodeInstance`、`Edge`、typed `PortSpec` 及
   `GraphValidator`；首批类型是 `MediaFile`、`VideoFile`、`AudioFile`、`DataFile`，插件可增加开放字符串
   类型，Phase 1 只接受大小写敏感的精确类型相等，不做隐式继承或转换。定义和实例使用精确版本，参数按
   NodeDefinition 的 JSON Schema 验证。
 - `zniku.project`：公开 `Project` 与 `ProjectStore`；`.zniku` 是带 schema version 的单文件 SQLite
-  authority，保存当前 Graph、节点定义、参数和 Studio 位置。
+  authority，schema v2 在当前 Graph 之外保存普通 Run snapshot、attempt、Artifact、NodeResult、日志索引
+  和 latest-result head；Phase 1 schema v1 工程会在严格结构校验后事务化迁移。
+- `zniku.runtime`：公开最小 Runtime 模型、`Scheduler`、completed reuse／downstream stale 分析、支持
+  三类 executor 的 `NodeRunner` 与运行编排服务。持久状态只有 `pending`、`running`、
+  `waiting_external`、`completed` 和 `failed`；`ready`／`blocked` 只即时计算。
 - Project 保存前与读取后都会执行同一 Graph Validator；非法图、未知工程 schema、损坏数据和缺失的精确
   NodeDefinition 默认 fail closed。
 - `.zniku` 可能包含本地路径和节点配置，默认由 Git 忽略；测试只在临时目录创建纯合成工程。
-- 本阶段没有 Run、NodeRun、Artifact、Scheduler、attempt、日志或媒体 I/O；这些不在 Phase 1 Store 中预建
-  空表。
+- Phase 2 不提供真实媒体节点，也不连接 Studio；Runner 的媒体轻量验收接口由 Phase 4 节点 adapter 使用。
 
 ## 0.2.0 明确删除的旧宪法
 
@@ -98,7 +101,7 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | CLI / Python package | `zniku` |
 | 工程文件扩展名 | `.zniku` |
 
-## Phase 0–1 交付边界
+## Phase 0–2 交付边界
 
 本阶段已经完成：
 
@@ -108,10 +111,13 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 - 用自动化测试锁定“单一新权威、旧文档只在归档”的目录与引用规则；
 - 实现最小 Project、Graph、NodeDefinition、NodeInstance、Edge 和严格参数模型；
 - 实现 typed ports、required input、`one`／`ordered_many` 与 DAG validator；
-- 实现事务化 SQLite `.zniku` Project Store 及损坏／未知输入失败语义。
+- 实现事务化 SQLite `.zniku` Project Store 及损坏／未知输入失败语义；
+- 实现普通 graph snapshot、稳定 ready 计算、独立 attempt 工作目录与普通日志；
+- 实现 trusted Python adapter、`shell=False` command executor 和可跨应用重启的 manual external handoff；
+- 实现 interrupted 恢复失败、rerun-from-start、completed result 复用和 downstream stale。
 
-本阶段没有实现 Scheduler、Node Runner、Run／NodeRun／Artifact、正式 Studio 接入或真实媒体节点；这些分别
-属于 Phase 2–4。旧实现和旧测试暂时保留为 legacy regression，最终清理属于 Phase 5。
+本阶段没有实现正式 Studio 接入或真实媒体节点；这些分别属于 Phase 3–4。旧实现和旧测试暂时保留为
+legacy regression，最终清理属于 Phase 5。
 
 ## 过渡期仓库结构
 
@@ -120,7 +126,8 @@ ZNiku/
 ├── src/zniku/
 │   ├── graph/                   # 0.2.0 Graph 模型与唯一 validator
 │   ├── project/                 # 0.2.0 SQLite .zniku Project Store
-│   └── 其余模块                 # 0.1.0 legacy regression；Phase 2–5 逐步替换
+│   ├── runtime/                 # 0.2.0 Scheduler、Node Runner 与运行历史
+│   └── 其余模块                 # 0.1.0 legacy regression；Phase 3–5 逐步替换
 ├── apps/studio/
 │   └── src/gui0/                # 0.2.0 正式 Studio 的交互起点，当前仍是 mock
 ├── tests/                       # legacy regression + 架构权威一致性门
@@ -135,8 +142,8 @@ ZNiku/
 
 ## 本地验证
 
-Python 需要 3.12 或更高版本及 `uv`。以下门禁验证 0.2.0 Graph Core、Project Store 和过渡期 legacy
-regression：
+Python 需要 3.12 或更高版本及 `uv`。以下门禁验证 0.2.0 Graph Core、Project Store、Runtime 和过渡期
+legacy regression：
 
 ```powershell
 uv lock --check
@@ -164,9 +171,9 @@ npm audit --audit-level=low
 ## 实施路线
 
 1. Phase 1（已完成）：Project、Graph Core、typed ports、DAG validator 与 SQLite `.zniku` Store；
-2. Phase 2：Scheduler、Node Runner、attempt、rerun-from-start、结果复用与 stale；
+2. Phase 2（已完成）：Scheduler、Node Runner、attempt、rerun-from-start、结果复用与 stale；
 3. Phase 3：GUI-0 接入 Project Service 和 Runtime，形成唯一正式 Studio；
 4. Phase 4：首批真实媒体节点与 automatic／manual_external；
 5. Phase 5：删除旧 Evidence/full/recovery/fixed pipeline 实现并完成最小验收。
 
-当前仓库为私有开发仓库，未授予开源许可证。
+当前仓库为公开开发仓库，但尚未包含开源许可证；公开可见不等于授予复制、修改或分发许可。

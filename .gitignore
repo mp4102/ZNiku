@@ -4,10 +4,12 @@
 **/coverage/
 *.tsbuildinfo
 
-# Python / Runtime（后续阶段）
+# Python / Runtime
 .venv/
 **/__pycache__/
 **/.pytest_cache/
+.pytest-tmp-*/
+.test-tmp-*/
 **/.ruff_cache/
 **/.mypy_cache/
 **/*.egg-info/

@@ -153,6 +153,25 @@ def test_node_definition_rejects_invalid_parameter_schema() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "error_code"),
+    (
+        ("executable", "python\x00.exe", "E_COMMAND_EXECUTABLE_NUL"),
+        ("argv", ("-c", "value\x00suffix"), "E_COMMAND_ARGV_NUL"),
+    ),
+)
+def test_command_executor_rejects_nul(
+    field: str,
+    value: str | tuple[str, ...],
+    error_code: str,
+) -> None:
+    values: dict[str, object] = {"executable": "python", "argv": ("-V",)}
+    values[field] = value
+
+    with pytest.raises(ValidationError, match=error_code):
+        CommandExecutorSpec.model_validate(values)
+
+
 def test_node_definition_allows_same_port_id_in_opposite_directions() -> None:
     definition = NodeDefinition(
         type_id="builtin.transform",

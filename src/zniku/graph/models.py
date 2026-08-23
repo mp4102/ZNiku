@@ -278,10 +278,20 @@ class CommandExecutorSpec(GraphModel):
     def normalize_argv(cls, value: Any) -> Any:
         return tuple(value) if isinstance(value, list) else value
 
+    @field_validator("argv")
+    @classmethod
+    def validate_argv(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any("\x00" in token for token in value):
+            raise ValueError("E_COMMAND_ARGV_NUL: command argv 不得包含 NUL")
+        return value
+
     @field_validator("executable")
     @classmethod
     def validate_executable(cls, value: str) -> str:
-        return _ensure_non_blank(value, field_name="executable")
+        normalized = _ensure_non_blank(value, field_name="executable")
+        if "\x00" in normalized:
+            raise ValueError("E_COMMAND_EXECUTABLE_NUL: command executable 不得包含 NUL")
+        return normalized
 
 
 class ManualExternalExecutorSpec(GraphModel):
