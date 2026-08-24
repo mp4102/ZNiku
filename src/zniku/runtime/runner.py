@@ -28,8 +28,14 @@ from zniku.graph import (
     NodeInstance,
     PythonExecutorSpec,
 )
+from zniku.runtime.models import FrameRange
 
 _MEDIA_TYPES = frozenset({"MediaFile", "VideoFile", "AudioFile"})
+_DEFAULT_OUTPUT_SUFFIX = {
+    "MediaFile": ".mkv",
+    "VideoFile": ".mkv",
+    "AudioFile": ".mka",
+}
 _PLACEHOLDER = re.compile(
     r"^\{(?P<kind>workdir|input|inputs|output|param)(?::(?P<name>[^{}:]+))?\}$"
 )
@@ -128,19 +134,31 @@ class NodeExecutionRequest:
 
 @dataclass(frozen=True, slots=True)
 class OutputTarget:
-    """Runner 分配给 adapter、命令或人工流程的声明输出。"""
+    """Runner 分配给 adapter、命令或人工流程的声明输出。
+
+    外部路径权限只能由受信任 Python adapter 通过 ``ProducedOutput`` 显式申请；
+    command 与人工流程仍只能在 attempt 工作目录中产生输出。
+    """
 
     port_id: str
     kind: str
     path: Path
+    frame_range: FrameRange | None = None
+    allow_external: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class ProducedOutput:
-    """允许 adapter 在 attempt 内返回不同于默认值的输出路径。"""
+    """允许受信任 adapter 返回实际输出路径及可选帧区间。
+
+    ``allow_external`` 是 Source/Output 类节点使用的最小权限开关，不会通过
+    NodeDefinition 或用户 JSON 传入。默认严格限制在 attempt 内。
+    """
 
     port_id: str
     path: Path
+    frame_range: FrameRange | None = None
+    allow_external: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +195,7 @@ class ValidatedOutput:
     size: int
     mtime_ns: int
     media_info: Mapping[str, object]
+    frame_range: FrameRange | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +227,7 @@ class RunnerArtifact:
     producer_node_run_id: str
     producer_port_id: str
     ordinal: int | None
+    frame_range: FrameRange | None
     media_info: Mapping[str, object]
     size: int
     mtime_ns: int
@@ -797,7 +817,10 @@ class NodeRunner:
                 kind=port.data_type,
                 path=self._resolve_inside(
                     layout.output_dir,
-                    overrides.get(port.port_id, f"{index:03d}.out"),
+                    overrides.get(
+                        port.port_id,
+                        f"{index:03d}{_DEFAULT_OUTPUT_SUFFIX.get(port.data_type, '.out')}",
+                    ),
                 ),
             )
             for index, port in enumerate(request.definition.output_ports)
@@ -860,6 +883,8 @@ class NodeRunner:
                 or not isinstance(item.port_id, str)
                 or not item.port_id
                 or not isinstance(item.path, Path)
+                or (item.frame_range is not None and not isinstance(item.frame_range, FrameRange))
+                or type(item.allow_external) is not bool
                 for item in result.outputs
             ):
                 raise TypeError("outputs 必须是 tuple[ProducedOutput, ...]，且字段类型有效")
@@ -906,9 +931,14 @@ class NodeRunner:
                 or not isinstance(item.port_id, str)
                 or not item.port_id
                 or not isinstance(item.path, Path)
+                or (item.frame_range is not None and not isinstance(item.frame_range, FrameRange))
+                or type(item.allow_external) is not bool
+                or item.allow_external
                 for item in submission.outputs
             ):
-                raise TypeError("outputs 必须是 tuple[ProducedOutput, ...]，且字段类型有效")
+                raise TypeError(
+                    "outputs 必须是 attempt 内的 tuple[ProducedOutput, ...]，且字段类型有效"
+                )
             media_summary = self._strict_summary_mapping(
                 submission.media_summary,
                 field_name="media_summary",
@@ -1066,7 +1096,7 @@ class NodeRunner:
         if not produced:
             return targets
         expected = {item.port_id: item for item in targets}
-        actual: dict[str, Path] = {}
+        actual: dict[str, tuple[Path, FrameRange | None, bool]] = {}
         for item in produced:
             if item.port_id not in expected or item.port_id in actual:
                 raise self._configuration_error(
@@ -1074,7 +1104,22 @@ class NodeRunner:
                     f"输出 {item.port_id!r} 未声明或重复",
                 )
             path = Path(item.path)
-            if path.is_absolute():
+            if item.allow_external:
+                if not path.is_absolute():
+                    raise RunnerError(
+                        "E_RUNNER_EXTERNAL_PATH_INVALID",
+                        RunnerFailureReason.PATH_INVALID,
+                        f"外部 adapter output 必须是绝对路径：{path}",
+                    )
+                try:
+                    resolved = path.resolve(strict=False)
+                except OSError as error:
+                    raise RunnerError(
+                        "E_RUNNER_EXTERNAL_PATH_INVALID",
+                        RunnerFailureReason.PATH_INVALID,
+                        f"无法解析外部 adapter output：{path}",
+                    ) from error
+            elif path.is_absolute():
                 try:
                     resolved = path.resolve(strict=False)
                     resolved.relative_to(work_dir.resolve(strict=True))
@@ -1086,13 +1131,20 @@ class NodeRunner:
                     ) from error
             else:
                 resolved = self._resolve_inside(work_dir, path)
-            actual[item.port_id] = resolved
+            actual[item.port_id] = (resolved, item.frame_range, item.allow_external)
         if set(actual) != set(expected):
             raise self._configuration_error(
                 "E_RUNNER_OUTPUT_BINDING_INCOMPLETE", "adapter 必须提交全部声明 output"
             )
         return tuple(
-            OutputTarget(item.port_id, item.kind, actual[item.port_id]) for item in targets
+            OutputTarget(
+                item.port_id,
+                item.kind,
+                actual[item.port_id][0],
+                frame_range=actual[item.port_id][1],
+                allow_external=actual[item.port_id][2],
+            )
+            for item in targets
         )
 
     def _validate_and_build_result(
@@ -1109,7 +1161,8 @@ class NodeRunner:
         for output in outputs:
             try:
                 resolved = output.path.resolve(strict=True)
-                resolved.relative_to(layout.work_dir)
+                if not output.allow_external:
+                    resolved.relative_to(layout.work_dir.resolve(strict=True))
                 stat = resolved.stat()
             except (OSError, ValueError) as error:
                 raise RunnerError(
@@ -1161,6 +1214,7 @@ class NodeRunner:
                     size=stat.st_size,
                     mtime_ns=stat.st_mtime_ns,
                     media_info=media_info,
+                    frame_range=output.frame_range,
                 )
             )
 
@@ -1173,6 +1227,7 @@ class NodeRunner:
                 producer_node_run_id=request.node_run_id,
                 producer_port_id=item.port_id,
                 ordinal=None,
+                frame_range=item.frame_range,
                 media_info=item.media_info,
                 size=item.size,
                 mtime_ns=item.mtime_ns,

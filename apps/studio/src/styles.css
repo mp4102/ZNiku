@@ -436,8 +436,51 @@ button {
 
 .palette-list {
   display: grid;
-  gap: 7px;
+  gap: 14px;
   padding: 0 12px;
+}
+
+.palette-group {
+  display: grid;
+  gap: 7px;
+}
+
+.palette-group > header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: start;
+  padding: 0 2px;
+}
+
+.palette-group > header strong,
+.palette-group > header small {
+  display: block;
+}
+
+.palette-group > header strong {
+  color: #d6dee8;
+  font-size: 10px;
+}
+
+.palette-group > header small {
+  margin-top: 2px;
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.palette-group > header em {
+  color: var(--amber);
+  font: normal 9px/1.2 'IBM Plex Mono', monospace;
+}
+
+.palette-empty {
+  margin: 0;
+  padding: 14px 10px;
+  border: 1px dashed #2b3949;
+  color: var(--quiet);
+  font-size: 10px;
+  text-align: center;
 }
 
 .palette-item {

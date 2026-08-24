@@ -27,6 +27,7 @@ from zniku.graph import (
     PythonExecutorSpec,
     ValidatorSpec,
 )
+from zniku.runtime.models import FrameRange
 from zniku.runtime.runner import (
     ManualHandoff,
     ManualSubmission,
@@ -331,6 +332,24 @@ def test_python_adapter_result_fields_fail_closed(tmp_path: Path) -> None:
         PythonAdapterResult(media_summary=cast(Any, None)),
         PythonAdapterResult(validation_summary=cast(Any, [])),
         PythonAdapterResult(media_summary=cast(Any, {1: "non-string-key"})),
+        PythonAdapterResult(
+            outputs=(
+                ProducedOutput(
+                    port_id="data",
+                    path=Path("candidate"),
+                    frame_range=cast(Any, {"start_frame": 0, "end_frame": 1}),
+                ),
+            )
+        ),
+        PythonAdapterResult(
+            outputs=(
+                ProducedOutput(
+                    port_id="data",
+                    path=Path("candidate"),
+                    allow_external=cast(Any, 1),
+                ),
+            )
+        ),
     )
 
     for index, invalid_result in enumerate(invalid_results):
@@ -350,6 +369,76 @@ def test_python_adapter_result_fields_fail_closed(tmp_path: Path) -> None:
             ).run_automatic(request_for(definition))
         assert captured.value.code == "E_RUNNER_ADAPTER_RESULT_INVALID"
         assert captured.value.reason is RunnerFailureReason.ADAPTER_FAILED
+
+
+def test_python_adapter_external_output_is_explicit_and_preserves_frame_range(
+    tmp_path: Path,
+) -> None:
+    """只有受信任 adapter 显式申请时才接受外部文件，并保留首尾半开帧区间。"""
+
+    definition = python_data_definition()
+    outside = tmp_path / "published.bin"
+
+    def adapter(_context: PythonAdapterContext) -> PythonAdapterResult:
+        outside.write_bytes(b"published")
+        return PythonAdapterResult(
+            outputs=(
+                ProducedOutput(
+                    port_id="data",
+                    path=outside,
+                    frame_range=FrameRange(start_frame=12, end_frame=34),
+                    allow_external=True,
+                ),
+            )
+        )
+
+    result = NodeRunner(
+        tmp_path / "work",
+        python_adapters={"tests.adapters:write": adapter},
+    ).run_automatic(request_for(definition))
+
+    assert result.artifacts[0].path == outside.resolve()
+    assert result.artifacts[0].frame_range == FrameRange(start_frame=12, end_frame=34)
+
+
+def test_python_adapter_external_output_defaults_fail_closed(tmp_path: Path) -> None:
+    """未显式授权的 adapter 外部路径必须被 Runner 拒绝。"""
+
+    definition = python_data_definition()
+    outside = tmp_path / "escaped.bin"
+
+    def adapter(_context: PythonAdapterContext) -> PythonAdapterResult:
+        outside.write_bytes(b"candidate")
+        return PythonAdapterResult(outputs=(ProducedOutput(port_id="data", path=outside),))
+
+    with pytest.raises(RunnerError) as captured:
+        NodeRunner(
+            tmp_path / "work",
+            python_adapters={"tests.adapters:write": adapter},
+        ).run_automatic(request_for(definition))
+
+    assert captured.value.code == "E_RUNNER_PATH_ESCAPE"
+    assert captured.value.reason is RunnerFailureReason.PATH_INVALID
+
+
+def test_default_media_output_paths_have_container_extensions(tmp_path: Path) -> None:
+    """默认容器扩展名可被 FFmpeg 和人工外部工具直接识别。"""
+
+    definition = NodeDefinition(
+        type_id="test.manual_media_extensions",
+        version="2.0.0",
+        output_ports=(
+            PortSpec(port_id="video", data_type="VideoFile"),
+            PortSpec(port_id="audio", data_type="AudioFile"),
+            PortSpec(port_id="media", data_type="MediaFile"),
+        ),
+        execution_mode=ExecutionMode.MANUAL_EXTERNAL,
+        executor=ManualExternalExecutorSpec(),
+    )
+
+    handoff = NodeRunner(tmp_path / "work").prepare_manual(request_for(definition))
+
+    assert tuple(Path(item.path).suffix for item in handoff.outputs) == (".mkv", ".mka", ".mkv")
 
 
 def test_validator_result_fields_fail_closed(tmp_path: Path) -> None:
@@ -505,6 +594,9 @@ def test_manual_submission_fields_fail_closed(tmp_path: Path) -> None:
         cast(Any, object()),
         ManualSubmission(outputs=(cast(Any, object()),)),
         ManualSubmission(outputs=(ProducedOutput(port_id=cast(Any, 1), path=Path("candidate")),)),
+        ManualSubmission(
+            outputs=(ProducedOutput(port_id="result", path=Path("candidate"), allow_external=True),)
+        ),
         ManualSubmission(media_summary=cast(Any, None)),
         ManualSubmission(validation_summary={"nested": object()}),
         ManualSubmission(media_summary=cast(Any, ExitMapping())),

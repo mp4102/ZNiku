@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { App } from './App'
 import type { StudioCommand, StudioEnvelope } from './studio/contracts'
 import type { StudioGateway } from './studio/gateway'
-import { handoffEnvelope, studioEnvelope } from './studio/test-fixtures'
+import {
+  handoffEnvelope,
+  projectSnapshot,
+  sourceDefinition,
+  studioEnvelope,
+  transformDefinition,
+} from './studio/test-fixtures'
 
 afterEach(cleanup)
 
@@ -60,6 +66,45 @@ describe('ZNIKU Studio 0.2.0 formal workspace', () => {
     expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
   })
 
+  it('按 Python catalog 展示基础媒体节点与 VideoTransform presets', async () => {
+    const user = userEvent.setup()
+    const mediaSource = { ...sourceDefinition, type_id: 'zniku.media.source.video' }
+    const mrPreset = {
+      ...transformDefinition,
+      type_id: 'zniku.media.video_transform.mr.external',
+    }
+    const createdEnvelope = studioEnvelope({
+      snapshot: {
+        project: { ...projectSnapshot.project, graph: { nodes: [], edges: [] } },
+        definitions: [mediaSource, mrPreset],
+      },
+    })
+    let currentEnvelope = studioEnvelope({ project_path: null, snapshot: null })
+    const commands: StudioCommand[] = []
+    const gateway: StudioGateway = {
+      inspect: async () => currentEnvelope,
+      command: async (command) => {
+        commands.push(command)
+        if (command.operation === 'create_project') currentEnvelope = createdEnvelope
+        return currentEnvelope
+      },
+    }
+    render(<App gateway={gateway} nodeIdFactory={() => 'node.mr'} />)
+
+    expect(await screen.findByText('尚未打开工程')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('工程路径'), 'C:\\synthetic\\media.zniku')
+    await user.click(screen.getByRole('button', { name: '新建' }))
+    await waitFor(() => expect(commands.at(-1)?.operation).toBe('create_project'))
+
+    expect(await screen.findByRole('region', { name: '基础媒体节点' })).toBeInTheDocument()
+    const presets = screen.getByRole('region', { name: 'VideoTransform presets' })
+    expect(within(presets).getByText('zniku.media.video_transform.mr.external')).toBeInTheDocument()
+    await user.click(within(presets).getByRole('button', { name: /zniku\.media\.video_transform\.mr\.external/ }))
+
+    expect(await screen.findByLabelText('node.mr 节点')).toBeInTheDocument()
+    expect(screen.getByLabelText('节点参数 JSON')).toHaveValue('{\n  "strength": 3\n}')
+  })
+
   it('打开、新建、参数保存并通过真实命令执行 Run all', async () => {
     const user = userEvent.setup()
     const gateway = new RecordingGateway()
@@ -86,7 +131,7 @@ describe('ZNIKU Studio 0.2.0 formal workspace', () => {
       name: 'New Project',
     }))
 
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     const editor = await screen.findByLabelText('节点参数 JSON')
     fireEvent.change(editor, { target: { value: '{"strength":7}' } })
     await user.click(screen.getByRole('button', { name: '应用参数到 Draft' }))
@@ -113,7 +158,7 @@ describe('ZNIKU Studio 0.2.0 formal workspace', () => {
     render(<App gateway={gateway} />)
     await screen.findByText('Synthetic Studio Project')
 
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     expect(await screen.findByText('External handoff')).toBeInTheDocument()
     expect(screen.getByText('C:\\synthetic\\source.mkv')).toBeInTheDocument()
     expect(screen.getByText(/output\.mkv/)).toBeInTheDocument()
@@ -124,7 +169,7 @@ describe('ZNIKU Studio 0.2.0 formal workspace', () => {
       node_run_id: '00000000-0000-4000-8000-000000000012',
     }))
 
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     await user.click(screen.getByRole('button', { name: 'Run to here' }))
     await waitFor(() => expect(gateway.commands.slice(-2).map((command) => command.operation)).toEqual([
       'save_project',
@@ -132,7 +177,7 @@ describe('ZNIKU Studio 0.2.0 formal workspace', () => {
     ]))
     expect(gateway.commands.at(-1)).toMatchObject({ node_id: 'transform' })
 
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     await user.click(screen.getByRole('button', { name: 'Rerun from here' }))
     await waitFor(() => expect(gateway.commands.at(-1)).toEqual({
       operation: 'rerun_from_here',
@@ -149,7 +194,7 @@ describe('ZNIKU Studio 0.2.0 formal workspace', () => {
     render(<App gateway={gateway} />)
     await screen.findByText('Synthetic Studio Project')
 
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     for (const name of [
       '打开',
       '新建',
@@ -189,7 +234,7 @@ describe('ZNIKU Studio 0.2.0 formal workspace', () => {
     render(<App gateway={gateway} />)
     await screen.findByText('Synthetic Studio Project')
 
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     expect(screen.getByRole('button', { name: 'Run to here' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Rerun from here' })).toBeDisabled()
   })

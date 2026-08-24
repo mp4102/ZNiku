@@ -47,6 +47,7 @@ import {
   reorderEdge,
 } from './graph'
 import { createStudioGateway, type StudioGateway } from './gateway'
+import { groupStudioDefinitions } from './catalog'
 
 const nodeTypes = { workflow: WorkflowNodeCard }
 
@@ -494,11 +495,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     [acceptEnvelope, draft, effectiveGateway],
   )
 
-  const filteredDefinitions = definitions.filter((definition) =>
-    `${definition.type_id} ${definition.version} ${definition.executor.kind}`
-      .toLowerCase()
-      .includes(query.trim().toLowerCase()),
-  )
+  const catalogGroups = groupStudioDefinitions(definitions, query)
   const singleSelectedNodeId = selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null
   const rerunId = currentRun?.run_id ?? null
   const rerunNodeIncluded = singleSelectedNodeId
@@ -560,16 +557,25 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         </div>
         <label className="search-box">
           <span>⌕</span>
-          <input aria-label="搜索节点" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="type、version 或 executor" />
+          <input aria-label="搜索节点" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="type、port、mode 或 executor" />
         </label>
         <div className="palette-list" aria-label="节点定义列表">
-          {filteredDefinitions.map((definition) => (
-            <button className={`palette-item palette-item--${definition.executor.kind}`} type="button" key={`${definition.type_id}@${definition.version}`} disabled={!draft || busy} onClick={() => addDefinition(definition)}>
-              <span className="palette-icon">{definition.executor.kind === 'manual_external' ? 'ME' : definition.executor.kind === 'command' ? 'CM' : 'PY'}</span>
-              <span><strong>{definition.type_id}</strong><small>{definition.input_ports.length} in · {definition.output_ports.length} out</small></span>
-              <em>{definition.version}</em>
-            </button>
+          {catalogGroups.map((group) => (
+            <section className="palette-group" aria-label={group.label} key={group.id}>
+              <header>
+                <span><strong>{group.label}</strong><small>{group.description}</small></span>
+                <em>{group.entries.length}</em>
+              </header>
+              {group.entries.map(({ definition, role }) => (
+                <button className={`palette-item palette-item--${definition.executor.kind}`} type="button" key={`${definition.type_id}@${definition.version}`} disabled={!draft || busy} onClick={() => addDefinition(definition)}>
+                  <span className="palette-icon">{definition.executor.kind === 'manual_external' ? 'ME' : definition.executor.kind === 'command' ? 'CM' : 'PY'}</span>
+                  <span><strong>{definition.type_id}</strong><small>{role} · {definition.execution_mode} · {definition.input_ports.length} in / {definition.output_ports.length} out</small></span>
+                  <em>{definition.version}</em>
+                </button>
+              ))}
+            </section>
           ))}
+          {catalogGroups.length === 0 && <p className="palette-empty">没有匹配的 exact definition。</p>}
         </div>
         <div className="selection-actions">
           <button className="button button--ghost" type="button" disabled={selectedNodeIds.size === 0 || busy} onClick={copySelected}>复制所选</button>
@@ -577,7 +583,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         </div>
         <div className="palette-note">
           <span>自由 DAG</span>
-          <p>拖动框选可多选；Ctrl/Cmd+D 复制，Delete 删除。端口只按精确 data_type 与 cardinality 连接。</p>
+          <p>节点与 presets 来自当前 .zniku 的 Python catalog。拖动框选可多选；端口只按精确 data_type 与 cardinality 连接。</p>
         </div>
       </aside>
 

@@ -1,4 +1,4 @@
-"""锁定 0.2.0 Phase 3 的单一架构权威与 0.1.0 只读归档边界。"""
+"""锁定 0.2.0 Phase 4 的单一架构权威与 0.1.0 只读归档边界。"""
 
 from __future__ import annotations
 
@@ -28,18 +28,25 @@ LEGACY_ARCHITECTURE_PATHS = (
 MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\((?P<target>[^)]+)\)")
 
 
-def test_graph_core_is_the_only_active_architecture_document() -> None:
+def test_graph_core_is_the_only_authority_and_media_contract_is_subordinate() -> None:
     active_files = {
         path.relative_to(ACTIVE_ARCHITECTURE)
         for path in ACTIVE_ARCHITECTURE.rglob("*")
         if path.is_file()
     }
 
-    assert active_files == {Path("graph-core-baseline.md")}
+    assert active_files == {
+        Path("graph-core-baseline.md"),
+        Path("media-node-contract.md"),
+    }
     baseline = (ACTIVE_ARCHITECTURE / "graph-core-baseline.md").read_text("utf-8")
+    media_contract = (ACTIVE_ARCHITECTURE / "media-node-contract.md").read_text("utf-8")
     assert "已批准的唯一 0.2.0 目标架构基线" in baseline
-    assert "Phase 0\u20133 已实施" in baseline
-    assert "Phase 4\u20135 尚未实施" in baseline
+    assert "Phase 0\u20134 已实施" in baseline
+    assert "Phase 5 尚未实施" in baseline
+    assert "graph-core-baseline.md" in media_contract
+    assert "本文从属于" in media_contract
+    assert "发生冲突时以上位基线为准" in media_contract
 
 
 def test_all_legacy_architecture_documents_are_archived() -> None:
@@ -72,9 +79,10 @@ def test_active_guidance_points_only_to_the_graph_core_authority() -> None:
             "`zniku.project`",
             "`zniku.runtime`",
             "`zniku.project_service`",
+            "`zniku.media`",
         )
     )
-    assert "0.2.0 Phase 3" in package_doc
+    assert "0.2.0 Phase 4" in package_doc
     assert "Project Service" in package_doc and "唯一正式 Studio" in package_doc
     assert "../../docs/architecture/graph-core-baseline.md" in studio_readme
 

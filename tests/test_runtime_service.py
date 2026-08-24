@@ -27,11 +27,13 @@ from zniku.graph import (
 from zniku.project import Project, ProjectStore
 from zniku.runtime import (
     FailureReason,
+    FrameRange,
     ManualSubmission,
     NodeRun,
     NodeRunState,
     NodeValidatorContext,
     NodeValidatorResult,
+    ProducedOutput,
     PythonAdapterContext,
     PythonAdapterResult,
     RunnerCancelled,
@@ -228,6 +230,51 @@ def test_service_executes_manual_handoff_then_reuses_exact_results(tmp_path: Pat
         assert reused.state is NodeRunState.COMPLETED
         assert reused.reused_from_result_id is not None
         assert reused.output_artifact_ids == first_heads[node_id].output_artifact_ids
+
+
+def test_service_persists_runner_external_path_and_frame_range(tmp_path: Path) -> None:
+    """Runner 媒体元数据必须原样进入 Project 的普通 Artifact 记录。"""
+
+    definition = _python_definition(
+        "test.external-source",
+        "tests:external-source",
+        outputs=_data_output(),
+    )
+    graph = Graph(
+        nodes=(
+            NodeInstance(
+                node_id="source",
+                type_id=definition.type_id,
+                definition_version=definition.version,
+            ),
+        )
+    )
+    external = tmp_path / "external-source.bin"
+    external.write_bytes(b"source")
+
+    def adapter(_context: PythonAdapterContext) -> PythonAdapterResult:
+        return PythonAdapterResult(
+            outputs=(
+                ProducedOutput(
+                    port_id="out",
+                    path=external,
+                    frame_range=FrameRange(start_frame=0, end_frame=42),
+                    allow_external=True,
+                ),
+            )
+        )
+
+    service = RuntimeService(
+        _store(tmp_path, graph, (definition,), filename="external-frame-range.zniku"),
+        tmp_path / "external-work",
+        python_adapters={"tests:external-source": adapter},
+    )
+    run = service.run_until_blocked(service.create_run().run_id)
+    node_run = _latest_attempt(run.node_runs, "source")
+    artifact = service.repository.get_artifact(node_run.output_artifact_ids[0])
+
+    assert artifact.path == str(external.resolve())
+    assert artifact.frame_range == FrameRange(start_frame=0, end_frame=42)
 
 
 def test_manual_handoff_respects_definition_input_port_order(tmp_path: Path) -> None:

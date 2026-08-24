@@ -5,6 +5,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from zniku.media import (
+    built_in_media_definitions,
+    media_artifact_quick_probe,
+    media_python_adapters,
+    media_validators,
+    runner_media_probe,
+)
 from zniku.project_service import ProjectServiceApplication, serve_project_service
 
 
@@ -27,7 +34,7 @@ def main() -> int:
     """建立单一 application session 并持续服务到操作者中断。"""
 
     arguments = build_parser().parse_args()
-    application = ProjectServiceApplication(work_root=arguments.work_root)
+    application = build_application(arguments.work_root)
     if arguments.project is not None:
         application.command({"operation": "open_project", "path": str(arguments.project)})
     server = serve_project_service(application, port=arguments.port)
@@ -39,6 +46,19 @@ def main() -> int:
     finally:
         server.server_close()
     return 0
+
+
+def build_application(work_root: Path) -> ProjectServiceApplication:
+    """构造正式 Phase 4 host；Python 媒体目录是 Studio 节点合同的唯一权威。"""
+
+    return ProjectServiceApplication(
+        work_root=work_root,
+        definition_catalog=built_in_media_definitions(),
+        python_adapters=media_python_adapters(),
+        validators=media_validators(),
+        media_probe=runner_media_probe,
+        artifact_quick_probe=media_artifact_quick_probe,
+    )
 
 
 if __name__ == "__main__":

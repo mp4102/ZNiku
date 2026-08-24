@@ -266,6 +266,46 @@ def test_create_save_and_reopen_round_trip(tmp_path: Path) -> None:
     assert reopened.snapshot.definitions == ()
 
 
+def test_create_project_uses_injected_definition_catalog(tmp_path: Path) -> None:
+    """新建 Project 固定启动时目录，但打开旧 Project 不会暗中追加定义。"""
+
+    definition = _source_definition()
+    application = ProjectServiceApplication(
+        work_root=tmp_path / "work",
+        definition_catalog=(definition,),
+    )
+    path = tmp_path / "catalog.zniku"
+
+    created = application.command(
+        {
+            "operation": "create_project",
+            "path": str(path),
+            "project_id": "project.catalog",
+            "name": "目录工程",
+        }
+    )
+
+    assert created.snapshot is not None
+    assert created.snapshot.definitions == (definition,)
+    reopened = ProjectServiceApplication(work_root=tmp_path / "reopen").command(
+        {"operation": "open_project", "path": str(path)}
+    )
+    assert reopened.snapshot is not None
+    assert reopened.snapshot.definitions == (definition,)
+
+
+def test_project_service_rejects_duplicate_definition_catalog(tmp_path: Path) -> None:
+    definition = _source_definition()
+
+    with pytest.raises(ProjectServiceError) as captured:
+        ProjectServiceApplication(
+            work_root=tmp_path / "work",
+            definition_catalog=(definition, definition),
+        )
+
+    assert captured.value.code == "E_PROJECT_SERVICE_DEFINITION_CATALOG"
+
+
 def test_save_reuses_python_definition_catalog_and_persists_layout(tmp_path: Path) -> None:
     store = _store(tmp_path)
     before = store.load()

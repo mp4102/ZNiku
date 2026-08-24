@@ -8,16 +8,18 @@ Facade 在一次 Project session 内只构造一个 ``RuntimeService``，因此�
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from time import monotonic
 from typing import Final
 
 from pydantic import ValidationError
 
+from zniku.graph import NodeDefinition
 from zniku.project import Project, ProjectStore, ProjectStoreError
 from zniku.runtime import (
     Artifact,
+    ArtifactQuickProbe,
     NodeRun,
     PythonAdapter,
     Run,
@@ -28,7 +30,7 @@ from zniku.runtime import (
     RuntimeService,
     RuntimeServiceError,
 )
-from zniku.runtime.runner import NodeValidator
+from zniku.runtime.runner import MediaProbe, NodeValidator
 
 from .models import (
     ActiveProjectOperation,
@@ -65,8 +67,11 @@ class ProjectServiceApplication:
         self,
         *,
         work_root: str | Path,
+        definition_catalog: Iterable[NodeDefinition] = (),
         python_adapters: Mapping[str, PythonAdapter] | None = None,
         validators: Mapping[str, NodeValidator] | None = None,
+        media_probe: MediaProbe | None = None,
+        artifact_quick_probe: ArtifactQuickProbe | None = None,
     ) -> None:
         root = Path(work_root)
         try:
@@ -81,8 +86,26 @@ class ProjectServiceApplication:
                 "E_PROJECT_SERVICE_WORK_ROOT", "work_root 必须是目录", http_status=400
             )
 
+        catalog = tuple(definition_catalog)
+        if any(not isinstance(item, NodeDefinition) for item in catalog):
+            raise ProjectServiceError(
+                "E_PROJECT_SERVICE_DEFINITION_CATALOG",
+                "definition_catalog 只能包含 NodeDefinition",
+                http_status=500,
+            )
+        keys = tuple((item.type_id, item.version) for item in catalog)
+        if len(keys) != len(set(keys)):
+            raise ProjectServiceError(
+                "E_PROJECT_SERVICE_DEFINITION_CATALOG",
+                "definition_catalog 不得重复 type_id/version",
+                http_status=500,
+            )
+
+        self._definition_catalog = catalog
         self._python_adapters = dict(python_adapters or {})
         self._validators = dict(validators or {})
+        self._media_probe = media_probe
+        self._artifact_quick_probe = artifact_quick_probe
         self._state = threading.Condition(threading.RLock())
         self._store: ProjectStore | None = None
         self._runtime: RuntimeService | None = None
@@ -213,7 +236,7 @@ class ProjectServiceApplication:
             raise ProjectServiceError(
                 "E_PROJECT_SERVICE_PROJECT_INVALID", str(error), http_status=422
             ) from error
-        store = ProjectStore.create(path, project, ())
+        store = ProjectStore.create(path, project, self._definition_catalog)
         self._store = store
         self._runtime = self._runtime_for(store)
         self._active_run_id = None
@@ -309,6 +332,8 @@ class ProjectServiceApplication:
             self._work_root,
             python_adapters=self._python_adapters,
             validators=self._validators,
+            media_probe=self._media_probe,
+            artifact_quick_probe=self._artifact_quick_probe,
         )
 
     def _require_session(self) -> tuple[ProjectStore, RuntimeService]:

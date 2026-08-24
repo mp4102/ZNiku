@@ -658,6 +658,7 @@ class RuntimeService:
             producer_node_run_id=value.producer_node_run_id,
             producer_port_id=value.producer_port_id,
             ordinal=value.ordinal,
+            frame_range=value.frame_range,
             media_info=_json_mapping(value.media_info),
             size=value.size,
             mtime_ns=value.mtime_ns,
