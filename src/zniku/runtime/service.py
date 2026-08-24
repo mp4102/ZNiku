@@ -159,6 +159,23 @@ class RuntimeService:
             )
         return self._repository.start_run(run, node_runs, started_at=utc_now())
 
+    def create_rerun_run(self, node_id: str) -> Run:
+        """为终态历史之后的“从此处重新运行”建立新的普通全图 Run。
+
+        当前 Project 中该节点先标记 ``rerun_requested``，下游标记 ``upstream_changed``。随后启动
+        全图 Run：未受影响的 fresh 节点仍可按既有规则复用，失效闭包必须创建全新 attempt，从而不会
+        把终态 Run 改写成可 resume 的对象。
+        """
+
+        snapshot = self._repository.project_store.load()
+        node_ids = {node.node_id for node in snapshot.project.graph.nodes}
+        if node_id not in node_ids:
+            raise RuntimeServiceError(
+                "E_SERVICE_RERUN_NODE_UNKNOWN", f"当前 Project 不含节点 {node_id!r}"
+            )
+        self._repository.mark_rerun_stale(node_id, updated_at=utc_now())
+        return self.create_run()
+
     def run_until_blocked(self, run_id: str) -> Run:
         """顺序执行全部即时 ready 节点，直到完成或只剩 blocked/waiting/failed。
 

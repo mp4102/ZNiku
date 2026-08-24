@@ -19,6 +19,7 @@ from zniku.authoring import (
 )
 from zniku.engines import ENGINE_SDK_CONTRACT_VERSION
 from zniku.pipelines import DEFAULT_PIPELINE_CONTRACT_VERSION
+from zniku.project_service import PROJECT_SERVICE_CONTRACT_VERSION
 from zniku.studio import STUDIO_PROJECTION_CONTRACT_VERSION
 from zniku.workflow import CORE_OPERATOR_CONTRACT_VERSION, EXECUTABLE_WORKFLOW_CONTRACT_VERSION
 from zniku.workflow.execution import (
@@ -36,6 +37,7 @@ def test_phase_1_release_identity_is_0_2_0() -> None:
     assert (ROOT / "VERSION").read_text("utf-8").strip() == "0.2.0"
     assert pyproject["project"]["version"] == "0.2.0"
     assert zniku.__version__ == "0.2.0"
+    assert PROJECT_SERVICE_CONTRACT_VERSION == "0.2.0"
     studio_package: dict[str, Any] = json.loads(
         (ROOT / "apps" / "studio" / "package.json").read_text("utf-8")
     )

@@ -1,34 +1,39 @@
-# ZNIKU Studio 0.2.0 过渡说明
+# ZNIKU Studio 0.2.0
 
-本应用的目标产品形态由
-[`graph-core-baseline.md`](../../docs/architecture/graph-core-baseline.md) 唯一定义：Studio 使用同一张自由媒体
-节点图完成编辑、运行控制、状态、日志和外部人工 handoff，不再维护 Formal Designer、Expanded Plan、
-Run Monitor 与 GUI-0 四套入口。
+Studio 以一张自由媒体节点图同时承担编辑和 Runtime 状态展示。React 应用只维护未保存的画布 Draft；
+`.zniku` Project、Graph 校验、Run、Artifact、日志及 external handoff 的正式语义全部来自 Python Project
+Service。
 
-## Phase 2 当前状态
+唯一架构权威是 [`graph-core-baseline.md`](../../docs/architecture/graph-core-baseline.md)；本应用不得恢复
+0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-Phase 2 已提供 Python `zniku.graph`、`zniku.project` 与 `zniku.runtime`，并将产品实现版本保持为
-`0.2.0`。当前 React UI 仍主要来自 `main@198d802` 的 legacy implementation，尚未接入 Project Service：
+当前 Phase 3 功能：
 
-- `src/gui0/` 已具备 Palette 添加、拖动、typed 连接、删除和最小 DAG 校验，是 Phase 3 正式 Studio 的
-  交互起点；
-- GUI-0 目前仍是浏览器内存 mock，不保存 `.zniku`、不调用新 Runtime，也不执行媒体；
-- `formal/`、`generated/`、Python authoring bridge、Expanded Plan、Run Monitor 和 Real Acceptance 暂留作
-  legacy regression，不是 0.2.0 架构权威；
-- Phase 2 已完成 Scheduler 与 Node Runner；Phase 3 才会把 GUI-0 接入真实 Project Service 和 Runtime，
-  并删除双轨入口。
+- 从工程精确版本 `NodeDefinition` 搜索、添加、拖动、连接、复制和多选删除节点；
+- 编辑节点 JSON 参数，显示 required input、精确 `data_type`、`one` / `ordered_many` 与 DAG diagnostics；
+- 新建、打开、保存 SQLite-backed `.zniku`；
+- Run all、Run to here、Rerun from here；
+- 在同一节点卡片和 Inspector 显示 progress、completed、failed、stale、错误原因、Artifact 输出路径；
+- 显示有界 stdout/stderr 与 external handoff 输入、目标路径，并提交外部输出。
 
-不得把当前 UI 的唯一 Final、scope、Freeze、Compiler digest 或固定运行图继续扩建成 0.2.0 产品合同。
+Studio 不实现 Compiler、Freeze、ExecutionPlan、scope、唯一 Final、固定 AVEnhanceFlow 拓扑或浏览器 mock
+Runtime。Project Service 不可用或响应不符合 Python 生成 Schema 时失败关闭。
 
 ## 本地运行
 
+先在仓库根目录启动 loopback Project Service（默认 `127.0.0.1:18765`），再启动 Vite：
+
 ```powershell
+uv run --locked --extra dev python tools/run_studio_project_service.py --work-root D:\ZNIKU\runtime-data
 cd apps/studio
 npm ci
 npm run dev
 ```
 
-默认只监听 `127.0.0.1`。Phase 2 过渡回归门：
+可在加载 Studio 前设置 `window.__ZNIKU_STUDIO_API_BASE__` 覆盖 API 地址；默认只连接
+`http://127.0.0.1:18765`。
+
+## 验证
 
 ```powershell
 npm run typecheck
@@ -37,14 +42,5 @@ npm run build
 npm audit --audit-level=low
 ```
 
-这些命令只证明版本切换没有破坏 legacy Studio；Python Project Store 与 Runtime 已完成，但 Studio 接入仍未
-完成。
-
-## 供应链边界
-
-直接运行依赖已经锁定为 React 19.2.8、React DOM 19.2.8、`@xyflow/react` 12.11.3 与 Ajv 8.20.0。
-构建与测试工具锁定为 Vite 8.2.1、TypeScript 7.0.2、Vitest 4.1.10、jsdom 29.1.1 及 Testing Library；
-`package-lock.json` 固定完整传递依赖树，安装后应保留 `npm audit` 为零漏洞的验证门。
-
-当前原型使用 Node.js 24。jsdom 固定在 29.1.1，是因为 jsdom 30 要求 Node.js 24.15.0 或更高版本，
-高于当前锁定开发环境的 Node.js 24.14.0。
+`src/service/project-service.schema.json` 由 Python Pydantic 模型生成，是 Studio response 的唯一运行时
+Schema；不得手写第二份同义 Schema。

@@ -1,4 +1,4 @@
-"""锁定 0.2.0 Phase 2 的单一架构权威与 0.1.0 只读归档边界。"""
+"""锁定 0.2.0 Phase 3 的单一架构权威与 0.1.0 只读归档边界。"""
 
 from __future__ import annotations
 
@@ -38,8 +38,8 @@ def test_graph_core_is_the_only_active_architecture_document() -> None:
     assert active_files == {Path("graph-core-baseline.md")}
     baseline = (ACTIVE_ARCHITECTURE / "graph-core-baseline.md").read_text("utf-8")
     assert "已批准的唯一 0.2.0 目标架构基线" in baseline
-    assert "Phase 0\u20132 已实施" in baseline
-    assert "Phase 3\u20135 尚未实施" in baseline
+    assert "Phase 0\u20133 已实施" in baseline
+    assert "Phase 4\u20135 尚未实施" in baseline
 
 
 def test_all_legacy_architecture_documents_are_archived() -> None:
@@ -67,10 +67,15 @@ def test_active_guidance_points_only_to_the_graph_core_authority() -> None:
     assert "当前实现版本：`0.2.0`" in readme
     assert all(
         public_module in readme
-        for public_module in ("`zniku.graph`", "`zniku.project`", "`zniku.runtime`")
+        for public_module in (
+            "`zniku.graph`",
+            "`zniku.project`",
+            "`zniku.runtime`",
+            "`zniku.project_service`",
+        )
     )
-    assert "0.2.0 Phase 2" in package_doc
-    assert "Scheduler" in package_doc and "Node Runner" in package_doc
+    assert "0.2.0 Phase 3" in package_doc
+    assert "Project Service" in package_doc and "唯一正式 Studio" in package_doc
     assert "../../docs/architecture/graph-core-baseline.md" in studio_readme
 
     active_guidance = "\n".join((agents, readme, studio_readme, package_doc))

@@ -1,0 +1,257 @@
+/**
+ * 定义 ZNIKU Studio 使用的 0.2.0 Project Service wire 类型。
+ *
+ * 运行时校验直接使用 Python Pydantic 生成的 ``project-service.schema.json``，本文件不维护第二份 Schema。
+ * 类型只为 React 投影提供静态约束；任何未知字段、错误版本或非法 Runtime 状态都由生成 Schema 失败关闭。
+ */
+
+import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js'
+import projectServiceSchema from '../service/project-service.schema.json'
+
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
+export type JsonObject = { [key: string]: JsonValue }
+
+export type Cardinality = 'one' | 'ordered_many'
+export type ExecutionMode = 'automatic' | 'manual_external'
+
+export interface PortSpecWire {
+  readonly port_id: string
+  readonly data_type: string
+  readonly cardinality: Cardinality
+  readonly required: boolean
+}
+
+export type ExecutorSpecWire =
+  | { readonly kind: 'python'; readonly adapter: string }
+  | { readonly kind: 'command'; readonly executable: string; readonly argv: ReadonlyArray<string> }
+  | { readonly kind: 'manual_external'; readonly instructions: string | null }
+
+export interface NodeDefinitionWire {
+  readonly type_id: string
+  readonly version: string
+  readonly input_ports: ReadonlyArray<PortSpecWire>
+  readonly output_ports: ReadonlyArray<PortSpecWire>
+  readonly parameter_schema: JsonObject
+  readonly execution_mode: ExecutionMode
+  readonly executor: ExecutorSpecWire
+  readonly validator: { readonly adapter: string } | null
+}
+
+export interface NodeInstanceWire {
+  readonly node_id: string
+  readonly type_id: string
+  readonly definition_version: string
+  readonly parameters: JsonObject
+  readonly ui_position: { readonly x: number; readonly y: number } | null
+}
+
+export interface EdgeWire {
+  readonly source_node_id: string
+  readonly source_port_id: string
+  readonly target_node_id: string
+  readonly target_port_id: string
+  readonly ordinal: number | null
+}
+
+export interface GraphWire {
+  readonly nodes: ReadonlyArray<NodeInstanceWire>
+  readonly edges: ReadonlyArray<EdgeWire>
+}
+
+export interface ProjectWire {
+  readonly project_id: string
+  readonly name: string
+  readonly graph: GraphWire
+}
+
+export interface ProjectSnapshotWire {
+  readonly project: ProjectWire
+  readonly definitions: ReadonlyArray<NodeDefinitionWire>
+}
+
+export type FailureReason =
+  | 'execution_error'
+  | 'validation_failed'
+  | 'interrupted'
+  | 'cancelled'
+  | 'external_submission_invalid'
+
+export interface FailureWire {
+  readonly reason: FailureReason
+  readonly message: string
+}
+
+export interface ArtifactWire {
+  readonly artifact_id: string
+  readonly kind: string
+  readonly path: string
+  readonly producer_node_run_id: string
+  readonly producer_port_id: string
+  readonly ordinal: number | null
+  readonly frame_range: { readonly start_frame: number; readonly end_frame: number } | null
+  readonly media_info: JsonObject
+  readonly size: number | null
+  readonly mtime_ns: number | null
+}
+
+export interface ExternalOutputTargetWire {
+  readonly port_id: string
+  readonly path: string
+  readonly ordinal: number | null
+}
+
+export interface ExternalHandoffWire {
+  readonly handoff_id: string
+  readonly node_run_id: string
+  readonly input_artifact_ids: ReadonlyArray<string>
+  readonly output_targets: ReadonlyArray<ExternalOutputTargetWire>
+  readonly instructions: string | null
+  readonly created_at: string
+}
+
+export type NodeRunState = 'pending' | 'running' | 'waiting_external' | 'completed' | 'failed'
+
+export interface NodeRunWire {
+  readonly node_run_id: string
+  readonly run_id: string
+  readonly node_id: string
+  readonly definition_version: string
+  readonly attempt: number
+  readonly state: NodeRunState
+  readonly input_artifact_ids: ReadonlyArray<string>
+  readonly output_artifact_ids: ReadonlyArray<string>
+  readonly created_at: string
+  readonly work_dir: string
+  readonly started_at: string | null
+  readonly ended_at: string | null
+  readonly progress: number | null
+  readonly exit_code: number | null
+  readonly log_path: string | null
+  readonly error: FailureWire | null
+  readonly reused_from_result_id: string | null
+  readonly external_handoff: ExternalHandoffWire | null
+}
+
+export type RunState = 'pending' | 'running' | 'completed' | 'failed'
+
+export interface RunWire {
+  readonly run_id: string
+  readonly project_id: string
+  readonly graph_snapshot: GraphWire
+  readonly definitions_snapshot: ReadonlyArray<NodeDefinitionWire>
+  readonly selected_targets: ReadonlyArray<string>
+  readonly state: RunState
+  readonly node_runs: ReadonlyArray<NodeRunWire>
+  readonly created_at: string
+  readonly started_at: string | null
+  readonly ended_at: string | null
+  readonly error: FailureWire | null
+}
+
+export interface LatestResultWire {
+  readonly node_id: string
+  readonly result_id: string
+  readonly stale: boolean
+  readonly stale_reason:
+    | 'graph_changed'
+    | 'upstream_changed'
+    | 'output_missing'
+    | 'quick_probe_failed'
+    | 'rerun_requested'
+    | null
+  readonly updated_at: string
+}
+
+export interface NodeLogWire {
+  readonly node_run_id: string
+  readonly stdout: string
+  readonly stderr: string
+  readonly stdout_available: boolean
+  readonly stderr_available: boolean
+  readonly stdout_truncated: boolean
+  readonly stderr_truncated: boolean
+}
+
+export type ActiveStudioOperation =
+  | 'run_all'
+  | 'run_to'
+  | 'rerun_from_here'
+  | 'submit_external'
+
+export type StudioOperation =
+  | 'create_project'
+  | 'open_project'
+  | 'save_project'
+  | ActiveStudioOperation
+
+export interface StudioServiceError {
+  readonly code: string
+  readonly message: string
+}
+
+export interface StudioEnvelope {
+  readonly contract_version: '0.2.0'
+  readonly project_path: string | null
+  readonly snapshot: ProjectSnapshotWire | null
+  readonly runs: ReadonlyArray<RunWire>
+  readonly active_run_id: string | null
+  readonly active_operation: ActiveStudioOperation | null
+  readonly latest_results: ReadonlyArray<LatestResultWire>
+  readonly artifacts: ReadonlyArray<ArtifactWire>
+  readonly logs: ReadonlyArray<NodeLogWire>
+  readonly error: StudioServiceError | null
+}
+
+export type StudioCommand =
+  | {
+      readonly operation: 'create_project'
+      readonly path: string
+      readonly project_id: string
+      readonly name: string
+    }
+  | { readonly operation: 'open_project'; readonly path: string }
+  | { readonly operation: 'save_project'; readonly project: ProjectWire }
+  | { readonly operation: 'run_all' }
+  | { readonly operation: 'run_to'; readonly node_id: string }
+  | { readonly operation: 'rerun_from_here'; readonly run_id: string; readonly node_id: string }
+  | { readonly operation: 'submit_external'; readonly node_run_id: string }
+
+const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false })
+const validateEnvelope = ajv.compile(projectServiceSchema)
+const validateCommand = ajv.compile({
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $defs: projectServiceSchema.$defs,
+  $ref: '#/$defs/ProjectServiceCommand',
+})
+
+export class StudioContractError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'StudioContractError'
+  }
+}
+
+function validationMessage(errors: ErrorObject[] | null | undefined): string {
+  return (errors ?? [])
+    .slice(0, 4)
+    .map((error) => `${error.instancePath || '/'} ${error.message ?? error.keyword}`)
+    .join('; ')
+}
+
+export function parseStudioEnvelope(value: unknown): StudioEnvelope {
+  if (!validateEnvelope(value)) {
+    throw new StudioContractError(
+      `Studio host payload 不符合 Python 0.2.0 Schema：${validationMessage(validateEnvelope.errors)}`,
+    )
+  }
+  return value as unknown as StudioEnvelope
+}
+
+export function parseStudioCommand(value: unknown): StudioCommand {
+  if (!validateCommand(value)) {
+    throw new StudioContractError(
+      `Studio command 不符合 Python 0.2.0 Schema：${validationMessage(validateCommand.errors)}`,
+    )
+  }
+  return value as StudioCommand
+}

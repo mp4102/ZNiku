@@ -677,6 +677,57 @@ def test_stale_head_before_run_creation_is_not_reused(tmp_path: Path) -> None:
     )
 
 
+def test_terminal_rerun_marks_source_and_downstream_with_distinct_reasons(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    source = _python_definition("test.source", "tests:source", outputs=_data_output())
+    copy = _python_definition(
+        "test.copy",
+        "tests:copy",
+        inputs=_data_input(),
+        outputs=_data_output(),
+    )
+    graph = Graph(
+        nodes=(
+            NodeInstance(
+                node_id="source",
+                type_id=source.type_id,
+                definition_version=source.version,
+            ),
+            NodeInstance(
+                node_id="copy",
+                type_id=copy.type_id,
+                definition_version=copy.version,
+            ),
+        ),
+        edges=(
+            Edge(
+                source_node_id="source",
+                source_port_id="out",
+                target_node_id="copy",
+                target_port_id="in",
+            ),
+        ),
+    )
+    service = RuntimeService(
+        _store(tmp_path, graph, (source, copy)),
+        tmp_path / "work",
+        python_adapters={
+            "tests:source": _source_adapter(calls),
+            "tests:copy": _copy_adapter(calls),
+        },
+    )
+    first = service.run_until_blocked(service.create_run().run_id)
+    assert first.state is RunState.COMPLETED
+
+    service.create_rerun_run("source")
+    latest = {item.node_id: item for item in service.repository.list_latest()}
+
+    assert latest["source"].stale_reason is StaleReason.RERUN_REQUESTED
+    assert latest["copy"].stale_reason is StaleReason.UPSTREAM_CHANGED
+
+
 def test_quick_probe_system_exit_blocks_reuse_without_terminating_service(
     tmp_path: Path,
 ) -> None:

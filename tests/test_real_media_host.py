@@ -64,6 +64,6 @@ def test_loopback_http_status_returns_closed_envelope(tmp_path: Path) -> None:
 def test_real_media_host_schema_has_no_drift() -> None:
     root = Path(__file__).resolve().parents[1]
     checked_in = json.loads(
-        (root / "apps/studio/src/formal/real-media-host.schema.json").read_text("utf-8")
+        (root / "tests/fixtures/legacy/real-media-host.schema.json").read_text("utf-8")
     )
     assert checked_in == RealHostEnvelope.model_json_schema()

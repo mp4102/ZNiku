@@ -1,6 +1,6 @@
 name: ZNIKU Core CI
 
-# Phase 2 Graph Core、SQLite Project Store 与 Runtime 的正式 Python 门禁；尚未清理的 0.1.0
+# Phase 3 Graph Core、SQLite Project Store、Runtime 与 Project Service 的正式 Python 门禁；尚未清理的 0.1.0
 # legacy implementation 继续作为过渡期回归，直到 Phase 5 删除。
 
 on:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  verify-core-runtime:
+  verify-core-runtime-service:
     runs-on: ubuntu-latest
 
     steps:
@@ -46,13 +46,18 @@ jobs:
             tests/test_runtime_reuse.py \
             tests/test_node_runner.py \
             tests/test_runtime_service.py \
+            tests/test_project_service.py \
+            tests/test_project_service_host.py \
             tests/test_architecture_authority.py \
             tests/test_version_consistency.py
+
+      - name: Verify Project Service Studio schema
+        run: uv run --locked --extra dev python tools/generate_project_service_schema.py --check
 
       - name: Typecheck Graph Core, Project Store and Runtime
         run: |
           uv run --locked --extra dev mypy --no-incremental \
-            src/zniku/graph src/zniku/project src/zniku/runtime \
+            src/zniku/graph src/zniku/project src/zniku/runtime src/zniku/project_service \
             tests/test_graph_models.py \
             tests/test_graph_validation.py \
             tests/test_project_store.py \
@@ -60,12 +65,18 @@ jobs:
             tests/test_runtime_scheduler.py \
             tests/test_runtime_reuse.py \
             tests/test_node_runner.py \
-            tests/test_runtime_service.py
+            tests/test_runtime_service.py \
+            tests/test_project_service.py \
+            tests/test_project_service_host.py \
+            tools/generate_project_service_schema.py \
+            tools/run_studio_project_service.py \
+            tools/create_studio_demo_project.py \
+            tools/studio_demo_adapter.py
 
       - name: Lint Graph Core, Project Store and Runtime
         run: |
           uv run --locked --extra dev ruff check \
-            src/zniku/graph src/zniku/project src/zniku/runtime \
+            src/zniku/graph src/zniku/project src/zniku/runtime src/zniku/project_service \
             tests/test_graph_models.py \
             tests/test_graph_validation.py \
             tests/test_project_store.py \
@@ -73,12 +84,18 @@ jobs:
             tests/test_runtime_scheduler.py \
             tests/test_runtime_reuse.py \
             tests/test_node_runner.py \
-            tests/test_runtime_service.py
+            tests/test_runtime_service.py \
+            tests/test_project_service.py \
+            tests/test_project_service_host.py \
+            tools/generate_project_service_schema.py \
+            tools/run_studio_project_service.py \
+            tools/create_studio_demo_project.py \
+            tools/studio_demo_adapter.py
 
       - name: Format check Graph Core, Project Store and Runtime
         run: |
           uv run --locked --extra dev ruff format --check \
-            src/zniku/graph src/zniku/project src/zniku/runtime \
+            src/zniku/graph src/zniku/project src/zniku/runtime src/zniku/project_service \
             tests/test_graph_models.py \
             tests/test_graph_validation.py \
             tests/test_project_store.py \
@@ -86,7 +103,13 @@ jobs:
             tests/test_runtime_scheduler.py \
             tests/test_runtime_reuse.py \
             tests/test_node_runner.py \
-            tests/test_runtime_service.py
+            tests/test_runtime_service.py \
+            tests/test_project_service.py \
+            tests/test_project_service_host.py \
+            tools/generate_project_service_schema.py \
+            tools/run_studio_project_service.py \
+            tools/create_studio_demo_project.py \
+            tools/studio_demo_adapter.py
 
   verify-legacy:
     runs-on: ubuntu-latest
@@ -118,6 +141,9 @@ jobs:
 
       - name: Verify legacy generated Studio projection
         run: uv run --locked --extra dev python tools/generate_authoring_projection.py --check
+
+      - name: Verify Phase 3 Project Service schema
+        run: uv run --locked --extra dev python tools/generate_project_service_schema.py --check
 
       - name: Test complete transitional repository
         run: uv run --locked --extra dev pytest

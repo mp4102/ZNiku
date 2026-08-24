@@ -10,14 +10,16 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 
 - 目标版本：`ZNIKU Studio 0.2.0`
 - 开发分支：`v0.2.0`
-- 当前阶段：**Phase 0–2 已完成——Graph Core、Project Store、Scheduler 与 Node Runner 已建立；Phase 3 尚未实施**
+- 当前阶段：**Phase 0–3 已完成——唯一正式 Studio 已接入 Project Service 与 Runtime；Phase 4 尚未实施**
 - 唯一目标架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
-- 当前实现版本：`0.2.0`，公共入口为 `zniku.graph`、`zniku.project` 与 `zniku.runtime`
+- 当前实现版本：`0.2.0`，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime` 与
+  `zniku.project_service`
 - 过渡期代码：`main@198d802` 的 `0.1.0` legacy implementation 仍保留为回归对照，Phase 5 删除
 
-Phase 1 已将 `VERSION`、Python package 与 Studio package 的产品实现版本切换为 `0.2.0`；Phase 2 已用
-新的最小 Run、NodeRun、Artifact 与 NodeResult 替换 Runtime 领域入口。尚未重写的 Compiler、Evidence
-和前端投影继续保留各自的 `0.1.0` legacy contract version，不能作为 0.2.0 能力入口。
+Phase 1 已建立 Graph Core 与 `.zniku` Store，Phase 2 已用新的最小 Run、NodeRun、Artifact 与 NodeResult
+替换 Runtime 领域入口，Phase 3 已把自由节点画布接到这些 Python authority。尚未清理的 Compiler、
+Evidence 与旧生成投影继续保留各自的 `0.1.0` legacy contract version，只用于 Phase 5 前的回归，不再有
+Studio 产品入口。
 
 ## 产品核心
 
@@ -49,7 +51,7 @@ Graph Core 只校验 node／port／edge 存在、typed output→input、required
 `ordered_many` ordinal 连续唯一和 DAG 无环。图允许多个 Source、多个 Output、零 Output，以及任意合法
 分支与汇合。
 
-## Phase 1–2 公共内核
+## Phase 1–3 公共内核
 
 - `zniku.graph`：公开 `Graph`、`NodeDefinition`、`NodeInstance`、`Edge`、typed `PortSpec` 及
   `GraphValidator`；首批类型是 `MediaFile`、`VideoFile`、`AudioFile`、`DataFile`，插件可增加开放字符串
@@ -61,10 +63,15 @@ Graph Core 只校验 node／port／edge 存在、typed output→input、required
 - `zniku.runtime`：公开最小 Runtime 模型、`Scheduler`、completed reuse／downstream stale 分析、支持
   三类 executor 的 `NodeRunner` 与运行编排服务。持久状态只有 `pending`、`running`、
   `waiting_external`、`completed` 和 `failed`；`ready`／`blocked` 只即时计算。
+- `zniku.project_service`：提供严格 0.2.0 DTO 与只监听 loopback 的本地 HTTP host；Studio 可创建、打开、
+  保存 `.zniku`，启动全图或目标祖先闭包 Run，从节点重新运行，轮询 attempt、日志与输出，并提交
+  `manual_external` 声明目标。响应由 Python Schema 校验，浏览器不能替换 NodeDefinition executor、
+  work root 或 handoff 路径。
 - Project 保存前与读取后都会执行同一 Graph Validator；非法图、未知工程 schema、损坏数据和缺失的精确
   NodeDefinition 默认 fail closed。
 - `.zniku` 可能包含本地路径和节点配置，默认由 Git 忽略；测试只在临时目录创建纯合成工程。
-- Phase 2 不提供真实媒体节点，也不连接 Studio；Runner 的媒体轻量验收接口由 Phase 4 节点 adapter 使用。
+- Phase 3 仍不提供真实媒体节点；Runner 的媒体轻量验收接口由 Phase 4 节点 adapter 使用。仓库提供的
+  `demo.text_*` 工程生成器只处理合成 `DataFile`，用于验证 Project Service、Runtime 与 external handoff。
 
 ## 0.2.0 明确删除的旧宪法
 
@@ -101,7 +108,7 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | CLI / Python package | `zniku` |
 | 工程文件扩展名 | `.zniku` |
 
-## Phase 0–2 交付边界
+## Phase 0–3 交付边界
 
 本阶段已经完成：
 
@@ -115,9 +122,15 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 - 实现普通 graph snapshot、稳定 ready 计算、独立 attempt 工作目录与普通日志；
 - 实现 trusted Python adapter、`shell=False` command executor 和可跨应用重启的 manual external handoff；
 - 实现 interrupted 恢复失败、rerun-from-start、completed result 复用和 downstream stale。
+- 将 GUI-0 升为唯一正式 Designer：Palette、拖动、typed 连接、复制、多选、删除、参数编辑和即时 DAG
+  提示都作用于同一张 Graph；运行状态只叠加在该画布上。
+- 接通 `.zniku` 创建／打开／原子保存、Run all、Run to here、Rerun from here、stdout/stderr、输出路径、
+  stale／失败原因和 manual external Submit。
+- 删除 Formal Designer、Expanded Plan、Run Monitor、Real Acceptance 与 GUI-0 Prototype 的产品双轨入口；
+  Studio 不再提供 Compiler／Freeze／Evidence mock 回退。
 
-本阶段没有实现正式 Studio 接入或真实媒体节点；这些分别属于 Phase 3–4。旧实现和旧测试暂时保留为
-legacy regression，最终清理属于 Phase 5。
+本阶段没有实现真实媒体节点；这属于 Phase 4。Python 旧实现和旧测试暂时保留为 legacy regression，
+最终清理属于 Phase 5。
 
 ## 过渡期仓库结构
 
@@ -127,9 +140,10 @@ ZNiku/
 │   ├── graph/                   # 0.2.0 Graph 模型与唯一 validator
 │   ├── project/                 # 0.2.0 SQLite .zniku Project Store
 │   ├── runtime/                 # 0.2.0 Scheduler、Node Runner 与运行历史
-│   └── 其余模块                 # 0.1.0 legacy regression；Phase 3–5 逐步替换
+│   ├── project_service/         # 0.2.0 Studio DTO、application 与 loopback host
+│   └── 其余模块                 # 0.1.0 legacy regression；Phase 5 清理
 ├── apps/studio/
-│   └── src/gui0/                # 0.2.0 正式 Studio 的交互起点，当前仍是 mock
+│   └── src/studio/              # 0.2.0 唯一正式 Designer 与 Runtime overlay
 ├── tests/                       # legacy regression + 架构权威一致性门
 ├── docs/
 │   ├── architecture/
@@ -140,7 +154,7 @@ ZNiku/
 └── VERSION                      # 0.2.0 产品实现版本
 ```
 
-## 本地验证
+## 本地运行与验证
 
 Python 需要 3.12 或更高版本及 `uv`。以下门禁验证 0.2.0 Graph Core、Project Store、Runtime 和过渡期
 legacy regression：
@@ -149,19 +163,34 @@ legacy regression：
 uv lock --check
 uv sync --locked --extra dev
 uv run --locked --extra dev python tools/generate_authoring_projection.py --check
+uv run --locked --extra dev python tools/generate_project_service_schema.py --check
 uv run --locked --extra dev pytest
 uv run --locked --extra dev mypy --no-incremental src tests tools
 uv run --locked --extra dev ruff check src tests tools
 uv run --locked --extra dev ruff format --check src tests tools
 ```
 
-Studio 当前仍是 0.1.0 过渡实现；GUI-0 将在 Phase 3 接入真实 Project Service，并取代 Formal Designer、
-Expanded Plan、Run Monitor 与 GUI-0 四套入口。当前可运行：
+可以先生成一个不含真实媒体的 Phase 3 合成工程，再分别启动 Project Service 与 Studio：
+
+```powershell
+uv run --locked --extra dev python tools/create_studio_demo_project.py D:\ZNIKU\phase3-demo.zniku
+uv run --locked --extra dev python tools/run_studio_project_service.py `
+  --work-root D:\ZNIKU\runtime-data `
+  --project D:\ZNIKU\phase3-demo.zniku
+```
+
+另一个终端运行：
 
 ```powershell
 cd apps/studio
 npm ci
 npm run dev
+```
+
+浏览器打开 Vite 输出的 loopback 地址。Studio 默认连接 `http://127.0.0.1:18765`；可通过
+`window.__ZNIKU_STUDIO_API_BASE__` 为可信 LAN 开发环境显式替换。生产构建与门禁：
+
+```powershell
 npm run typecheck
 npm run test:run
 npm run build
@@ -172,7 +201,7 @@ npm audit --audit-level=low
 
 1. Phase 1（已完成）：Project、Graph Core、typed ports、DAG validator 与 SQLite `.zniku` Store；
 2. Phase 2（已完成）：Scheduler、Node Runner、attempt、rerun-from-start、结果复用与 stale；
-3. Phase 3：GUI-0 接入 Project Service 和 Runtime，形成唯一正式 Studio；
+3. Phase 3（已完成）：GUI-0 接入 Project Service 和 Runtime，形成唯一正式 Studio；
 4. Phase 4：首批真实媒体节点与 automatic／manual_external；
 5. Phase 5：删除旧 Evidence/full/recovery/fixed pipeline 实现并完成最小验收。
 

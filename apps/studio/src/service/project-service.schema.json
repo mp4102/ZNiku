@@ -1,0 +1,1694 @@
+{
+  "$defs": {
+    "ActiveProjectOperation": {
+      "enum": [
+        "run_all",
+        "run_to",
+        "rerun_from_here",
+        "submit_external"
+      ],
+      "type": "string"
+    },
+    "Artifact": {
+      "additionalProperties": false,
+      "description": "记录一个已通过节点轻量验收的外置文件。\n\n``artifact_id`` 只允许随机 UUIDv4；路径、size 与 mtime 是本地索引和 dirty hint，不是内容摘要。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "frame_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FrameRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9]*(?:[._:/-][A-Za-z0-9]+)*$",
+          "title": "Kind",
+          "type": "string"
+        },
+        "media_info": {
+          "$ref": "#/$defs/JsonObject"
+        },
+        "mtime_ns": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mtime Ns"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "producer_node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Producer Node Run Id",
+          "type": "string"
+        },
+        "producer_port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Producer Port Id",
+          "type": "string"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "kind",
+        "path",
+        "producer_node_run_id",
+        "producer_port_id",
+        "ordinal",
+        "frame_range",
+        "media_info",
+        "size",
+        "mtime_ns"
+      ],
+      "title": "Artifact",
+      "type": "object"
+    },
+    "Cardinality": {
+      "description": "端口只支持单值或带显式顺序的多值输入。",
+      "enum": [
+        "one",
+        "ordered_many"
+      ],
+      "title": "Cardinality",
+      "type": "string"
+    },
+    "CommandExecutorSpec": {
+      "additionalProperties": false,
+      "description": "声明必须以 ``shell=False`` 直接启动的 executable 与 argv。",
+      "properties": {
+        "argv": {
+          "default": [],
+          "items": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "title": "Argv",
+          "type": "array"
+        },
+        "executable": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Executable",
+          "type": "string"
+        },
+        "kind": {
+          "const": "command",
+          "default": "command",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "executable",
+        "argv"
+      ],
+      "title": "CommandExecutorSpec",
+      "type": "object"
+    },
+    "Command_CreateProjectCommand": {
+      "additionalProperties": false,
+      "description": "创建不覆盖既有文件的空 Project；NodeDefinition 由后续 SDK/插件导入。",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "operation": {
+          "const": "create_project",
+          "title": "Operation",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "project_id": {
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "path",
+        "project_id",
+        "name"
+      ],
+      "title": "CreateProjectCommand",
+      "type": "object"
+    },
+    "Command_Edge": {
+      "additionalProperties": false,
+      "description": "连接一个已声明 output 与一个已声明 input。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "source_node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Source Node Id",
+          "type": "string"
+        },
+        "source_port_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Source Port Id",
+          "type": "string"
+        },
+        "target_node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Target Node Id",
+          "type": "string"
+        },
+        "target_port_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Target Port Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_node_id",
+        "source_port_id",
+        "target_node_id",
+        "target_port_id"
+      ],
+      "title": "Edge",
+      "type": "object"
+    },
+    "Command_Graph": {
+      "additionalProperties": false,
+      "description": "表示用户当前编辑的普通节点与有向边集合。",
+      "properties": {
+        "edges": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Command_Edge"
+          },
+          "title": "Edges",
+          "type": "array"
+        },
+        "nodes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Command_NodeInstance"
+          },
+          "title": "Nodes",
+          "type": "array"
+        }
+      },
+      "title": "Graph",
+      "type": "object"
+    },
+    "Command_JsonObject": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Command_JsonValue"
+      },
+      "type": "object"
+    },
+    "Command_JsonValue": {},
+    "Command_NodeInstance": {
+      "additionalProperties": false,
+      "description": "将一个图节点绑定到精确 NodeDefinition 版本与参数。",
+      "properties": {
+        "definition_version": {
+          "maxLength": 96,
+          "minLength": 5,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "parameters": {
+          "$ref": "#/$defs/Command_JsonObject"
+        },
+        "type_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9]*(?:[._:/-][A-Za-z0-9]+)*$",
+          "title": "Type Id",
+          "type": "string"
+        },
+        "ui_position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Command_UiPosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "node_id",
+        "type_id",
+        "definition_version"
+      ],
+      "title": "NodeInstance",
+      "type": "object"
+    },
+    "Command_OpenProjectCommand": {
+      "additionalProperties": false,
+      "description": "打开一个既有且结构合法的 ``.zniku``。",
+      "properties": {
+        "operation": {
+          "const": "open_project",
+          "title": "Operation",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "path"
+      ],
+      "title": "OpenProjectCommand",
+      "type": "object"
+    },
+    "Command_Project": {
+      "additionalProperties": false,
+      "description": "表示一个 0.2.0 工程当前的可编辑 Graph。",
+      "properties": {
+        "graph": {
+          "$ref": "#/$defs/Command_Graph"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "project_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "name",
+        "graph"
+      ],
+      "title": "Project",
+      "type": "object"
+    },
+    "Command_RerunFromHereCommand": {
+      "additionalProperties": false,
+      "description": "从指定节点创建全新 attempt；终态 Run 会建立新的普通 Run。",
+      "properties": {
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "operation": {
+          "const": "rerun_from_here",
+          "title": "Operation",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "run_id",
+        "node_id"
+      ],
+      "title": "RerunFromHereCommand",
+      "type": "object"
+    },
+    "Command_RunAllCommand": {
+      "additionalProperties": false,
+      "description": "从当前 Project 建立普通全图 Run snapshot。",
+      "properties": {
+        "operation": {
+          "const": "run_all",
+          "title": "Operation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "title": "RunAllCommand",
+      "type": "object"
+    },
+    "Command_RunToCommand": {
+      "additionalProperties": false,
+      "description": "只运行目标节点及其祖先闭包。",
+      "properties": {
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "operation": {
+          "const": "run_to",
+          "title": "Operation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "node_id"
+      ],
+      "title": "RunToCommand",
+      "type": "object"
+    },
+    "Command_SaveProjectCommand": {
+      "additionalProperties": false,
+      "description": "保存当前 Project 的名称、Graph、参数与 Studio 布局。",
+      "properties": {
+        "operation": {
+          "const": "save_project",
+          "title": "Operation",
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/Command_Project"
+        }
+      },
+      "required": [
+        "operation",
+        "project"
+      ],
+      "title": "SaveProjectCommand",
+      "type": "object"
+    },
+    "Command_SubmitExternalCommand": {
+      "additionalProperties": false,
+      "description": "提交仍为最新 attempt 的 manual_external 目标文件。",
+      "properties": {
+        "node_run_id": {
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "operation": {
+          "const": "submit_external",
+          "title": "Operation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "node_run_id"
+      ],
+      "title": "SubmitExternalCommand",
+      "type": "object"
+    },
+    "Command_UiPosition": {
+      "additionalProperties": false,
+      "description": "保存 Studio 画布位置；该值不参与 Runtime 语义。",
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "UiPosition",
+      "type": "object"
+    },
+    "Edge": {
+      "additionalProperties": false,
+      "description": "连接一个已声明 output 与一个已声明 input。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "source_node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Source Node Id",
+          "type": "string"
+        },
+        "source_port_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Source Port Id",
+          "type": "string"
+        },
+        "target_node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Target Node Id",
+          "type": "string"
+        },
+        "target_port_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Target Port Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_node_id",
+        "source_port_id",
+        "target_node_id",
+        "target_port_id",
+        "ordinal"
+      ],
+      "title": "Edge",
+      "type": "object"
+    },
+    "ExecutionMode": {
+      "description": "区分 Runtime 自动启动与操作者提交外部结果。",
+      "enum": [
+        "automatic",
+        "manual_external"
+      ],
+      "title": "ExecutionMode",
+      "type": "string"
+    },
+    "ExecutorSpec": {
+      "discriminator": {
+        "mapping": {
+          "command": "#/$defs/CommandExecutorSpec",
+          "manual_external": "#/$defs/ManualExternalExecutorSpec",
+          "python": "#/$defs/PythonExecutorSpec"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PythonExecutorSpec"
+        },
+        {
+          "$ref": "#/$defs/CommandExecutorSpec"
+        },
+        {
+          "$ref": "#/$defs/ManualExternalExecutorSpec"
+        }
+      ]
+    },
+    "ExternalHandoff": {
+      "additionalProperties": false,
+      "description": "持久化人工外部流程的输入身份、目标路径与操作提示。\n\nhandoff 只表示等待操作者提交文件，不保存外部工具内部进度，因此可安全跨应用重启保留。",
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "input_artifact_ids": {
+          "default": [],
+          "items": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          "title": "Input Artifact Ids",
+          "type": "array"
+        },
+        "instructions": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instructions"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "output_targets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExternalOutputTarget"
+          },
+          "title": "Output Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "handoff_id",
+        "node_run_id",
+        "input_artifact_ids",
+        "output_targets",
+        "instructions",
+        "created_at"
+      ],
+      "title": "ExternalHandoff",
+      "type": "object"
+    },
+    "ExternalOutputTarget": {
+      "additionalProperties": false,
+      "description": "声明 manual_external handoff 的一个预期输出位置。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Port Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "port_id",
+        "path",
+        "ordinal"
+      ],
+      "title": "ExternalOutputTarget",
+      "type": "object"
+    },
+    "FailureReason": {
+      "description": "失败原因决定展示与从头重跑行为，不创建恢复协议。",
+      "enum": [
+        "execution_error",
+        "validation_failed",
+        "interrupted",
+        "cancelled",
+        "external_submission_invalid"
+      ],
+      "title": "FailureReason",
+      "type": "string"
+    },
+    "FrameRange": {
+      "additionalProperties": false,
+      "description": "表示首尾半开 ``[start_frame, end_frame)`` 帧区间。",
+      "properties": {
+        "end_frame": {
+          "exclusiveMinimum": 0,
+          "title": "End Frame",
+          "type": "integer"
+        },
+        "start_frame": {
+          "minimum": 0,
+          "title": "Start Frame",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_frame",
+        "end_frame"
+      ],
+      "title": "FrameRange",
+      "type": "object"
+    },
+    "Graph": {
+      "additionalProperties": false,
+      "description": "表示用户当前编辑的普通节点与有向边集合。",
+      "properties": {
+        "edges": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Edge"
+          },
+          "title": "Edges",
+          "type": "array"
+        },
+        "nodes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NodeInstance"
+          },
+          "title": "Nodes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "title": "Graph",
+      "type": "object"
+    },
+    "JsonObject": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "type": "object"
+    },
+    "JsonValue": {},
+    "LatestNodeResult": {
+      "additionalProperties": false,
+      "description": "把 Project 当前 NodeInstance 映射到最新结果及独立 stale 标志。",
+      "properties": {
+        "node_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "result_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Result Id",
+          "type": "string"
+        },
+        "stale": {
+          "title": "Stale",
+          "type": "boolean"
+        },
+        "stale_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StaleReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "result_id",
+        "stale",
+        "stale_reason",
+        "updated_at"
+      ],
+      "title": "LatestNodeResult",
+      "type": "object"
+    },
+    "ManualExternalExecutorSpec": {
+      "additionalProperties": false,
+      "description": "声明由操作者在外部完成处理并提交输出的 handoff。",
+      "properties": {
+        "instructions": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instructions"
+        },
+        "kind": {
+          "const": "manual_external",
+          "default": "manual_external",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "instructions"
+      ],
+      "title": "ManualExternalExecutorSpec",
+      "type": "object"
+    },
+    "NodeDefinition": {
+      "additionalProperties": false,
+      "description": "声明一种可精确版本绑定、可执行且可校验参数的节点类型。",
+      "properties": {
+        "execution_mode": {
+          "$ref": "#/$defs/ExecutionMode"
+        },
+        "executor": {
+          "$ref": "#/$defs/ExecutorSpec"
+        },
+        "input_ports": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PortSpec"
+          },
+          "title": "Input Ports",
+          "type": "array"
+        },
+        "output_ports": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PortSpec"
+          },
+          "title": "Output Ports",
+          "type": "array"
+        },
+        "parameter_schema": {
+          "$ref": "#/$defs/JsonObject"
+        },
+        "type_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9]*(?:[._:/-][A-Za-z0-9]+)*$",
+          "title": "Type Id",
+          "type": "string"
+        },
+        "validator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ValidatorSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "version": {
+          "maxLength": 96,
+          "minLength": 5,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type_id",
+        "version",
+        "input_ports",
+        "output_ports",
+        "parameter_schema",
+        "execution_mode",
+        "executor",
+        "validator"
+      ],
+      "title": "NodeDefinition",
+      "type": "object"
+    },
+    "NodeInstance": {
+      "additionalProperties": false,
+      "description": "将一个图节点绑定到精确 NodeDefinition 版本与参数。",
+      "properties": {
+        "definition_version": {
+          "maxLength": 96,
+          "minLength": 5,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "parameters": {
+          "$ref": "#/$defs/JsonObject"
+        },
+        "type_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9]*(?:[._:/-][A-Za-z0-9]+)*$",
+          "title": "Type Id",
+          "type": "string"
+        },
+        "ui_position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UiPosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "node_id",
+        "type_id",
+        "definition_version",
+        "parameters",
+        "ui_position"
+      ],
+      "title": "NodeInstance",
+      "type": "object"
+    },
+    "NodeLogProjection": {
+      "additionalProperties": false,
+      "description": "携带一个 attempt 的有界 stdout/stderr 尾部，而不是任意路径读取能力。",
+      "properties": {
+        "node_run_id": {
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "stderr": {
+          "default": "",
+          "title": "Stderr",
+          "type": "string"
+        },
+        "stderr_available": {
+          "default": false,
+          "title": "Stderr Available",
+          "type": "boolean"
+        },
+        "stderr_truncated": {
+          "default": false,
+          "title": "Stderr Truncated",
+          "type": "boolean"
+        },
+        "stdout": {
+          "default": "",
+          "title": "Stdout",
+          "type": "string"
+        },
+        "stdout_available": {
+          "default": false,
+          "title": "Stdout Available",
+          "type": "boolean"
+        },
+        "stdout_truncated": {
+          "default": false,
+          "title": "Stdout Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node_run_id",
+        "stdout",
+        "stderr",
+        "stdout_truncated",
+        "stderr_truncated",
+        "stdout_available",
+        "stderr_available"
+      ],
+      "title": "NodeLogProjection",
+      "type": "object"
+    },
+    "NodeRun": {
+      "additionalProperties": false,
+      "description": "记录一个节点在某个 Run 内不可恢复的一次完整 attempt。",
+      "properties": {
+        "attempt": {
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 96,
+          "minLength": 5,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ended At"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "external_handoff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExternalHandoff"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "input_artifact_ids": {
+          "default": [],
+          "items": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          "title": "Input Artifact Ids",
+          "type": "array"
+        },
+        "log_path": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Log Path"
+        },
+        "node_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "output_artifact_ids": {
+          "default": [],
+          "items": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          "title": "Output Artifact Ids",
+          "type": "array"
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Progress"
+        },
+        "reused_from_result_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reused From Result Id"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "state": {
+          "$ref": "#/$defs/NodeRunState"
+        },
+        "work_dir": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Work Dir",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_run_id",
+        "run_id",
+        "node_id",
+        "definition_version",
+        "attempt",
+        "state",
+        "input_artifact_ids",
+        "output_artifact_ids",
+        "created_at",
+        "work_dir",
+        "started_at",
+        "ended_at",
+        "progress",
+        "exit_code",
+        "log_path",
+        "error",
+        "reused_from_result_id",
+        "external_handoff"
+      ],
+      "title": "NodeRun",
+      "type": "object"
+    },
+    "NodeRunState": {
+      "description": "NodeRun 唯一允许持久化的五种状态。",
+      "enum": [
+        "pending",
+        "running",
+        "waiting_external",
+        "completed",
+        "failed"
+      ],
+      "title": "NodeRunState",
+      "type": "string"
+    },
+    "PortSpec": {
+      "additionalProperties": false,
+      "description": "声明节点端口的本地身份、精确数据类型、基数与输入必需性。",
+      "properties": {
+        "cardinality": {
+          "$ref": "#/$defs/Cardinality",
+          "default": "one"
+        },
+        "data_type": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9]*(?:[._:/-][A-Za-z0-9]+)*$",
+          "title": "Data Type",
+          "type": "string"
+        },
+        "port_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "port_id",
+        "data_type",
+        "cardinality",
+        "required"
+      ],
+      "title": "PortSpec",
+      "type": "object"
+    },
+    "Project": {
+      "additionalProperties": false,
+      "description": "表示一个 0.2.0 工程当前的可编辑 Graph。",
+      "properties": {
+        "graph": {
+          "$ref": "#/$defs/Graph"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "project_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "name",
+        "graph"
+      ],
+      "title": "Project",
+      "type": "object"
+    },
+    "ProjectServiceCommand": {
+      "discriminator": {
+        "mapping": {
+          "create_project": "#/$defs/Command_CreateProjectCommand",
+          "open_project": "#/$defs/Command_OpenProjectCommand",
+          "rerun_from_here": "#/$defs/Command_RerunFromHereCommand",
+          "run_all": "#/$defs/Command_RunAllCommand",
+          "run_to": "#/$defs/Command_RunToCommand",
+          "save_project": "#/$defs/Command_SaveProjectCommand",
+          "submit_external": "#/$defs/Command_SubmitExternalCommand"
+        },
+        "propertyName": "operation"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Command_OpenProjectCommand"
+        },
+        {
+          "$ref": "#/$defs/Command_CreateProjectCommand"
+        },
+        {
+          "$ref": "#/$defs/Command_SaveProjectCommand"
+        },
+        {
+          "$ref": "#/$defs/Command_RunAllCommand"
+        },
+        {
+          "$ref": "#/$defs/Command_RunToCommand"
+        },
+        {
+          "$ref": "#/$defs/Command_RerunFromHereCommand"
+        },
+        {
+          "$ref": "#/$defs/Command_SubmitExternalCommand"
+        }
+      ]
+    },
+    "ProjectServiceFailure": {
+      "additionalProperties": false,
+      "description": "向 Studio 暴露稳定错误码与受限操作者说明。",
+      "properties": {
+        "code": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ProjectServiceFailure",
+      "type": "object"
+    },
+    "ProjectSnapshot": {
+      "additionalProperties": false,
+      "description": "表示 Project Store 一次原子读取或保存的完整 Core 内容。\n\ndefinitions 保留调用方提供的精确顺序，并以 ``type_id/version`` 绑定 Graph 中的 NodeInstance。\n它不是 Run snapshot，也不计算 canonical digest。",
+      "properties": {
+        "definitions": {
+          "items": {
+            "$ref": "#/$defs/NodeDefinition"
+          },
+          "title": "Definitions",
+          "type": "array"
+        },
+        "project": {
+          "$ref": "#/$defs/Project"
+        }
+      },
+      "required": [
+        "project",
+        "definitions"
+      ],
+      "title": "ProjectSnapshot",
+      "type": "object"
+    },
+    "PythonExecutorSpec": {
+      "additionalProperties": false,
+      "description": "引用由本地可信插件提供的 Python adapter。",
+      "properties": {
+        "adapter": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Adapter",
+          "type": "string"
+        },
+        "kind": {
+          "const": "python",
+          "default": "python",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "adapter"
+      ],
+      "title": "PythonExecutorSpec",
+      "type": "object"
+    },
+    "Run": {
+      "additionalProperties": false,
+      "description": "保存启动瞬间的普通 Graph/NodeDefinition snapshot 与 NodeRun 历史。",
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "definitions_snapshot": {
+          "items": {
+            "$ref": "#/$defs/NodeDefinition"
+          },
+          "title": "Definitions Snapshot",
+          "type": "array"
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ended At"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "graph_snapshot": {
+          "$ref": "#/$defs/Graph"
+        },
+        "node_runs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NodeRun"
+          },
+          "title": "Node Runs",
+          "type": "array"
+        },
+        "project_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "selected_targets": {
+          "default": [],
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "type": "string"
+          },
+          "title": "Selected Targets",
+          "type": "array"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "state": {
+          "$ref": "#/$defs/RunState"
+        }
+      },
+      "required": [
+        "run_id",
+        "project_id",
+        "graph_snapshot",
+        "definitions_snapshot",
+        "selected_targets",
+        "state",
+        "node_runs",
+        "created_at",
+        "started_at",
+        "ended_at",
+        "error"
+      ],
+      "title": "Run",
+      "type": "object"
+    },
+    "RunState": {
+      "description": "Run 聚合的最小持久状态。",
+      "enum": [
+        "pending",
+        "running",
+        "completed",
+        "failed"
+      ],
+      "title": "RunState",
+      "type": "string"
+    },
+    "RuntimeFailure": {
+      "additionalProperties": false,
+      "description": "保存失败类别和适合操作者阅读的简短信息。",
+      "properties": {
+        "message": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/FailureReason"
+        }
+      },
+      "required": [
+        "reason",
+        "message"
+      ],
+      "title": "RuntimeFailure",
+      "type": "object"
+    },
+    "StaleReason": {
+      "description": "当前 latest result 失效的最小原因集合。",
+      "enum": [
+        "graph_changed",
+        "upstream_changed",
+        "output_missing",
+        "quick_probe_failed",
+        "rerun_requested"
+      ],
+      "title": "StaleReason",
+      "type": "string"
+    },
+    "UiPosition": {
+      "additionalProperties": false,
+      "description": "保存 Studio 画布位置；该值不参与 Runtime 语义。",
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "UiPosition",
+      "type": "object"
+    },
+    "ValidatorSpec": {
+      "additionalProperties": false,
+      "description": "引用本地可信插件提供的节点级轻量 validator。",
+      "properties": {
+        "adapter": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Adapter",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter"
+      ],
+      "title": "ValidatorSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Studio 每次刷新得到的单一 Project/Runtime 读模型。",
+  "properties": {
+    "active_operation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ActiveProjectOperation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "active_run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Active Run Id"
+    },
+    "artifacts": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Artifact"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "contract_version": {
+      "const": "0.2.0",
+      "default": "0.2.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProjectServiceFailure"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "latest_results": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/LatestNodeResult"
+      },
+      "title": "Latest Results",
+      "type": "array"
+    },
+    "logs": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/NodeLogProjection"
+      },
+      "title": "Logs",
+      "type": "array"
+    },
+    "project_path": {
+      "anyOf": [
+        {
+          "maxLength": 32767,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Project Path"
+    },
+    "runs": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Run"
+      },
+      "title": "Runs",
+      "type": "array"
+    },
+    "snapshot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProjectSnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "contract_version",
+    "project_path",
+    "snapshot",
+    "runs",
+    "active_run_id",
+    "active_operation",
+    "latest_results",
+    "artifacts",
+    "logs",
+    "error"
+  ],
+  "title": "ProjectServiceEnvelope",
+  "type": "object"
+}

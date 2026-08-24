@@ -49,7 +49,9 @@ from zniku.runtime.repository import (
     RuntimeRepository,
 )
 
-BASE_TIME = datetime(2026, 8, 24, 1, 0, tzinfo=UTC)
+# 固定在产品测试运行日期之后，避免 ProjectStore 的真实保存时钟超过合成 attempt 时钟，
+# 从而把“时间回退”测试偶然变成依赖执行当天时刻的测试。
+BASE_TIME = datetime(2100, 1, 1, 1, 0, tzinfo=UTC)
 
 
 def rid(number: int) -> str:

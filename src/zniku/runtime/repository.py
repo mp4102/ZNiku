@@ -347,6 +347,18 @@ class RuntimeRepository:
         finally:
             connection.close()
 
+    @contextmanager
+    def _read_connection(self) -> Iterator[sqlite3.Connection]:
+        """为一次公共聚合读取固定 SQLite snapshot，避免并发提交造成 torn view。"""
+
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            try:
+                yield connection
+            finally:
+                if connection.in_transaction:
+                    connection.rollback()
+
     def start_run(
         self,
         run: Run,
@@ -430,13 +442,13 @@ class RuntimeRepository:
     def get_run(self, run_id: str) -> Run:
         """读取一个 Run 及其不可改写的完整 NodeRun 历史。"""
 
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             return self._read_run(connection, run_id)
 
     def list_runs(self) -> tuple[Run, ...]:
         """按创建顺序读取全部 Run。"""
 
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             run_ids = [
                 cast(str, row[0])
                 for row in connection.execute("SELECT run_id FROM runs ORDER BY rowid")
@@ -762,7 +774,7 @@ class RuntimeRepository:
     def get_node_run(self, node_run_id: str) -> NodeRun:
         """按随机身份读取一个历史 attempt。"""
 
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             node_run = self._read_node_run(connection, node_run_id)
             run = self._read_run(connection, node_run.run_id)
             return next(item for item in run.node_runs if item.node_run_id == node_run_id)
@@ -770,7 +782,7 @@ class RuntimeRepository:
     def list_node_runs(self, run_id: str) -> tuple[NodeRun, ...]:
         """按插入顺序读取一个 Run 的全部 attempt。"""
 
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             return self._read_run(connection, run_id).node_runs
 
     def transition_node_run(
@@ -1316,7 +1328,7 @@ class RuntimeRepository:
     def get_result(self, result_id: str) -> NodeResult:
         """读取一个 NodeResult 及其全部有序 Artifact。"""
 
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             result = self._read_result(connection, result_id)
             self._validate_public_result(connection, result)
             return result
@@ -1342,7 +1354,7 @@ class RuntimeRepository:
             before = _normalize_write_timestamp(before, context="before")
             where += " AND nr.ended_at < ?"
             parameters = (node_id, _timestamp(before, context="before"))
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             rows = connection.execute(
                 f"""
                 SELECT result.result_id
@@ -1361,7 +1373,7 @@ class RuntimeRepository:
     def get_artifact(self, artifact_id: str) -> Artifact:
         """按随机身份读取一个已原子登记的 Artifact。"""
 
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             row = connection.execute(
                 "SELECT * FROM artifacts WHERE artifact_id = ?", (artifact_id,)
             ).fetchone()
@@ -1382,7 +1394,7 @@ class RuntimeRepository:
     def get_latest(self, node_id: str) -> LatestNodeResult | None:
         """读取当前 Project node 的 latest head；尚无结果时返回 ``None``。"""
 
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             row = connection.execute(
                 "SELECT * FROM latest_results WHERE node_id = ?", (node_id,)
             ).fetchone()
@@ -1395,7 +1407,7 @@ class RuntimeRepository:
         失效范围。
         """
 
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             rows = connection.execute("SELECT * FROM latest_results ORDER BY rowid").fetchall()
             return tuple(self._validated_latest_from_row(connection, row) for row in rows)
 
@@ -1445,6 +1457,51 @@ class RuntimeRepository:
             if include_self:
                 node_ids = (node_id, *node_ids)
             self._mark_latest_stale_in_connection(connection, node_ids, reason, updated_at)
+            rows = [
+                row
+                for item in node_ids
+                if (
+                    row := connection.execute(
+                        "SELECT * FROM latest_results WHERE node_id = ?", (item,)
+                    ).fetchone()
+                )
+                is not None
+            ]
+            latest = tuple(self._validated_latest_from_row(connection, row) for row in rows)
+            connection.commit()
+            return latest
+
+    def mark_rerun_stale(
+        self,
+        node_id: str,
+        *,
+        updated_at: datetime,
+    ) -> tuple[LatestNodeResult, ...]:
+        """原子区分显式 rerun 节点与因其变化而失效的下游 latest heads。"""
+
+        updated_at = _normalize_write_timestamp(updated_at, context="updated_at")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            graph = self._read_current_project(connection).project.graph
+            if node_id not in {node.node_id for node in graph.nodes}:
+                raise RuntimeNotFoundError(
+                    "E_RERUN_NODE_NOT_IN_CURRENT_GRAPH",
+                    f"当前 Project 不含节点 {node_id!r}",
+                )
+            downstream = _downstream_node_ids(graph, node_id)
+            self._mark_latest_stale_in_connection(
+                connection,
+                (node_id,),
+                StaleReason.RERUN_REQUESTED,
+                updated_at,
+            )
+            self._mark_latest_stale_in_connection(
+                connection,
+                downstream,
+                StaleReason.UPSTREAM_CHANGED,
+                updated_at,
+            )
+            node_ids = (node_id, *downstream)
             rows = [
                 row
                 for item in node_ids
