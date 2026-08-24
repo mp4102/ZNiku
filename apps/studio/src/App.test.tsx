@@ -6,6 +6,7 @@ import type { StudioCommand, StudioEnvelope } from './studio/contracts'
 import type { StudioGateway } from './studio/gateway'
 import {
   handoffEnvelope,
+  failedStatusEnvelope,
   projectSnapshot,
   sourceDefinition,
   studioEnvelope,
@@ -31,7 +32,7 @@ class RecordingGateway implements StudioGateway {
   }
 }
 
-describe('ZNIKU Studio 0.2.0 formal workspace', () => {
+describe('ZNIKU Studio 0.2.0 single Project workspace', () => {
   it('Project Service 缺失时失败关闭，不回退旧正式投影或浏览器 mock', async () => {
     const gateway: StudioGateway = {
       inspect: () => Promise.reject(new Error('loopback offline')),
@@ -62,6 +63,9 @@ describe('ZNIKU Studio 0.2.0 formal workspace', () => {
 
     await user.click(screen.getByRole('button', { name: '复制所选' }))
     expect(await screen.findByLabelText('node.copied 节点')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '删除所选' }))
+    await waitFor(() => expect(screen.queryByLabelText('node.copied 节点')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('node.added 节点')).toBeInTheDocument()
     expect(screen.getAllByText('E_REQUIRED_INPUT_MISSING').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
   })
@@ -185,6 +189,28 @@ describe('ZNIKU Studio 0.2.0 formal workspace', () => {
       node_id: 'transform',
     }))
   })
+
+  it.each(['cancelled', 'interrupted'] as const)(
+    '在同一 Graph 显示 completed/stale/failed、%s 原因、日志和输出路径',
+    async (reason) => {
+      render(<App gateway={new RecordingGateway(failedStatusEnvelope(reason))} />)
+      await screen.findByText('Synthetic Studio Project')
+
+      const sourceCard = await screen.findByLabelText('source 节点')
+      expect(within(sourceCard).getByText('Completed')).toBeInTheDocument()
+      expect(within(sourceCard).getByText('Stale')).toBeInTheDocument()
+      fireEvent.click(sourceCard)
+      expect(await screen.findByText('C:\\synthetic\\source.mkv')).toBeInTheDocument()
+
+      const failedCard = await screen.findByLabelText('transform 节点')
+      expect(within(failedCard).getByText('Failed')).toBeInTheDocument()
+      expect(within(failedCard).getByText('40%')).toBeInTheDocument()
+      fireEvent.click(failedCard)
+      const runtime = await screen.findByLabelText('Runtime details')
+      expect(runtime).toHaveTextContent(reason)
+      expect(runtime).toHaveTextContent(reason === 'cancelled' ? '操作者取消' : '应用重启中断')
+    },
+  )
 
   it('active_operation 期间禁用全部 Project Service 动作', async () => {
     const gateway = new RecordingGateway(

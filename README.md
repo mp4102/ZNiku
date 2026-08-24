@@ -10,16 +10,16 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 
 - 目标版本：`ZNIKU Studio 0.2.0`
 - 开发分支：`v0.2.0`
-- 当前阶段：**Phase 0–4 已完成——正式 Studio 已接入首批真实媒体节点；Phase 5 尚未实施**
+- 当前阶段：**Phase 0–5 已完成——0.2.0 Core 已完成 legacy 清理与最小自动化验收**
 - 唯一目标架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
 - 当前实现版本：`0.2.0`，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
   `zniku.project_service` 与 `zniku.media`
-- 过渡期代码：`main@198d802` 的 `0.1.0` legacy implementation 仍保留为回归对照，Phase 5 删除
+- 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
 
 Phase 1 已建立 Graph Core 与 `.zniku` Store，Phase 2 已用新的最小 Run、NodeRun、Artifact 与 NodeResult
 替换 Runtime 领域入口，Phase 3 已把自由节点画布接到这些 Python authority，Phase 4 已加入首批真实媒体
-NodeDefinition、FFmpeg adapters、FFprobe 与轻量 validators。尚未清理的 Compiler、Evidence 与旧生成投影
-继续保留各自的 `0.1.0` legacy contract version，只用于 Phase 5 前的回归，不再有 Studio 产品入口。
+NodeDefinition、FFmpeg adapters、FFprobe 与轻量 validators。Phase 5 已删除旧 Compiler、Evidence、固定
+pipeline、Real Acceptance 和旧生成投影的实现、测试与工具；CI 只验证当前 0.2.0 产品面。
 
 ## 产品核心
 
@@ -51,7 +51,7 @@ Graph Core 只校验 node／port／edge 存在、typed output→input、required
 `ordered_many` ordinal 连续唯一和 DAG 无环。图允许多个 Source、多个 Output、零 Output，以及任意合法
 分支与汇合。
 
-## Phase 1–4 公共内核
+## Phase 1–5 公共内核
 
 - `zniku.graph`：公开 `Graph`、`NodeDefinition`、`NodeInstance`、`Edge`、typed `PortSpec` 及
   `GraphValidator`；首批类型是 `MediaFile`、`VideoFile`、`AudioFile`、`DataFile`，插件可增加开放字符串
@@ -96,6 +96,7 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | --- | --- |
 | [`docs/architecture/graph-core-baseline.md`](docs/architecture/graph-core-baseline.md) | 0.2.0 唯一目标架构权威 |
 | [`docs/architecture/media-node-contract.md`](docs/architecture/media-node-contract.md) | Phase 4 首批媒体节点的从属实现合同 |
+| [`docs/phase5-acceptance.md`](docs/phase5-acceptance.md) | Phase 5 可重复门禁及其证明边界 |
 | [`docs/brand-baseline.md`](docs/brand-baseline.md) | 品牌、产品名与代码标识 |
 | [`docs/archive/0.1.0/`](docs/archive/0.1.0/) | 0.1.0 历史实现说明；对 0.2.0 无规范权威 |
 
@@ -113,7 +114,7 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | CLI / Python package | `zniku` |
 | 工程文件扩展名 | `.zniku` |
 
-## Phase 0–4 交付边界
+## Phase 0–5 交付边界
 
 本阶段已经完成：
 
@@ -139,11 +140,14 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
   媒体 Artifact 登记前执行存在、非空、FFprobe 流识别和节点轻量 validator。
 - 提供 MR、Enhancement、FI external presets，以及 OutputFile 的显式 `copy`／`reference` 发布模式；成功发布
   会在 typed `published` port 登记 Studio 可见、Runtime 可 quick-probe 的 external Artifact。
+- 删除 0.1.0 legacy Python packages、专属 tests／tools、旧 Studio generated projections 与第二套 CI 门禁；
+  `docs/archive/0.1.0/` 只作为不可执行的历史档案保留。
+- 加入 CI 可自行合成的 12 帧 FFV1 端到端 smoke，覆盖两条正式媒体 DAG、Split/Merge 帧守恒、发布结果与
+  completed reuse。详细验收范围见 [Phase 5 最小验收](docs/phase5-acceptance.md)。
 
-Phase 4 自动化只证明单元测试和短真实媒体 smoke；它不代表长片性能、主观画质或最终操作者验收。Python 旧
-实现和旧测试暂时保留为 legacy regression，最终清理属于 Phase 5。
+自动化只证明单元测试和极短合成媒体 smoke；它不代表长片性能、主观画质或最终操作者验收。
 
-## 过渡期仓库结构
+## 仓库结构
 
 ```text
 ZNiku/
@@ -153,14 +157,16 @@ ZNiku/
 │   ├── runtime/                 # 0.2.0 Scheduler、Node Runner 与运行历史
 │   ├── project_service/         # 0.2.0 Studio DTO、application 与 loopback host
 │   ├── media/                   # 0.2.0 首批媒体 definitions、adapters、probe 与 validators
-│   └── 其余模块                 # 0.1.0 legacy regression；Phase 5 清理
 ├── apps/studio/
 │   └── src/studio/              # 0.2.0 唯一正式 Designer 与 Runtime overlay
-├── tests/                       # legacy regression + 架构权威一致性门
+├── tests/                       # 当前 0.2.0 单元、集成与架构权威门禁
+├── tools/                       # Schema 一致性、Studio host 与短媒体 smoke 工具
 ├── docs/
 │   ├── architecture/
-│   │   └── graph-core-baseline.md
+│   │   ├── graph-core-baseline.md
+│   │   └── media-node-contract.md
 │   ├── archive/0.1.0/           # 旧架构历史归档
+│   ├── phase5-acceptance.md      # 可重复最小验收与证明边界
 │   └── brand-baseline.md
 ├── AGENTS.md
 └── VERSION                      # 0.2.0 产品实现版本
@@ -168,34 +174,34 @@ ZNiku/
 
 ## 本地运行与验证
 
-Python 需要 3.12 或更高版本及 `uv`；Phase 4 媒体节点还要求 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。以下
-门禁验证 0.2.0 Graph Core、Project Store、Runtime、媒体节点和过渡期 legacy regression：
+Python 需要 3.12 或更高版本及 `uv`；媒体节点还要求 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。以下门禁只
+验证当前 0.2.0 Graph Core、Project Store、Runtime、Project Service 与媒体节点：
 
 ```powershell
 uv lock --check
 uv sync --locked --extra dev
-uv run --locked --extra dev python tools/generate_authoring_projection.py --check
 uv run --locked --extra dev python tools/generate_project_service_schema.py --check
 uv run --locked --extra dev pytest
+uv run --locked --extra dev python tools/run_media_smoke.py
 uv run --locked --extra dev mypy --no-incremental src tests tools
 uv run --locked --extra dev ruff check src tests tools
 uv run --locked --extra dev ruff format --check src tests tools
 ```
 
-无需真实媒体时，可以继续生成 Phase 3 合成工程验证 Project Service 与 handoff。要运行 Phase 4 短媒体
-smoke，请先准备一个短参考片段，再指定输出目录并生成可自由编辑的示例工程；工具会创建尚不存在的工程父
-目录与输出目录，但不会覆盖既有 `.zniku`：
+`tools/run_media_smoke.py` 无需输入文件：它会在临时目录自行生成 12 帧视频，运行两条媒体 DAG，并在退出时
+删除全部临时工程、attempt 与输出。要在 Studio 中进行交互验收，再准备一个短参考片段，指定输出目录并生成
+可自由编辑的示例工程；工具会创建尚不存在的工程父目录与输出目录，但不会覆盖既有 `.zniku`：
 
 ```powershell
 ffmpeg -version
 ffprobe -version
 uv run --locked --extra dev python tools/create_media_smoke_project.py `
-  D:\ZNIKU\phase4-smoke.zniku `
+  D:\ZNIKU\phase5-smoke.zniku `
   D:\Media\short-reference.mkv `
-  D:\ZNIKU\phase4-output
+  D:\ZNIKU\phase5-output
 uv run --locked --extra dev python tools/run_studio_project_service.py `
   --work-root D:\ZNIKU\runtime-data `
-  --project D:\ZNIKU\phase4-smoke.zniku
+  --project D:\ZNIKU\phase5-smoke.zniku
 ```
 
 另一个终端运行：
@@ -228,6 +234,6 @@ preset，填写 `tool`、`model`、`tool_version` 后按 handoff 目标完成外
 2. Phase 2（已完成）：Scheduler、Node Runner、attempt、rerun-from-start、结果复用与 stale；
 3. Phase 3（已完成）：GUI-0 接入 Project Service 和 Runtime，形成唯一正式 Studio；
 4. Phase 4（已完成）：首批真实媒体节点与 automatic／manual_external；
-5. Phase 5：删除旧 Evidence/full/recovery/fixed pipeline 实现并完成最小验收。
+5. Phase 5（已完成）：删除旧 Evidence/full/recovery/fixed pipeline 实现并完成最小验收。
 
 当前仓库为公开开发仓库，但尚未包含开源许可证；公开可见不等于授予复制、修改或分发许可。

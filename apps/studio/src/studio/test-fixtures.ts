@@ -254,3 +254,56 @@ export function handoffEnvelope(): StudioEnvelope {
     ],
   })
 }
+
+export function failedStatusEnvelope(
+  reason: 'cancelled' | 'interrupted',
+): StudioEnvelope {
+  const base = handoffEnvelope()
+  const run = base.runs[0]!
+  const sourceRun = run.node_runs[0]!
+  const transformRun = run.node_runs[1]!
+  const message = reason === 'cancelled' ? '操作者取消当前 attempt' : '应用重启中断当前 attempt'
+  return {
+    ...base,
+    active_operation: null,
+    latest_results: [
+      {
+        node_id: 'source',
+        result_id: '00000000-0000-4000-8000-000000000021',
+        stale: true,
+        stale_reason: 'graph_changed',
+        updated_at: '2026-08-24T00:00:03Z',
+      },
+    ],
+    logs: [
+      {
+        node_run_id: transformRun.node_run_id,
+        stdout: '',
+        stderr: message,
+        stdout_available: true,
+        stderr_available: true,
+        stdout_truncated: false,
+        stderr_truncated: false,
+      },
+    ],
+    runs: [
+      {
+        ...run,
+        state: 'failed',
+        ended_at: '2026-08-24T00:00:03Z',
+        error: { reason, message },
+        node_runs: [
+          sourceRun,
+          {
+            ...transformRun,
+            state: 'failed',
+            ended_at: '2026-08-24T00:00:03Z',
+            progress: 0.4,
+            error: { reason, message },
+            external_handoff: null,
+          },
+        ],
+      },
+    ],
+  }
+}

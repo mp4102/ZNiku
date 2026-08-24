@@ -11,7 +11,6 @@ requires-python = ">=3.12"
 dependencies = [
   "jsonschema>=4.26,<5",
   "pydantic>=2.12,<3",
-  "rfc8785>=0.1.4,<1",
 ]
 
 [project.optional-dependencies]
@@ -39,10 +38,6 @@ strict = true
 files = ["src", "tests", "tools"]
 show_error_codes = true
 warn_unreachable = true
-
-[[tool.mypy.overrides]]
-module = "rfc8785"
-follow_imports = "skip"
 
 [tool.ruff]
 target-version = "py312"

@@ -19,6 +19,8 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, cast
 
+import pytest
+
 from zniku.graph import (
     ExecutionMode,
     Graph,
@@ -32,6 +34,7 @@ from zniku.project_service import (
     make_project_service_handler,
     serve_project_service,
 )
+from zniku.project_service.host import _write_response_body
 from zniku.runtime import PythonAdapterContext, PythonAdapterResult
 
 
@@ -127,6 +130,23 @@ def test_default_project_service_port_avoids_windows_reserved_range() -> None:
     signature = inspect.signature(serve_project_service)
 
     assert signature.parameters["port"].default == 18765
+
+
+@pytest.mark.parametrize(
+    "error_type",
+    (BrokenPipeError, ConnectionAbortedError, ConnectionResetError),
+)
+def test_response_disconnect_does_not_escape_request_handler(
+    error_type: type[OSError],
+) -> None:
+    """浏览器停止轮询时只丢弃当前响应，不向 server 线程打印 traceback。"""
+
+    class DisconnectingWriter:
+        def write(self, data: bytes, /) -> int:
+            del data
+            raise error_type("客户端已断开")
+
+    assert _write_response_body(DisconnectingWriter(), b"{}") is False
 
 
 def test_http_routes_cors_and_strict_json_fail_closed(tmp_path: Path) -> None:

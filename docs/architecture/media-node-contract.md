@@ -1,6 +1,6 @@
 # ZNIKU 0.2.0 首批媒体节点合同
 
-- 状态：Phase 4 已实现合同说明
+- 状态：Phase 4 已实现；Phase 5 清理后保留的媒体节点合同
 - 版本：`0.2.0`
 - 上位权威：[`graph-core-baseline.md`](graph-core-baseline.md)
 
@@ -113,7 +113,7 @@ Schema，不改变 Scheduler：
 - 全局 checksum、full verification、Evidence、receipt 或归档 Manifest；
 - 自动证明 AI 模型和主观画质；
 - 公网、分布式 worker、GPU lease、SMB 故障转移或长片压力矩阵；
-- Phase 5 的 legacy 清理和最终操作者长片验收。
+- 最终操作者长片验收；自动化只执行短合成媒体，不把长片压力测试扩大为 Core 门禁。
 
 仓库提供的短媒体 smoke project 只是一张可编辑的示例 DAG，用于验证七类节点的最小真实执行合同；它不是
 产品内置 workflow，也不扩大 Core 完成条件。

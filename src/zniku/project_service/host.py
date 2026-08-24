@@ -10,13 +10,35 @@ import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address
-from typing import Any, Final
+from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
 from .service import ProjectServiceApplication, ProjectServiceError
 
 _MAX_BODY_BYTES: Final = 4 * 1024 * 1024
 _DEFAULT_PORT: Final = 18_765
+
+
+class _ResponseWriter(Protocol):
+    """描述 HTTP handler 写出响应体所需的最小接口。"""
+
+    def write(self, data: bytes, /) -> object:
+        """写出完整或部分响应体。"""
+
+
+def _write_response_body(writer: _ResponseWriter, data: bytes) -> bool:
+    """写出 JSON body；客户端主动断连只终止当前传输，不重放已经执行的命令。
+
+    Studio 轮询关闭、页面刷新或进程退出都可能让 socket 在响应序列化完成后消失。此时
+    Project/Runtime mutation 已有自己的事务边界，HTTP host 只能放弃这次响应，不能把传输错误冒充
+    领域失败或再次执行命令。
+    """
+
+    try:
+        writer.write(data)
+    except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+        return False
+    return True
 
 
 class _JsonPayloadError(ValueError):
@@ -161,7 +183,8 @@ def make_project_service_handler(
             self.send_header("Cache-Control", "no-store")
             self._cors()
             self.end_headers()
-            self.wfile.write(data)
+            if not _write_response_body(self.wfile, data):
+                self.close_connection = True
 
         def _error(self, status: HTTPStatus, code: str, message: str) -> None:
             self._json(status, {"error": {"code": code, "message": message[:4096]}})

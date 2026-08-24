@@ -13,6 +13,7 @@ import {
   dataSourceDefinition,
   mergeDefinition,
   projectSnapshot,
+  sinkDefinition,
   sourceDefinition,
   transformDefinition,
 } from './test-fixtures'
@@ -179,6 +180,86 @@ describe('Studio 0.2.0 Graph interactions', () => {
       },
     }
     expect(inspectGraph(partial).map((item) => item.code)).toEqual(['E_REQUIRED_INPUT_MISSING'])
+  })
+
+  it('接受多个 Source、多个 Output、零 Output 以及任意合法分支汇合', () => {
+    const node = (
+      node_id: string,
+      type_id: string,
+      definition_version = '0.2.0',
+      parameters: Record<string, number> = {},
+    ) => ({ node_id, type_id, definition_version, parameters, ui_position: null })
+    const graph: GraphWire = {
+      nodes: [
+        node('source.left', sourceDefinition.type_id),
+        node('source.right', sourceDefinition.type_id),
+        node('branch.left', transformDefinition.type_id, '0.2.0', { strength: 3 }),
+        node('branch.right', transformDefinition.type_id, '0.2.0', { strength: 3 }),
+        node('merge', mergeDefinition.type_id),
+        node('output.preview', sinkDefinition.type_id),
+        node('output.archive', sinkDefinition.type_id),
+      ],
+      edges: [
+        {
+          source_node_id: 'source.left',
+          source_port_id: 'out',
+          target_node_id: 'branch.left',
+          target_port_id: 'in',
+          ordinal: null,
+        },
+        {
+          source_node_id: 'source.right',
+          source_port_id: 'out',
+          target_node_id: 'branch.right',
+          target_port_id: 'in',
+          ordinal: null,
+        },
+        {
+          source_node_id: 'branch.left',
+          source_port_id: 'out',
+          target_node_id: 'merge',
+          target_port_id: 'items',
+          ordinal: 0,
+        },
+        {
+          source_node_id: 'branch.right',
+          source_port_id: 'out',
+          target_node_id: 'merge',
+          target_port_id: 'items',
+          ordinal: 1,
+        },
+        {
+          source_node_id: 'merge',
+          source_port_id: 'out',
+          target_node_id: 'output.preview',
+          target_port_id: 'in',
+          ordinal: null,
+        },
+        {
+          source_node_id: 'merge',
+          source_port_id: 'out',
+          target_node_id: 'output.archive',
+          target_port_id: 'in',
+          ordinal: null,
+        },
+      ],
+    }
+    const definitions = [sourceDefinition, transformDefinition, mergeDefinition, sinkDefinition]
+    expect(
+      inspectGraph({
+        project: { ...projectSnapshot.project, graph },
+        definitions,
+      }),
+    ).toEqual([])
+    expect(
+      inspectGraph({
+        project: {
+          ...projectSnapshot.project,
+          graph: { nodes: graph.nodes.slice(0, 2), edges: [] },
+        },
+        definitions,
+      }),
+    ).toEqual([])
   })
 
   it('按精确定义的 parameter_schema 即时失败关闭', () => {

@@ -7,7 +7,7 @@ Service。
 唯一架构权威是 [`graph-core-baseline.md`](../../docs/architecture/graph-core-baseline.md)；本应用不得恢复
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-当前 Phase 4 功能：
+当前 Phase 1–5 已实现产品面：
 
 - 从工程精确版本 `NodeDefinition` 搜索、添加、拖动、连接、复制和多选删除节点；
 - 编辑节点 JSON 参数，显示 required input、精确 `data_type`、`one` / `ordered_many` 与 DAG diagnostics；
