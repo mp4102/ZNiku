@@ -1,4 +1,4 @@
-"""锁定 0.2.0 Phase 1 的单一架构权威与 0.1.0 只读归档边界。"""
+"""锁定 0.2.0 的单一架构权威、正式 Python namespace 与只读文档归档边界。"""
 
 from __future__ import annotations
 
@@ -26,20 +26,40 @@ LEGACY_ARCHITECTURE_PATHS = (
     Path("zbaton/sample.json"),
 )
 MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\((?P<target>[^)]+)\)")
+LEGACY_PYTHON_PACKAGES = (
+    "agent",
+    "application",
+    "authoring",
+    "contracts",
+    "engines",
+    "history",
+    "pipelines",
+    "realmedia",
+    "studio",
+    "validation",
+    "workflow",
+)
 
 
-def test_graph_core_is_the_only_active_architecture_document() -> None:
+def test_graph_core_is_the_only_authority_and_media_contract_is_subordinate() -> None:
     active_files = {
         path.relative_to(ACTIVE_ARCHITECTURE)
         for path in ACTIVE_ARCHITECTURE.rglob("*")
         if path.is_file()
     }
 
-    assert active_files == {Path("graph-core-baseline.md")}
+    assert active_files == {
+        Path("graph-core-baseline.md"),
+        Path("media-node-contract.md"),
+    }
     baseline = (ACTIVE_ARCHITECTURE / "graph-core-baseline.md").read_text("utf-8")
+    media_contract = (ACTIVE_ARCHITECTURE / "media-node-contract.md").read_text("utf-8")
     assert "已批准的唯一 0.2.0 目标架构基线" in baseline
-    assert "Phase 0\u20131 已实施" in baseline
-    assert "Phase 2\u20135 尚未实施" in baseline
+    assert "Phase 0\u20135 已实施" in baseline
+    assert "Phase 5 尚未实施" not in baseline
+    assert "graph-core-baseline.md" in media_contract
+    assert "本文从属于" in media_contract
+    assert "发生冲突时以上位基线为准" in media_contract
 
 
 def test_all_legacy_architecture_documents_are_archived() -> None:
@@ -58,16 +78,28 @@ def test_active_guidance_points_only_to_the_graph_core_authority() -> None:
     agents = (ROOT / "AGENTS.md").read_text("utf-8")
     readme = (ROOT / "README.md").read_text("utf-8")
     studio_readme = (ROOT / "apps" / "studio" / "README.md").read_text("utf-8")
+    package_doc = (ROOT / "src" / "zniku" / "__init__.py").read_text("utf-8")
 
     assert "docs/architecture/graph-core-baseline.md" in agents
     assert "唯一目标架构权威" in agents
     assert "多个 Source、多个 Output、零 Output" in agents
     assert "目标版本：`ZNIKU Studio 0.2.0`" in readme
     assert "当前实现版本：`0.2.0`" in readme
-    assert "`zniku.graph`" in readme and "`zniku.project`" in readme
+    assert all(
+        public_module in readme
+        for public_module in (
+            "`zniku.graph`",
+            "`zniku.project`",
+            "`zniku.runtime`",
+            "`zniku.project_service`",
+            "`zniku.media`",
+        )
+    )
+    assert "0.1.0 contracts" in package_doc
+    assert "Project Service" in package_doc and "唯一正式 Studio" in package_doc
     assert "../../docs/architecture/graph-core-baseline.md" in studio_readme
 
-    active_guidance = "\n".join((agents, readme, studio_readme))
+    active_guidance = "\n".join((agents, readme, studio_readme, package_doc))
     for legacy_path in LEGACY_ARCHITECTURE_PATHS:
         old_link = f"docs/architecture/{legacy_path.as_posix()}"
         assert old_link not in active_guidance
@@ -91,3 +123,17 @@ def test_local_document_links_resolve_after_archiving() -> None:
                 assert (markdown_file.parent / path_text).exists(), (
                     f"{markdown_file.relative_to(ROOT)} 包含失效链接：{target}"
                 )
+
+
+def test_legacy_python_implementation_is_not_shipped_as_product_code() -> None:
+    package_root = ROOT / "src" / "zniku"
+    for package_name in LEGACY_PYTHON_PACKAGES:
+        assert not tuple((package_root / package_name).glob("*.py"))
+
+    assert {init_file.parent.name for init_file in package_root.glob("*/__init__.py")} == {
+        "graph",
+        "media",
+        "project",
+        "project_service",
+        "runtime",
+    }

@@ -4,7 +4,9 @@ SQLite 文件是 Project、Graph 与精确 NodeDefinition 的唯一持久化 aut
 Graph 校验，再通过单个事务替换 Core 表；任一步失败都会回滚，已有工程内容保持不变。读取会检查
 SQLite header、应用标识、schema version、表结构、外键与模型内容，未知或损坏输入默认失败关闭。
 
-本模块刻意不创建 Run、Artifact、日志或 Runtime 表，也不读取、迁移 0.1.0 snapshot/Evidence。
+schema v2 在同一文件中为 RuntimeRepository 保留 Run、NodeRun、Artifact、NodeResult 与 latest result
+表；Project 保存不会删除运行历史。只允许将本仓库 0.2.0 Phase 1 schema v1 单向事务迁移到 v2，绝不
+读取或迁移 0.1.0 legacy snapshot/Evidence。
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import os
 import sqlite3
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -22,11 +25,12 @@ from pydantic import ValidationError
 from zniku.graph import Graph, GraphValidationError, GraphValidator, NodeDefinition
 from zniku.project.models import Project, ProjectSnapshot
 
-PROJECT_SCHEMA_VERSION: Final = 1
+PROJECT_SCHEMA_VERSION: Final = 2
 PROJECT_APPLICATION_ID: Final = 0x5A4E494B  # ASCII "ZNIK"
 _SQLITE_HEADER: Final = b"SQLite format 3\x00"
-_EXPECTED_TABLES: Final = frozenset({"project", "node_definitions", "graph_nodes", "graph_edges"})
-_EXPECTED_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
+_PHASE_1_SCHEMA_VERSION: Final = 1
+_CORE_TABLES: Final = frozenset({"project", "node_definitions", "graph_nodes", "graph_edges"})
+_CORE_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
     "project": ("singleton", "project_id", "name"),
     "node_definitions": ("definition_order", "type_id", "version", "payload_json"),
     "graph_nodes": (
@@ -45,6 +49,68 @@ _EXPECTED_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
         "target_port_id",
         "ordinal",
     ),
+}
+_RUNTIME_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
+    "runs": (
+        "run_id",
+        "project_id",
+        "state",
+        "graph_snapshot_json",
+        "definitions_snapshot_json",
+        "selected_targets_json",
+        "created_at",
+        "started_at",
+        "ended_at",
+        "error_json",
+    ),
+    "node_runs": (
+        "node_run_id",
+        "run_id",
+        "node_id",
+        "definition_version",
+        "attempt",
+        "state",
+        "input_artifact_ids_json",
+        "output_artifact_ids_json",
+        "created_at",
+        "work_dir",
+        "started_at",
+        "ended_at",
+        "progress",
+        "exit_code",
+        "log_path",
+        "error_json",
+        "reused_from_result_id",
+        "external_handoff_json",
+    ),
+    "artifacts": (
+        "artifact_id",
+        "result_id",
+        "kind",
+        "path",
+        "producer_node_run_id",
+        "producer_port_id",
+        "ordinal",
+        "frame_start",
+        "frame_end",
+        "media_info_json",
+        "size",
+        "mtime_ns",
+    ),
+    "node_results": (
+        "result_id",
+        "node_run_id",
+        "output_artifact_ids_json",
+        "media_summary_json",
+        "validation_summary_json",
+        "created_at",
+    ),
+    "latest_results": ("node_id", "result_id", "stale", "stale_reason", "updated_at"),
+}
+_EXPECTED_TABLES: Final = _CORE_TABLES | frozenset(_RUNTIME_COLUMNS)
+_EXPECTED_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
+    **_CORE_COLUMNS,
+    **_RUNTIME_COLUMNS,
 }
 
 _SCHEMA_SQL: Final = """
@@ -87,6 +153,99 @@ CREATE TABLE graph_edges (
         ON UPDATE RESTRICT ON DELETE RESTRICT
 );
 """
+
+_RUNTIME_SCHEMA_STATEMENTS: Final = (
+    """
+    CREATE TABLE runs (
+        run_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'running', 'completed', 'failed')),
+        graph_snapshot_json TEXT NOT NULL,
+        definitions_snapshot_json TEXT NOT NULL,
+        selected_targets_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        started_at TEXT,
+        ended_at TEXT,
+        error_json TEXT
+    )
+    """,
+    """
+    CREATE TABLE node_runs (
+        node_run_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        definition_version TEXT NOT NULL,
+        attempt INTEGER NOT NULL CHECK (attempt >= 1),
+        state TEXT NOT NULL CHECK (
+            state IN ('pending', 'running', 'waiting_external', 'completed', 'failed')
+        ),
+        input_artifact_ids_json TEXT NOT NULL,
+        output_artifact_ids_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        work_dir TEXT NOT NULL,
+        started_at TEXT,
+        ended_at TEXT,
+        progress REAL CHECK (progress IS NULL OR (progress >= 0.0 AND progress <= 1.0)),
+        exit_code INTEGER,
+        log_path TEXT,
+        error_json TEXT,
+        reused_from_result_id TEXT,
+        external_handoff_json TEXT,
+        UNIQUE (run_id, node_id, attempt),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT,
+        FOREIGN KEY (reused_from_result_id) REFERENCES node_results(result_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT
+    )
+    """,
+    """
+    CREATE TABLE node_results (
+        result_id TEXT PRIMARY KEY,
+        node_run_id TEXT NOT NULL UNIQUE,
+        output_artifact_ids_json TEXT NOT NULL,
+        media_summary_json TEXT NOT NULL,
+        validation_summary_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (node_run_id) REFERENCES node_runs(node_run_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT
+    )
+    """,
+    """
+    CREATE TABLE artifacts (
+        artifact_id TEXT PRIMARY KEY,
+        result_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        path TEXT NOT NULL,
+        producer_node_run_id TEXT NOT NULL,
+        producer_port_id TEXT NOT NULL,
+        ordinal INTEGER CHECK (ordinal IS NULL OR ordinal >= 0),
+        frame_start INTEGER CHECK (frame_start IS NULL OR frame_start >= 0),
+        frame_end INTEGER CHECK (frame_end IS NULL OR frame_end > frame_start),
+        media_info_json TEXT NOT NULL,
+        size INTEGER CHECK (size IS NULL OR size >= 0),
+        mtime_ns INTEGER CHECK (mtime_ns IS NULL OR mtime_ns >= 0),
+        FOREIGN KEY (result_id) REFERENCES node_results(result_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT,
+        FOREIGN KEY (producer_node_run_id) REFERENCES node_runs(node_run_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT
+    )
+    """,
+    """
+    CREATE TABLE latest_results (
+        node_id TEXT PRIMARY KEY,
+        result_id TEXT NOT NULL,
+        stale INTEGER NOT NULL CHECK (stale IN (0, 1)),
+        stale_reason TEXT,
+        updated_at TEXT NOT NULL,
+        CHECK (
+            (stale = 0 AND stale_reason IS NULL)
+            OR (stale = 1 AND stale_reason IS NOT NULL)
+        ),
+        FOREIGN KEY (result_id) REFERENCES node_results(result_id)
+            ON UPDATE RESTRICT ON DELETE RESTRICT
+    )
+    """,
+)
 
 
 class ProjectStoreError(RuntimeError):
@@ -172,11 +331,72 @@ def _remove_owned_file(path: Path, *, identity: tuple[int, int]) -> None:
             path.unlink(missing_ok=True)
 
 
+def _incoming_edge_signature(graph: Graph, node_id: str) -> tuple[tuple[str, str, str, int], ...]:
+    return tuple(
+        sorted(
+            (
+                edge.source_node_id,
+                edge.source_port_id,
+                edge.target_port_id,
+                -1 if edge.ordinal is None else edge.ordinal,
+            )
+            for edge in graph.edges
+            if edge.target_node_id == node_id
+        )
+    )
+
+
+def _downstream_ids(graph: Graph, node_id: str) -> set[str]:
+    adjacency: dict[str, set[str]] = {node.node_id: set() for node in graph.nodes}
+    for edge in graph.edges:
+        adjacency.setdefault(edge.source_node_id, set()).add(edge.target_node_id)
+    visited: set[str] = set()
+    pending = list(adjacency.get(node_id, ()))
+    while pending:
+        candidate = pending.pop()
+        if candidate in visited:
+            continue
+        visited.add(candidate)
+        pending.extend(adjacency.get(candidate, ()))
+    return visited
+
+
+def _graph_change_stale_ids(old: ProjectSnapshot, new: ProjectSnapshot) -> tuple[str, ...]:
+    """找出语义变化节点及其新旧 Graph 下游；单纯 UI 坐标变化不失效结果。"""
+
+    old_nodes = {node.node_id: node for node in old.project.graph.nodes}
+    new_nodes = {node.node_id: node for node in new.project.graph.nodes}
+    old_definitions = {(item.type_id, item.version): item for item in old.definitions}
+    new_definitions = {(item.type_id, item.version): item for item in new.definitions}
+    changed: set[str] = set(old_nodes) ^ set(new_nodes)
+    for node_id in set(old_nodes) & set(new_nodes):
+        old_node = old_nodes[node_id]
+        new_node = new_nodes[node_id]
+        if (
+            old_node.type_id != new_node.type_id
+            or old_node.definition_version != new_node.definition_version
+            or old_node.parameters != new_node.parameters
+            or _incoming_edge_signature(old.project.graph, node_id)
+            != _incoming_edge_signature(new.project.graph, node_id)
+            or old_definitions.get((old_node.type_id, old_node.definition_version))
+            != new_definitions.get((new_node.type_id, new_node.definition_version))
+        ):
+            changed.add(node_id)
+    stale = set(changed)
+    for node_id in changed:
+        stale.update(_downstream_ids(old.project.graph, node_id))
+        stale.update(_downstream_ids(new.project.graph, node_id))
+    order = [node.node_id for node in new.project.graph.nodes]
+    order.extend(node.node_id for node in old.project.graph.nodes if node.node_id not in new_nodes)
+    return tuple(node_id for node_id in order if node_id in stale)
+
+
 class ProjectStore:
     """管理一个 SQLite-backed ``.zniku`` 工程文件。
 
     实例不持有长期数据库连接；每次操作独立打开连接，避免隐藏事务和跨线程连接所有权。``save`` 是
-    唯一写入口，``load`` 返回 Project 与精确 NodeDefinition 的同一读取快照。
+    Project Core 的唯一写入口，``load`` 返回 Project 与精确 NodeDefinition 的同一读取快照；Runtime
+    历史由 RuntimeRepository 在 schema v2 附加表中独立维护。
     """
 
     def __init__(self, path: str | os.PathLike[str]) -> None:
@@ -221,6 +441,8 @@ class ProjectStore:
             try:
                 store._configure_connection(connection)
                 connection.executescript(_SCHEMA_SQL)
+                for statement in _RUNTIME_SCHEMA_STATEMENTS:
+                    connection.execute(statement)
                 connection.execute(f"PRAGMA application_id = {PROJECT_APPLICATION_ID}")
                 connection.execute(f"PRAGMA user_version = {PROJECT_SCHEMA_VERSION}")
                 connection.commit()
@@ -238,7 +460,7 @@ class ProjectStore:
 
     @classmethod
     def open(cls, path: str | os.PathLike[str]) -> ProjectStore:
-        """打开并验证现有工程；不会自动创建、修复或迁移文件。"""
+        """打开并验证现有工程；只自动迁移受支持的 0.2.0 Phase 1 schema v1。"""
 
         store = cls(path)
         store._assert_file_and_schema()
@@ -262,8 +484,18 @@ class ProjectStore:
         connection: sqlite3.Connection | None = None
         try:
             connection = sqlite3.connect(self.path)
+            connection.row_factory = sqlite3.Row
             self._configure_connection(connection)
             connection.execute("BEGIN IMMEDIATE")
+            previous: ProjectSnapshot | None = None
+            if connection.execute("SELECT count(*) FROM project").fetchone()[0] == 1:
+                loaded = self._read_snapshot(connection)
+                previous = self._validated_snapshot(loaded.project, loaded.definitions)
+                if previous.project.project_id != snapshot.project.project_id:
+                    raise _validation_error(
+                        "E_PROJECT_ID_IMMUTABLE",
+                        "既有 .zniku authority 的 project_id 不得替换",
+                    )
             connection.execute("DELETE FROM graph_edges")
             connection.execute("DELETE FROM graph_nodes")
             connection.execute("DELETE FROM node_definitions")
@@ -298,6 +530,22 @@ class ProjectStore:
                 """,
                 edge_rows,
             )
+            if previous is not None:
+                stale_node_ids = _graph_change_stale_ids(previous, snapshot)
+                if stale_node_ids:
+                    changed_at = (
+                        datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+                    )
+                    connection.executemany(
+                        """
+                        UPDATE latest_results
+                        SET stale = 1,
+                            stale_reason = 'graph_changed',
+                            updated_at = CASE WHEN updated_at > ? THEN updated_at ELSE ? END
+                        WHERE node_id = ?
+                        """,
+                        ((changed_at, changed_at, node_id) for node_id in stale_node_ids),
+                    )
             violations = connection.execute("PRAGMA foreign_key_check").fetchall()
             if violations:
                 raise _validation_error(
@@ -361,15 +609,29 @@ class ProjectStore:
                         "E_PROJECT_APPLICATION_ID_UNKNOWN",
                         f"未知 application_id：{application_id}",
                     )
-                if schema_version != PROJECT_SCHEMA_VERSION:
+                quick_check = connection.execute("PRAGMA quick_check").fetchall()
+                if [row[0] for row in quick_check] != ["ok"]:
+                    raise _format_error("E_PROJECT_SQLITE_CORRUPT", "SQLite quick_check 失败")
+                if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                    raise _format_error("E_PROJECT_FOREIGN_KEY_INVALID", "工程包含无效外键")
+                if schema_version == _PHASE_1_SCHEMA_VERSION:
+                    self._assert_schema_shape(
+                        connection,
+                        expected_tables=_CORE_TABLES,
+                        expected_columns=_CORE_COLUMNS,
+                    )
+                    self._migrate_phase_1_to_phase_2(connection)
+                    schema_version = PROJECT_SCHEMA_VERSION
+                elif schema_version != PROJECT_SCHEMA_VERSION:
                     raise _format_error(
                         "E_PROJECT_SCHEMA_VERSION_UNKNOWN",
                         f"未知 schema version：{schema_version}",
                     )
-                self._assert_schema_shape(connection)
-                quick_check = connection.execute("PRAGMA quick_check").fetchall()
-                if [row[0] for row in quick_check] != ["ok"]:
-                    raise _format_error("E_PROJECT_SQLITE_CORRUPT", "SQLite quick_check 失败")
+                self._assert_schema_shape(
+                    connection,
+                    expected_tables=_EXPECTED_TABLES,
+                    expected_columns=_EXPECTED_COLUMNS,
+                )
                 if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                     raise _format_error("E_PROJECT_FOREIGN_KEY_INVALID", "工程包含无效外键")
             finally:
@@ -393,27 +655,61 @@ class ProjectStore:
             raise ProjectStoreError("E_PROJECT_FOREIGN_KEYS_DISABLED", "无法启用 SQLite 外键")
 
     @staticmethod
-    def _assert_schema_shape(connection: sqlite3.Connection) -> None:
+    def _assert_schema_shape(
+        connection: sqlite3.Connection,
+        *,
+        expected_tables: frozenset[str],
+        expected_columns: Mapping[str, tuple[str, ...]],
+    ) -> None:
         actual_tables = {
             cast(str, row[0])
             for row in connection.execute(
                 "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
             )
         }
-        if actual_tables != _EXPECTED_TABLES:
+        if actual_tables != expected_tables:
             raise _format_error(
                 "E_PROJECT_SCHEMA_INVALID",
                 f"工程表集合无效：{sorted(actual_tables)}",
             )
-        for table, expected_columns in _EXPECTED_COLUMNS.items():
+        for table, columns in expected_columns.items():
             actual_columns = tuple(
                 cast(str, row[1]) for row in connection.execute(f"PRAGMA table_info({table})")
             )
-            if actual_columns != expected_columns:
+            if actual_columns != columns:
                 raise _format_error(
                     "E_PROJECT_SCHEMA_INVALID",
                     f"{table} 列结构无效：{actual_columns}",
                 )
+
+    def _migrate_phase_1_to_phase_2(self, connection: sqlite3.Connection) -> None:
+        """只迁移本仓库 0.2.0 Phase 1 schema，不读取任何 0.1.0 legacy 数据。
+
+        ``BEGIN IMMEDIATE`` 后先完整读取并验证旧 Project；在此之前绝不创建表或写 user_version，
+        因而模型损坏只会拒绝打开，不会把坏 authority 标成 schema v2。
+        """
+
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            snapshot = self._read_snapshot(connection)
+            self._validated_snapshot(snapshot.project, snapshot.definitions)
+            for statement in _RUNTIME_SCHEMA_STATEMENTS:
+                connection.execute(statement)
+            connection.execute(f"PRAGMA user_version = {PROJECT_SCHEMA_VERSION}")
+            self._assert_schema_shape(
+                connection,
+                expected_tables=_EXPECTED_TABLES,
+                expected_columns=_EXPECTED_COLUMNS,
+            )
+            if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                raise _format_error(
+                    "E_PROJECT_FOREIGN_KEY_INVALID",
+                    "迁移后的工程包含无效外键",
+                )
+            connection.commit()
+        except (ProjectStoreError, sqlite3.Error):
+            connection.rollback()
+            raise
 
     @staticmethod
     def _validated_snapshot(

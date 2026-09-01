@@ -1,0 +1,906 @@
+"""编排 ZNIKU 0.2.0 Run、Scheduler、Repository 与 Node Runner。
+
+本模块是 Phase 2 的最小同步 Project Service：Run 启动时复制普通 graph/definition snapshot，随后按
+DAG 顺序执行 ready 节点、登记完整结果、复用启动前仍适用的历史 result，并持久化人工外部 handoff。
+它不实现 Compiler、ExecutionPlan、digest、Evidence、checkpoint、resume、媒体业务节点或并发调度。
+
+节点失败只会阻断其依赖分支，Run 保持 ``running`` 以等待操作者执行 ``rerun_from_start``；独立分支
+仍会继续。只有全部选中节点 completed 才把 Run 终结为 completed，避免把可从头重跑的节点失败错误地
+变成不可再次创建 attempt 的 Run 终态。
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import cast
+from uuid import UUID
+
+from pydantic import JsonValue, ValidationError
+
+from zniku.graph import NodeDefinition, NodeInstance
+from zniku.project import ProjectStore
+
+from .models import (
+    Artifact,
+    ExternalHandoff,
+    ExternalOutputTarget,
+    FailureReason,
+    NodeResult,
+    NodeRun,
+    NodeRunState,
+    Run,
+    RunState,
+    RuntimeFailure,
+    StaleReason,
+    new_runtime_id,
+    utc_now,
+)
+from .repository import RuntimeRepository
+from .reuse import ReuseCandidate, analyze_reuse, capture_node_signature
+from .runner import (
+    HandoffInput,
+    HandoffOutput,
+    ManualHandoff,
+    ManualSubmission,
+    MediaProbe,
+    NodeExecutionRequest,
+    NodeRunner,
+    NodeValidator,
+    PythonAdapter,
+    RunnerArtifact,
+    RunnerError,
+    RunnerFailureReason,
+    RunnerInput,
+    RunnerResult,
+)
+from .scheduler import Scheduler
+
+type ArtifactQuickProbe = Callable[[Artifact], bool]
+
+
+class RuntimeServiceError(RuntimeError):
+    """Service 无法在不破坏 Run 历史的前提下继续时的公共错误。"""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(f"{code}: {message}")
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedInputs:
+    """同时保留 reuse 的稳定 edge 顺序和 Runner 的端口绑定。"""
+
+    artifact_ids: tuple[str, ...]
+    runner_inputs: tuple[RunnerInput, ...]
+
+
+class RuntimeService:
+    """在单用户本地 Project 上同步推进普通 DAG Run。
+
+    构造 Service 会把遗留 ``running`` NodeRun 失败为 ``interrupted``；``waiting_external`` 不变。
+    这是应用重启恢复，不接管旧进程，也不尝试恢复 attempt 内部进度。
+    """
+
+    def __init__(
+        self,
+        store: ProjectStore,
+        work_root: str | Path,
+        *,
+        python_adapters: Mapping[str, PythonAdapter] | None = None,
+        validators: Mapping[str, NodeValidator] | None = None,
+        media_probe: MediaProbe | None = None,
+        ffprobe_executable: str = "ffprobe",
+        artifact_quick_probe: ArtifactQuickProbe | None = None,
+    ) -> None:
+        root = Path(work_root)
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            self._work_root = root.resolve(strict=True)
+        except OSError as error:
+            raise RuntimeServiceError("E_SERVICE_WORK_ROOT_INVALID", str(error)) from error
+        if not self._work_root.is_dir():
+            raise RuntimeServiceError("E_SERVICE_WORK_ROOT_INVALID", "work_root 必须是目录")
+
+        self._repository = RuntimeRepository(store)
+        self._runner = NodeRunner(
+            self._work_root,
+            python_adapters=python_adapters,
+            validators=validators,
+            media_probe=media_probe,
+            ffprobe_executable=ffprobe_executable,
+        )
+        self._artifact_quick_probe = artifact_quick_probe or _default_artifact_quick_probe
+        self._repository.recover_interrupted(recovered_at=utc_now())
+
+    @property
+    def repository(self) -> RuntimeRepository:
+        """公开共享同一 ``.zniku`` authority 的 Runtime Repository。"""
+
+        return self._repository
+
+    def create_run(self, *, selected_targets: tuple[str, ...] = ()) -> Run:
+        """从当前 Project 建立普通 snapshot，并为选中闭包创建 attempt 1。
+
+        空 ``selected_targets`` 表示整图。下游 attempt 先以空 inputs 持久化；它第一次成为 ready 时才
+        一次性绑定已登记的直接输入 Artifact，避免为尚不存在的输出伪造身份。
+        """
+
+        snapshot = self._repository.project_store.load()
+        scheduler = Scheduler(snapshot.project.graph)
+        states = dict.fromkeys(scheduler.topological_order, NodeRunState.PENDING.value)
+        analysis = scheduler.analyze(
+            states,
+            selected_targets=selected_targets if selected_targets else None,
+        )
+        normalized_targets = analysis.selected_targets if selected_targets else ()
+        run = Run.pending(
+            project_id=snapshot.project.project_id,
+            graph_snapshot=snapshot.project.graph,
+            definitions_snapshot=snapshot.definitions,
+            selected_targets=normalized_targets,
+        )
+        nodes = {node.node_id: node for node in run.graph_snapshot.nodes}
+        node_runs: list[NodeRun] = []
+        for node_id in analysis.selected_node_ids:
+            node = nodes[node_id]
+            node_run_id = new_runtime_id()
+            node_runs.append(
+                NodeRun.pending(
+                    run_id=run.run_id,
+                    node_id=node_id,
+                    definition_version=node.definition_version,
+                    attempt=1,
+                    input_artifact_ids=(),
+                    work_dir=str(self._attempt_work_dir(node_run_id)),
+                    node_run_id=node_run_id,
+                )
+            )
+        return self._repository.start_run(run, node_runs, started_at=utc_now())
+
+    def create_rerun_run(self, node_id: str) -> Run:
+        """为终态历史之后的“从此处重新运行”建立新的普通全图 Run。
+
+        当前 Project 中该节点先标记 ``rerun_requested``，下游标记 ``upstream_changed``。随后启动
+        全图 Run：未受影响的 fresh 节点仍可按既有规则复用，失效闭包必须创建全新 attempt，从而不会
+        把终态 Run 改写成可 resume 的对象。
+        """
+
+        snapshot = self._repository.project_store.load()
+        node_ids = {node.node_id for node in snapshot.project.graph.nodes}
+        if node_id not in node_ids:
+            raise RuntimeServiceError(
+                "E_SERVICE_RERUN_NODE_UNKNOWN", f"当前 Project 不含节点 {node_id!r}"
+            )
+        self._repository.mark_rerun_stale(node_id, updated_at=utc_now())
+        return self.create_run()
+
+    def run_until_blocked(self, run_id: str) -> Run:
+        """顺序执行全部即时 ready 节点，直到完成或只剩 blocked/waiting/failed。
+
+        一个节点失败不会提前结束循环，因此不依赖该节点的独立分支仍会执行。方法是同步的；Phase 2
+        不承诺并行进程调度。
+        """
+
+        while True:
+            run = self._repository.get_run(run_id)
+            if run.state is RunState.COMPLETED:
+                return run
+            if run.state is not RunState.RUNNING:
+                raise RuntimeServiceError(
+                    "E_SERVICE_RUN_NOT_RUNNING",
+                    f"Run {run_id} 当前状态为 {run.state.value}",
+                )
+
+            selected = self._selected_node_ids(run)
+            latest = self._latest_attempts(run, selected)
+            states = {node_id: latest[node_id].state.value for node_id in selected}
+            analysis = Scheduler(run.graph_snapshot).analyze(
+                states,
+                selected_targets=run.selected_targets if run.selected_targets else None,
+            )
+            if analysis.ready_node_ids:
+                self._process_ready(run, latest[analysis.ready_node_ids[0]])
+                continue
+            if selected and all(
+                latest[node_id].state is NodeRunState.COMPLETED for node_id in selected
+            ):
+                return self._repository.transition_run(
+                    run_id,
+                    RunState.COMPLETED,
+                    occurred_at=utc_now(),
+                )
+            if not selected:
+                return self._repository.transition_run(
+                    run_id,
+                    RunState.COMPLETED,
+                    occurred_at=utc_now(),
+                )
+            return self._repository.get_run(run_id)
+
+    def submit_external(
+        self,
+        node_run_id: str,
+        *,
+        submission: ManualSubmission | None = None,
+    ) -> Run:
+        """验收一个仍为最新 attempt 的 manual_external handoff 并继续 Run。
+
+        被上游 rerun 取代的旧 handoff 会失败关闭；它的历史 NodeRun 不被改写，也不能晚到覆盖新 head。
+        """
+
+        node_run = self._repository.get_node_run(node_run_id)
+        run = self._repository.get_run(node_run.run_id)
+        latest = self._latest_attempts(run, self._selected_node_ids(run))
+        if latest.get(node_run.node_id) != node_run:
+            raise RuntimeServiceError(
+                "E_SERVICE_HANDOFF_SUPERSEDED",
+                "manual_external attempt 已被新的 rerun attempt 取代",
+            )
+        if node_run.state is not NodeRunState.WAITING_EXTERNAL:
+            raise RuntimeServiceError(
+                "E_SERVICE_HANDOFF_STATE",
+                f"NodeRun 当前状态为 {node_run.state.value}",
+            )
+        if node_run.external_handoff is None:
+            raise RuntimeServiceError("E_SERVICE_HANDOFF_MISSING", "waiting_external 缺少 handoff")
+
+        request = self._execution_request(run, node_run)
+        handoff = self._runner_handoff(run, node_run, request.inputs)
+        try:
+            result = self._runner.submit_manual(request, handoff, submission)
+            self._register_runner_result(node_run, result)
+        except RunnerError as error:
+            self._fail_node_run(node_run, error, external_submission=True)
+        except RuntimeServiceError as error:
+            self._fail_service_node_run(
+                node_run,
+                error,
+                reason=FailureReason.EXTERNAL_SUBMISSION_INVALID,
+            )
+        return self.run_until_blocked(run.run_id)
+
+    def rerun_from_start(self, run_id: str, node_id: str) -> Run:
+        """为节点及选中闭包内下游创建新 attempt，并立即执行到下个阻塞点。
+
+        旧 attempt (包括 pending 或 waiting_external) 保持不变；旧 handoff 因不再是最新 attempt
+        而不能 Submit。若闭包内仍有真正 ``running`` attempt，则拒绝并发重跑，避免两个进程竞争。
+        """
+
+        run = self._repository.get_run(run_id)
+        if run.state is not RunState.RUNNING:
+            raise RuntimeServiceError(
+                "E_SERVICE_RERUN_RUN_STATE",
+                "只有仍在等待操作者处理的 running Run 可以创建新 attempt",
+            )
+        selected = self._selected_node_ids(run)
+        if node_id not in selected:
+            raise RuntimeServiceError(
+                "E_SERVICE_RERUN_NODE_OUTSIDE_SELECTION",
+                f"节点 {node_id!r} 不属于当前 Run 执行闭包",
+            )
+        scheduler = Scheduler(run.graph_snapshot)
+        selected_set = set(selected)
+        closure = tuple(
+            item for item in scheduler.downstream_closure(node_id) if item in selected_set
+        )
+        latest = self._latest_attempts(run, selected)
+        active = tuple(item for item in closure if latest[item].state is NodeRunState.RUNNING)
+        if active:
+            raise RuntimeServiceError(
+                "E_SERVICE_RERUN_ACTIVE",
+                "不能取代仍在运行的 attempt：" + ", ".join(active),
+            )
+
+        nodes = {node.node_id: node for node in run.graph_snapshot.nodes}
+        attempts = {
+            item: max(node_run.attempt for node_run in run.node_runs if node_run.node_id == item)
+            for item in closure
+        }
+        new_attempts: list[NodeRun] = []
+        for item in closure:
+            node_run_id = new_runtime_id()
+            new_attempts.append(
+                NodeRun.pending(
+                    run_id=run_id,
+                    node_id=item,
+                    definition_version=nodes[item].definition_version,
+                    attempt=attempts[item] + 1,
+                    input_artifact_ids=(),
+                    work_dir=str(self._attempt_work_dir(node_run_id)),
+                    node_run_id=node_run_id,
+                )
+            )
+        self._repository.create_rerun_attempts(
+            run_id,
+            node_id,
+            new_attempts,
+            updated_at=utc_now(),
+        )
+        return self.run_until_blocked(run_id)
+
+    def recover_interrupted(self) -> tuple[NodeRun, ...]:
+        """显式重复执行幂等的启动恢复；waiting_external 始终保留。"""
+
+        return self._repository.recover_interrupted(recovered_at=utc_now())
+
+    def _process_ready(self, run: Run, node_run: NodeRun) -> None:
+        resolved = self._resolve_inputs(run, node_run.node_id)
+        if node_run.input_artifact_ids:
+            if node_run.input_artifact_ids != resolved.artifact_ids:
+                raise RuntimeServiceError(
+                    "E_SERVICE_INPUT_BINDING_CHANGED",
+                    "pending attempt 已绑定 inputs 与 Run snapshot 当前上游结果不一致",
+                )
+        elif resolved.artifact_ids:
+            node_run = self._repository.bind_inputs(node_run.node_run_id, resolved.artifact_ids)
+
+        if self._try_reuse(run, node_run):
+            return
+        request = self._execution_request(run, node_run, resolved=resolved)
+        definition = request.definition
+        if definition.execution_mode.value == "manual_external":
+            self._prepare_manual(node_run, request)
+        else:
+            self._run_automatic(node_run, request)
+
+    def _run_automatic(self, node_run: NodeRun, request: NodeExecutionRequest) -> None:
+        started_at = utc_now()
+        log_path = str(Path(node_run.work_dir) / "logs")
+        running = self._repository.transition_node_run(
+            node_run.node_run_id,
+            NodeRunState.RUNNING,
+            occurred_at=started_at,
+            log_path=log_path,
+        )
+        try:
+            result = self._runner.run_automatic(request)
+            self._register_runner_result(running, result)
+        except RunnerError as error:
+            self._fail_node_run(running, error)
+        except RuntimeServiceError as error:
+            self._fail_service_node_run(
+                running,
+                error,
+                reason=FailureReason.EXECUTION_ERROR,
+            )
+
+    def _prepare_manual(self, node_run: NodeRun, request: NodeExecutionRequest) -> None:
+        try:
+            handoff = self._runner.prepare_manual(request)
+            runtime_handoff = self._runtime_handoff(node_run, handoff)
+        except (RunnerError, RuntimeServiceError) as error:
+            # prepare 尚未形成可持久化 handoff，不能伪造 automatic running 或无效 waiting 状态。
+            if isinstance(error, RunnerError):
+                reason = _failure_reason(error.reason, external_submission=False)
+                log_path = (
+                    str(error.stdout_log_path.parent) if error.stdout_log_path is not None else None
+                )
+            else:
+                reason = FailureReason.EXECUTION_ERROR
+                log_path = str(Path(node_run.work_dir) / "logs")
+            self._repository.fail_node_run_before_start(
+                node_run.node_run_id,
+                failed_at=utc_now(),
+                error=RuntimeFailure(reason=reason, message=str(error)[:4096]),
+                log_path=log_path,
+            )
+            return
+        self._repository.transition_node_run(
+            node_run.node_run_id,
+            NodeRunState.WAITING_EXTERNAL,
+            occurred_at=runtime_handoff.created_at,
+            external_handoff=runtime_handoff,
+            log_path=str(Path(node_run.work_dir) / "logs"),
+        )
+
+    def _try_reuse(self, run: Run, node_run: NodeRun) -> bool:
+        # attempt > 1 是操作者明确要求从头重跑的 closure；复用会悄悄撤销该意图。
+        if node_run.attempt != 1:
+            return False
+        latest = self._repository.get_latest(node_run.node_id)
+        if latest is None:
+            return False
+        if latest.updated_at <= run.created_at and latest.stale:
+            return False
+
+        candidates = self._repository.list_results_for_node(
+            node_run.node_id,
+            before=run.created_at,
+        )
+        if latest.updated_at <= run.created_at:
+            # Run 启动时可见的 fresh head 是唯一 authority；不得回退到更旧结果绕过失效。
+            candidates = tuple(
+                result for result in candidates if result.result_id == latest.result_id
+            )
+        for result in candidates:
+            if not self._candidate_matches(run, node_run, result):
+                continue
+            self._repository.reuse_result(
+                node_run.node_run_id,
+                result.result_id,
+                completed_at=utc_now(),
+            )
+            return True
+        return False
+
+    def _candidate_matches(
+        self,
+        run: Run,
+        node_run: NodeRun,
+        result: NodeResult,
+    ) -> bool:
+        """按 active Run snapshot 检查一个在 Run 启动前完成的历史结果。"""
+
+        source_node_run = self._repository.get_node_run(result.node_run_id)
+        source_run = self._repository.get_run(source_node_run.run_id)
+        current_node = next(
+            item for item in run.graph_snapshot.nodes if item.node_id == node_run.node_id
+        )
+        source_node = next(
+            (
+                item
+                for item in source_run.graph_snapshot.nodes
+                if item.node_id == source_node_run.node_id
+            ),
+            None,
+        )
+        if source_node is None or source_node_run.node_id != node_run.node_id:
+            return False
+        current_definition = self._definition_for(run, current_node)
+        source_definition = self._definition_for(source_run, source_node)
+        expected_outputs = tuple(
+            (port.port_id, port.data_type, None) for port in current_definition.output_ports
+        )
+        actual_outputs = tuple(
+            (item.producer_port_id, item.kind, item.ordinal) for item in result.outputs
+        )
+        if source_definition != current_definition or actual_outputs != expected_outputs:
+            return False
+        current_signature = capture_node_signature(
+            run.graph_snapshot,
+            node_run.node_id,
+            input_artifact_ids=node_run.input_artifact_ids,
+        )
+        previous_signature = capture_node_signature(
+            source_run.graph_snapshot,
+            source_node_run.node_id,
+            input_artifact_ids=source_node_run.input_artifact_ids,
+        )
+        probe_results: dict[str, bool] = {}
+        probe_reason: StaleReason | None = None
+        for artifact in result.outputs:
+            passed, reason = self._probe_artifact(artifact)
+            probe_results[artifact.artifact_id] = passed
+            if not passed and probe_reason is None:
+                probe_reason = reason
+        current_latest = self._repository.get_latest(node_run.node_id)
+        if (
+            probe_reason is not None
+            and current_latest is not None
+            and current_latest.result_id == result.result_id
+            and not current_latest.stale
+        ):
+            self._repository.mark_downstream_stale(
+                node_run.node_id,
+                probe_reason,
+                updated_at=utc_now(),
+                include_self=True,
+            )
+
+        decision = analyze_reuse(
+            current_signature,
+            ReuseCandidate(
+                result_id=result.result_id,
+                state=source_node_run.state.value,
+                signature=previous_signature,
+                output_artifact_ids=tuple(item.artifact_id for item in result.outputs),
+                # global latest 在 Run 启动后的变化不属于 active snapshot authority。
+                latest_stale=probe_reason is not None,
+            ),
+            output_quick_probe=probe_results,
+        )
+        return decision.reusable and decision.reused_result_id is not None
+
+    def _execution_request(
+        self,
+        run: Run,
+        node_run: NodeRun,
+        *,
+        resolved: _ResolvedInputs | None = None,
+    ) -> NodeExecutionRequest:
+        nodes = {node.node_id: node for node in run.graph_snapshot.nodes}
+        node = nodes.get(node_run.node_id)
+        if node is None:
+            raise RuntimeServiceError(
+                "E_SERVICE_SNAPSHOT_NODE_MISSING", f"Run snapshot 缺少 {node_run.node_id!r}"
+            )
+        definition = self._definition_for(run, node)
+        inputs = resolved or self._resolve_bound_inputs(run, node_run)
+        if inputs.artifact_ids != node_run.input_artifact_ids:
+            raise RuntimeServiceError(
+                "E_SERVICE_INPUT_BINDING_MISMATCH",
+                "NodeRun input_artifact_ids 与 graph edge 解析结果不一致",
+            )
+        return NodeExecutionRequest(
+            node_run_id=node_run.node_run_id,
+            attempt=node_run.attempt,
+            definition=definition,
+            node=node,
+            inputs=inputs.runner_inputs,
+        )
+
+    def _resolve_inputs(self, run: Run, node_id: str) -> _ResolvedInputs:
+        signature = capture_node_signature(run.graph_snapshot, node_id)
+        node = next(item for item in run.graph_snapshot.nodes if item.node_id == node_id)
+        definition = self._definition_for(run, node)
+        port_positions = {port.port_id: index for index, port in enumerate(definition.input_ports)}
+        selected = self._selected_node_ids(run)
+        latest = self._latest_attempts(run, selected)
+        runner_inputs: list[RunnerInput] = []
+        artifact_ids: list[str] = []
+        for edge in signature.incoming_edges:
+            source = latest.get(edge.source_node_id)
+            if source is None or source.state is not NodeRunState.COMPLETED:
+                raise RuntimeServiceError(
+                    "E_SERVICE_INPUT_SOURCE_NOT_COMPLETED",
+                    f"上游 {edge.source_node_id!r} 尚未 completed",
+                )
+            artifacts = tuple(
+                self._repository.get_artifact(artifact_id)
+                for artifact_id in source.output_artifact_ids
+            )
+            matches = tuple(
+                artifact
+                for artifact in artifacts
+                if artifact.producer_port_id == edge.source_port_id
+            )
+            if len(matches) != 1:
+                raise RuntimeServiceError(
+                    "E_SERVICE_SOURCE_OUTPUT_AMBIGUOUS",
+                    f"{edge.source_node_id}.{edge.source_port_id} 必须精确对应一个 Artifact",
+                )
+            artifact = matches[0]
+            artifact_ids.append(artifact.artifact_id)
+            runner_inputs.append(
+                RunnerInput(
+                    port_id=edge.target_port_id,
+                    artifact_id=artifact.artifact_id,
+                    kind=artifact.kind,
+                    path=Path(artifact.path),
+                    ordinal=edge.ordinal,
+                )
+            )
+        # NodeRun 绑定沿用 Graph canonical edge 顺序；Runner/Handoff 面向插件，使用
+        # NodeDefinition 声明顺序，同一 ordered_many port 内再按 ordinal 排列。
+        ordered_runner_inputs = tuple(
+            sorted(
+                runner_inputs,
+                key=lambda item: (
+                    port_positions[item.port_id],
+                    -1 if item.ordinal is None else item.ordinal,
+                ),
+            )
+        )
+        return _ResolvedInputs(tuple(artifact_ids), ordered_runner_inputs)
+
+    def _resolve_bound_inputs(self, run: Run, node_run: NodeRun) -> _ResolvedInputs:
+        resolved = self._resolve_inputs(run, node_run.node_id)
+        if resolved.artifact_ids != node_run.input_artifact_ids:
+            raise RuntimeServiceError(
+                "E_SERVICE_BOUND_INPUTS_INVALID",
+                "持久化 input_artifact_ids 不再对应 Run snapshot 直接入边",
+            )
+        return resolved
+
+    def _register_runner_result(self, node_run: NodeRun, result: RunnerResult) -> None:
+        try:
+            work_dir_matches = result.work_dir.resolve(strict=True) == Path(
+                node_run.work_dir
+            ).resolve(strict=True)
+        except OSError as error:
+            raise RuntimeServiceError("E_SERVICE_RUNNER_RESULT_WORKDIR", str(error)) from error
+        if (
+            result.node_run_id != node_run.node_run_id
+            or result.attempt != node_run.attempt
+            or not work_dir_matches
+        ):
+            raise RuntimeServiceError(
+                "E_SERVICE_RUNNER_RESULT_BINDING",
+                "RunnerResult 没有绑定当前 NodeRun attempt",
+            )
+
+        run = self._repository.get_run(node_run.run_id)
+        node = next(
+            (item for item in run.graph_snapshot.nodes if item.node_id == node_run.node_id),
+            None,
+        )
+        if node is None:
+            raise RuntimeServiceError(
+                "E_SERVICE_SNAPSHOT_NODE_MISSING", f"Run snapshot 缺少 {node_run.node_id!r}"
+            )
+        definition = self._definition_for(run, node)
+        expected_outputs = tuple(
+            (port.port_id, port.data_type, None) for port in definition.output_ports
+        )
+        actual_outputs = tuple(
+            (item.producer_port_id, item.kind, item.ordinal) for item in result.artifacts
+        )
+        if actual_outputs != expected_outputs:
+            raise RuntimeServiceError(
+                "E_SERVICE_RUNNER_OUTPUT_CONTRACT",
+                "RunnerResult 必须按 NodeDefinition 精确返回每个声明 output",
+            )
+        try:
+            persisted = NodeResult(
+                result_id=result.result_id,
+                node_run_id=result.node_run_id,
+                outputs=tuple(self._artifact_from_runner(item) for item in result.artifacts),
+                media_summary=_json_mapping(result.media_summary),
+                validation_summary=_json_mapping(result.validation_summary),
+                created_at=utc_now(),
+            )
+        except (ValidationError, TypeError, ValueError) as error:
+            raise RuntimeServiceError("E_SERVICE_RUNNER_RESULT_INVALID", str(error)) from error
+        self._repository.register_result(
+            persisted,
+            ended_at=utc_now(),
+            exit_code=result.exit_code,
+        )
+
+    @staticmethod
+    def _artifact_from_runner(value: RunnerArtifact) -> Artifact:
+        return Artifact(
+            artifact_id=value.artifact_id,
+            kind=value.kind,
+            path=str(value.path),
+            producer_node_run_id=value.producer_node_run_id,
+            producer_port_id=value.producer_port_id,
+            ordinal=value.ordinal,
+            frame_range=value.frame_range,
+            media_info=_json_mapping(value.media_info),
+            size=value.size,
+            mtime_ns=value.mtime_ns,
+        )
+
+    def _fail_node_run(
+        self,
+        node_run: NodeRun,
+        error: RunnerError,
+        *,
+        external_submission: bool = False,
+    ) -> NodeRun:
+        reason = _failure_reason(error.reason, external_submission=external_submission)
+        return self._repository.transition_node_run(
+            node_run.node_run_id,
+            NodeRunState.FAILED,
+            occurred_at=utc_now(),
+            error=RuntimeFailure(reason=reason, message=str(error)[:4096]),
+            exit_code=error.exit_code,
+            log_path=(
+                str(error.stdout_log_path.parent)
+                if error.stdout_log_path is not None
+                else node_run.log_path
+            ),
+        )
+
+    def _fail_service_node_run(
+        self,
+        node_run: NodeRun,
+        error: RuntimeServiceError,
+        *,
+        reason: FailureReason,
+    ) -> NodeRun:
+        """把成功登记前发现的 Service/Runner 合同错误收敛为当前 attempt 失败。"""
+
+        return self._repository.transition_node_run(
+            node_run.node_run_id,
+            NodeRunState.FAILED,
+            occurred_at=utc_now(),
+            error=RuntimeFailure(reason=reason, message=str(error)[:4096]),
+            log_path=node_run.log_path,
+        )
+
+    def _runtime_handoff(
+        self,
+        node_run: NodeRun,
+        handoff: ManualHandoff,
+    ) -> ExternalHandoff:
+        try:
+            work_dir_matches = Path(handoff.work_dir).resolve(strict=True) == Path(
+                node_run.work_dir
+            ).resolve(strict=True)
+        except OSError as error:
+            raise RuntimeServiceError("E_SERVICE_HANDOFF_WORKDIR", str(error)) from error
+        canonical_input_ids = tuple(
+            item.artifact_id
+            for item in sorted(
+                handoff.inputs,
+                key=lambda item: (
+                    item.port_id,
+                    -1 if item.ordinal is None else item.ordinal,
+                ),
+            )
+        )
+        if (
+            handoff.node_run_id != node_run.node_run_id
+            or handoff.attempt != node_run.attempt
+            or not work_dir_matches
+            or canonical_input_ids != node_run.input_artifact_ids
+        ):
+            raise RuntimeServiceError(
+                "E_SERVICE_HANDOFF_BINDING", "Runner handoff 没有绑定当前 NodeRun attempt"
+            )
+        return ExternalHandoff(
+            handoff_id=new_runtime_id(),
+            node_run_id=node_run.node_run_id,
+            input_artifact_ids=canonical_input_ids,
+            output_targets=tuple(
+                ExternalOutputTarget(port_id=item.port_id, path=item.path)
+                for item in handoff.outputs
+            ),
+            instructions=handoff.instructions,
+            created_at=utc_now(),
+        )
+
+    def _runner_handoff(
+        self,
+        run: Run,
+        node_run: NodeRun,
+        inputs: tuple[RunnerInput, ...],
+    ) -> ManualHandoff:
+        runtime_handoff = node_run.external_handoff
+        if runtime_handoff is None:
+            raise RuntimeServiceError("E_SERVICE_HANDOFF_MISSING", "NodeRun 缺少 handoff")
+        resolved_input_ids = tuple(
+            item.artifact_id
+            for item in sorted(
+                inputs,
+                key=lambda item: (
+                    item.port_id,
+                    -1 if item.ordinal is None else item.ordinal,
+                ),
+            )
+        )
+        if (
+            runtime_handoff.input_artifact_ids != node_run.input_artifact_ids
+            or node_run.input_artifact_ids != resolved_input_ids
+        ):
+            raise RuntimeServiceError(
+                "E_SERVICE_HANDOFF_INPUT_BINDING",
+                "persisted handoff、NodeRun 与当前直接输入 Artifact 绑定不一致",
+            )
+        node = next(item for item in run.graph_snapshot.nodes if item.node_id == node_run.node_id)
+        definition = self._definition_for(run, node)
+        kinds = {port.port_id: port.data_type for port in definition.output_ports}
+        try:
+            outputs = tuple(
+                HandoffOutput(
+                    port_id=item.port_id,
+                    kind=kinds[item.port_id],
+                    path=item.path,
+                )
+                for item in runtime_handoff.output_targets
+            )
+        except KeyError as error:
+            raise RuntimeServiceError(
+                "E_SERVICE_HANDOFF_OUTPUT_UNKNOWN", f"handoff 引用未知 output {error.args[0]!r}"
+            ) from error
+        return ManualHandoff(
+            schema_version=1,
+            node_run_id=node_run.node_run_id,
+            attempt=node_run.attempt,
+            type_id=node.type_id,
+            definition_version=node.definition_version,
+            work_dir=node_run.work_dir,
+            inputs=tuple(
+                HandoffInput(
+                    port_id=item.port_id,
+                    artifact_id=item.artifact_id,
+                    kind=item.kind,
+                    path=str(item.path),
+                    ordinal=item.ordinal,
+                )
+                for item in inputs
+            ),
+            outputs=outputs,
+            instructions=runtime_handoff.instructions,
+        )
+
+    @staticmethod
+    def _definition_for(run: Run, node: NodeInstance) -> NodeDefinition:
+        matches = tuple(
+            definition
+            for definition in run.definitions_snapshot
+            if definition.type_id == node.type_id and definition.version == node.definition_version
+        )
+        if len(matches) != 1:
+            raise RuntimeServiceError(
+                "E_SERVICE_DEFINITION_BINDING",
+                f"{node.type_id}@{node.definition_version} 必须精确对应一个 definition",
+            )
+        return matches[0]
+
+    @staticmethod
+    def _selected_node_ids(run: Run) -> tuple[str, ...]:
+        scheduler = Scheduler(run.graph_snapshot)
+        if not run.selected_targets:
+            return scheduler.topological_order
+        return scheduler.ancestor_closure(run.selected_targets)
+
+    @staticmethod
+    def _latest_attempts(run: Run, selected: tuple[str, ...]) -> dict[str, NodeRun]:
+        latest: dict[str, NodeRun] = {}
+        selected_set = set(selected)
+        for node_run in run.node_runs:
+            if node_run.node_id not in selected_set:
+                continue
+            current = latest.get(node_run.node_id)
+            if current is None or node_run.attempt > current.attempt:
+                latest[node_run.node_id] = node_run
+        missing = tuple(node_id for node_id in selected if node_id not in latest)
+        if missing:
+            raise RuntimeServiceError(
+                "E_SERVICE_ATTEMPT_MISSING",
+                "Run 执行闭包缺少 NodeRun：" + ", ".join(missing),
+            )
+        return latest
+
+    def _attempt_work_dir(self, node_run_id: str) -> Path:
+        """只用 UUID hex 派生 attempt 目录，不接受 node_id 或用户路径片段。"""
+
+        parsed = UUID(node_run_id)
+        if parsed.version != 4 or str(parsed) != node_run_id:
+            raise RuntimeServiceError("E_SERVICE_NODE_RUN_ID_INVALID", "node_run_id 必须是 UUIDv4")
+        return self._work_root / parsed.hex
+
+    def _probe_artifact(self, artifact: Artifact) -> tuple[bool, StaleReason]:
+        path = Path(artifact.path)
+        try:
+            if not path.is_file() or path.stat().st_size <= 0:
+                return False, StaleReason.OUTPUT_MISSING
+            probe_result = self._artifact_quick_probe(artifact)
+            if type(probe_result) is not bool or probe_result is not True:
+                return False, StaleReason.QUICK_PROBE_FAILED
+        except OSError:
+            return False, StaleReason.OUTPUT_MISSING
+        except (SystemExit, GeneratorExit, Exception):
+            return False, StaleReason.QUICK_PROBE_FAILED
+        return True, StaleReason.QUICK_PROBE_FAILED
+
+
+def _default_artifact_quick_probe(artifact: Artifact) -> bool:
+    """以一次非空读取确认普通文件仍可读；媒体专用 probe 可由 Phase 4 调用方注入。"""
+
+    with Path(artifact.path).open("rb") as stream:
+        return bool(stream.read(1))
+
+
+def _json_mapping(value: Mapping[str, object]) -> dict[str, JsonValue]:
+    """保留 Runner 的普通 mapping，具体 JSON 合法性由严格 Runtime 模型再次验证。"""
+
+    return cast(dict[str, JsonValue], dict(value))
+
+
+def _failure_reason(
+    reason: RunnerFailureReason,
+    *,
+    external_submission: bool,
+) -> FailureReason:
+    if reason is RunnerFailureReason.INTERRUPTED:
+        return FailureReason.INTERRUPTED
+    if reason is RunnerFailureReason.CANCELLED:
+        return FailureReason.CANCELLED
+    if external_submission:
+        return FailureReason.EXTERNAL_SUBMISSION_INVALID
+    if reason in {
+        RunnerFailureReason.OUTPUT_INVALID,
+        RunnerFailureReason.PROBE_FAILED,
+        RunnerFailureReason.VALIDATOR_FAILED,
+    }:
+        return FailureReason.VALIDATION_FAILED
+    return FailureReason.EXECUTION_ERROR
+
+
+__all__ = ["ArtifactQuickProbe", "RuntimeService", "RuntimeServiceError"]

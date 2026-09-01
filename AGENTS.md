@@ -51,5 +51,3 @@
   说明原因、边界与失败语义，不逐行翻译代码。
 - Python 和 Markdown 文件使用 UTF-8。
 - 修改 Studio 后至少运行 typecheck、测试和生产构建；Graph Core 与 Runtime 建立各自的自动化门禁。
-- 使用 Conventional Commits：`type(scope): 中文简短说明`，标题不超过 72 个字符。
-- 未经用户明确授权，不执行 commit、push、PR、tag、release 或破坏性 Git 操作。

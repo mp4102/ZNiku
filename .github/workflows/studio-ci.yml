@@ -1,7 +1,6 @@
 name: ZNIKU Studio CI
 
-# Phase 0 过渡门：本工作流只验证 0.1.0 legacy Studio 与 Python bridge 未被权威切换破坏，
-# 0.2.0 正式 Studio 门将在 Phase 3 建立。
+# Phase 5 唯一正式 Studio 门：验证当前 Project Service wire contract、Designer、类型、测试与生产构建。
 
 on:
   push:
@@ -33,15 +32,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Setup uv for legacy Python bridge integration
+      - name: Setup uv for Project Service schema gate
         uses: astral-sh/setup-uv@v7.2.0
         with:
           version: "0.11.32"
           enable-cache: true
 
-      - name: Install legacy Python authority dependencies
+      - name: Install Python authority dependencies
         working-directory: .
         run: uv sync --locked --extra dev
+
+      - name: Verify Project Service schema
+        working-directory: .
+        run: uv run --locked --extra dev python tools/generate_project_service_schema.py --check
 
       - name: Install locked dependencies
         run: npm ci

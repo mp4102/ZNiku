@@ -1,9 +1,9 @@
 # ZNIKU 0.2.0 自由媒体图核心设计基线
 
-- 状态：**已批准的唯一 0.2.0 目标架构基线；严格不兼容 0.1.0；Phase 0–1 已实施，Phase 2–5 尚未实施**
+- 状态：**已批准的唯一 0.2.0 目标架构基线；严格不兼容 0.1.0；Phase 0–5 已实施**
 - 日期：2026-08-23
 - 目标产品：`ZNIKU Studio 0.2.0`
-- 当前代码基线：`main@198d802`
+- 重构起点：`main@198d802`
 - 实现范围：`src/zniku/`、`apps/studio/`
 
 ## 1. 文档定位
@@ -341,10 +341,14 @@ validator 只决定 `pass/fail`。Warning 仅用于 UI 提示，永不阻断下�
 ```text
 pending → running → completed / failed
 pending → waiting_external → completed / failed
+pending → failed  （executor、attempt 目录或 handoff 准备失败）
 ```
 
 `ready`、`blocked`、`queued` 和 `validating` 只作为即时计算或 UI 状态，不持久化。`interrupted` 与
 `cancelled` 记录为 `failed.reason`，因为后续行为都只是从头 rerun。
+
+准备阶段的直接失败必须把 `started_at` 与 `ended_at` 记录为同一失败时刻，且不能携带 Artifact 或
+无效 handoff。它只补齐“尚未进入 executor 就失败”的可审计终态，不表示 checkpoint 或 resume。
 
 ### 10.2 强制规则
 
