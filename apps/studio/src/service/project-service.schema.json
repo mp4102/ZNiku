@@ -5,7 +5,8 @@
         "run_all",
         "run_to",
         "rerun_from_here",
-        "submit_external"
+        "submit_external",
+        "abandon_run"
       ],
       "type": "string"
     },
@@ -157,9 +158,30 @@
       "title": "CommandExecutorSpec",
       "type": "object"
     },
+    "Command_AbandonRunCommand": {
+      "additionalProperties": false,
+      "description": "把没有 automatic running attempt 的非终态 Run 原子收敛为 cancelled。",
+      "properties": {
+        "operation": {
+          "const": "abandon_run",
+          "title": "Operation",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "run_id"
+      ],
+      "title": "AbandonRunCommand",
+      "type": "object"
+    },
     "Command_CreateProjectCommand": {
       "additionalProperties": false,
-      "description": "创建不覆盖既有文件的空 Project；NodeDefinition 由后续 SDK/插件导入。",
+      "description": "创建不覆盖既有文件的空 Project；NodeDefinition 由启动 catalog 注入。",
       "properties": {
         "name": {
           "title": "Name",
@@ -461,8 +483,12 @@
     },
     "Command_SubmitExternalCommand": {
       "additionalProperties": false,
-      "description": "提交仍为最新 attempt 的 manual_external 目标文件。",
+      "description": "提交精确绑定到最新 waiting attempt 的 manual_external 目标文件。",
       "properties": {
+        "handoff_id": {
+          "title": "Handoff Id",
+          "type": "string"
+        },
         "node_run_id": {
           "title": "Node Run Id",
           "type": "string"
@@ -471,11 +497,17 @@
           "const": "submit_external",
           "title": "Operation",
           "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
         }
       },
       "required": [
         "operation",
-        "node_run_id"
+        "run_id",
+        "node_run_id",
+        "handoff_id"
       ],
       "title": "SubmitExternalCommand",
       "type": "object"
@@ -648,6 +680,146 @@
         "created_at"
       ],
       "title": "ExternalHandoff",
+      "type": "object"
+    },
+    "ExternalHandoffReadiness": {
+      "additionalProperties": false,
+      "description": "绑定一个最新 waiting attempt 的无副作用人工输出预检结果。",
+      "properties": {
+        "checked_at": {
+          "format": "date-time",
+          "title": "Checked At",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "0.2.1",
+          "default": "0.2.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "probe_requested": {
+          "title": "Probe Requested",
+          "type": "boolean"
+        },
+        "ready_for_submit": {
+          "title": "Ready For Submit",
+          "type": "boolean"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "targets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExternalOutputReadiness"
+          },
+          "title": "Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "checked_at",
+        "probe_requested",
+        "ready_for_submit",
+        "targets"
+      ],
+      "title": "ExternalHandoffReadiness",
+      "type": "object"
+    },
+    "ExternalOutputReadiness": {
+      "additionalProperties": false,
+      "description": "描述 handoff 中一个 server-declared target 的本次只读观测。",
+      "properties": {
+        "message": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "mtime_ns": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mtime Ns"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "port_id": {
+          "title": "Port Id",
+          "type": "string"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "state": {
+          "$ref": "#/$defs/ReadinessState"
+        }
+      },
+      "required": [
+        "port_id",
+        "ordinal",
+        "path",
+        "state",
+        "size",
+        "mtime_ns",
+        "message"
+      ],
+      "title": "ExternalOutputReadiness",
       "type": "object"
     },
     "ExternalOutputTarget": {
@@ -955,6 +1127,32 @@
       "title": "NodeInstance",
       "type": "object"
     },
+    "NodeLogEnvelope": {
+      "additionalProperties": false,
+      "description": "将日志 tail 精确绑定到请求的 Run 与 NodeRun。",
+      "properties": {
+        "contract_version": {
+          "const": "0.2.1",
+          "default": "0.2.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "log": {
+          "$ref": "#/$defs/NodeLogProjection"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "run_id",
+        "log"
+      ],
+      "title": "NodeLogEnvelope",
+      "type": "object"
+    },
     "NodeLogProjection": {
       "additionalProperties": false,
       "description": "携带一个 attempt 的有界 stdout/stderr 尾部，而不是任意路径读取能力。",
@@ -1004,6 +1202,74 @@
         "stderr_available"
       ],
       "title": "NodeLogProjection",
+      "type": "object"
+    },
+    "NodeProgressProjection": {
+      "additionalProperties": false,
+      "description": "描述当前进程仍持有的细粒度 automatic attempt 进度。",
+      "properties": {
+        "current": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current"
+        },
+        "fraction": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Fraction",
+          "type": "number"
+        },
+        "node_run_id": {
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "total": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProgressUnit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "node_run_id",
+        "fraction",
+        "current",
+        "total",
+        "unit",
+        "observed_at"
+      ],
+      "title": "NodeProgressProjection",
       "type": "object"
     },
     "NodeRun": {
@@ -1250,6 +1516,15 @@
       "title": "PortSpec",
       "type": "object"
     },
+    "ProgressUnit": {
+      "enum": [
+        "frames",
+        "bytes",
+        "microseconds",
+        "items"
+      ],
+      "type": "string"
+    },
     "Project": {
       "additionalProperties": false,
       "description": "表示一个 0.2.0 工程当前的可编辑 Graph。",
@@ -1282,6 +1557,7 @@
     "ProjectServiceCommand": {
       "discriminator": {
         "mapping": {
+          "abandon_run": "#/$defs/Command_AbandonRunCommand",
           "create_project": "#/$defs/Command_CreateProjectCommand",
           "open_project": "#/$defs/Command_OpenProjectCommand",
           "rerun_from_here": "#/$defs/Command_RerunFromHereCommand",
@@ -1313,12 +1589,15 @@
         },
         {
           "$ref": "#/$defs/Command_SubmitExternalCommand"
+        },
+        {
+          "$ref": "#/$defs/Command_AbandonRunCommand"
         }
       ]
     },
     "ProjectServiceFailure": {
       "additionalProperties": false,
-      "description": "向 Studio 暴露稳定错误码与受限操作者说明。",
+      "description": "向 Studio 暴露稳定错误码、受限说明及相关 Run identity。",
       "properties": {
         "code": {
           "maxLength": 160,
@@ -1331,11 +1610,20 @@
           "minLength": 1,
           "title": "Message",
           "type": "string"
+        },
+        "related_run_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Related Run Ids",
+          "type": "array"
         }
       },
       "required": [
         "code",
-        "message"
+        "message",
+        "related_run_ids"
       ],
       "title": "ProjectServiceFailure",
       "type": "object"
@@ -1385,6 +1673,16 @@
       ],
       "title": "PythonExecutorSpec",
       "type": "object"
+    },
+    "ReadinessState": {
+      "enum": [
+        "missing",
+        "empty",
+        "present",
+        "probe_passed",
+        "probe_failed"
+      ],
+      "type": "string"
     },
     "Run": {
       "additionalProperties": false,
@@ -1494,6 +1792,90 @@
       "title": "Run",
       "type": "object"
     },
+    "RunDetailEnvelope": {
+      "additionalProperties": false,
+      "description": "返回一个明确 Run 的完整历史及其引用 Artifact 闭包。",
+      "properties": {
+        "artifacts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Artifact"
+          },
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "contract_version": {
+          "const": "0.2.1",
+          "default": "0.2.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "progress_samples": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NodeProgressProjection"
+          },
+          "title": "Progress Samples",
+          "type": "array"
+        },
+        "run": {
+          "$ref": "#/$defs/Run"
+        }
+      },
+      "required": [
+        "contract_version",
+        "run",
+        "artifacts",
+        "progress_samples"
+      ],
+      "title": "RunDetailEnvelope",
+      "type": "object"
+    },
+    "RunNodeStateCounts": {
+      "additionalProperties": false,
+      "description": "统计一个 Run 执行闭包中每个节点最高 attempt 的持久状态。",
+      "properties": {
+        "completed": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Completed",
+          "type": "integer"
+        },
+        "failed": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "pending": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Pending",
+          "type": "integer"
+        },
+        "running": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Running",
+          "type": "integer"
+        },
+        "waiting_external": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Waiting External",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pending",
+        "running",
+        "waiting_external",
+        "completed",
+        "failed"
+      ],
+      "title": "RunNodeStateCounts",
+      "type": "object"
+    },
     "RunState": {
       "description": "Run 聚合的最小持久状态。",
       "enum": [
@@ -1503,6 +1885,172 @@
         "failed"
       ],
       "title": "RunState",
+      "type": "string"
+    },
+    "RunSummary": {
+      "additionalProperties": false,
+      "description": "提供有界 Run selector 和全局 Next action 所需的轻量投影。",
+      "properties": {
+        "actionable": {
+          "title": "Actionable",
+          "type": "boolean"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ended At"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "latest_activity_at": {
+          "format": "date-time",
+          "title": "Latest Activity At",
+          "type": "string"
+        },
+        "node_count": {
+          "minimum": 0,
+          "title": "Node Count",
+          "type": "integer"
+        },
+        "project_id": {
+          "title": "Project Id",
+          "type": "string"
+        },
+        "requires_operator_action": {
+          "title": "Requires Operator Action",
+          "type": "boolean"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "selected_targets": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Selected Targets",
+          "type": "array"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "state": {
+          "$ref": "#/$defs/RunSummaryState"
+        },
+        "state_counts": {
+          "$ref": "#/$defs/RunNodeStateCounts"
+        },
+        "target_mode": {
+          "$ref": "#/$defs/RunTargetMode"
+        }
+      },
+      "required": [
+        "run_id",
+        "project_id",
+        "target_mode",
+        "selected_targets",
+        "state",
+        "node_count",
+        "state_counts",
+        "actionable",
+        "requires_operator_action",
+        "created_at",
+        "started_at",
+        "ended_at",
+        "latest_activity_at",
+        "error"
+      ],
+      "title": "RunSummary",
+      "type": "object"
+    },
+    "RunSummaryPageEnvelope": {
+      "additionalProperties": false,
+      "description": "按 opaque cursor 返回 terminal Run 历史的一页 summary。",
+      "properties": {
+        "contract_version": {
+          "const": "0.2.1",
+          "default": "0.2.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "next_run_cursor": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Run Cursor"
+        },
+        "run_summaries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RunSummary"
+          },
+          "title": "Run Summaries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "run_summaries",
+        "next_run_cursor"
+      ],
+      "title": "RunSummaryPageEnvelope",
+      "type": "object"
+    },
+    "RunSummaryState": {
+      "enum": [
+        "pending",
+        "running",
+        "completed",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "RunTargetMode": {
+      "enum": [
+        "all",
+        "selected"
+      ],
       "type": "string"
     },
     "RuntimeFailure": {
@@ -1537,6 +2085,120 @@
       ],
       "title": "StaleReason",
       "type": "string"
+    },
+    "StatusEnvelope": {
+      "additionalProperties": false,
+      "description": "Studio 高频刷新得到的有界 Project/Run summary 读模型。",
+      "properties": {
+        "active_operation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ActiveProjectOperation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "active_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Run Id"
+        },
+        "contract_version": {
+          "const": "0.2.1",
+          "default": "0.2.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectServiceFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "latest_results": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LatestNodeResult"
+          },
+          "title": "Latest Results",
+          "type": "array"
+        },
+        "next_run_cursor": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Run Cursor"
+        },
+        "project_path": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Path"
+        },
+        "run_summaries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RunSummary"
+          },
+          "title": "Run Summaries",
+          "type": "array"
+        },
+        "snapshot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectSnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_path",
+        "snapshot",
+        "run_summaries",
+        "next_run_cursor",
+        "active_run_id",
+        "active_operation",
+        "latest_results",
+        "error"
+      ],
+      "title": "StatusEnvelope",
+      "type": "object"
     },
     "UiPosition": {
       "additionalProperties": false,
@@ -1576,119 +2238,7 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
-  "description": "Studio 每次刷新得到的单一 Project/Runtime 读模型。",
-  "properties": {
-    "active_operation": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ActiveProjectOperation"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "active_run_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Active Run Id"
-    },
-    "artifacts": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/Artifact"
-      },
-      "title": "Artifacts",
-      "type": "array"
-    },
-    "contract_version": {
-      "const": "0.2.0",
-      "default": "0.2.0",
-      "title": "Contract Version",
-      "type": "string"
-    },
-    "error": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ProjectServiceFailure"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "latest_results": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/LatestNodeResult"
-      },
-      "title": "Latest Results",
-      "type": "array"
-    },
-    "logs": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/NodeLogProjection"
-      },
-      "title": "Logs",
-      "type": "array"
-    },
-    "project_path": {
-      "anyOf": [
-        {
-          "maxLength": 32767,
-          "minLength": 1,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Project Path"
-    },
-    "runs": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/Run"
-      },
-      "title": "Runs",
-      "type": "array"
-    },
-    "snapshot": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ProjectSnapshot"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    }
-  },
-  "required": [
-    "contract_version",
-    "project_path",
-    "snapshot",
-    "runs",
-    "active_run_id",
-    "active_operation",
-    "latest_results",
-    "artifacts",
-    "logs",
-    "error"
-  ],
-  "title": "ProjectServiceEnvelope",
-  "type": "object"
+  "$ref": "#/$defs/StatusEnvelope",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StatusEnvelope"
 }

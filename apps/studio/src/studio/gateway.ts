@@ -1,31 +1,62 @@
 /**
- * 提供 Studio 到 loopback Project Service 的可替换网关。
+ * 提供 Studio 到 loopback Project Service 0.2.1 的分层网关。
  *
- * 网关只发送结构化 JSON，不在浏览器实现 Project 或 Runtime 语义。网络失败、非 JSON 响应及不符合
- * 0.2.0 contract 的响应都会失败关闭，测试可注入内存网关而无需模拟全局 fetch。
+ * 网关只发送结构化 JSON，并按 endpoint 调用 Python Schema 派生的解析器。status、Run detail、日志和
+ * readiness 使用不同资源通道，网络或合同失败不会清空其他通道最后一次可信数据。
  */
 
 import {
+  parseExternalHandoffReadiness,
+  parseNodeLogEnvelope,
+  parseRunDetailEnvelope,
+  parseRunSummaryPageEnvelope,
+  parseStatusEnvelope,
   parseStudioCommand,
-  parseStudioEnvelope,
   StudioContractError,
+  type ExternalHandoffReadiness,
+  type NodeLogEnvelope,
+  type RunDetailEnvelope,
+  type RunSummaryPageEnvelope,
+  type StatusEnvelope,
   type StudioCommand,
-  type StudioEnvelope,
+  type StudioServiceError,
 } from './contracts'
 
 export interface StudioGateway {
-  inspect(): Promise<StudioEnvelope>
-  command(command: StudioCommand): Promise<StudioEnvelope>
+  inspect(viewRunId?: string | null): Promise<StatusEnvelope>
+  listRuns(cursor?: string | null, limit?: number): Promise<RunSummaryPageEnvelope>
+  inspectRun(runId: string): Promise<RunDetailEnvelope>
+  inspectLog(runId: string, nodeRunId: string): Promise<NodeLogEnvelope>
+  inspectReadiness(
+    runId: string,
+    nodeRunId: string,
+    probe: boolean,
+  ): Promise<ExternalHandoffReadiness>
+  command(command: StudioCommand): Promise<StatusEnvelope>
 }
 
 export class StudioGatewayError extends Error {
-  constructor(message: string) {
+  readonly code: string | null
+  readonly relatedRunIds: ReadonlyArray<string>
+  readonly httpStatus: number | null
+
+  constructor(
+    message: string,
+    options: {
+      readonly code?: string | null
+      readonly relatedRunIds?: ReadonlyArray<string>
+      readonly httpStatus?: number | null
+    } = {},
+  ) {
     super(message)
     this.name = 'StudioGatewayError'
+    this.code = options.code ?? null
+    this.relatedRunIds = options.relatedRunIds ?? []
+    this.httpStatus = options.httpStatus ?? null
   }
 }
 
-function parseErrorEnvelope(value: unknown): { readonly code: string; readonly message: string } {
+function parseErrorEnvelope(value: unknown): StudioServiceError {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new StudioGatewayError('Project Service 错误响应不是 JSON object')
   }
@@ -38,14 +69,34 @@ function parseErrorEnvelope(value: unknown): { readonly code: string; readonly m
     throw new StudioGatewayError('Project Service error 必须是 object')
   }
   const keys = Object.keys(error).sort()
-  if (keys.length !== 2 || keys[0] !== 'code' || keys[1] !== 'message') {
-    throw new StudioGatewayError('Project Service error 只能包含 code 与 message')
+  if (
+    keys.length !== 3 ||
+    keys[0] !== 'code' ||
+    keys[1] !== 'message' ||
+    keys[2] !== 'related_run_ids'
+  ) {
+    throw new StudioGatewayError(
+      'Project Service error 只能包含 code、message 与 related_run_ids',
+    )
   }
-  const { code, message } = error as { readonly code?: unknown; readonly message?: unknown }
-  if (typeof code !== 'string' || !code || typeof message !== 'string' || !message) {
-    throw new StudioGatewayError('Project Service error code/message 必须是非空字符串')
+  const { code, message, related_run_ids: relatedRunIds } = error as {
+    readonly code?: unknown
+    readonly message?: unknown
+    readonly related_run_ids?: unknown
   }
-  return { code, message }
+  if (
+    typeof code !== 'string' ||
+    !code ||
+    typeof message !== 'string' ||
+    !message ||
+    !Array.isArray(relatedRunIds) ||
+    relatedRunIds.some((item) => typeof item !== 'string' || !item)
+  ) {
+    throw new StudioGatewayError(
+      'Project Service error code/message/related_run_ids 字段类型无效',
+    )
+  }
+  return { code, message, related_run_ids: relatedRunIds as string[] }
 }
 
 declare global {
@@ -54,26 +105,90 @@ declare global {
   }
 }
 
+type Parser<T> = (value: unknown) => T
+
 export class FetchStudioGateway implements StudioGateway {
   constructor(
     private readonly baseUrl =
       window.__ZNIKU_STUDIO_API_BASE__ ?? 'http://127.0.0.1:18765',
   ) {}
 
-  async inspect(): Promise<StudioEnvelope> {
-    return this.request('/api/studio/status', { method: 'GET' })
+  async inspect(viewRunId?: string | null): Promise<StatusEnvelope> {
+    const query = new URLSearchParams()
+    if (viewRunId) query.set('view_run_id', viewRunId)
+    return this.request(
+      `/api/studio/status${query.size ? `?${query.toString()}` : ''}`,
+      { method: 'GET' },
+      parseStatusEnvelope,
+    )
   }
 
-  async command(command: StudioCommand): Promise<StudioEnvelope> {
+  async listRuns(cursor?: string | null, limit = 20): Promise<RunSummaryPageEnvelope> {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (cursor) query.set('cursor', cursor)
+    return this.request(
+      `/api/studio/runs?${query.toString()}`,
+      { method: 'GET' },
+      parseRunSummaryPageEnvelope,
+    )
+  }
+
+  async inspectRun(runId: string): Promise<RunDetailEnvelope> {
+    const detail = await this.request(
+      `/api/studio/runs/${encodeURIComponent(runId)}`,
+      { method: 'GET' },
+      parseRunDetailEnvelope,
+    )
+    if (detail.run.run_id !== runId) {
+      throw new StudioContractError('Run detail 的 run_id 与请求资源不一致')
+    }
+    return detail
+  }
+
+  async inspectLog(runId: string, nodeRunId: string): Promise<NodeLogEnvelope> {
+    const envelope = await this.request(
+      `/api/studio/runs/${encodeURIComponent(runId)}/node-runs/${encodeURIComponent(nodeRunId)}/logs`,
+      { method: 'GET' },
+      parseNodeLogEnvelope,
+    )
+    if (envelope.run_id !== runId || envelope.log.node_run_id !== nodeRunId) {
+      throw new StudioContractError('Node log 的 run_id/node_run_id 与请求资源不一致')
+    }
+    return envelope
+  }
+
+  async inspectReadiness(
+    runId: string,
+    nodeRunId: string,
+    probe: boolean,
+  ): Promise<ExternalHandoffReadiness> {
+    const readiness = await this.request(
+      `/api/studio/runs/${encodeURIComponent(runId)}/node-runs/${encodeURIComponent(nodeRunId)}/handoff-readiness?probe=${probe ? 'true' : 'false'}`,
+      { method: 'GET' },
+      parseExternalHandoffReadiness,
+    )
+    if (readiness.run_id !== runId || readiness.node_run_id !== nodeRunId) {
+      throw new StudioContractError(
+        'handoff readiness 的 run_id/node_run_id 与请求资源不一致',
+      )
+    }
+    return readiness
+  }
+
+  async command(command: StudioCommand): Promise<StatusEnvelope> {
     const payload = parseStudioCommand(command)
-    return this.request('/api/studio/command', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
+    return this.request(
+      '/api/studio/command',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      parseStatusEnvelope,
+    )
   }
 
-  private async request(path: string, init: RequestInit): Promise<StudioEnvelope> {
+  private async request<T>(path: string, init: RequestInit, parser: Parser<T>): Promise<T> {
     let response: Response
     try {
       response = await fetch(`${this.baseUrl}${path}`, init)
@@ -87,23 +202,28 @@ export class FetchStudioGateway implements StudioGateway {
     try {
       value = await response.json()
     } catch {
-      throw new StudioGatewayError(`Project Service 返回非 JSON 响应（HTTP ${response.status}）`)
+      throw new StudioGatewayError(`Project Service 返回非 JSON 响应（HTTP ${response.status}）`, {
+        httpStatus: response.status,
+      })
     }
 
     if (!response.ok) {
       const error = parseErrorEnvelope(value)
-      throw new StudioGatewayError(`Project Service command 失败：${error.code}: ${error.message}`)
+      throw new StudioGatewayError(`Project Service command 失败：${error.code}: ${error.message}`, {
+        code: error.code,
+        relatedRunIds: error.related_run_ids,
+        httpStatus: response.status,
+      })
     }
 
-    let envelope: StudioEnvelope
     try {
-      envelope = parseStudioEnvelope(value)
+      return parser(value)
     } catch (error) {
       if (error instanceof StudioContractError) throw error
-      throw new StudioGatewayError('Project Service 响应解析失败')
+      throw new StudioGatewayError('Project Service 响应解析失败', {
+        httpStatus: response.status,
+      })
     }
-
-    return envelope
   }
 }
 

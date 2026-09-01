@@ -54,6 +54,7 @@ from .runner import (
     RunnerFailureReason,
     RunnerInput,
     RunnerResult,
+    ValidatedOutput,
 )
 from .scheduler import Scheduler
 
@@ -223,28 +224,25 @@ class RuntimeService:
         self,
         node_run_id: str,
         *,
+        run_id: str | None = None,
+        handoff_id: str | None = None,
         submission: ManualSubmission | None = None,
     ) -> Run:
         """验收一个仍为最新 attempt 的 manual_external handoff 并继续 Run。
 
         被上游 rerun 取代的旧 handoff 会失败关闭；它的历史 NodeRun 不被改写，也不能晚到覆盖新 head。
+        Project Service 0.2.1 必须同时传入 ``run_id`` 与 ``handoff_id``；可选值只保留 Runtime 内部
+        既有调用兼容，最终仍从持久 authority 解析并验证精确绑定。
         """
 
-        node_run = self._repository.get_node_run(node_run_id)
-        run = self._repository.get_run(node_run.run_id)
-        latest = self._latest_attempts(run, self._selected_node_ids(run))
-        if latest.get(node_run.node_id) != node_run:
-            raise RuntimeServiceError(
-                "E_SERVICE_HANDOFF_SUPERSEDED",
-                "manual_external attempt 已被新的 rerun attempt 取代",
-            )
-        if node_run.state is not NodeRunState.WAITING_EXTERNAL:
-            raise RuntimeServiceError(
-                "E_SERVICE_HANDOFF_STATE",
-                f"NodeRun 当前状态为 {node_run.state.value}",
-            )
-        if node_run.external_handoff is None:
-            raise RuntimeServiceError("E_SERVICE_HANDOFF_MISSING", "waiting_external 缺少 handoff")
+        persisted = self._repository.get_node_run(node_run_id)
+        resolved_run_id = persisted.run_id if run_id is None else run_id
+        node_run = self.inspect_external_handoff(
+            resolved_run_id,
+            node_run_id,
+            handoff_id=handoff_id,
+        )
+        run = self._repository.get_run(resolved_run_id)
 
         request = self._execution_request(run, node_run)
         handoff = self._runner_handoff(run, node_run, request.inputs)
@@ -260,6 +258,62 @@ class RuntimeService:
                 reason=FailureReason.EXTERNAL_SUBMISSION_INVALID,
             )
         return self.run_until_blocked(run.run_id)
+
+    def inspect_external_handoff(
+        self,
+        run_id: str,
+        node_run_id: str,
+        *,
+        handoff_id: str | None = None,
+    ) -> NodeRun:
+        """只读解析一个精确绑定且仍可操作的最新 waiting handoff。"""
+
+        run = self._repository.get_run(run_id)
+        node_run = self._repository.get_node_run(node_run_id)
+        if node_run.run_id != run.run_id:
+            raise RuntimeServiceError(
+                "E_SERVICE_NODE_RUN_OUTSIDE_RUN",
+                "NodeRun 不属于声明的 Run",
+            )
+        latest = self._latest_attempts(run, self._selected_node_ids(run))
+        if latest.get(node_run.node_id) != node_run:
+            raise RuntimeServiceError(
+                "E_SERVICE_HANDOFF_SUPERSEDED",
+                "manual_external attempt 已被新的 rerun attempt 取代",
+            )
+        if node_run.state is not NodeRunState.WAITING_EXTERNAL:
+            raise RuntimeServiceError(
+                "E_SERVICE_HANDOFF_STATE",
+                f"NodeRun 当前状态为 {node_run.state.value}",
+            )
+        persisted_handoff = node_run.external_handoff
+        if persisted_handoff is None:
+            raise RuntimeServiceError("E_SERVICE_HANDOFF_MISSING", "waiting_external 缺少 handoff")
+        if handoff_id is not None and persisted_handoff.handoff_id != handoff_id:
+            raise RuntimeServiceError(
+                "E_SERVICE_HANDOFF_STALE",
+                "handoff identity 已过期或不属于声明 attempt",
+            )
+        return node_run
+
+    def inspect_external_outputs(
+        self,
+        run_id: str,
+        node_run_id: str,
+        *,
+        handoff_id: str,
+    ) -> tuple[ValidatedOutput, ...]:
+        """只读执行 handoff 的完整媒体与节点 validator，不登记任何结果。"""
+
+        node_run = self.inspect_external_handoff(
+            run_id,
+            node_run_id,
+            handoff_id=handoff_id,
+        )
+        run = self._repository.get_run(run_id)
+        request = self._execution_request(run, node_run)
+        handoff = self._runner_handoff(run, node_run, request.inputs)
+        return self._runner.inspect_manual_outputs(request, handoff)
 
     def rerun_from_start(self, run_id: str, node_id: str) -> Run:
         """为节点及选中闭包内下游创建新 attempt，并立即执行到下个阻塞点。
@@ -319,6 +373,40 @@ class RuntimeService:
             updated_at=utc_now(),
         )
         return self.run_until_blocked(run_id)
+
+    def abandon_run(self, run_id: str) -> Run:
+        """原子放弃一个没有 automatic running attempt 的非终态 Run。
+
+        queued pending Run 尚未物化的闭包 attempt 会在同一事务内创建并立即取消；这里只生成随机
+        identity 与受控 work_dir 路径，不创建目录、日志或输出。既有 completed/failed attempt 和所有
+        handoff/Artifact 都保持原样。
+        """
+
+        run = self._repository.get_run(run_id)
+        abandoned_at = utc_now()
+        pending_attempts: list[NodeRun] = []
+        if run.state is RunState.PENDING:
+            nodes = {node.node_id: node for node in run.graph_snapshot.nodes}
+            for node_id in self._selected_node_ids(run):
+                node_run_id = new_runtime_id()
+                node = nodes[node_id]
+                pending_attempts.append(
+                    NodeRun.pending(
+                        run_id=run.run_id,
+                        node_id=node_id,
+                        definition_version=node.definition_version,
+                        attempt=1,
+                        input_artifact_ids=(),
+                        work_dir=str(self._attempt_work_dir(node_run_id)),
+                        node_run_id=node_run_id,
+                        created_at=abandoned_at,
+                    )
+                )
+        return self._repository.abandon_run(
+            run_id,
+            abandoned_at=abandoned_at,
+            pending_node_runs=tuple(pending_attempts),
+        )
 
     def recover_interrupted(self) -> tuple[NodeRun, ...]:
         """显式重复执行幂等的启动恢复；waiting_external 始终保留。"""

@@ -543,6 +543,150 @@ class RuntimeRepository:
             connection.commit()
         return self.get_run(run_id)
 
+    def abandon_run(
+        self,
+        run_id: str,
+        *,
+        abandoned_at: datetime,
+        pending_node_runs: Sequence[NodeRun] = (),
+    ) -> Run:
+        """原子把非终态 Run 收敛为 ``failed(reason=cancelled)``。
+
+        queued pending Run 的 attempt 1 由 Service 预生成，但只在本事务内插入并立即失败；Repository
+        不创建 work_dir、日志或输出。running Run 只终结每个节点最高的 pending/waiting attempt，历史
+        superseded attempt、completed 结果、handoff 与 Artifact 均保持不可改写。
+        """
+
+        abandoned_at = _normalize_write_timestamp(abandoned_at, context="abandoned_at")
+        candidates = tuple(pending_node_runs)
+        try:
+            with self._connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                current = self._read_run(connection, run_id)
+                if current.state not in {RunState.PENDING, RunState.RUNNING}:
+                    raise RuntimeConflictError(
+                        "E_RUN_ABANDON_TERMINAL",
+                        f"终态 Run {current.state.value!r} 不能再次 abandon",
+                    )
+
+                if current.state is RunState.PENDING:
+                    selected = _selected_node_ids(
+                        current.graph_snapshot,
+                        current.selected_targets,
+                    )
+                    candidate_nodes = tuple(item.node_id for item in candidates)
+                    if len(candidate_nodes) != len(set(candidate_nodes)) or set(
+                        candidate_nodes
+                    ) != set(selected):
+                        raise RuntimeConflictError(
+                            "E_RUN_ABANDON_ATTEMPT_SET",
+                            "queued pending Run 的取消 attempts 必须精确覆盖执行闭包",
+                        )
+                    self._validate_bulk_node_runs(
+                        connection,
+                        current,
+                        candidates,
+                        expected_attempts=dict.fromkeys(selected, 1),
+                    )
+                    if any(item.created_at != abandoned_at for item in candidates):
+                        raise RuntimeConflictError(
+                            "E_RUN_ABANDON_ATTEMPT_TIME",
+                            "queued pending Run 的取消 attempt 必须使用统一取消时刻",
+                        )
+                    for candidate in candidates:
+                        self._insert_node_run(connection, candidate)
+                    history = candidates
+                else:
+                    if candidates:
+                        raise RuntimeConflictError(
+                            "E_RUN_ABANDON_ATTEMPT_UNEXPECTED",
+                            "running Run 不接受额外 attempt",
+                        )
+                    history = current.node_runs
+
+                if any(item.state is NodeRunState.RUNNING for item in history):
+                    raise RuntimeConflictError(
+                        "E_RUN_ABANDON_ACTIVE",
+                        "存在 automatic running attempt，不能 abandon",
+                    )
+
+                latest: dict[str, NodeRun] = {}
+                for item in history:
+                    previous = latest.get(item.node_id)
+                    if previous is None or item.attempt > previous.attempt:
+                        latest[item.node_id] = item
+                observed_times = [current.created_at]
+                observed_times.extend(
+                    value for value in (current.started_at, current.ended_at) if value is not None
+                )
+                for item in latest.values():
+                    observed_times.append(item.created_at)
+                    observed_times.extend(
+                        value for value in (item.started_at, item.ended_at) if value is not None
+                    )
+                if any(value > abandoned_at for value in observed_times):
+                    raise RuntimeConflictError(
+                        "E_RUN_ABANDON_TIME",
+                        "取消时刻不得早于 Run 或最新 attempt 的既有时间",
+                    )
+                cancelled_error = RuntimeFailure(
+                    reason=FailureReason.CANCELLED,
+                    message="操作者放弃 Run；未完成节点只能从头创建新 attempt",
+                )
+                for item in latest.values():
+                    if item.state not in {NodeRunState.PENDING, NodeRunState.WAITING_EXTERNAL}:
+                        continue
+                    updated = item.model_copy(
+                        update={
+                            "state": NodeRunState.FAILED,
+                            "started_at": item.started_at or abandoned_at,
+                            "ended_at": abandoned_at,
+                            "error": cancelled_error,
+                        }
+                    )
+                    self._update_node_run(connection, item, updated)
+
+                started_at = current.started_at or abandoned_at
+                updated_run = current.model_copy(
+                    update={
+                        "state": RunState.FAILED,
+                        "started_at": started_at,
+                        "ended_at": abandoned_at,
+                        "error": cancelled_error,
+                    }
+                )
+                assert updated_run.started_at is not None
+                assert updated_run.ended_at is not None
+                assert updated_run.error is not None
+                changed = connection.execute(
+                    """
+                    UPDATE runs
+                    SET state = ?, started_at = ?, ended_at = ?, error_json = ?
+                    WHERE run_id = ? AND state = ?
+                    """,
+                    (
+                        updated_run.state.value,
+                        _timestamp(updated_run.started_at, context="Run.started_at"),
+                        _timestamp(updated_run.ended_at, context="Run.ended_at"),
+                        _dump_json(updated_run.error.model_dump(mode="json")),
+                        current.run_id,
+                        current.state.value,
+                    ),
+                ).rowcount
+                if changed != 1:
+                    raise RuntimeConflictError(
+                        "E_RUN_ABANDON_RACE",
+                        "Run 状态已被并发修改",
+                    )
+                connection.commit()
+        except RuntimeRepositoryError:
+            raise
+        except (ValidationError, sqlite3.IntegrityError) as error:
+            raise RuntimeConflictError("E_RUN_ABANDON_CONFLICT", str(error)) from error
+        except sqlite3.Error as error:
+            raise RuntimeRepositoryError("E_RUN_ABANDON_FAILED", str(error)) from error
+        return self.get_run(run_id)
+
     def create_node_run(self, node_run: NodeRun) -> NodeRun:
         """新增 pending attempt；同一 node 的 attempt 必须从 1 连续递增。"""
 
@@ -1962,7 +2106,16 @@ class RuntimeRepository:
 
         incoming = _ordered_incoming_edges(run.graph_snapshot, node_run.node_id)
         if not node_run.input_artifact_ids:
-            if incoming and node_run.state is not NodeRunState.PENDING:
+            cancelled_before_ready = (
+                node_run.state is NodeRunState.FAILED
+                and node_run.error is not None
+                and node_run.error.reason is FailureReason.CANCELLED
+            )
+            if (
+                incoming
+                and node_run.state is not NodeRunState.PENDING
+                and not cancelled_before_ready
+            ):
                 raise RuntimeDataError(
                     "E_NODE_RUN_INPUT_RELATION_CORRUPT",
                     "已启动的 NodeRun 必须完整保存 snapshot 入边绑定",
@@ -2605,14 +2758,18 @@ class RuntimeRepository:
                 "E_NODE_RUN_TIME_RELATION_CORRUPT",
                 "NodeRun.started_at 不得早于 parent Run.started_at",
             )
-        if run.state is RunState.COMPLETED:
-            latest = {
+        latest = (
+            {
                 node_id: max(
                     (item for item in run.node_runs if item.node_id == node_id),
                     key=lambda item: item.attempt,
                 )
                 for node_id in selected
             }
+            if run.state is not RunState.PENDING
+            else {}
+        )
+        if run.state is RunState.COMPLETED:
             if any(item.state is not NodeRunState.COMPLETED for item in latest.values()):
                 raise RuntimeDataError(
                     "E_RUN_COMPLETION_RELATION_CORRUPT",
@@ -2631,12 +2788,12 @@ class RuntimeRepository:
                 item.state not in {NodeRunState.COMPLETED, NodeRunState.FAILED}
                 or item.ended_at is None
                 or item.ended_at > run.ended_at
-                for item in run.node_runs
+                for item in latest.values()
             )
         ):
             raise RuntimeDataError(
                 "E_RUN_FAILURE_RELATION_CORRUPT",
-                "failed Run 不得遗留 pending/running/waiting child",
+                "failed Run 的 selected closure 最新 attempts 必须全部终结",
             )
 
     @staticmethod

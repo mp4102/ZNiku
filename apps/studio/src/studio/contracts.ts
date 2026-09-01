@@ -1,11 +1,13 @@
 /**
- * 定义 ZNIKU Studio 使用的 0.2.0 Project Service wire 类型。
+ * 定义 ZNIKU Studio 使用的 0.2.1 Project Service wire 类型。
  *
- * 运行时校验直接使用 Python Pydantic 生成的 ``project-service.schema.json``，本文件不维护第二份 Schema。
- * 类型只为 React 投影提供静态约束；任何未知字段、错误版本或非法 Runtime 状态都由生成 Schema 失败关闭。
+ * Python 生成的 ``project-service.schema.json`` 是唯一运行时 Schema。这里的 TypeScript interface
+ * 只为 React 提供静态约束；每个 endpoint 都使用自己的 Python Schema definition 失败关闭，不能把
+ * status、Run detail、日志或 handoff readiness 混成第二套宽松响应。
  */
 
-import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js'
+import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js'
+import addFormats from 'ajv-formats'
 import projectServiceSchema from '../service/project-service.schema.json'
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
@@ -162,6 +164,78 @@ export interface LatestResultWire {
   readonly updated_at: string
 }
 
+export interface RunNodeStateCountsWire {
+  readonly pending: number
+  readonly running: number
+  readonly waiting_external: number
+  readonly completed: number
+  readonly failed: number
+}
+
+export interface RunSummaryWire {
+  readonly run_id: string
+  readonly project_id: string
+  readonly target_mode: 'all' | 'selected'
+  readonly selected_targets: ReadonlyArray<string>
+  readonly state: RunState
+  readonly node_count: number
+  readonly state_counts: RunNodeStateCountsWire
+  readonly actionable: boolean
+  readonly requires_operator_action: boolean
+  readonly created_at: string
+  readonly started_at: string | null
+  readonly ended_at: string | null
+  readonly latest_activity_at: string
+  readonly error: FailureWire | null
+}
+
+export interface NodeProgressProjectionWire {
+  readonly node_run_id: string
+  readonly fraction: number
+  readonly current: number | null
+  readonly total: number | null
+  readonly unit: 'frames' | 'bytes' | 'microseconds' | 'items' | null
+  readonly observed_at: string
+}
+
+export interface StudioServiceError {
+  readonly code: string
+  readonly message: string
+  readonly related_run_ids: ReadonlyArray<string>
+}
+
+export type ActiveStudioOperation =
+  | 'run_all'
+  | 'run_to'
+  | 'rerun_from_here'
+  | 'submit_external'
+  | 'abandon_run'
+
+export interface StatusEnvelope {
+  readonly contract_version: '0.2.1'
+  readonly project_path: string | null
+  readonly snapshot: ProjectSnapshotWire | null
+  readonly run_summaries: ReadonlyArray<RunSummaryWire>
+  readonly next_run_cursor: string | null
+  readonly active_run_id: string | null
+  readonly active_operation: ActiveStudioOperation | null
+  readonly latest_results: ReadonlyArray<LatestResultWire>
+  readonly error: StudioServiceError | null
+}
+
+export interface RunSummaryPageEnvelope {
+  readonly contract_version: '0.2.1'
+  readonly run_summaries: ReadonlyArray<RunSummaryWire>
+  readonly next_run_cursor: string | null
+}
+
+export interface RunDetailEnvelope {
+  readonly contract_version: '0.2.1'
+  readonly run: RunWire
+  readonly artifacts: ReadonlyArray<ArtifactWire>
+  readonly progress_samples: ReadonlyArray<NodeProgressProjectionWire>
+}
+
 export interface NodeLogWire {
   readonly node_run_id: string
   readonly stdout: string
@@ -172,35 +246,46 @@ export interface NodeLogWire {
   readonly stderr_truncated: boolean
 }
 
-export type ActiveStudioOperation =
-  | 'run_all'
-  | 'run_to'
-  | 'rerun_from_here'
-  | 'submit_external'
+export interface NodeLogEnvelope {
+  readonly contract_version: '0.2.1'
+  readonly run_id: string
+  readonly log: NodeLogWire
+}
+
+export type ExternalReadinessState =
+  | 'missing'
+  | 'empty'
+  | 'present'
+  | 'probe_passed'
+  | 'probe_failed'
+
+export interface ExternalOutputReadinessWire {
+  readonly port_id: string
+  readonly ordinal: number | null
+  readonly path: string
+  readonly state: ExternalReadinessState
+  readonly size: number | null
+  readonly mtime_ns: number | null
+  readonly message: string | null
+}
+
+export interface ExternalHandoffReadiness {
+  readonly contract_version: '0.2.1'
+  readonly run_id: string
+  readonly node_run_id: string
+  readonly handoff_id: string
+  readonly checked_at: string
+  readonly probe_requested: boolean
+  readonly ready_for_submit: boolean
+  readonly targets: ReadonlyArray<ExternalOutputReadinessWire>
+}
 
 export type StudioOperation =
   | 'create_project'
   | 'open_project'
   | 'save_project'
+  | 'abandon_run'
   | ActiveStudioOperation
-
-export interface StudioServiceError {
-  readonly code: string
-  readonly message: string
-}
-
-export interface StudioEnvelope {
-  readonly contract_version: '0.2.0'
-  readonly project_path: string | null
-  readonly snapshot: ProjectSnapshotWire | null
-  readonly runs: ReadonlyArray<RunWire>
-  readonly active_run_id: string | null
-  readonly active_operation: ActiveStudioOperation | null
-  readonly latest_results: ReadonlyArray<LatestResultWire>
-  readonly artifacts: ReadonlyArray<ArtifactWire>
-  readonly logs: ReadonlyArray<NodeLogWire>
-  readonly error: StudioServiceError | null
-}
 
 export type StudioCommand =
   | {
@@ -214,15 +299,42 @@ export type StudioCommand =
   | { readonly operation: 'run_all' }
   | { readonly operation: 'run_to'; readonly node_id: string }
   | { readonly operation: 'rerun_from_here'; readonly run_id: string; readonly node_id: string }
-  | { readonly operation: 'submit_external'; readonly node_run_id: string }
+  | {
+      readonly operation: 'submit_external'
+      readonly run_id: string
+      readonly node_run_id: string
+      readonly handoff_id: string
+    }
+  | { readonly operation: 'abandon_run'; readonly run_id: string }
 
-const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false })
-const validateEnvelope = ajv.compile(projectServiceSchema)
-const validateCommand = ajv.compile({
-  $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $defs: projectServiceSchema.$defs,
-  $ref: '#/$defs/ProjectServiceCommand',
-})
+type SchemaDocument = {
+  readonly $schema?: string
+  readonly $defs?: Readonly<Record<string, unknown>>
+  readonly title?: string
+  readonly [key: string]: unknown
+}
+
+const schemaDocument = projectServiceSchema as unknown as SchemaDocument
+const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: true })
+addFormats(ajv)
+
+function compileDefinition(name: string): ValidateFunction {
+  if (!schemaDocument.$defs || !(name in schemaDocument.$defs)) {
+    throw new Error(`Python Project Service Schema 缺少 $defs/${name}`)
+  }
+  return ajv.compile({
+    $schema: schemaDocument.$schema ?? 'https://json-schema.org/draft/2020-12/schema',
+    $defs: schemaDocument.$defs,
+    $ref: `#/$defs/${name}`,
+  })
+}
+
+const validateStatus = compileDefinition('StatusEnvelope')
+const validateRunSummaryPage = compileDefinition('RunSummaryPageEnvelope')
+const validateRunDetail = compileDefinition('RunDetailEnvelope')
+const validateNodeLog = compileDefinition('NodeLogEnvelope')
+const validateExternalReadiness = compileDefinition('ExternalHandoffReadiness')
+const validateCommand = compileDefinition('ProjectServiceCommand')
 
 export class StudioContractError extends Error {
   constructor(message: string) {
@@ -238,20 +350,39 @@ function validationMessage(errors: ErrorObject[] | null | undefined): string {
     .join('; ')
 }
 
-export function parseStudioEnvelope(value: unknown): StudioEnvelope {
-  if (!validateEnvelope(value)) {
+function parseWith<T>(value: unknown, validator: ValidateFunction, label: string): T {
+  if (!validator(value)) {
     throw new StudioContractError(
-      `Studio host payload 不符合 Python 0.2.0 Schema：${validationMessage(validateEnvelope.errors)}`,
+      `${label} 不符合 Python 0.2.1 Schema：${validationMessage(validator.errors)}`,
     )
   }
-  return value as unknown as StudioEnvelope
+  return value as T
+}
+
+export function parseStatusEnvelope(value: unknown): StatusEnvelope {
+  return parseWith(value, validateStatus, 'Studio status payload')
+}
+
+export function parseRunSummaryPageEnvelope(value: unknown): RunSummaryPageEnvelope {
+  return parseWith(value, validateRunSummaryPage, 'Studio Run summary page')
+}
+
+export function parseRunDetailEnvelope(value: unknown): RunDetailEnvelope {
+  return parseWith(value, validateRunDetail, 'Studio Run detail')
+}
+
+export function parseNodeLogEnvelope(value: unknown): NodeLogEnvelope {
+  return parseWith(value, validateNodeLog, 'Studio Node log')
+}
+
+export function parseExternalHandoffReadiness(value: unknown): ExternalHandoffReadiness {
+  return parseWith(value, validateExternalReadiness, 'Studio handoff readiness')
 }
 
 export function parseStudioCommand(value: unknown): StudioCommand {
-  if (!validateCommand(value)) {
-    throw new StudioContractError(
-      `Studio command 不符合 Python 0.2.0 Schema：${validationMessage(validateCommand.errors)}`,
-    )
-  }
-  return value as StudioCommand
+  return parseWith(value, validateCommand, 'Studio command')
 }
+
+// 只为迁移现有调用者保留名称；它仍严格解析新的 0.2.1 StatusEnvelope。
+export type StudioEnvelope = StatusEnvelope
+export const parseStudioEnvelope = parseStatusEnvelope

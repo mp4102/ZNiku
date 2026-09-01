@@ -1,12 +1,12 @@
 /**
- * 实现 ZNIKU 0.2.0 的单一正式 Studio 工作区。
+ * 实现 ZNIKU 0.2.1 的单一正式 Studio 工作区与 Run 可观察性。
  *
- * Designer 直接编辑 Project Service 返回的普通 Graph；Runtime 状态只叠加在同一画布上。浏览器不生成
- * Compiler、Freeze、ExecutionPlan 或媒体结果，所有保存、运行、日志和 external handoff 都调用 Python
- * authority。网络或合同错误不会回退到本地模拟数据。
+ * Designer 编辑 Project 当前 Graph；运行视图默认展示操作者显式选择的 Run snapshot。status、Run
+ * detail、readiness 与日志分别从 Python authority 读取，并通过 generation/sequence 丢弃迟到响应。
+ * 页面只投影状态，不生成第二套 Run、Artifact、进度或人工交接 authority。
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -24,16 +24,20 @@ import {
 import { WorkflowNodeCard } from '../components/WorkflowNodeCard'
 import type { WorkflowEdge, WorkflowNode, WorkflowNodeData } from '../model'
 import type {
+  ArtifactWire,
   EdgeWire,
+  ExternalHandoffReadiness,
   GraphWire,
   JsonObject,
   NodeDefinitionWire,
   NodeInstanceWire,
+  NodeLogEnvelope,
   NodeRunWire,
   ProjectSnapshotWire,
-  RunWire,
+  RunDetailEnvelope,
+  RunSummaryWire,
+  StatusEnvelope,
   StudioCommand,
-  StudioEnvelope,
 } from './contracts'
 import {
   connectGraph,
@@ -44,12 +48,67 @@ import {
   edgeId,
   inspectGraph,
   isStudioConnectionValid,
+  nodeExecutionSignatureMatches,
   reorderEdge,
 } from './graph'
-import { createStudioGateway, type StudioGateway } from './gateway'
+import { createStudioGateway, StudioGatewayError, type StudioGateway } from './gateway'
 import { groupStudioDefinitions } from './catalog'
 
 const nodeTypes = { workflow: WorkflowNodeCard }
+const failureBackoff = [750, 1_500, 3_000, 5_000] as const
+
+type ChannelName = 'status' | 'detail' | 'readiness' | 'log'
+type ResourceChannelName = Exclude<ChannelName, 'status'>
+
+interface ChannelHealth {
+  readonly stale: boolean
+  readonly lastSuccess: string | null
+}
+
+const initialHealth: Record<ChannelName, ChannelHealth> = {
+  status: { stale: false, lastSuccess: null },
+  detail: { stale: false, lastSuccess: null },
+  readiness: { stale: false, lastSuccess: null },
+  log: { stale: false, lastSuccess: null },
+}
+
+type ResourceHealth = Record<ResourceChannelName, ReadonlyMap<string, ChannelHealth>>
+
+interface ReadinessProbeFlight {
+  readonly generation: number
+  readonly token: symbol
+  readonly promise: Promise<ExternalHandoffReadiness | null>
+}
+
+function nodeRunResourceKey(runId: string, nodeRunId: string): string {
+  return `${runId}/${nodeRunId}`
+}
+
+function emptyResourceHealth(): ResourceHealth {
+  return {
+    detail: new Map(),
+    readiness: new Map(),
+    log: new Map(),
+  }
+}
+
+function aggregateResourceHealth(
+  values: ReadonlyMap<string, ChannelHealth>,
+  resourceKeys: ReadonlyArray<string>,
+): ChannelHealth {
+  const observed = resourceKeys.flatMap((key) => {
+    const value = values.get(key)
+    return value ? [value] : []
+  })
+  const successes = observed
+    .map((value) => value.lastSuccess)
+    .filter((value): value is string => value !== null)
+    .sort()
+  return {
+    stale: observed.some((value) => value.stale),
+    lastSuccess: successes.at(-1) ?? null,
+  }
+}
 
 export interface StudioWorkspaceProps {
   readonly gateway?: StudioGateway
@@ -63,14 +122,11 @@ function defaultNodeId(): string {
 function replaceGraph(snapshot: ProjectSnapshotWire, graph: GraphWire): ProjectSnapshotWire {
   return {
     ...snapshot,
-    project: {
-      ...snapshot.project,
-      graph,
-    },
+    project: { ...snapshot.project, graph },
   }
 }
 
-function latestNodeRuns(run: RunWire | null): Map<string, NodeRunWire> {
+function latestNodeRuns(run: RunDetailEnvelope['run'] | null): Map<string, NodeRunWire> {
   const values = new Map<string, NodeRunWire>()
   for (const nodeRun of run?.node_runs ?? []) {
     const current = values.get(nodeRun.node_id)
@@ -79,11 +135,79 @@ function latestNodeRuns(run: RunWire | null): Map<string, NodeRunWire> {
   return values
 }
 
-function selectedRun(envelope: StudioEnvelope | null): RunWire | null {
-  if (!envelope) return null
-  return (
-    envelope.runs.find((run) => run.run_id === envelope.active_run_id) ?? envelope.runs[0] ?? null
-  )
+function sortSummaries(values: ReadonlyArray<RunSummaryWire>): RunSummaryWire[] {
+  return [...values].sort((left, right) => {
+    const time = right.created_at.localeCompare(left.created_at)
+    return time !== 0 ? time : right.run_id.localeCompare(left.run_id)
+  })
+}
+
+function mergeSummaries(
+  ...groups: ReadonlyArray<ReadonlyArray<RunSummaryWire>>
+): RunSummaryWire[] {
+  const byId = new Map<string, RunSummaryWire>()
+  for (const group of groups) for (const summary of group) byId.set(summary.run_id, summary)
+  return sortSummaries([...byId.values()])
+}
+
+function defaultRunId(summaries: ReadonlyArray<RunSummaryWire>): string | null {
+  return summaries.find((summary) => summary.actionable)?.run_id ?? summaries[0]?.run_id ?? null
+}
+
+function summaryRevision(summary: RunSummaryWire | undefined): string {
+  if (!summary) return ''
+  return JSON.stringify([
+    summary.run_id,
+    summary.state,
+    summary.state_counts,
+    summary.latest_activity_at,
+    summary.error,
+  ])
+}
+
+function statusPollDelay(status: StatusEnvelope | null): number {
+  if (!status) return 5_000
+  if (
+    status.active_operation !== null ||
+    status.run_summaries.some((summary) => summary.state_counts.running > 0)
+  ) {
+    return 750
+  }
+  return status.run_summaries.some((summary) => summary.actionable) ? 1_500 : 5_000
+}
+
+function targetLabel(summary: RunSummaryWire): string {
+  return summary.target_mode === 'all'
+    ? 'Run all'
+    : `Run to ${summary.selected_targets.join(', ')}`
+}
+
+function summaryOptionLabel(summary: RunSummaryWire): string {
+  const counts = summary.state_counts
+  return `${summary.created_at} · ${targetLabel(summary)} · ${summary.state} · ${counts.completed}/${summary.node_count} completed · ${counts.running} running · ${counts.waiting_external} waiting external · ${counts.failed} failed`
+}
+
+function readinessLabel(value: ExternalHandoffReadiness | null): string {
+  if (!value) return 'checking'
+  if (value.ready_for_submit) return 'probe passed'
+  const states = [...new Set(value.targets.map((target) => target.state))]
+  return states.join(', ') || 'no targets'
+}
+
+function elapsedLabel(createdAt: string): string {
+  const created = Date.parse(createdAt)
+  if (!Number.isFinite(created)) return '等待时长未知'
+  const seconds = Math.max(0, Math.floor((Date.now() - created) / 1_000))
+  if (seconds < 60) return `已等待 ${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `已等待 ${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 48) return `已等待 ${hours}h ${minutes % 60}m`
+  return `已等待 ${Math.floor(hours / 24)}d ${hours % 24}h`
+}
+
+function isTerminal(summary: RunSummaryWire | undefined): boolean {
+  return summary?.state === 'completed' || summary?.state === 'failed'
 }
 
 function isEditingTarget(target: EventTarget | null): boolean {
@@ -106,13 +230,61 @@ function parameterObject(value: string): JsonObject | null {
   }
 }
 
+function parameterTextValue(parameters: JsonObject, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = parameters[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return null
+}
+
+function monotonicDetail(
+  previous: RunDetailEnvelope | null,
+  incoming: RunDetailEnvelope,
+): { readonly detail: RunDetailEnvelope; readonly regressed: boolean } {
+  if (!previous || previous.run.run_id !== incoming.run.run_id) {
+    return { detail: incoming, regressed: false }
+  }
+  const trusted = new Map(previous.run.node_runs.map((item) => [item.node_run_id, item]))
+  let regressed = false
+  const nodeRuns = incoming.run.node_runs.map((item) => {
+    const prior = trusted.get(item.node_run_id)
+    if (
+      prior?.attempt === item.attempt &&
+      prior.progress !== null &&
+      item.progress !== null &&
+      item.progress < prior.progress
+    ) {
+      regressed = true
+      return { ...item, progress: prior.progress }
+    }
+    return item
+  })
+  return {
+    regressed,
+    detail: regressed ? { ...incoming, run: { ...incoming.run, node_runs: nodeRuns } } : incoming,
+  }
+}
+
 export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: StudioWorkspaceProps) {
   const effectiveGateway = useMemo(() => gateway ?? createStudioGateway(), [gateway])
-  const [envelope, setEnvelope] = useState<StudioEnvelope | null>(null)
+  const [status, setStatus] = useState<StatusEnvelope | null>(null)
+  const [historySummaries, setHistorySummaries] = useState<ReadonlyArray<RunSummaryWire>>([])
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null)
+  const [viewRunId, setViewRunId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<RunDetailEnvelope | null>(null)
+  const [readiness, setReadiness] = useState<ReadonlyMap<string, ExternalHandoffReadiness>>(
+    new Map(),
+  )
+  const [logs, setLogs] = useState<ReadonlyMap<string, NodeLogEnvelope>>(new Map())
+  const [statusHealth, setStatusHealth] = useState<ChannelHealth>(initialHealth.status)
+  const [resourceHealth, setResourceHealth] = useState<ResourceHealth>(emptyResourceHealth)
   const [draft, setDraft] = useState<ProjectSnapshotWire | null>(null)
+  const [showRunSnapshot, setShowRunSnapshot] = useState(true)
   const [dirty, setDirty] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [historyBusy, setHistoryBusy] = useState(false)
   const [boundaryError, setBoundaryError] = useState<string | null>(null)
   const [clientHint, setClientHint] = useState<string | null>(null)
   const [projectPath, setProjectPath] = useState('')
@@ -123,104 +295,492 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<ReadonlySet<string>>(new Set())
   const [parameterText, setParameterText] = useState('{}')
   const [bottomOpen, setBottomOpen] = useState(true)
+  const [pollEpoch, setPollEpoch] = useState(0)
 
-  const acceptEnvelope = useCallback(
-    (next: StudioEnvelope, options: { readonly replaceProject: boolean }) => {
-      setEnvelope(next)
+  const statusRef = useRef<StatusEnvelope | null>(null)
+  const detailRef = useRef<RunDetailEnvelope | null>(null)
+  const viewRunIdRef = useRef<string | null>(null)
+  const historySummariesRef = useRef<ReadonlyArray<RunSummaryWire>>([])
+  const historyCursorRef = useRef<string | null>(null)
+  const historyPagingStartedRef = useRef(false)
+  const generationRef = useRef(0)
+  const sequenceRef = useRef<Record<ChannelName | 'history', number>>({
+    status: 0,
+    detail: 0,
+    readiness: 0,
+    log: 0,
+    history: 0,
+  })
+  const acceptedRef = useRef<Record<'status' | 'history', number>>({
+    status: 0,
+    history: 0,
+  })
+  const acceptedResourceSequenceRef = useRef({
+    detail: new Map<string, number>(),
+    readiness: new Map<string, number>(),
+    log: new Map<string, number>(),
+  })
+  const latestIssuedSequenceRef = useRef({
+    detail: new Map<string, number>(),
+    readiness: new Map<string, number>(),
+    log: new Map<string, number>(),
+  })
+  const readinessProbeFlightRef = useRef(new Map<string, ReadinessProbeFlight>())
+  const selectedLogResourceRef = useRef<string | null>(null)
+  const busyRef = useRef(false)
+  const detailSummaryRevisionRef = useRef('')
+
+  const markStatusHealth = useCallback((stale: boolean) => {
+    setStatusHealth((current) => ({
+      stale,
+      lastSuccess: stale ? current.lastSuccess : new Date().toISOString(),
+    }))
+  }, [])
+
+  const markResourceHealth = useCallback(
+    (channel: ResourceChannelName, resourceKey: string, stale: boolean) => {
+      setResourceHealth((current) => {
+        const values = new Map(current[channel])
+        const previous = values.get(resourceKey) ?? { stale: false, lastSuccess: null }
+        values.set(resourceKey, {
+          stale,
+          lastSuccess: stale ? previous.lastSuccess : new Date().toISOString(),
+        })
+        return { ...current, [channel]: values }
+      })
+    },
+    [],
+  )
+
+  const replaceHistory = useCallback(
+    (summaries: ReadonlyArray<RunSummaryWire>, cursor: string | null, pagingStarted: boolean) => {
+      historySummariesRef.current = summaries
+      historyCursorRef.current = cursor
+      historyPagingStartedRef.current = pagingStarted
+      setHistorySummaries(summaries)
+      setHistoryCursor(cursor)
+    },
+    [],
+  )
+
+  const acceptStatus = useCallback(
+    (
+      next: StatusEnvelope,
+      options: {
+        readonly replaceProject: boolean
+        readonly clearGraphSelection?: boolean
+        readonly resetHistory?: boolean
+      },
+    ) => {
+      const previous = statusRef.current
+      const pathChanged = previous !== null && previous.project_path !== next.project_path
+      const firstAuthority = previous === null
+      statusRef.current = next
+      setStatus(next)
       if (next.project_path !== null) setProjectPath(next.project_path)
-      if (options.replaceProject) {
+      if (options.replaceProject || pathChanged) {
         setDraft(next.snapshot)
         setDirty(false)
-        setSelectedNodeIds(new Set())
-        setSelectedEdgeIds(new Set())
+        if (options.clearGraphSelection ?? pathChanged) {
+          setSelectedNodeIds(new Set())
+          setSelectedEdgeIds(new Set())
+        }
         if (next.snapshot) {
           setProjectId(next.snapshot.project.project_id)
           setProjectName(next.snapshot.project.name)
         }
       }
+      if (firstAuthority || pathChanged || options.resetHistory) {
+        replaceHistory(next.run_summaries, next.next_run_cursor, false)
+      } else {
+        // session selector 保留所有已经见过的 summary；否则新 Run 推动首页窗口后，已见 terminal
+        // 会在 cursor 已经推进甚至耗尽时从页面消失。
+        const retained = mergeSummaries(historySummariesRef.current, next.run_summaries)
+        historySummariesRef.current = retained
+        setHistorySummaries(retained)
+        if (!historyPagingStartedRef.current) {
+          historyCursorRef.current = next.next_run_cursor
+          setHistoryCursor(next.next_run_cursor)
+        }
+      }
       setBoundaryError(null)
       setClientHint(next.error ? `${next.error.code}: ${next.error.message}` : null)
+      markStatusHealth(false)
     },
-    [],
+    [markStatusHealth, replaceHistory],
   )
 
-  const refresh = useCallback(
-    async (replaceProject: boolean) => {
+  const setTrustedViewRunId = useCallback((runId: string | null, clearResources = true) => {
+    viewRunIdRef.current = runId
+    setViewRunId(runId)
+    if (clearResources) {
+      detailRef.current = null
+      setDetail(null)
+      setReadiness(new Map())
+      setLogs(new Map())
+      setResourceHealth(emptyResourceHealth())
+      selectedLogResourceRef.current = null
+      detailSummaryRevisionRef.current = ''
+    }
+  }, [])
+
+  const loadDetail = useCallback(
+    async (runId: string, generation: number): Promise<RunDetailEnvelope | null> => {
+      const sequence = ++sequenceRef.current.detail
+      const resourceKey = runId
+      latestIssuedSequenceRef.current.detail.set(resourceKey, sequence)
       try {
-        acceptEnvelope(await effectiveGateway.inspect(), { replaceProject })
+        const incoming = await effectiveGateway.inspectRun(runId)
+        if (
+          generation !== generationRef.current ||
+          runId !== viewRunIdRef.current ||
+          sequence !== latestIssuedSequenceRef.current.detail.get(resourceKey) ||
+          sequence <= (acceptedResourceSequenceRef.current.detail.get(resourceKey) ?? 0)
+        ) {
+          return null
+        }
+        acceptedResourceSequenceRef.current.detail.set(resourceKey, sequence)
+        const merged = monotonicDetail(detailRef.current, incoming)
+        detailRef.current = merged.detail
+        setDetail(merged.detail)
+        if (merged.regressed) {
+          setClientHint('E_STUDIO_PROGRESS_REGRESSION：已保留最后可信进度并重新检查。')
+        }
+        const summary = statusRef.current?.run_summaries.find((item) => item.run_id === runId)
+        detailSummaryRevisionRef.current = summaryRevision(summary)
+        markResourceHealth('detail', resourceKey, false)
+        return merged.detail
       } catch (error) {
-        setBoundaryError(error instanceof Error ? error.message : 'Project Service inspect 失败')
+        if (
+          generation === generationRef.current &&
+          runId === viewRunIdRef.current &&
+          sequence === latestIssuedSequenceRef.current.detail.get(resourceKey)
+        ) {
+          markResourceHealth('detail', resourceKey, true)
+          setBoundaryError(error instanceof Error ? error.message : 'Run detail 读取失败')
+        }
+        return null
       }
     },
-    [acceptEnvelope, effectiveGateway],
+    [effectiveGateway, markResourceHealth],
+  )
+
+  const loadReadiness = useCallback(
+    async (
+      runId: string,
+      nodeRunId: string,
+      probe: boolean,
+      generation: number,
+    ): Promise<ExternalHandoffReadiness | null> => {
+      if (generation !== generationRef.current || runId !== viewRunIdRef.current) return null
+      const resourceKey = nodeRunResourceKey(runId, nodeRunId)
+      const existingFlight = readinessProbeFlightRef.current.get(resourceKey)
+      if (existingFlight?.generation === generation) {
+        // 显式完整 probe 是该 handoff 的短期权威；被动轮询不得抢占它，重复点击则复用同一请求。
+        return probe ? existingFlight.promise : null
+      }
+      if (existingFlight) readinessProbeFlightRef.current.delete(resourceKey)
+
+      const request = (async (): Promise<ExternalHandoffReadiness | null> => {
+        const sequence = ++sequenceRef.current.readiness
+        latestIssuedSequenceRef.current.readiness.set(resourceKey, sequence)
+        try {
+          const next = await effectiveGateway.inspectReadiness(runId, nodeRunId, probe)
+          if (
+            generation !== generationRef.current ||
+            runId !== viewRunIdRef.current ||
+            sequence !== latestIssuedSequenceRef.current.readiness.get(resourceKey) ||
+            sequence <=
+              (acceptedResourceSequenceRef.current.readiness.get(resourceKey) ?? 0)
+          ) {
+            return null
+          }
+          acceptedResourceSequenceRef.current.readiness.set(resourceKey, sequence)
+          setReadiness((current) => new Map(current).set(nodeRunId, next))
+          markResourceHealth('readiness', resourceKey, false)
+          return next
+        } catch (error) {
+          if (
+            generation === generationRef.current &&
+            runId === viewRunIdRef.current &&
+            sequence === latestIssuedSequenceRef.current.readiness.get(resourceKey)
+          ) {
+            markResourceHealth('readiness', resourceKey, true)
+            setClientHint(error instanceof Error ? error.message : 'handoff readiness 读取失败')
+          }
+          return null
+        }
+      })()
+      if (!probe) return request
+
+      const token = Symbol(resourceKey)
+      const guarded = request.finally(() => {
+        const current = readinessProbeFlightRef.current.get(resourceKey)
+        if (current?.generation === generation && current.token === token) {
+          readinessProbeFlightRef.current.delete(resourceKey)
+        }
+      })
+      readinessProbeFlightRef.current.set(resourceKey, { generation, token, promise: guarded })
+      return guarded
+    },
+    [effectiveGateway, markResourceHealth],
+  )
+
+  const loadLog = useCallback(
+    async (runId: string, nodeRunId: string, generation: number): Promise<void> => {
+      const sequence = ++sequenceRef.current.log
+      const resourceKey = `${runId}/${nodeRunId}`
+      latestIssuedSequenceRef.current.log.set(resourceKey, sequence)
+      try {
+        const next = await effectiveGateway.inspectLog(runId, nodeRunId)
+        if (
+          generation !== generationRef.current ||
+          runId !== viewRunIdRef.current ||
+          sequence !== latestIssuedSequenceRef.current.log.get(resourceKey) ||
+          sequence <= (acceptedResourceSequenceRef.current.log.get(resourceKey) ?? 0)
+        ) {
+          return
+        }
+        acceptedResourceSequenceRef.current.log.set(resourceKey, sequence)
+        setLogs((current) => new Map(current).set(resourceKey, next))
+        markResourceHealth('log', resourceKey, false)
+      } catch (error) {
+        if (
+          generation === generationRef.current &&
+          runId === viewRunIdRef.current &&
+          sequence === latestIssuedSequenceRef.current.log.get(resourceKey)
+        ) {
+          markResourceHealth('log', resourceKey, true)
+          if (selectedLogResourceRef.current === resourceKey) {
+            setClientHint(error instanceof Error ? error.message : '节点日志读取失败')
+          }
+        }
+      }
+    },
+    [effectiveGateway, markResourceHealth],
   )
 
   useEffect(() => {
+    const generation = ++generationRef.current
     let active = true
     setLoading(true)
+    setBoundaryError(null)
+    const sequence = ++sequenceRef.current.status
     effectiveGateway
-      .inspect()
-      .then((next) => {
-        if (active) acceptEnvelope(next, { replaceProject: true })
+      .inspect(null)
+      .then(async (next) => {
+        if (!active || generation !== generationRef.current || sequence <= acceptedRef.current.status) {
+          return
+        }
+        acceptedRef.current.status = sequence
+        acceptStatus(next, { replaceProject: true })
+        const selected = defaultRunId(next.run_summaries)
+        setTrustedViewRunId(selected)
+        setShowRunSnapshot(selected !== null)
+        if (selected) {
+          const selectedDetail = await loadDetail(selected, generation)
+          const waiting = [...latestNodeRuns(selectedDetail?.run ?? null).values()].filter(
+            (item) => item.state === 'waiting_external' && item.external_handoff !== null,
+          )
+          for (const nodeRun of waiting) {
+            if (!active || generation !== generationRef.current) return
+            await loadReadiness(selected, nodeRun.node_run_id, false, generation)
+          }
+        }
       })
       .catch((error: unknown) => {
-        if (active) setBoundaryError(error instanceof Error ? error.message : 'Project Service inspect 失败')
+        if (active && generation === generationRef.current) {
+          markStatusHealth(true)
+          setBoundaryError(error instanceof Error ? error.message : 'Project Service inspect 失败')
+        }
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (active && generation === generationRef.current) setLoading(false)
       })
     return () => {
       active = false
+      if (generation === generationRef.current) generationRef.current += 1
     }
-  }, [acceptEnvelope, effectiveGateway])
-
-  const currentRun = selectedRun(envelope)
-  const operationActive = typeof envelope?.active_operation === 'string'
-  const shouldPoll = operationActive
+  }, [acceptStatus, effectiveGateway, loadDetail, loadReadiness, markStatusHealth, setTrustedViewRunId])
 
   useEffect(() => {
-    if (!shouldPoll) return
-    const timer = window.setInterval(() => void refresh(false), 750)
-    return () => window.clearInterval(timer)
-  }, [refresh, shouldPoll])
+    if (loading) return
+    const generation = generationRef.current
+    let cancelled = false
+    let timer: number | null = null
+    let failureIndex = 0
+    let previousOperation = statusRef.current?.active_operation ?? null
 
-  const invoke = useCallback(
-    async (command: StudioCommand, replaceProject = true): Promise<StudioEnvelope | null> => {
-      setBusy(true)
-      setBoundaryError(null)
-      setClientHint(null)
-      try {
-        const next = await effectiveGateway.command(command)
-        acceptEnvelope(next, { replaceProject })
-        return next
-      } catch (error) {
-        setBoundaryError(error instanceof Error ? error.message : 'Project Service command 失败')
-        return null
-      } finally {
-        setBusy(false)
+    const schedule = (delay: number) => {
+      if (!cancelled && generation === generationRef.current) {
+        timer = window.setTimeout(() => void cycle(), delay)
       }
-    },
-    [acceptEnvelope, effectiveGateway],
+    }
+
+    const cycle = async () => {
+      if (cancelled || generation !== generationRef.current) return
+      const sequence = ++sequenceRef.current.status
+      let nextStatus: StatusEnvelope | null = null
+      let recoveredMissingRunId: string | null = null
+      try {
+        nextStatus = await effectiveGateway.inspect(viewRunIdRef.current)
+      } catch (error) {
+        if (
+          error instanceof StudioGatewayError &&
+          error.code === 'E_PROJECT_SERVICE_RUN_NOT_FOUND' &&
+          viewRunIdRef.current !== null
+        ) {
+          const missingRunId = viewRunIdRef.current
+          try {
+            const recovered = await effectiveGateway.inspect(null)
+            // 精确 detail 已确认该 ID 不存在；即使 status 窗口短暂滞后，也不能把它重新选回。
+            nextStatus = {
+              ...recovered,
+              run_summaries: recovered.run_summaries.filter(
+                (summary) => summary.run_id !== missingRunId,
+              ),
+              active_run_id:
+                recovered.active_run_id === missingRunId ? null : recovered.active_run_id,
+            }
+            recoveredMissingRunId = missingRunId
+          } catch (retryError) {
+            error = retryError
+          }
+        }
+        if (!nextStatus && generation === generationRef.current) {
+          markStatusHealth(true)
+          setBoundaryError(error instanceof Error ? error.message : 'Project Service status 读取失败')
+        }
+      }
+
+      if (
+        cancelled ||
+        generation !== generationRef.current ||
+        (nextStatus && sequence <= acceptedRef.current.status)
+      ) {
+        return
+      }
+
+      if (!nextStatus) {
+        const existingDetail = detailRef.current
+        if (existingDetail && viewRunIdRef.current) {
+          await loadDetail(viewRunIdRef.current, generation)
+        }
+        schedule(failureBackoff[Math.min(failureIndex++, failureBackoff.length - 1)]!)
+        return
+      }
+
+      acceptedRef.current.status = sequence
+      failureIndex = 0
+      if (recoveredMissingRunId) {
+        // 404 recovery 与历史分页共享 project generation；推进独立 fence，禁止旧 page 撤销 fresh reset。
+        const historyFence = ++sequenceRef.current.history
+        acceptedRef.current.history = historyFence
+        setHistoryBusy(false)
+        setTrustedViewRunId(null)
+      }
+      acceptStatus(nextStatus, {
+        replaceProject: false,
+        resetHistory: recoveredMissingRunId !== null,
+      })
+      const merged = mergeSummaries(nextStatus.run_summaries, historySummariesRef.current)
+      let selected = viewRunIdRef.current
+      if (!selected || !merged.some((summary) => summary.run_id === selected)) {
+        selected = defaultRunId(merged)
+        setTrustedViewRunId(selected)
+      }
+      if (recoveredMissingRunId) {
+        setClientHint('先前选择的 Run 已不存在，已重新选择可用 Run。')
+      }
+
+      let selectedDetail = detailRef.current
+      const selectedSummary = merged.find((summary) => summary.run_id === selected)
+      const revision = summaryRevision(selectedSummary)
+      if (
+        selected &&
+        (selectedDetail?.run.run_id !== selected ||
+          !isTerminal(selectedSummary) ||
+          detailSummaryRevisionRef.current !== revision)
+      ) {
+        selectedDetail = (await loadDetail(selected, generation)) ?? detailRef.current
+      }
+
+      if (selected && selectedDetail?.run.run_id === selected) {
+        const waiting = [...latestNodeRuns(selectedDetail.run).values()].filter(
+          (item) => item.state === 'waiting_external' && item.external_handoff !== null,
+        )
+        for (const nodeRun of waiting) {
+          if (cancelled || generation !== generationRef.current) return
+          await loadReadiness(selected, nodeRun.node_run_id, false, generation)
+        }
+      }
+
+      const finalRefresh = previousOperation !== null && nextStatus.active_operation === null
+      previousOperation = nextStatus.active_operation
+      schedule(finalRefresh ? 0 : statusPollDelay(nextStatus))
+    }
+
+    schedule(statusPollDelay(statusRef.current))
+    return () => {
+      cancelled = true
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [
+    acceptStatus,
+    effectiveGateway,
+    loadDetail,
+    loadReadiness,
+    loading,
+    markStatusHealth,
+    pollEpoch,
+    setTrustedViewRunId,
+  ])
+
+  const allSummaries = useMemo(
+    () => mergeSummaries(status?.run_summaries ?? [], historySummaries),
+    [historySummaries, status?.run_summaries],
   )
-
-  const updateGraph = useCallback((updater: (graph: GraphWire) => GraphWire) => {
-    setDraft((current) => (current ? replaceGraph(current, updater(current.project.graph)) : current))
-    setDirty(true)
-    setClientHint(null)
-  }, [])
-
-  const activeNodeRuns = useMemo(() => latestNodeRuns(currentRun), [currentRun])
+  const viewedSummary = allSummaries.find((summary) => summary.run_id === viewRunId) ?? null
+  const currentRun = detail?.run.run_id === viewRunId ? detail.run : null
+  const operationActive = status?.active_operation !== null && status?.active_operation !== undefined
+  const currentSnapshot = useMemo<ProjectSnapshotWire | null>(() => {
+    if (!currentRun || !draft) return null
+    return {
+      project: {
+        project_id: currentRun.project_id,
+        name: draft.project.name,
+        graph: currentRun.graph_snapshot,
+      },
+      definitions: currentRun.definitions_snapshot,
+    }
+  }, [currentRun, draft])
+  const displaySnapshot = showRunSnapshot && currentSnapshot ? currentSnapshot : draft
+  const graph = displaySnapshot?.project.graph ?? { nodes: [], edges: [] }
+  const definitions = displaySnapshot?.definitions ?? []
+  const diagnostics = useMemo(() => (draft ? inspectGraph(draft) : []), [draft])
+  const runLatestAttempts = useMemo(() => latestNodeRuns(currentRun), [currentRun])
+  const activeNodeRuns = useMemo(() => {
+    if (!currentRun) return new Map<string, NodeRunWire>()
+    if (showRunSnapshot) return runLatestAttempts
+    const visible = new Map<string, NodeRunWire>()
+    for (const [nodeId, nodeRun] of runLatestAttempts) {
+      if (draft && nodeExecutionSignatureMatches(draft.project.graph, currentRun.graph_snapshot, nodeId)) {
+        visible.set(nodeId, nodeRun)
+      }
+    }
+    return visible
+  }, [currentRun, draft, runLatestAttempts, showRunSnapshot])
   const latestResults = useMemo(
-    () => new Map((envelope?.latest_results ?? []).map((result) => [result.node_id, result])),
-    [envelope?.latest_results],
+    () =>
+      new Map(
+        (showRunSnapshot ? [] : status?.latest_results ?? []).map((result) => [result.node_id, result]),
+      ),
+    [showRunSnapshot, status?.latest_results],
   )
   const artifactsById = useMemo(
-    () => new Map((envelope?.artifacts ?? []).map((artifact) => [artifact.artifact_id, artifact])),
-    [envelope?.artifacts],
+    () => new Map((detail?.artifacts ?? []).map((artifact) => [artifact.artifact_id, artifact])),
+    [detail?.artifacts],
   )
-  const definitions = draft?.definitions ?? []
-  const graph = draft?.project.graph ?? { nodes: [], edges: [] }
-  const diagnostics = useMemo(() => (draft ? inspectGraph(draft) : []), [draft])
   const definitionsByKey = useMemo(
     () => new Map(definitions.map((definition) => [`${definition.type_id}@${definition.version}`, definition])),
     [definitions],
@@ -244,8 +804,12 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         return [
           {
             id: node.node_id,
-            type: 'workflow',
-            position: node.ui_position ?? { x: 80 + (index % 4) * 250, y: 100 + Math.floor(index / 4) * 190 },
+            type: 'workflow' as const,
+            position:
+              node.ui_position ?? {
+                x: 80 + (index % 4) * 250,
+                y: 100 + Math.floor(index / 4) * 190,
+              },
             selected: selectedNodeIds.has(node.node_id),
             data,
           },
@@ -258,7 +822,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     () =>
       graph.edges.map((edge) => ({
         id: edgeId(edge),
-        type: 'smoothstep',
+        type: 'smoothstep' as const,
         source: edge.source_node_id,
         sourceHandle: edge.source_port_id,
         target: edge.target_node_id,
@@ -271,15 +835,18 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     [graph.edges, selectedEdgeIds],
   )
 
-  const selectedNode =
-    graph.nodes.find((node) => selectedNodeIds.has(node.node_id)) ?? null
+  const selectedNode = graph.nodes.find((node) => selectedNodeIds.has(node.node_id)) ?? null
   const selectedDefinition = selectedNode ? definitionForNode(selectedNode, definitions) : null
-  const selectedEdge =
-    graph.edges.find((edge) => selectedEdgeIds.has(edgeId(edge))) ?? null
+  const selectedEdge = graph.edges.find((edge) => selectedEdgeIds.has(edgeId(edge))) ?? null
   const selectedNodeRun = selectedNode ? activeNodeRuns.get(selectedNode.node_id) ?? null : null
-  const selectedLog = selectedNodeRun
-    ? envelope?.logs.find((log) => log.node_run_id === selectedNodeRun.node_run_id) ?? null
-    : null
+  const selectedLogResourceKey =
+    viewRunId && selectedNodeRun?.log_path
+      ? `${viewRunId}/${selectedNodeRun.node_run_id}`
+      : null
+  const selectedLog =
+    selectedLogResourceKey && logs.get(selectedLogResourceKey)?.log.node_run_id === selectedNodeRun?.node_run_id
+      ? logs.get(selectedLogResourceKey)!.log
+      : null
   const selectedOutputs = selectedNodeRun
     ? selectedNodeRun.output_artifact_ids.flatMap((artifactId) => {
         const artifact = artifactsById.get(artifactId)
@@ -292,10 +859,65 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         return artifact ? [artifact.path] : [`未解析 Artifact：${artifactId}`]
       })
     : []
+  const waitingNodeRuns = useMemo(
+    () =>
+      [...runLatestAttempts.values()].filter(
+        (nodeRun) => nodeRun.state === 'waiting_external' && nodeRun.external_handoff !== null,
+      ),
+    [runLatestAttempts],
+  )
+  const health = useMemo<Record<ChannelName, ChannelHealth>>(
+    () => ({
+      status: statusHealth,
+      detail: aggregateResourceHealth(
+        resourceHealth.detail,
+        viewRunId ? [viewRunId] : [],
+      ),
+      readiness: aggregateResourceHealth(
+        resourceHealth.readiness,
+        viewRunId
+          ? waitingNodeRuns.map((nodeRun) => `${viewRunId}/${nodeRun.node_run_id}`)
+          : [],
+      ),
+      log: aggregateResourceHealth(
+        resourceHealth.log,
+        selectedLogResourceKey ? [selectedLogResourceKey] : [],
+      ),
+    }),
+    [resourceHealth, selectedLogResourceKey, statusHealth, viewRunId, waitingNodeRuns],
+  )
 
   useEffect(() => {
     setParameterText(JSON.stringify(selectedNode?.parameters ?? {}, null, 2))
   }, [selectedNode])
+
+  useEffect(() => {
+    selectedLogResourceRef.current = selectedLogResourceKey
+    if (!viewRunId || !selectedNodeRun?.log_path || !selectedLogResourceKey) return
+    void loadLog(viewRunId, selectedNodeRun.node_run_id, generationRef.current)
+  }, [loadLog, selectedLogResourceKey, selectedNodeRun?.log_path, selectedNodeRun?.node_run_id, viewRunId])
+
+  const selectRun = useCallback(
+    (runId: string) => {
+      // Run 选择会切换请求 generation；同步释放旧分页 owner，旧请求的 finally 不得回写新视图。
+      setHistoryBusy(false)
+      readinessProbeFlightRef.current.clear()
+      const generation = ++generationRef.current
+      setTrustedViewRunId(runId)
+      setShowRunSnapshot(true)
+      setSelectedNodeIds(new Set())
+      setSelectedEdgeIds(new Set())
+      setPollEpoch((value) => value + 1)
+      void loadDetail(runId, generation)
+    },
+    [loadDetail, setTrustedViewRunId],
+  )
+
+  const updateGraph = useCallback((updater: (graph: GraphWire) => GraphWire) => {
+    setDraft((current) => (current ? replaceGraph(current, updater(current.project.graph)) : current))
+    setDirty(true)
+    setClientHint(null)
+  }, [])
 
   const handleSelection = useCallback((selection: OnSelectionChangeParams) => {
     setSelectedNodeIds(new Set(selection.nodes.map((node) => node.id)))
@@ -330,8 +952,11 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     }
   }, [])
 
+  const graphEditable = !showRunSnapshot || currentRun === null
+
   const handleNodesChange = useCallback(
     (changes: NodeChange<WorkflowNode>[]) => {
+      if (!graphEditable) return
       const positions = new Map(
         changes.flatMap((change) =>
           change.type === 'position' && change.position ? [[change.id, change.position] as const] : [],
@@ -350,37 +975,39 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           ),
         }))
       }
-      if (removed.size > 0) {
-        updateGraph((current) => deleteSelection(current, removed, new Set()))
-      }
+      if (removed.size > 0) updateGraph((current) => deleteSelection(current, removed, new Set()))
     },
-    [updateGraph],
+    [graphEditable, updateGraph],
   )
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange<WorkflowEdge>[]) => {
+      if (!graphEditable) return
       const removed = new Set(
         changes.flatMap((change) => (change.type === 'remove' ? [change.id] : [])),
       )
       if (removed.size > 0) updateGraph((current) => deleteSelection(current, new Set(), removed))
     },
-    [updateGraph],
+    [graphEditable, updateGraph],
   )
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      const next = connectGraph(connection, graph, definitions)
+      if (!graphEditable || !draft) return
+      const next = connectGraph(connection, draft.project.graph, draft.definitions)
       if (!next) {
         setClientHint('连接被拒绝：请检查精确 data_type、cardinality、占用状态与 cycle。')
         return
       }
       updateGraph(() => next)
     },
-    [definitions, graph, updateGraph],
+    [draft, graphEditable, updateGraph],
   )
 
   const connectionIsValid = useCallback(
     (connection: Connection | WorkflowEdge) =>
+      graphEditable &&
+      !!draft &&
       isStudioConnectionValid(
         {
           source: connection.source,
@@ -388,15 +1015,16 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           target: connection.target,
           targetHandle: connection.targetHandle ?? null,
         },
-        graph,
-        definitions,
+        draft.project.graph,
+        draft.definitions,
       ),
-    [definitions, graph],
+    [draft, graphEditable],
   )
 
   const addDefinition = useCallback(
     (definition: NodeDefinitionWire) => {
-      const existing = new Set(graph.nodes.map((node) => node.node_id))
+      if (!draft || !graphEditable) return
+      const existing = new Set(draft.project.graph.nodes.map((node) => node.node_id))
       let nodeId = nodeIdFactory()
       while (existing.has(nodeId)) nodeId = nodeIdFactory()
       const node: NodeInstanceWire = {
@@ -404,47 +1032,57 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         type_id: definition.type_id,
         definition_version: definition.version,
         parameters: defaultParameters(definition),
-        ui_position: { x: 120 + graph.nodes.length * 42, y: 120 + graph.nodes.length * 28 },
+        ui_position: {
+          x: 120 + draft.project.graph.nodes.length * 42,
+          y: 120 + draft.project.graph.nodes.length * 28,
+        },
       }
       updateGraph((current) => ({ ...current, nodes: [...current.nodes, node] }))
       setSelectedNodeIds(new Set([nodeId]))
       setSelectedEdgeIds(new Set())
     },
-    [graph.nodes, nodeIdFactory, updateGraph],
+    [draft, graphEditable, nodeIdFactory, updateGraph],
   )
 
   const copySelected = useCallback(() => {
-    if (selectedNodeIds.size === 0) return
-    const copied = copySelection(graph, selectedNodeIds, nodeIdFactory)
+    if (!draft || !graphEditable || selectedNodeIds.size === 0) return
+    const copied = copySelection(draft.project.graph, selectedNodeIds, nodeIdFactory)
     updateGraph(() => copied.graph)
     setSelectedNodeIds(copied.copied_node_ids)
     setSelectedEdgeIds(new Set())
-  }, [graph, nodeIdFactory, selectedNodeIds, updateGraph])
+  }, [draft, graphEditable, nodeIdFactory, selectedNodeIds, updateGraph])
 
   const deleteSelected = useCallback(() => {
-    if (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0) return
+    if (!graphEditable || (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0)) return
     updateGraph((current) => deleteSelection(current, selectedNodeIds, selectedEdgeIds))
     setSelectedNodeIds(new Set())
     setSelectedEdgeIds(new Set())
-  }, [selectedEdgeIds, selectedNodeIds, updateGraph])
+  }, [graphEditable, selectedEdgeIds, selectedNodeIds, updateGraph])
 
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
-      if (isEditingTarget(event.target)) return
-      if ((event.key === 'Delete' || event.key === 'Backspace') && (selectedNodeIds.size || selectedEdgeIds.size)) {
+      if (isEditingTarget(event.target) || !graphEditable) return
+      if (
+        (event.key === 'Delete' || event.key === 'Backspace') &&
+        (selectedNodeIds.size || selectedEdgeIds.size)
+      ) {
         event.preventDefault()
         deleteSelected()
-      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd' && selectedNodeIds.size) {
+      } else if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === 'd' &&
+        selectedNodeIds.size
+      ) {
         event.preventDefault()
         copySelected()
       }
     }
     window.addEventListener('keydown', handleKeyboard)
     return () => window.removeEventListener('keydown', handleKeyboard)
-  }, [copySelected, deleteSelected, selectedEdgeIds.size, selectedNodeIds.size])
+  }, [copySelected, deleteSelected, graphEditable, selectedEdgeIds.size, selectedNodeIds.size])
 
   const applyParameters = useCallback(() => {
-    if (!selectedNode) return
+    if (!selectedNode || !graphEditable) return
     const parameters = parameterObject(parameterText)
     if (!parameters) {
       setClientHint('参数必须是合法 JSON object；未修改 Project Draft。')
@@ -456,121 +1094,279 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         node.node_id === selectedNode.node_id ? { ...node, parameters } : node,
       ),
     }))
-  }, [parameterText, selectedNode, updateGraph])
+  }, [graphEditable, parameterText, selectedNode, updateGraph])
 
-  const createProject = () =>
-    void invoke({
-      operation: 'create_project',
-      path: projectPath.trim(),
-      project_id: projectId.trim(),
-      name: projectName.trim(),
-    })
+  const executeCommands = useCallback(
+    async (
+      commands: ReadonlyArray<StudioCommand>,
+      options: { readonly preferCreatedRun?: boolean } = {},
+    ): Promise<StatusEnvelope | null> => {
+      if (busyRef.current) return null
+      busyRef.current = true
+      setBusy(true)
+      setBoundaryError(null)
+      setClientHint(null)
+      const previousPath = statusRef.current?.project_path ?? null
+      const previousViewRunId = viewRunIdRef.current
+      // 任意命令都会切换请求 generation，因此先取消旧历史分页在 UI 上的互斥占位。
+      setHistoryBusy(false)
+      readinessProbeFlightRef.current.clear()
+      const generation = ++generationRef.current
+      setPollEpoch((value) => value + 1)
+      let next: StatusEnvelope | null = null
+      try {
+        for (const command of commands) {
+          next = await effectiveGateway.command(command)
+          if (generation !== generationRef.current) return null
+          acceptStatus(next, {
+            replaceProject:
+              command.operation === 'open_project' ||
+              command.operation === 'create_project' ||
+              command.operation === 'save_project',
+            clearGraphSelection:
+              command.operation === 'open_project' || command.operation === 'create_project',
+          })
+        }
+        if (!next) return null
 
-  const openProject = () =>
-    void invoke({ operation: 'open_project', path: projectPath.trim() })
+        const last = commands.at(-1)
+        if (last?.operation === 'save_project') return next
+        let selected = viewRunIdRef.current
+        if (last?.operation === 'open_project' || last?.operation === 'create_project') {
+          const knownSummaries = mergeSummaries(
+            next.run_summaries,
+            previousPath === next.project_path ? historySummariesRef.current : [],
+          )
+          selected =
+            previousPath === next.project_path &&
+            previousViewRunId !== null &&
+            knownSummaries.some((summary) => summary.run_id === previousViewRunId)
+              ? previousViewRunId
+              : defaultRunId(knownSummaries)
+        } else if (
+          options.preferCreatedRun &&
+          next.active_run_id &&
+          (last?.operation === 'run_all' ||
+            last?.operation === 'run_to' ||
+            last?.operation === 'rerun_from_here')
+        ) {
+          selected = next.active_run_id
+        }
+        setTrustedViewRunId(selected)
+        setShowRunSnapshot(selected !== null)
+        if (selected) await loadDetail(selected, generation)
+        return next
+      } catch (error) {
+        if (
+          error instanceof StudioGatewayError &&
+          error.code === 'E_PROJECT_SERVICE_RUN_CONFLICT'
+        ) {
+          const existing = error.relatedRunIds[0] ?? null
+          setClientHint(`${error.code}：已有非终态 Run，请先继续或放弃它。`)
+          if (existing) {
+            setTrustedViewRunId(existing)
+            setShowRunSnapshot(true)
+          }
+        } else if (error instanceof StudioGatewayError && error.code) {
+          setClientHint(`${error.code}: ${error.message}`)
+        } else {
+          setBoundaryError(error instanceof Error ? error.message : 'Project Service command 失败')
+        }
+        return null
+      } finally {
+        // selector 可以在命令等待期间切换 viewRunId 并使 poll generation 失效；命令仍是唯一 owner，
+        // 因此必须由它无条件释放互斥，否则一次合法浏览历史会把 Studio 永久锁在 busy。
+        busyRef.current = false
+        setBusy(false)
+        setPollEpoch((value) => value + 1)
+      }
+    },
+    [acceptStatus, effectiveGateway, loadDetail, setTrustedViewRunId],
+  )
 
-  const saveProject = useCallback(async (): Promise<StudioEnvelope | null> => {
+  const saveProject = useCallback(async (): Promise<StatusEnvelope | null> => {
     if (!draft) return null
-    return invoke({ operation: 'save_project', project: draft.project })
-  }, [draft, invoke])
+    return executeCommands([{ operation: 'save_project', project: draft.project }])
+  }, [draft, executeCommands])
 
   const saveThenRun = useCallback(
     async (command: StudioCommand) => {
       if (!draft) return
-      setBusy(true)
-      setBoundaryError(null)
-      setClientHint(null)
-      try {
-        const saved = await effectiveGateway.command({ operation: 'save_project', project: draft.project })
-        acceptEnvelope(saved, { replaceProject: true })
-        if (saved.error) return
-        const next = await effectiveGateway.command(command)
-        acceptEnvelope(next, { replaceProject: true })
-      } catch (error) {
-        setBoundaryError(error instanceof Error ? error.message : 'Runtime command 失败')
-      } finally {
-        setBusy(false)
-      }
+      await executeCommands(
+        [{ operation: 'save_project', project: draft.project }, command],
+        { preferCreatedRun: true },
+      )
     },
-    [acceptEnvelope, draft, effectiveGateway],
+    [draft, executeCommands],
   )
 
-  const catalogGroups = groupStudioDefinitions(definitions, query)
+  const validateAndSubmit = useCallback(
+    async (nodeRun: NodeRunWire) => {
+      if (!viewRunId || !nodeRun.external_handoff || health.readiness.stale) return
+      const runId = viewRunId
+      const nodeRunId = nodeRun.node_run_id
+      const handoffId = nodeRun.external_handoff.handoff_id
+      const checked = await loadReadiness(
+        runId,
+        nodeRunId,
+        true,
+        generationRef.current,
+      )
+      if (!checked?.ready_for_submit) {
+        setClientHint('外部输出尚未通过完整 probe/validator，未发送 Submit。')
+        return
+      }
+      if (
+        checked.run_id !== runId ||
+        checked.node_run_id !== nodeRunId ||
+        checked.handoff_id !== handoffId
+      ) {
+        setClientHint('E_STUDIO_HANDOFF_IDENTITY_MISMATCH：probe 身份不匹配，未发送 Submit。')
+        return
+      }
+      await executeCommands([
+        {
+          operation: 'submit_external',
+          run_id: runId,
+          node_run_id: nodeRunId,
+          handoff_id: handoffId,
+        },
+      ])
+    },
+    [executeCommands, health.readiness.stale, loadReadiness, viewRunId],
+  )
+
+  const copyPath = useCallback(async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(path)
+      setClientHint('路径已复制。')
+    } catch {
+      setClientHint('浏览器未授予剪贴板权限，请手动复制显示的路径。')
+    }
+  }, [])
+
+  const loadOlderRuns = useCallback(async () => {
+    const cursor = historyCursorRef.current
+    if (!cursor || historyBusy) return
+    setHistoryBusy(true)
+    historyPagingStartedRef.current = true
+    const generation = generationRef.current
+    const sequence = ++sequenceRef.current.history
+    try {
+      const page = await effectiveGateway.listRuns(cursor, 20)
+      if (generation !== generationRef.current || sequence <= acceptedRef.current.history) return
+      acceptedRef.current.history = sequence
+      // 已由新鲜 status 见过的同一 Run summary 优先于较旧分页投影。
+      const merged = mergeSummaries(page.run_summaries, historySummariesRef.current)
+      historySummariesRef.current = merged
+      historyCursorRef.current = page.next_run_cursor
+      setHistorySummaries(merged)
+      setHistoryCursor(page.next_run_cursor)
+    } catch (error) {
+      if (
+        generation === generationRef.current &&
+        sequence === sequenceRef.current.history
+      ) {
+        setClientHint(error instanceof Error ? error.message : 'Run 历史读取失败')
+      }
+    } finally {
+      if (
+        generation === generationRef.current &&
+        sequence === sequenceRef.current.history
+      ) {
+        setHistoryBusy(false)
+      }
+    }
+  }, [effectiveGateway, historyBusy])
+
+  const catalogGroups = groupStudioDefinitions(draft?.definitions ?? [], query)
   const singleSelectedNodeId = selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null
   const rerunId = currentRun?.run_id ?? null
   const rerunNodeIncluded = singleSelectedNodeId
-    ? activeNodeRuns.has(singleSelectedNodeId)
+    ? runLatestAttempts.has(singleSelectedNodeId)
     : false
   const serviceBusy = busy || operationActive
-  const runBlocked = serviceBusy || !draft || diagnostics.length > 0
+  const runBlocked = serviceBusy || health.status.stale || !draft || diagnostics.length > 0
+  const detailMutationBlocked = serviceBusy || health.status.stale || health.detail.stale
+  const firstWaiting = waitingNodeRuns[0] ?? null
+  const firstFailed = [...runLatestAttempts.values()].find(
+    (nodeRun) => nodeRun.state === 'failed',
+  ) ?? null
+  const globalActionSummary =
+    allSummaries.find((summary) => summary.requires_operator_action) ?? null
+  const firstWaitingInputPaths = firstWaiting?.external_handoff?.input_artifact_ids.map(
+    (artifactId) => artifactsById.get(artifactId)?.path ?? `未解析 Artifact：${artifactId}`,
+  ) ?? []
+  const snapshotChanged =
+    !!currentRun && !!draft && currentRun.graph_snapshot !== draft.project.graph &&
+    JSON.stringify(currentRun.graph_snapshot) !== JSON.stringify(draft.project.graph)
 
   return (
     <main className={`app-shell studio-workspace ${bottomOpen ? 'has-bottom-drawer' : ''}`}>
       <header className="topbar">
         <div className="brand-lockup">
           <div className="brand-mark">ZN</div>
-          <div>
-            <span className="brand-name">ZNIKU</span>
-            <span className="brand-subtitle">Studio</span>
-          </div>
+          <div><span className="brand-name">ZNIKU</span><span className="brand-subtitle">Studio</span></div>
         </div>
 
         <div className="workflow-identity">
           <span className="eyebrow">PROJECT GRAPH</span>
           <strong>{draft?.project.name ?? '打开或新建 .zniku 工程'}</strong>
           <span className="identity-meta">
-            {draft ? `${draft.project.project_id} · ${graph.nodes.length} nodes · ${dirty ? '未保存' : '已保存'}` : '0.2.0 Project Service authority'}
+            {draft
+              ? `${draft.project.project_id} · ${draft.project.graph.nodes.length} nodes · ${dirty ? '未保存' : '已保存'}`
+              : '0.2.1 Project Service wire authority'}
           </span>
         </div>
 
         <div className="project-location">
-          <input
-            aria-label="工程路径"
-            value={projectPath}
-            onChange={(event) => setProjectPath(event.target.value)}
-            placeholder="D:\\Projects\\example.zniku"
-          />
-          <button className="button button--ghost" type="button" disabled={serviceBusy || !projectPath.trim()} onClick={openProject}>打开</button>
-          <button className="button button--ghost" type="button" disabled={serviceBusy || !projectPath.trim() || !projectId.trim() || !projectName.trim()} onClick={createProject}>新建</button>
-          <button className="button button--ghost" type="button" disabled={serviceBusy || !draft || diagnostics.length > 0 || !dirty} onClick={() => void saveProject()}>保存</button>
+          <input aria-label="工程路径" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder="D:\\Projects\\example.zniku" />
+          <button className="button button--ghost" type="button" disabled={serviceBusy || health.status.stale || !projectPath.trim()} onClick={() => void executeCommands([{ operation: 'open_project', path: projectPath.trim() }])}>打开</button>
+          <button className="button button--ghost" type="button" disabled={serviceBusy || health.status.stale || !projectPath.trim() || !projectId.trim() || !projectName.trim()} onClick={() => void executeCommands([{ operation: 'create_project', path: projectPath.trim(), project_id: projectId.trim(), name: projectName.trim() }])}>新建</button>
+          <button className="button button--ghost" type="button" disabled={serviceBusy || health.status.stale || !draft || diagnostics.length > 0 || !dirty} onClick={() => void saveProject()}>保存</button>
         </div>
 
         <div className="top-actions">
-          <span className={`authority-badge ${boundaryError ? 'is-unavailable' : ''}`}>
-            {boundaryError ? 'SERVICE UNAVAILABLE' : envelope?.active_operation ? envelope.active_operation.toUpperCase() : 'PROJECT SERVICE'}
+          <span className={`authority-badge ${boundaryError || health.status.stale ? 'is-unavailable' : ''}`}>
+            {health.status.stale ? 'STATUS STALE' : status?.active_operation ? `HOST · ${status.active_operation.toUpperCase()}` : 'PROJECT SERVICE'}
           </span>
+          <div className="channel-health" aria-label="Resource channel health">
+            {(Object.entries(health) as Array<[ChannelName, ChannelHealth]>).map(
+              ([channel, value]) => (
+                <span className={value.stale ? 'is-stale' : ''} key={channel}>
+                  {channel.toUpperCase()} {value.stale ? 'STALE' : 'OK'} · {value.lastSuccess ?? 'never'}
+                </span>
+              ),
+            )}
+          </div>
+          <label className="run-selector">
+            <span>查看 Run</span>
+            <select aria-label="查看 Run" value={viewRunId ?? ''} onChange={(event) => event.target.value && selectRun(event.target.value)} disabled={allSummaries.length === 0}>
+              {allSummaries.length === 0 && <option value="">No Runs</option>}
+              {allSummaries.map((summary) => <option key={summary.run_id} value={summary.run_id}>{summaryOptionLabel(summary)}</option>)}
+            </select>
+          </label>
           <button className="button button--primary" type="button" disabled={runBlocked} onClick={() => void saveThenRun({ operation: 'run_all' })}>Run all</button>
-          <button className="button button--ghost" type="button" disabled={runBlocked || !singleSelectedNodeId} onClick={() => singleSelectedNodeId && void saveThenRun({ operation: 'run_to', node_id: singleSelectedNodeId })}>Run to here</button>
-          <button className="button button--ghost" type="button" disabled={runBlocked || !singleSelectedNodeId || !rerunId || !rerunNodeIncluded} onClick={() => singleSelectedNodeId && rerunId && void saveThenRun({ operation: 'rerun_from_here', run_id: rerunId, node_id: singleSelectedNodeId })}>Rerun from here</button>
+          <button className="button button--ghost" type="button" disabled={runBlocked || !singleSelectedNodeId || showRunSnapshot} onClick={() => singleSelectedNodeId && void saveThenRun({ operation: 'run_to', node_id: singleSelectedNodeId })}>Run to here</button>
+          <button className="button button--ghost" type="button" disabled={detailMutationBlocked || !singleSelectedNodeId || !rerunId || !rerunNodeIncluded} onClick={() => singleSelectedNodeId && rerunId && void executeCommands([{ operation: 'rerun_from_here', run_id: rerunId, node_id: singleSelectedNodeId }], { preferCreatedRun: true })}>Rerun from here</button>
         </div>
       </header>
 
       <aside className="palette-panel">
-        <div className="panel-heading">
-          <span className="eyebrow">NODE DEFINITIONS</span>
-          <h2>节点面板</h2>
-          <span className="registry-state"><i /> {definitions.length} exact versions</span>
-        </div>
+        <div className="panel-heading"><span className="eyebrow">NODE DEFINITIONS</span><h2>节点面板</h2><span className="registry-state"><i /> {draft?.definitions.length ?? 0} exact versions</span></div>
         <div className="project-fields">
           <label>Project ID<input aria-label="Project ID" value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
           <label>Project name<input aria-label="Project name" value={projectName} onChange={(event) => setProjectName(event.target.value)} /></label>
         </div>
-        <label className="search-box">
-          <span>⌕</span>
-          <input aria-label="搜索节点" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="type、port、mode 或 executor" />
-        </label>
+        <label className="search-box"><span>⌕</span><input aria-label="搜索节点" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="type、port、mode 或 executor" /></label>
         <div className="palette-list" aria-label="节点定义列表">
           {catalogGroups.map((group) => (
             <section className="palette-group" aria-label={group.label} key={group.id}>
-              <header>
-                <span><strong>{group.label}</strong><small>{group.description}</small></span>
-                <em>{group.entries.length}</em>
-              </header>
+              <header><span><strong>{group.label}</strong><small>{group.description}</small></span><em>{group.entries.length}</em></header>
               {group.entries.map(({ definition, role }) => (
-                <button className={`palette-item palette-item--${definition.executor.kind}`} type="button" key={`${definition.type_id}@${definition.version}`} disabled={!draft || busy} onClick={() => addDefinition(definition)}>
+                <button className={`palette-item palette-item--${definition.executor.kind}`} type="button" key={`${definition.type_id}@${definition.version}`} disabled={!draft || busy || !graphEditable} onClick={() => addDefinition(definition)}>
                   <span className="palette-icon">{definition.executor.kind === 'manual_external' ? 'ME' : definition.executor.kind === 'command' ? 'CM' : 'PY'}</span>
-                  <span><strong>{definition.type_id}</strong><small>{role} · {definition.execution_mode} · {definition.input_ports.length} in / {definition.output_ports.length} out</small></span>
-                  <em>{definition.version}</em>
+                  <span><strong>{definition.type_id}</strong><small>{role} · {definition.execution_mode} · {definition.input_ports.length} in / {definition.output_ports.length} out</small></span><em>{definition.version}</em>
                 </button>
               ))}
             </section>
@@ -578,20 +1374,23 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           {catalogGroups.length === 0 && <p className="palette-empty">没有匹配的 exact definition。</p>}
         </div>
         <div className="selection-actions">
-          <button className="button button--ghost" type="button" disabled={selectedNodeIds.size === 0 || busy} onClick={copySelected}>复制所选</button>
-          <button className="button button--danger" type="button" disabled={(selectedNodeIds.size === 0 && selectedEdgeIds.size === 0) || busy} onClick={deleteSelected}>删除所选</button>
+          <button className="button button--ghost" type="button" disabled={selectedNodeIds.size === 0 || busy || !graphEditable} onClick={copySelected}>复制所选</button>
+          <button className="button button--danger" type="button" disabled={(selectedNodeIds.size === 0 && selectedEdgeIds.size === 0) || busy || !graphEditable} onClick={deleteSelected}>删除所选</button>
         </div>
-        <div className="palette-note">
-          <span>自由 DAG</span>
-          <p>节点与 presets 来自当前 .zniku 的 Python catalog。拖动框选可多选；端口只按精确 data_type 与 cardinality 连接。</p>
-        </div>
+        <div className="palette-note"><span>自由 DAG</span><p>节点与 presets 来自当前 .zniku 的 Python catalog。Run snapshot 只读；切回当前 Graph 后才能编辑。</p></div>
       </aside>
 
       <section className="canvas-panel" aria-label="Studio Designer 画布">
         <div className="canvas-context">
-          <div><span className="context-mode">Designer + Runtime</span><strong>{currentRun ? `${currentRun.run_id} · ${currentRun.state}` : '编辑与运行使用同一张 Graph'}</strong></div>
-          <div className="canvas-legend"><span><i className="legend-dot source" /> automatic</span><span><i className="legend-dot engine" /> manual external</span><span><i className="legend-dot final" /> completed</span><span><i className="legend-dot operator" /> stale / failed</span></div>
+          <div><span className="context-mode">{showRunSnapshot && currentRun ? 'Run snapshot' : 'Current Graph'}</span><strong>{viewedSummary ? `${viewedSummary.run_id} · ${targetLabel(viewedSummary)} · ${viewedSummary.state}` : '编辑与运行使用同一 Project authority'}</strong></div>
+          <div className="canvas-context-actions">
+            {currentRun && <button type="button" onClick={() => { setShowRunSnapshot((value) => !value); setSelectedNodeIds(new Set()); setSelectedEdgeIds(new Set()) }}>{showRunSnapshot ? '查看当前 Graph' : '查看 Run snapshot'}</button>}
+            {snapshotChanged && <span>Run snapshot / 当前 Graph 已变化</span>}
+          </div>
         </div>
+        {viewedSummary && <div className="run-summary-strip" aria-label="Run summary"><strong>{targetLabel(viewedSummary)}</strong><span>{viewedSummary.state_counts.completed}/{viewedSummary.node_count} completed</span><span>{viewedSummary.state_counts.running} running</span><span>{viewedSummary.state_counts.waiting_external} waiting external</span><span>{viewedSummary.state_counts.failed} failed</span></div>}
+        {firstWaiting && <div className="next-action-banner" role="status"><span className="eyebrow">NEXT ACTION</span><div className="next-action-copy"><strong>{firstWaiting.node_id} 等待人工外部输出</strong>{firstWaiting.external_handoff?.instructions && <small>{firstWaiting.external_handoff.instructions}</small>}<code>{firstWaitingInputPaths.join(', ')} → {firstWaiting.external_handoff?.output_targets.map((target) => target.path).join(', ')}</code></div><span>{readinessLabel(readiness.get(firstWaiting.node_run_id) ?? null)} · {elapsedLabel(firstWaiting.created_at)}</span><button type="button" onClick={() => { setSelectedNodeIds(new Set([firstWaiting.node_id])); setSelectedEdgeIds(new Set()) }}>定位等待节点</button></div>}
+        {!firstWaiting && globalActionSummary && <div className="next-action-banner" role="status"><span className="eyebrow">NEXT ACTION</span><strong>{globalActionSummary.run_id} 需要操作者处理</strong><span>{globalActionSummary.state_counts.waiting_external} waiting external · {globalActionSummary.state_counts.failed} failed</span><button type="button" onClick={() => { if (globalActionSummary.run_id === viewRunId && firstFailed) { setSelectedNodeIds(new Set([firstFailed.node_id])); setSelectedEdgeIds(new Set()) } else { selectRun(globalActionSummary.run_id) } }}>{globalActionSummary.run_id === viewRunId && firstFailed ? '定位失败节点' : '查看需处理 Run'}</button></div>}
         {loading ? (
           <div className="authority-empty" role="status"><strong>正在连接 Project Service…</strong></div>
         ) : boundaryError && !draft ? (
@@ -599,110 +1398,99 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         ) : !draft ? (
           <div className="authority-empty"><strong>尚未打开工程</strong><p>输入本地 .zniku 路径后选择“打开”或“新建”。</p></div>
         ) : (
-          <ReactFlow
-            nodes={flowNodes}
-            edges={flowEdges}
-            nodeTypes={nodeTypes}
-            onNodesChange={handleNodesChange}
-            onEdgesChange={handleEdgesChange}
-            onSelectionChange={handleSelection}
-            onNodeClick={handleNodeClick}
-            onEdgeClick={handleEdgeClick}
-            onConnect={handleConnect}
-            isValidConnection={connectionIsValid}
-            nodesDraggable={!busy}
-            nodesConnectable={!busy}
-            edgesReconnectable={false}
-            deleteKeyCode={null}
-            selectionOnDrag
-            multiSelectionKeyCode={['Control', 'Meta']}
-            fitView
-            minZoom={0.2}
-            maxZoom={1.8}
-            colorMode="dark"
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} color="#263344" />
-            <Controls position="bottom-left" showInteractive={false} />
-            <MiniMap position="bottom-right" pannable zoomable nodeColor="#d89b45" />
+          <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onNodesChange={handleNodesChange} onEdgesChange={handleEdgesChange} onSelectionChange={handleSelection} onNodeClick={handleNodeClick} onEdgeClick={handleEdgeClick} onConnect={handleConnect} isValidConnection={connectionIsValid} nodesDraggable={!busy && graphEditable} nodesConnectable={!busy && graphEditable} edgesReconnectable={false} deleteKeyCode={null} selectionOnDrag multiSelectionKeyCode={['Control', 'Meta']} fitView minZoom={0.2} maxZoom={1.8} colorMode="dark" proOptions={{ hideAttribution: true }}>
+            <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} color="#263344" /><Controls position="bottom-left" showInteractive={false} /><MiniMap position="bottom-right" pannable zoomable nodeColor="#d89b45" />
           </ReactFlow>
         )}
       </section>
 
       <aside className="inspector-panel">
-        <div className="panel-heading inspector-heading">
-          <span className="eyebrow">INSPECTOR</span>
-          <h2>{selectedNode?.node_id ?? (selectedEdge ? 'Data edge' : '未选择实体')}</h2>
-          {(selectedNode || selectedEdge) && <code>{selectedNode ? `${selectedNode.type_id}@${selectedNode.definition_version}` : edgeId(selectedEdge!)}</code>}
-        </div>
+        <div className="panel-heading inspector-heading"><span className="eyebrow">INSPECTOR</span><h2>{selectedNode?.node_id ?? (selectedEdge ? 'Data edge' : '未选择实体')}</h2>{(selectedNode || selectedEdge) && <code>{selectedNode ? `${selectedNode.type_id}@${selectedNode.definition_version}` : edgeId(selectedEdge!)}</code>}</div>
         {selectedNode && selectedDefinition ? (
           <div className="inspector-content">
-            <section>
-              <h3>Node binding</h3>
-              <dl className="property-list"><div><dt>type_id</dt><dd>{selectedNode.type_id}</dd></div><div><dt>version</dt><dd>{selectedNode.definition_version}</dd></div><div><dt>executor</dt><dd>{selectedDefinition.executor.kind}</dd></div></dl>
-            </section>
-            <section>
-              <h3>Typed ports</h3>
-              {(['input_ports', 'output_ports'] as const).map((direction) => (
-                <div className="port-group" key={direction}>
-                  <span className="port-group-label">{direction}</span>
-                  {selectedDefinition[direction].length ? selectedDefinition[direction].map((port) => (
-                    <div className="port-summary" key={port.port_id}><span>{port.port_id}</span><code>{port.data_type} · {port.cardinality}{port.required ? ' · required' : ''}</code></div>
-                  )) : <div className="port-empty">none</div>}
-                </div>
-              ))}
-            </section>
-            <section>
-              <h3>Parameters</h3>
-              <textarea aria-label="节点参数 JSON" value={parameterText} onChange={(event) => setParameterText(event.target.value)} rows={8} />
-              <button className="button button--primary inspector-action" type="button" disabled={busy} onClick={applyParameters}>应用参数到 Draft</button>
-              <details><summary>parameter_schema</summary><pre>{JSON.stringify(selectedDefinition.parameter_schema, null, 2)}</pre></details>
-            </section>
-            {selectedNodeRun && (
-              <section aria-label="Runtime details">
-                <h3>Runtime · attempt {selectedNodeRun.attempt}</h3>
-                <div className={`runtime-status runtime-status--${selectedNodeRun.state}`}>{selectedNodeRun.state}{selectedNodeRun.progress !== null ? ` · ${Math.round(selectedNodeRun.progress * 100)}%` : ''}</div>
-                {selectedNodeRun.error && <p className="runtime-error">{selectedNodeRun.error.reason}<br />{selectedNodeRun.error.message}</p>}
-                {selectedOutputs.map((artifact) => <div className="output-path" key={artifact.artifact_id}><span>{artifact.producer_port_id}</span><code>{artifact.path}</code></div>)}
-                {selectedNodeRun.external_handoff && (
-                  <div className="handoff-panel">
-                    <strong>External handoff</strong>
-                    {selectedNodeRun.external_handoff.instructions && <p>{selectedNodeRun.external_handoff.instructions}</p>}
-                    <span>Inputs</span>{handoffInputs.map((path, index) => <code key={`${selectedNodeRun.external_handoff!.input_artifact_ids[index]}-${index}`}>{path}</code>)}
-                    <span>Targets</span>{selectedNodeRun.external_handoff.output_targets.map((target) => <code key={`${target.port_id}-${target.ordinal ?? 'one'}`}>{target.port_id}{target.ordinal === null ? '' : ` #${target.ordinal}`} · {target.path}</code>)}
-                    <button className="button button--primary inspector-action" type="button" disabled={serviceBusy || selectedNodeRun.state !== 'waiting_external'} onClick={() => void invoke({ operation: 'submit_external', node_run_id: selectedNodeRun.node_run_id }, false)}>Submit external output</button>
-                  </div>
-                )}
-                {(selectedLog || selectedNodeRun.log_path) && (
-                  <div className="node-logs">
-                    {selectedNodeRun.log_path && <code>{selectedNodeRun.log_path}</code>}
-                    <h4>stdout{selectedLog?.stdout_truncated ? '（尾部截断）' : ''}</h4><pre>{selectedLog?.stdout_available ? selectedLog.stdout || '（空）' : '（不可用）'}</pre>
-                    <h4>stderr{selectedLog?.stderr_truncated ? '（尾部截断）' : ''}</h4><pre>{selectedLog?.stderr_available ? selectedLog.stderr || '（空）' : '（不可用）'}</pre>
-                  </div>
-                )}
-              </section>
-            )}
+            <section><h3>Node binding</h3><dl className="property-list"><div><dt>type_id</dt><dd>{selectedNode.type_id}</dd></div><div><dt>version</dt><dd>{selectedNode.definition_version}</dd></div><div><dt>executor</dt><dd>{selectedDefinition.executor.kind}</dd></div></dl></section>
+            <section><h3>Typed ports</h3>{(['input_ports', 'output_ports'] as const).map((direction) => <div className="port-group" key={direction}><span className="port-group-label">{direction}</span>{selectedDefinition[direction].length ? selectedDefinition[direction].map((port) => <div className="port-summary" key={port.port_id}><span>{port.port_id}</span><code>{port.data_type} · {port.cardinality}{port.required ? ' · required' : ''}</code></div>) : <div className="port-empty">none</div>}</div>)}</section>
+            <section><h3>Parameters</h3><textarea aria-label="节点参数 JSON" value={parameterText} onChange={(event) => setParameterText(event.target.value)} rows={8} readOnly={!graphEditable} /><button className="button button--primary inspector-action" type="button" disabled={busy || !graphEditable} onClick={applyParameters}>应用参数到 Draft</button><details><summary>parameter_schema</summary><pre>{JSON.stringify(selectedDefinition.parameter_schema, null, 2)}</pre></details></section>
+            {selectedNodeRun && <section aria-label="Runtime details"><h3>Runtime · attempt {selectedNodeRun.attempt}</h3><div className={`runtime-status runtime-status--${selectedNodeRun.state}`}>{selectedNodeRun.state}{selectedNodeRun.progress !== null ? ` · ${Math.round(selectedNodeRun.progress * 100)}%` : ''}{selectedNodeRun.reused_from_result_id ? ' · reused' : ''}</div>{selectedNodeRun.error && <p className="runtime-error">{selectedNodeRun.error.reason}<br />{selectedNodeRun.error.message}</p>}{selectedOutputs.map((artifact) => <div className="output-path" key={artifact.artifact_id}><span>{artifact.producer_port_id}</span><code>{artifact.path}</code></div>)}{selectedNodeRun.external_handoff && <div className="handoff-panel"><strong>External handoff</strong>{selectedNodeRun.external_handoff.instructions && <p>{selectedNodeRun.external_handoff.instructions}</p>}<span>Inputs</span>{handoffInputs.map((path, index) => <div className="handoff-path" key={`${selectedNodeRun.external_handoff!.input_artifact_ids[index]}-${index}`}><code>{path}</code><button type="button" onClick={() => void copyPath(path)}>Copy input path</button></div>)}<span>Targets</span>{selectedNodeRun.external_handoff.output_targets.map((target) => <div className="handoff-path" key={`${target.port_id}-${target.ordinal ?? 'one'}`}><code>{target.port_id}{target.ordinal === null ? '' : ` #${target.ordinal}`} · {target.path}</code><button type="button" onClick={() => void copyPath(target.path)}>Copy target path</button></div>)}<div className="readiness-state">Readiness · {readinessLabel(readiness.get(selectedNodeRun.node_run_id) ?? null)}</div><button className="button button--primary inspector-action" type="button" disabled={detailMutationBlocked || health.readiness.stale || selectedNodeRun.state !== 'waiting_external' || !readiness.get(selectedNodeRun.node_run_id) || readiness.get(selectedNodeRun.node_run_id)!.targets.some((target) => target.state !== 'present' && target.state !== 'probe_passed')} onClick={() => void validateAndSubmit(selectedNodeRun)}>Validate and submit</button></div>}{(selectedLog || selectedNodeRun.log_path) && <div className="node-logs">{selectedNodeRun.log_path && <code>{selectedNodeRun.log_path}</code>}<h4>stdout{selectedLog?.stdout_truncated ? '（尾部截断）' : ''}</h4><pre>{health.log.stale ? '（日志通道离线，保留最后可信内容）' : selectedLog?.stdout_available ? selectedLog.stdout || '（空）' : '（不可用）'}</pre><h4>stderr{selectedLog?.stderr_truncated ? '（尾部截断）' : ''}</h4><pre>{health.log.stale ? '（日志通道离线，保留最后可信内容）' : selectedLog?.stderr_available ? selectedLog.stderr || '（空）' : '（不可用）'}</pre></div>}</section>}
           </div>
         ) : selectedEdge ? (
-          <div className="inspector-content">
-            <section><h3>Edge</h3><p>{selectedEdge.source_node_id}.{selectedEdge.source_port_id} → {selectedEdge.target_node_id}.{selectedEdge.target_port_id}</p>
-              {selectedEdge.ordinal !== null && <label className="ordinal-editor">Ordinal<input aria-label="Edge ordinal" type="number" min={0} value={selectedEdge.ordinal} onChange={(event) => updateGraph((current) => reorderEdge(current, edgeId(selectedEdge), Number(event.target.value)))} /></label>}
-              <button className="button button--danger inspector-action" type="button" onClick={deleteSelected}>删除所选连接</button>
-            </section>
-          </div>
+          <div className="inspector-content"><section><h3>Edge</h3><p>{selectedEdge.source_node_id}.{selectedEdge.source_port_id} → {selectedEdge.target_node_id}.{selectedEdge.target_port_id}</p>{selectedEdge.ordinal !== null && <label className="ordinal-editor">Ordinal<input aria-label="Edge ordinal" type="number" min={0} value={selectedEdge.ordinal} disabled={!graphEditable} onChange={(event) => updateGraph((current) => reorderEdge(current, edgeId(selectedEdge), Number(event.target.value)))} /></label>}<button className="button button--danger inspector-action" type="button" disabled={!graphEditable} onClick={deleteSelected}>删除所选连接</button></section></div>
         ) : <div className="empty-inspector">选择节点或连接查看配置、运行状态、日志和输出。</div>}
+        {waitingNodeRuns.length > 0 && (
+          <section className="handoff-queue" aria-label="External Handoff 队列">
+            <h3>External Handoff Queue</h3>
+            {waitingNodeRuns.map((nodeRun) => {
+              const node = currentRun?.graph_snapshot.nodes.find(
+                (item) => item.node_id === nodeRun.node_id,
+              )
+              const modelName = node
+                ? parameterTextValue(node.parameters, 'actual_model_name', 'model_name')
+                : null
+              const modelVersion = node
+                ? parameterTextValue(node.parameters, 'actual_model_version', 'model_version')
+                : null
+              const handoff = nodeRun.external_handoff!
+              const observedReadiness = readiness.get(nodeRun.node_run_id) ?? null
+              const inputPaths = handoff.input_artifact_ids.map(
+                (artifactId) => artifactsById.get(artifactId)?.path ?? `未解析 Artifact：${artifactId}`,
+              )
+              const canValidate =
+                !detailMutationBlocked &&
+                !health.readiness.stale &&
+                observedReadiness !== null &&
+                observedReadiness.targets.every(
+                  (target) => target.state === 'present' || target.state === 'probe_passed',
+                )
+              return (
+                <article aria-label={`Handoff ${nodeRun.node_id}`} key={nodeRun.node_run_id}>
+                  <button
+                    className="handoff-queue-select"
+                    type="button"
+                    onClick={() => {
+                      setSelectedNodeIds(new Set([nodeRun.node_id]))
+                      setSelectedEdgeIds(new Set())
+                    }}
+                  >
+                    <strong>{nodeRun.node_id}</strong>
+                    <span>{modelName ?? 'model not declared'}{modelVersion ? ` · ${modelVersion}` : ''}</span>
+                    <em>{readinessLabel(observedReadiness)} · {elapsedLabel(nodeRun.created_at)}</em>
+                  </button>
+                  {handoff.instructions && <p>{handoff.instructions}</p>}
+                  <span className="handoff-queue-label">Inputs</span>
+                  {inputPaths.map((path, index) => (
+                    <div className="handoff-path" key={`${handoff.input_artifact_ids[index]}-${index}`}>
+                      <code>{path}</code>
+                      <button type="button" onClick={() => void copyPath(path)}>Copy input path</button>
+                    </div>
+                  ))}
+                  <span className="handoff-queue-label">Targets</span>
+                  {handoff.output_targets.map((target) => (
+                    <div className="handoff-path" key={`${target.port_id}-${target.ordinal ?? 'one'}`}>
+                      <code>{target.port_id}{target.ordinal === null ? '' : ` #${target.ordinal}`} · {target.path}</code>
+                      <button type="button" onClick={() => void copyPath(target.path)}>Copy target path</button>
+                    </div>
+                  ))}
+                  <button
+                    className="button button--primary handoff-queue-submit"
+                    type="button"
+                    disabled={!canValidate}
+                    onClick={() => void validateAndSubmit(nodeRun)}
+                  >
+                    Validate and submit
+                  </button>
+                </article>
+              )
+            })}
+          </section>
+        )}
+        {viewedSummary?.actionable && <button className="button button--danger abandon-run" type="button" disabled={detailMutationBlocked || viewedSummary.state_counts.running > 0} onClick={() => viewRunId && void executeCommands([{ operation: 'abandon_run', run_id: viewRunId }])}>Abandon Run</button>}
         {clientHint && <p className="client-hint" role="status">{clientHint}</p>}
         {boundaryError && draft && <p className="client-hint client-hint--error" role="alert">{boundaryError}</p>}
       </aside>
 
       <section className={`bottom-drawer ${bottomOpen ? 'is-open' : ''}`}>
-        <button className="drawer-toggle" type="button" onClick={() => setBottomOpen((open) => !open)}><span>Graph diagnostics</span><strong>{diagnostics.length + (envelope?.error ? 1 : 0)}</strong><i>{bottomOpen ? '收起' : '展开'}</i></button>
-        {bottomOpen && <div className="diagnostic-list">
-          {diagnostics.length === 0 && !envelope?.error ? <div className="diagnostic-empty">graph_valid · 可保存和运行</div> : diagnostics.map((diagnostic) => (
-            <article className="diagnostic diagnostic--error" key={`${diagnostic.code}-${diagnostic.node_id ?? diagnostic.edge_id ?? 'graph'}`}><span className="diagnostic-icon">×</span><div><span className="diagnostic-code">{diagnostic.code}</span><strong>Graph Core</strong><p>{diagnostic.message}</p></div><button type="button" onClick={() => { if (diagnostic.node_id) setSelectedNodeIds(new Set([diagnostic.node_id])); if (diagnostic.edge_id) setSelectedEdgeIds(new Set([diagnostic.edge_id])) }}>定位</button></article>
-          ))}
-          {envelope?.error && <article className="diagnostic diagnostic--error"><span className="diagnostic-icon">×</span><div><span className="diagnostic-code">{envelope.error.code}</span><strong>Project Service</strong><p>{envelope.error.message}</p></div></article>}
-        </div>}
+        <button className="drawer-toggle" type="button" onClick={() => setBottomOpen((open) => !open)}><span>Graph diagnostics</span><strong>{diagnostics.length + (status?.error ? 1 : 0)}</strong><i>{bottomOpen ? '收起' : '展开'}</i></button>
+        {bottomOpen && <div className="diagnostic-list">{diagnostics.length === 0 && !status?.error ? <div className="diagnostic-empty">graph_valid · 可保存和运行</div> : diagnostics.map((diagnostic) => <article className="diagnostic diagnostic--error" key={`${diagnostic.code}-${diagnostic.node_id ?? diagnostic.edge_id ?? 'graph'}`}><span className="diagnostic-icon">×</span><div><span className="diagnostic-code">{diagnostic.code}</span><strong>Graph Core</strong><p>{diagnostic.message}</p></div><button type="button" onClick={() => { if (diagnostic.node_id) setSelectedNodeIds(new Set([diagnostic.node_id])); if (diagnostic.edge_id) setSelectedEdgeIds(new Set([diagnostic.edge_id])) }}>定位</button></article>)}{status?.error && <article className="diagnostic diagnostic--error"><span className="diagnostic-icon">×</span><div><span className="diagnostic-code">{status.error.code}</span><strong>Project Service</strong><p>{status.error.message}</p></div></article>}{historyCursor && <button className="button button--ghost" type="button" disabled={historyBusy} onClick={() => void loadOlderRuns()}>{historyBusy ? '读取历史…' : '加载更早 Run'}</button>}</div>}
       </section>
     </main>
   )

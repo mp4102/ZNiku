@@ -1,22 +1,34 @@
-"""提供仅监听 loopback 的 ZNIKU Studio Project Service HTTP host。
+"""提供仅监听 loopback 的 ZNIKU Studio 0.2.1 Project Service HTTP host。
 
-HTTP 层只负责严格 JSON、有限 body、CORS 与错误状态映射；Project、Graph 和 Runtime 语义全部委托给
-``ProjectServiceApplication``。服务不接受 shell 字符串、attempt 工作根或 handoff 输出路径。
+HTTP 层只负责严格 JSON、有限 body、CORS、固定身份路由和 query 解析；Project、Graph、Runtime 与
+readiness 语义全部委托给 ``ProjectServiceApplication``。客户端不能提供日志路径、attempt 工作根或
+handoff target，所有未知路由、字段和 query 默认失败关闭。
 """
 
 from __future__ import annotations
 
 import json
+import re
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address
 from typing import Any, Final, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from .service import ProjectServiceApplication, ProjectServiceError
 
 _MAX_BODY_BYTES: Final = 4 * 1024 * 1024
 _DEFAULT_PORT: Final = 18_765
+_RUNTIME_ID = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+_RUN_DETAIL_ROUTE = re.compile(rf"^/api/studio/runs/(?P<run_id>{_RUNTIME_ID})$")
+_NODE_LOG_ROUTE = re.compile(
+    rf"^/api/studio/runs/(?P<run_id>{_RUNTIME_ID})/node-runs/"
+    rf"(?P<node_run_id>{_RUNTIME_ID})/logs$"
+)
+_READINESS_ROUTE = re.compile(
+    rf"^/api/studio/runs/(?P<run_id>{_RUNTIME_ID})/node-runs/"
+    rf"(?P<node_run_id>{_RUNTIME_ID})/handoff-readiness$"
+)
 
 
 class _ResponseWriter(Protocol):
@@ -27,12 +39,7 @@ class _ResponseWriter(Protocol):
 
 
 def _write_response_body(writer: _ResponseWriter, data: bytes) -> bool:
-    """写出 JSON body；客户端主动断连只终止当前传输，不重放已经执行的命令。
-
-    Studio 轮询关闭、页面刷新或进程退出都可能让 socket 在响应序列化完成后消失。此时
-    Project/Runtime mutation 已有自己的事务边界，HTTP host 只能放弃这次响应，不能把传输错误冒充
-    领域失败或再次执行命令。
-    """
+    """写出 JSON body；客户端主动断连只终止当前传输，不重放 mutation。"""
 
     try:
         writer.write(data)
@@ -45,6 +52,10 @@ class _JsonPayloadError(ValueError):
     """表示 JSON 不是 Project Service 接受的闭合数据。"""
 
 
+class _QueryError(ValueError):
+    """表示 URL query 含未知、重复或非法值。"""
+
+
 def _is_http_loopback_origin(value: str) -> bool:
     """只接受无凭据、无路径的 HTTP loopback Origin 序列化值。"""
 
@@ -53,7 +64,6 @@ def _is_http_loopback_origin(value: str) -> bool:
     try:
         parsed = urlsplit(value)
         hostname = parsed.hostname
-        # 读取 ``port`` 会主动拒绝越界、非数字或多冒号端口。
         _ = parsed.port
     except ValueError:
         return False
@@ -98,13 +108,39 @@ def _load_json(payload: bytes) -> object:
         raise _JsonPayloadError("request body 不是合法 UTF-8 JSON") from error
 
 
+def _strict_query(raw_query: str, *, allowed: frozenset[str]) -> dict[str, str]:
+    """解析唯一键 query；空值、未知键与重复键全部拒绝。"""
+
+    try:
+        pairs = parse_qsl(
+            raw_query,
+            keep_blank_values=True,
+            strict_parsing=True,
+            encoding="utf-8",
+            errors="strict",
+            max_num_fields=8,
+        )
+    except (UnicodeError, ValueError) as error:
+        raise _QueryError("query 不是合法的 UTF-8 form encoding") from error
+    result: dict[str, str] = {}
+    for key, value in pairs:
+        if key not in allowed:
+            raise _QueryError(f"未知 query 字段：{key}")
+        if key in result:
+            raise _QueryError(f"重复 query 字段：{key}")
+        if not value:
+            raise _QueryError(f"query 字段 {key} 不得为空")
+        result[key] = value
+    return result
+
+
 def make_project_service_handler(
     application: ProjectServiceApplication,
 ) -> type[BaseHTTPRequestHandler]:
     """把一个 process-local Project session 绑定到 HTTP handler。"""
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "ZNIKUProjectService/0.2.0"
+        server_version = "ZNIKUProjectService/0.2.1"
 
         def do_OPTIONS(self) -> None:
             if not self._origin_allowed():
@@ -116,20 +152,86 @@ def make_project_service_handler(
         def do_GET(self) -> None:
             if not self._origin_allowed():
                 return
-            if self.path != "/api/studio/status":
+            try:
+                parsed = urlsplit(self.path)
+                if parsed.scheme or parsed.netloc or parsed.fragment:
+                    raise _QueryError("request target 必须是本地 origin-form")
+                payload = self._route_get(parsed.path, parsed.query)
+            except _QueryError as error:
+                self._error(
+                    HTTPStatus.BAD_REQUEST,
+                    "E_PROJECT_SERVICE_QUERY_INVALID",
+                    str(error),
+                )
+                return
+            except ProjectServiceError as error:
+                self._error(
+                    HTTPStatus(error.http_status),
+                    error.code,
+                    error.message,
+                    related_run_ids=error.related_run_ids,
+                )
+                return
+            if payload is None:
                 self._error(HTTPStatus.NOT_FOUND, "E_PROJECT_SERVICE_ROUTE", "未知 route")
                 return
-            try:
-                envelope = application.inspect()
-            except ProjectServiceError as error:
-                self._error(HTTPStatus(error.http_status), error.code, error.message)
-                return
-            self._json(HTTPStatus.OK, envelope.model_dump(mode="json"))
+            self._json(HTTPStatus.OK, payload)
+
+        def _route_get(self, path: str, raw_query: str) -> object | None:
+            if path == "/api/studio/status":
+                query = _strict_query(raw_query, allowed=frozenset({"view_run_id"}))
+                return application.inspect(query.get("view_run_id")).model_dump(mode="json")
+            if path == "/api/studio/runs":
+                query = _strict_query(raw_query, allowed=frozenset({"cursor", "limit"}))
+                raw_limit = query.get("limit")
+                if raw_limit is None:
+                    limit = 20
+                elif not raw_limit.isascii() or not raw_limit.isdecimal():
+                    raise _QueryError("limit 必须是 1..100 的 decimal integer")
+                else:
+                    limit = int(raw_limit)
+                return application.list_run_summaries(
+                    cursor=query.get("cursor"),
+                    limit=limit,
+                ).model_dump(mode="json")
+
+            detail_match = _RUN_DETAIL_ROUTE.fullmatch(path)
+            if detail_match is not None:
+                _strict_query(raw_query, allowed=frozenset())
+                return application.inspect_run_detail(detail_match.group("run_id")).model_dump(
+                    mode="json"
+                )
+            log_match = _NODE_LOG_ROUTE.fullmatch(path)
+            if log_match is not None:
+                _strict_query(raw_query, allowed=frozenset())
+                return application.inspect_node_logs(
+                    log_match.group("run_id"),
+                    log_match.group("node_run_id"),
+                ).model_dump(mode="json")
+            readiness_match = _READINESS_ROUTE.fullmatch(path)
+            if readiness_match is not None:
+                query = _strict_query(raw_query, allowed=frozenset({"probe"}))
+                raw_probe = query.get("probe", "false")
+                if raw_probe not in {"false", "true"}:
+                    raise _QueryError("probe 只能是 false 或 true")
+                return application.inspect_external_readiness(
+                    run_id=readiness_match.group("run_id"),
+                    node_run_id=readiness_match.group("node_run_id"),
+                    probe=raw_probe == "true",
+                ).model_dump(mode="json")
+            return None
 
         def do_POST(self) -> None:
             if not self._origin_allowed():
                 return
-            if self.path != "/api/studio/command":
+            parsed = urlsplit(self.path)
+            if (
+                parsed.path != "/api/studio/command"
+                or parsed.query
+                or parsed.fragment
+                or parsed.scheme
+                or parsed.netloc
+            ):
                 self._error(HTTPStatus.NOT_FOUND, "E_PROJECT_SERVICE_ROUTE", "未知 route")
                 return
             content_types = self.headers.get_all("Content-Type", [])
@@ -161,7 +263,12 @@ def make_project_service_handler(
                 self._error(HTTPStatus.BAD_REQUEST, "E_PROJECT_SERVICE_JSON", str(error))
                 return
             except ProjectServiceError as error:
-                self._error(HTTPStatus(error.http_status), error.code, error.message)
+                self._error(
+                    HTTPStatus(error.http_status),
+                    error.code,
+                    error.message,
+                    related_run_ids=error.related_run_ids,
+                )
                 return
             self._json(HTTPStatus.OK, envelope.model_dump(mode="json"))
 
@@ -186,8 +293,24 @@ def make_project_service_handler(
             if not _write_response_body(self.wfile, data):
                 self.close_connection = True
 
-        def _error(self, status: HTTPStatus, code: str, message: str) -> None:
-            self._json(status, {"error": {"code": code, "message": message[:4096]}})
+        def _error(
+            self,
+            status: HTTPStatus,
+            code: str,
+            message: str,
+            *,
+            related_run_ids: tuple[str, ...] = (),
+        ) -> None:
+            self._json(
+                status,
+                {
+                    "error": {
+                        "code": code,
+                        "message": message[:4096],
+                        "related_run_ids": list(related_run_ids),
+                    }
+                },
+            )
 
         def _origin_allowed(self) -> bool:
             origins = self.headers.get_all("Origin", [])

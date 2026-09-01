@@ -266,6 +266,58 @@ export function cloneJsonObject(value: JsonObject): JsonObject {
   return cloneJson(value) as JsonObject
 }
 
+function canonicalJson(value: JsonValue): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key]!)}`)
+    .join(',')}}`
+}
+
+function incomingExecutionEdges(graph: GraphWire, nodeId: string): ReadonlyArray<string> {
+  return graph.edges
+    .filter((edge) => edge.target_node_id === nodeId)
+    .map((edge) =>
+      JSON.stringify([
+        edge.source_node_id,
+        edge.source_port_id,
+        edge.target_port_id,
+        edge.ordinal,
+      ]),
+    )
+    .sort()
+}
+
+/**
+ * 比较当前 Graph 与 Run snapshot 中一个节点的完整 execution signature。
+ *
+ * ``ui_position`` 不影响执行；type/version、严格参数及全部直接入边中任一项变化时，历史 NodeRun
+ * 都不得叠加到当前 Graph，避免把已完成状态伪装成新配置的结果。
+ */
+export function nodeExecutionSignatureMatches(
+  currentGraph: GraphWire,
+  runGraph: GraphWire,
+  nodeId: string,
+): boolean {
+  const current = currentGraph.nodes.find((node) => node.node_id === nodeId)
+  const historical = runGraph.nodes.find((node) => node.node_id === nodeId)
+  if (!current || !historical) return false
+  if (
+    current.type_id !== historical.type_id ||
+    current.definition_version !== historical.definition_version ||
+    canonicalJson(current.parameters) !== canonicalJson(historical.parameters)
+  ) {
+    return false
+  }
+  const currentEdges = incomingExecutionEdges(currentGraph, nodeId)
+  const historicalEdges = incomingExecutionEdges(runGraph, nodeId)
+  return (
+    currentEdges.length === historicalEdges.length &&
+    currentEdges.every((edge, index) => edge === historicalEdges[index])
+  )
+}
+
 export function defaultParameters(definition: NodeDefinitionWire): JsonObject {
   const properties = definition.parameter_schema.properties
   if (properties === null || typeof properties !== 'object' || Array.isArray(properties)) return {}

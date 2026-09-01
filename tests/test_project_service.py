@@ -359,9 +359,10 @@ def test_run_to_executes_only_target_ancestor_closure(tmp_path: Path) -> None:
 
     started = application.command({"operation": "run_to", "node_id": "copy"})
     assert started.active_run_id is not None
+    run_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
-    completed = application.inspect()
-    run = completed.runs[-1]
+    completed = application.inspect_run_detail(run_id)
+    run = completed.run
 
     assert run.state is RunState.COMPLETED
     assert run.selected_targets == ("copy",)
@@ -371,10 +372,17 @@ def test_run_to_executes_only_target_ancestor_closure(tmp_path: Path) -> None:
     artifacts = {item.artifact_id: item for item in completed.artifacts}
     copy_artifact = artifacts[_latest(run, "copy").output_artifact_ids[0]]
     assert Path(copy_artifact.path).read_text(encoding="utf-8") == "alpha-copy"
-    logs = {item.node_run_id: item for item in completed.logs}
-    assert logs[_latest(run, "source").node_run_id].stdout.splitlines() == ["source stdout"]
-    assert logs[_latest(run, "source").node_run_id].stderr.splitlines() == ["source stderr"]
-    assert logs[_latest(run, "copy").node_run_id].stdout.splitlines() == ["copy stdout"]
+    source_logs = application.inspect_node_logs(
+        run.run_id,
+        _latest(run, "source").node_run_id,
+    ).log
+    copy_logs = application.inspect_node_logs(
+        run.run_id,
+        _latest(run, "copy").node_run_id,
+    ).log
+    assert source_logs.stdout.splitlines() == ["source stdout"]
+    assert source_logs.stderr.splitlines() == ["source stderr"]
+    assert copy_logs.stdout.splitlines() == ["copy stdout"]
 
 
 def test_run_all_waits_for_manual_handoff_then_submit_registers_output(
@@ -387,38 +395,46 @@ def test_run_all_waits_for_manual_handoff_then_submit_registers_output(
     )
     application.command({"operation": "open_project", "path": str(store.path)})
 
-    application.command({"operation": "run_all"})
+    started = application.command({"operation": "run_all"})
+    assert started.active_run_id is not None
+    run_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
-    waiting_envelope = application.inspect()
-    waiting_run = waiting_envelope.runs[-1]
+    waiting_envelope = application.inspect_run_detail(run_id)
+    waiting_run = waiting_envelope.run
     waiting = _latest(waiting_run, "manual")
 
     assert waiting_run.state is RunState.RUNNING
     assert waiting.state is NodeRunState.WAITING_EXTERNAL
     assert waiting.external_handoff is not None
-    assert waiting.external_handoff.instructions == "把输入复制到声明目标后提交"
-    assert len(waiting.external_handoff.input_artifact_ids) == 1
+    handoff = waiting.external_handoff
+    assert handoff.instructions == "把输入复制到声明目标后提交"
+    assert len(handoff.input_artifact_ids) == 1
     input_artifact = next(
         item
         for item in waiting_envelope.artifacts
-        if item.artifact_id == waiting.external_handoff.input_artifact_ids[0]
+        if item.artifact_id == handoff.input_artifact_ids[0]
     )
     assert Path(input_artifact.path).read_text(encoding="utf-8") == "alpha-copy"
-    output_target = waiting.external_handoff.output_targets[0]
+    output_target = handoff.output_targets[0]
     Path(output_target.path).write_text("manual-result", encoding="utf-8")
 
     submitted = application.command(
-        {"operation": "submit_external", "node_run_id": waiting.node_run_id}
+        {
+            "operation": "submit_external",
+            "run_id": waiting_run.run_id,
+            "node_run_id": waiting.node_run_id,
+            "handoff_id": handoff.handoff_id,
+        }
     )
     assert submitted.active_run_id == waiting_run.run_id
     assert application.wait_until_idle(timeout=5)
-    completed_envelope = application.inspect()
-    completed_run = completed_envelope.runs[-1]
+    completed_envelope = application.inspect_run_detail(waiting_run.run_id)
+    completed_run = completed_envelope.run
     completed = _latest(completed_run, "manual")
 
     assert completed_run.state is RunState.COMPLETED
     assert completed.state is NodeRunState.COMPLETED
-    assert completed.external_handoff == waiting.external_handoff
+    assert completed.external_handoff == handoff
     output = next(
         item
         for item in completed_envelope.artifacts
@@ -428,10 +444,6 @@ def test_run_all_waits_for_manual_handoff_then_submit_registers_output(
     assert Path(output.path).read_text(encoding="utf-8") == "manual-result"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Phase 1 将禁止普通 Run all 静默创建第二个 non-terminal Run",
-)
 def test_run_all_rejects_duplicate_when_waiting_run_is_actionable(tmp_path: Path) -> None:
     """已有 waiting_external Run 时返回稳定冲突，并且不得留下第二个 Run。"""
 
@@ -441,35 +453,27 @@ def test_run_all_rejects_duplicate_when_waiting_run_is_actionable(tmp_path: Path
         python_adapters=_adapters({}),
     )
     application.command({"operation": "open_project", "path": str(store.path)})
-    application.command({"operation": "run_all"})
+    started = application.command({"operation": "run_all"})
+    assert started.active_run_id is not None
+    run_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
     before = application.inspect()
-    waiting = before.runs[-1]
+    waiting = application.inspect_run_detail(run_id).run
     assert waiting.state is RunState.RUNNING
     assert _latest(waiting, "manual").state is NodeRunState.WAITING_EXTERNAL
-    before_ids = tuple(run.run_id for run in before.runs)
+    before_ids = tuple(summary.run_id for summary in before.run_summaries)
 
-    conflict: ProjectServiceError | None = None
-    try:
+    with pytest.raises(ProjectServiceError) as captured:
         application.command({"operation": "run_all"})
-    except ProjectServiceError as error:
-        conflict = error
-    finally:
-        # 当前缺陷会真的启动第二个 worker；必须收束它，避免预期失败测试泄漏后台线程。
-        assert application.wait_until_idle(timeout=5)
     after = application.inspect()
 
-    assert conflict is not None
+    conflict = captured.value
     assert conflict.code == "E_PROJECT_SERVICE_RUN_CONFLICT"
     assert conflict.http_status == 409
-    assert getattr(conflict, "related_run_ids", ()) == (waiting.run_id,)
-    assert tuple(run.run_id for run in after.runs) == before_ids
+    assert conflict.related_run_ids == (waiting.run_id,)
+    assert tuple(summary.run_id for summary in after.run_summaries) == before_ids
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Phase 1 将提供无状态副作用的 external handoff readiness 查询",
-)
 def test_missing_handoff_target_readiness_is_read_only(tmp_path: Path) -> None:
     """缺失目标只报告 missing，不得失败 attempt、登记 Artifact 或推进下游。"""
 
@@ -479,14 +483,18 @@ def test_missing_handoff_target_readiness_is_read_only(tmp_path: Path) -> None:
         python_adapters=_adapters({}),
     )
     application.command({"operation": "open_project", "path": str(store.path)})
-    application.command({"operation": "run_all"})
+    started = application.command({"operation": "run_all"})
+    assert started.active_run_id is not None
+    run_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
     before = application.inspect()
-    waiting_run = before.runs[-1]
+    before_detail = application.inspect_run_detail(run_id)
+    waiting_run = before_detail.run
     waiting = _latest(waiting_run, "manual")
     assert waiting.state is NodeRunState.WAITING_EXTERNAL
     assert waiting.external_handoff is not None
-    target = waiting.external_handoff.output_targets[0]
+    handoff = waiting.external_handoff
+    target = handoff.output_targets[0]
     assert not Path(target.path).exists()
     attempt_root = Path(waiting.work_dir)
 
@@ -504,19 +512,20 @@ def test_missing_handoff_target_readiness_is_read_only(tmp_path: Path) -> None:
     before_tree = attempt_tree()
 
     try:
-        readiness = application.inspect_external_readiness(  # type: ignore[attr-defined]
+        readiness = application.inspect_external_readiness(
             run_id=waiting_run.run_id,
             node_run_id=waiting.node_run_id,
             probe=False,
         )
     finally:
         after = application.inspect()
-        after_run = next(run for run in after.runs if run.run_id == waiting_run.run_id)
+        after_detail = application.inspect_run_detail(waiting_run.run_id)
+        after_run = after_detail.run
         after_waiting = _latest(after_run, "manual")
         assert after_run == waiting_run
         assert after_waiting.state is NodeRunState.WAITING_EXTERNAL
         assert after_waiting.error is None
-        assert after.artifacts == before.artifacts
+        assert after_detail.artifacts == before_detail.artifacts
         assert after.latest_results == before.latest_results
         assert not Path(target.path).exists()
         assert attempt_tree() == before_tree
@@ -524,7 +533,7 @@ def test_missing_handoff_target_readiness_is_read_only(tmp_path: Path) -> None:
     assert readiness.contract_version == "0.2.1"
     assert readiness.run_id == waiting_run.run_id
     assert readiness.node_run_id == waiting.node_run_id
-    assert readiness.handoff_id == waiting.external_handoff.handoff_id
+    assert readiness.handoff_id == handoff.handoff_id
     assert readiness.probe_requested is False
     assert readiness.ready_for_submit is False
     assert len(readiness.targets) == 1
@@ -543,27 +552,33 @@ def test_terminal_rerun_creates_new_run_and_reuses_unaffected_source(tmp_path: P
         python_adapters=_adapters(calls),
     )
     application.command({"operation": "open_project", "path": str(store.path)})
-    application.command({"operation": "run_all"})
+    started = application.command({"operation": "run_all"})
+    assert started.active_run_id is not None
+    first_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
-    first_envelope = application.inspect()
-    first = first_envelope.runs[-1]
+    first = application.inspect_run_detail(first_id).run
     first_copy = _latest(first, "copy")
     assert first.state is RunState.COMPLETED
 
-    application.command(
+    rerun_started = application.command(
         {
             "operation": "rerun_from_here",
             "run_id": first.run_id,
             "node_id": "copy",
         }
     )
+    assert rerun_started.active_run_id is not None
+    second_id = rerun_started.active_run_id
     assert application.wait_until_idle(timeout=5)
     rerun_envelope = application.inspect()
-    second = rerun_envelope.runs[-1]
+    second = application.inspect_run_detail(second_id).run
     second_source = _latest(second, "source")
     second_copy = _latest(second, "copy")
 
-    assert tuple(item.run_id for item in rerun_envelope.runs) == (first.run_id, second.run_id)
+    assert tuple(item.run_id for item in rerun_envelope.run_summaries) == (
+        second.run_id,
+        first.run_id,
+    )
     assert second.run_id != first.run_id
     assert first.state is RunState.COMPLETED
     assert second.state is RunState.COMPLETED
@@ -583,9 +598,10 @@ def test_terminal_rerun_rejects_node_outside_referenced_run(tmp_path: Path) -> N
         python_adapters=_adapters({}),
     )
     application.command({"operation": "open_project", "path": str(store.path)})
-    application.command({"operation": "run_to", "node_id": "source"})
+    started = application.command({"operation": "run_to", "node_id": "source"})
+    assert started.active_run_id is not None
     assert application.wait_until_idle(timeout=5)
-    first = application.inspect().runs[-1]
+    first = application.inspect_run_detail(started.active_run_id).run
     assert first.state is RunState.COMPLETED
     assert tuple(item.node_id for item in first.node_runs) == ("source",)
 
@@ -600,7 +616,7 @@ def test_terminal_rerun_rejects_node_outside_referenced_run(tmp_path: Path) -> N
 
     assert captured.value.code == "E_PROJECT_SERVICE_RERUN_NODE_OUTSIDE_RUN"
     assert captured.value.http_status == 409
-    assert tuple(item.run_id for item in application.inspect().runs) == (first.run_id,)
+    assert tuple(item.run_id for item in application.inspect().run_summaries) == (first.run_id,)
 
 
 def test_rerun_after_project_edit_uses_new_snapshot_instead_of_waiting_run(
@@ -612,9 +628,11 @@ def test_rerun_after_project_edit_uses_new_snapshot_instead_of_waiting_run(
         python_adapters=_adapters({}),
     )
     application.command({"operation": "open_project", "path": str(store.path)})
-    application.command({"operation": "run_all"})
+    started = application.command({"operation": "run_all"})
+    assert started.active_run_id is not None
+    first_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
-    first = application.inspect().runs[-1]
+    first = application.inspect_run_detail(first_id).run
     assert _latest(first, "manual").state is NodeRunState.WAITING_EXTERNAL
 
     snapshot = store.load()
@@ -630,16 +648,18 @@ def test_rerun_after_project_edit_uses_new_snapshot_instead_of_waiting_run(
         }
     )
     application.command({"operation": "save_project", "project": changed})
-    application.command(
+    rerun_started = application.command(
         {
             "operation": "rerun_from_here",
             "run_id": first.run_id,
             "node_id": "source",
         }
     )
+    assert rerun_started.active_run_id is not None
     assert application.wait_until_idle(timeout=5)
     inspected = application.inspect()
-    second = inspected.runs[-1]
+    second_detail = application.inspect_run_detail(rerun_started.active_run_id)
+    second = second_detail.run
 
     assert second.run_id != first.run_id
     assert second.graph_snapshot == changed.graph
@@ -647,10 +667,14 @@ def test_rerun_after_project_edit_uses_new_snapshot_instead_of_waiting_run(
     assert _latest(second, "manual").state is NodeRunState.WAITING_EXTERNAL
     source_output = next(
         artifact
-        for artifact in inspected.artifacts
+        for artifact in second_detail.artifacts
         if artifact.artifact_id == _latest(second, "source").output_artifact_ids[0]
     )
     assert Path(source_output.path).read_text("utf-8") == "beta"
+    assert tuple(summary.run_id for summary in inspected.run_summaries) == (
+        second.run_id,
+        first.run_id,
+    )
 
 
 def test_rerun_after_graph_edit_rejects_new_node_absent_from_referenced_run(
@@ -662,9 +686,10 @@ def test_rerun_after_graph_edit_rejects_new_node_absent_from_referenced_run(
         python_adapters=_adapters({}),
     )
     application.command({"operation": "open_project", "path": str(store.path)})
-    application.command({"operation": "run_all"})
+    started = application.command({"operation": "run_all"})
+    assert started.active_run_id is not None
     assert application.wait_until_idle(timeout=5)
-    first = application.inspect().runs[-1]
+    first = application.inspect_run_detail(started.active_run_id).run
     assert first.state is RunState.RUNNING
 
     snapshot = store.load()
@@ -696,7 +721,7 @@ def test_rerun_after_graph_edit_rejects_new_node_absent_from_referenced_run(
 
     assert captured.value.code == "E_PROJECT_SERVICE_RERUN_NODE_OUTSIDE_RUN"
     assert captured.value.http_status == 409
-    assert tuple(item.run_id for item in application.inspect().runs) == (first.run_id,)
+    assert tuple(item.run_id for item in application.inspect().run_summaries) == (first.run_id,)
 
 
 def test_log_projection_rejects_tampered_work_dir_outside_host_root(tmp_path: Path) -> None:
@@ -706,9 +731,10 @@ def test_log_projection_rejects_tampered_work_dir_outside_host_root(tmp_path: Pa
         python_adapters=_adapters({}),
     )
     application.command({"operation": "open_project", "path": str(store.path)})
-    application.command({"operation": "run_all"})
+    started = application.command({"operation": "run_all"})
+    assert started.active_run_id is not None
     assert application.wait_until_idle(timeout=5)
-    run = application.inspect().runs[-1]
+    run = application.inspect_run_detail(started.active_run_id).run
     source = _latest(run, "source")
     assert source.state is NodeRunState.COMPLETED
 
@@ -723,8 +749,7 @@ def test_log_projection_rejects_tampered_work_dir_outside_host_root(tmp_path: Pa
             (str(outside), str(outside_logs), source.node_run_id),
         )
 
-    inspected = application.inspect()
-    projection = next(item for item in inspected.logs if item.node_run_id == source.node_run_id)
+    projection = application.inspect_node_logs(run.run_id, source.node_run_id).log
 
     assert projection.stdout == ""
     assert projection.stderr == ""

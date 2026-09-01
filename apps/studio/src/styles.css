@@ -900,6 +900,204 @@ button {
   grid-template-rows: 108px minmax(0, 1fr) 48px;
 }
 
+/* 0.2.1 Run 可观察性：展示身份、后台 operation 与人工下一动作保持清晰分离。 */
+.run-selector {
+  display: grid;
+  gap: 3px;
+  min-width: 190px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.run-selector select {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #0d151f;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.canvas-context-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #d7a85d;
+  font-size: 11px;
+}
+
+.canvas-context-actions button,
+.next-action-banner button,
+.handoff-path button {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(18, 29, 42, .94);
+  color: var(--text);
+  cursor: pointer;
+  padding: 5px 8px;
+}
+
+.run-summary-strip {
+  position: absolute;
+  z-index: 5;
+  top: 54px;
+  left: 14px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid rgba(216, 155, 69, .26);
+  border-radius: 5px;
+  background: rgba(10, 17, 25, .9);
+  color: var(--muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.run-summary-strip strong {
+  color: var(--text);
+}
+
+.next-action-banner {
+  position: absolute;
+  z-index: 7;
+  top: 92px;
+  left: 14px;
+  right: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 12px;
+  border: 1px solid rgba(222, 159, 62, .72);
+  border-radius: 6px;
+  background: rgba(50, 35, 16, .95);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .3);
+  color: #f5d59d;
+}
+
+.next-action-banner strong {
+  color: #fff1d5;
+}
+
+.next-action-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.next-action-copy small,
+.next-action-copy code {
+  overflow: hidden;
+  color: #d7bd91;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.handoff-path {
+  display: grid;
+  gap: 5px;
+  margin: 4px 0 8px;
+}
+
+.handoff-path code {
+  overflow-wrap: anywhere;
+}
+
+.handoff-path button {
+  justify-self: start;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.readiness-state {
+  margin: 8px 0;
+  color: #efc47f;
+  font-size: 11px;
+}
+
+.handoff-queue {
+  margin: 14px;
+  padding: 12px;
+  border: 1px solid rgba(216, 155, 69, .3);
+  border-radius: 6px;
+  background: rgba(16, 24, 34, .8);
+}
+
+.handoff-queue h3 {
+  margin: 0 0 8px;
+}
+
+.handoff-queue article + article {
+  margin-top: 6px;
+}
+
+.handoff-queue article {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #0d151f;
+}
+
+.handoff-queue .handoff-queue-select {
+  display: grid;
+  width: 100%;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.handoff-queue article span,
+.handoff-queue article em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.handoff-queue article em {
+  color: #d8a962;
+}
+
+.handoff-queue article p {
+  margin: 0;
+  color: #a8b5c4;
+  font-size: 10px;
+}
+
+.handoff-queue .handoff-queue-label {
+  margin-top: 3px;
+  color: #b7c3d2;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.handoff-queue .handoff-path {
+  min-width: 0;
+  margin: 0;
+}
+
+.handoff-queue .handoff-queue-submit {
+  width: 100%;
+  margin-top: 3px;
+}
+
+.abandon-run {
+  margin: 0 14px 14px;
+  width: calc(100% - 28px);
+}
+
 .studio-workspace.has-bottom-drawer {
   grid-template-rows: 108px minmax(0, 1fr) 174px;
 }
@@ -949,6 +1147,25 @@ button {
 
 .studio-workspace .top-actions .button {
   padding: 0 10px;
+}
+
+.channel-health {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 238px;
+  gap: 2px 8px;
+}
+
+.channel-health span {
+  overflow: hidden;
+  color: #78909f;
+  font: 7px/1.3 'IBM Plex Mono', monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-health span.is-stale {
+  color: #ef9299;
 }
 
 .project-fields {

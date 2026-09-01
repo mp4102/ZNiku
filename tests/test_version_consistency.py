@@ -1,4 +1,4 @@
-"""锁定 ZNIKU 0.2.0 正式 Python、Studio 与锁文件版本一致性。"""
+"""锁定 0.2.0 产品身份与 0.2.1 Project Service wire 的分轴版本。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,8 @@ def test_release_identity_is_0_2_0() -> None:
     assert (ROOT / "VERSION").read_text("utf-8").strip() == "0.2.0"
     assert pyproject["project"]["version"] == "0.2.0"
     assert zniku.__version__ == "0.2.0"
-    assert PROJECT_SERVICE_CONTRACT_VERSION == "0.2.0"
+    # v0.2.1 Phase 1 先成对切换浏览器 wire；产品/package 版本留到 Phase 6 收敛。
+    assert PROJECT_SERVICE_CONTRACT_VERSION == "0.2.1"
     assert MEDIA_NODE_VERSION == "0.2.0"
 
     studio_package: dict[str, Any] = json.loads(

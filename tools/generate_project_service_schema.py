@@ -8,8 +8,14 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
-from zniku.project_service import ProjectServiceEnvelope
-from zniku.project_service.models import ProjectServiceCommand
+from zniku.project_service.models import (
+    ExternalHandoffReadiness,
+    NodeLogEnvelope,
+    ProjectServiceCommand,
+    RunDetailEnvelope,
+    RunSummaryPageEnvelope,
+    StatusEnvelope,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "apps" / "studio" / "src" / "service" / "project-service.schema.json"
@@ -78,13 +84,43 @@ def verify_local_references(schema: dict[str, object]) -> None:
 
 
 def render_schema() -> str:
-    """输出 response root 并内嵌 command Schema；它是 drift gate，不是领域 digest。"""
+    """输出 status root、全部定向 response 与 command Schema；它只是 wire drift gate。"""
 
-    envelope_schema = ProjectServiceEnvelope.model_json_schema(mode="serialization")
-    require_serialized_properties(envelope_schema)
+    response_models = (
+        StatusEnvelope,
+        RunSummaryPageEnvelope,
+        RunDetailEnvelope,
+        NodeLogEnvelope,
+        ExternalHandoffReadiness,
+    )
+    envelope_schema: dict[str, object] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": "#/$defs/StatusEnvelope",
+        "$defs": {},
+        "title": "StatusEnvelope",
+    }
+    envelope_definitions = envelope_schema["$defs"]
+    if not isinstance(envelope_definitions, dict):  # pragma: no cover - 本地常量防御
+        raise RuntimeError("Project Service response $defs 必须是 object")
+    for model in response_models:
+        model_schema = model.model_json_schema(mode="serialization")
+        require_serialized_properties(model_schema)
+        nested = model_schema.pop("$defs", {})
+        if not isinstance(nested, dict):
+            raise RuntimeError(f"{model.__name__} $defs 必须是 object")
+        for name, definition in nested.items():
+            existing = envelope_definitions.get(name)
+            if existing is not None and existing != definition:
+                raise RuntimeError(f"Project Service response Schema definition 冲突：{name}")
+            envelope_definitions[name] = definition
+        model_schema.pop("$schema", None)
+        existing = envelope_definitions.get(model.__name__)
+        if existing is not None and existing != model_schema:
+            raise RuntimeError(f"Project Service response root definition 冲突：{model.__name__}")
+        envelope_definitions[model.__name__] = model_schema
+
     command_schema = TypeAdapter(ProjectServiceCommand).json_schema()
     command_definitions = namespace_command_definitions(command_schema)
-    envelope_definitions = envelope_schema.setdefault("$defs", {})
     for name, definition in command_definitions.items():
         if name in envelope_definitions:
             raise RuntimeError(f"Project Service Schema definition 冲突：{name}")

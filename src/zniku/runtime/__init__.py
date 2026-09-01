@@ -65,6 +65,7 @@ from .runner import (
     RunnerInput,
     RunnerInterrupted,
     RunnerResult,
+    ValidatedOutput,
 )
 from .scheduler import (
     InstantNodeState,
@@ -131,6 +132,7 @@ __all__ = [
     "StaleAnalysis",
     "StaleNode",
     "StaleReason",
+    "ValidatedOutput",
     "analyze_reuse",
     "analyze_stale",
     "capture_node_signature",

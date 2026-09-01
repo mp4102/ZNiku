@@ -617,6 +617,43 @@ class NodeRunner:
                 layout,
             ) from error
 
+    def inspect_manual_outputs(
+        self,
+        request: NodeExecutionRequest,
+        handoff: ManualHandoff,
+    ) -> tuple[ValidatedOutput, ...]:
+        """只读验证一个既有 handoff 的全部声明输出。
+
+        该入口与正式 Submit 复用 request、handoff、媒体 probe 和节点 validator 合同，但不会创建
+        attempt 目录、写日志、构造 Artifact/NodeResult identity 或持久化任何状态。调用方仍必须在
+        正式 Submit 时重新验证，以关闭 readiness 与提交之间的文件变化窗口。
+        """
+
+        ordered_inputs = self._validate_request(request)
+        executor = request.definition.executor
+        if request.definition.execution_mode is not ExecutionMode.MANUAL_EXTERNAL or not isinstance(
+            executor, ManualExternalExecutorSpec
+        ):
+            raise self._configuration_error("E_RUNNER_MODE_INVALID", "节点不是 manual_external")
+        layout = self._existing_layout(request.node_run_id)
+        targets = self._output_targets(request, layout)
+        self._assert_handoff_matches(
+            request,
+            handoff,
+            layout,
+            targets,
+            ordered_inputs,
+            executor.instructions,
+        )
+        produced = self._resolve_produced_outputs((), targets, layout.work_dir)
+        validated, _ = self._validate_outputs(
+            request,
+            layout,
+            produced,
+            exit_code=None,
+        )
+        return validated
+
     def _validate_request(self, request: NodeExecutionRequest) -> tuple[RunnerInput, ...]:
         if request.attempt < 1:
             raise self._configuration_error("E_RUNNER_ATTEMPT_INVALID", "attempt 必须从 1 开始")
@@ -1157,6 +1194,65 @@ class NodeRunner:
         media_summary: Mapping[str, object],
         adapter_validation_summary: Mapping[str, object],
     ) -> RunnerResult:
+        validated, node_validation = self._validate_outputs(
+            request,
+            layout,
+            outputs,
+            exit_code=exit_code,
+        )
+        artifacts = tuple(
+            RunnerArtifact(
+                artifact_id=str(uuid4()),
+                kind=item.kind,
+                path=item.path,
+                producer_node_run_id=request.node_run_id,
+                producer_port_id=item.port_id,
+                ordinal=None,
+                frame_range=item.frame_range,
+                media_info=item.media_info,
+                size=item.size,
+                mtime_ns=item.mtime_ns,
+            )
+            for item in validated
+        )
+        output_media = {item.port_id: dict(item.media_info) for item in validated}
+        validation: dict[str, object] = {
+            "default": {
+                item.port_id: {
+                    "exists": True,
+                    "nonempty": True,
+                    "probe": item.kind in _MEDIA_TYPES,
+                }
+                for item in validated
+            },
+            "adapter": dict(adapter_validation_summary),
+        }
+        if node_validation is not None:
+            validation["node"] = dict(node_validation.summary)
+            validation["warnings"] = list(node_validation.warnings)
+        return RunnerResult(
+            result_id=str(uuid4()),
+            node_run_id=request.node_run_id,
+            attempt=request.attempt,
+            artifacts=artifacts,
+            work_dir=layout.work_dir,
+            stdout_log_path=layout.stdout_log_path,
+            stderr_log_path=layout.stderr_log_path,
+            exit_code=exit_code,
+            media_summary={"adapter": dict(media_summary), "outputs": output_media},
+            validation_summary=validation,
+        )
+
+    def _validate_outputs(
+        self,
+        request: NodeExecutionRequest,
+        layout: _AttemptLayout,
+        outputs: tuple[OutputTarget, ...],
+        *,
+        exit_code: int | None,
+    ) -> tuple[tuple[ValidatedOutput, ...], NodeValidatorResult | None]:
+        """执行不产生结果 identity 的共享输出验证路径。"""
+
         validated: list[ValidatedOutput] = []
         for output in outputs:
             try:
@@ -1218,45 +1314,8 @@ class NodeRunner:
                 )
             )
 
-        node_validation = self._run_node_validator(request, layout, tuple(validated))
-        artifacts = tuple(
-            RunnerArtifact(
-                artifact_id=str(uuid4()),
-                kind=item.kind,
-                path=item.path,
-                producer_node_run_id=request.node_run_id,
-                producer_port_id=item.port_id,
-                ordinal=None,
-                frame_range=item.frame_range,
-                media_info=item.media_info,
-                size=item.size,
-                mtime_ns=item.mtime_ns,
-            )
-            for item in validated
-        )
-        output_media = {item.port_id: dict(item.media_info) for item in validated}
-        validation: dict[str, object] = {
-            "default": {
-                item.port_id: {"exists": True, "nonempty": True, "probe": item.kind in _MEDIA_TYPES}
-                for item in validated
-            },
-            "adapter": dict(adapter_validation_summary),
-        }
-        if node_validation is not None:
-            validation["node"] = dict(node_validation.summary)
-            validation["warnings"] = list(node_validation.warnings)
-        return RunnerResult(
-            result_id=str(uuid4()),
-            node_run_id=request.node_run_id,
-            attempt=request.attempt,
-            artifacts=artifacts,
-            work_dir=layout.work_dir,
-            stdout_log_path=layout.stdout_log_path,
-            stderr_log_path=layout.stderr_log_path,
-            exit_code=exit_code,
-            media_summary={"adapter": dict(media_summary), "outputs": output_media},
-            validation_summary=validation,
-        )
+        values = tuple(validated)
+        return values, self._run_node_validator(request, layout, values)
 
     def _run_node_validator(
         self,

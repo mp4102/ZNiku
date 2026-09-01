@@ -158,7 +158,7 @@ def test_http_routes_cors_and_strict_json_fail_closed(tmp_path: Path) -> None:
             origin="http://127.0.0.1:4173",
         )
         assert status == 200
-        assert envelope["contract_version"] == "0.2.0"
+        assert envelope["contract_version"] == "0.2.1"
         assert envelope["project_path"] is None
         assert headers.get("Access-Control-Allow-Origin") == "http://127.0.0.1:4173"
         assert headers.get("Cache-Control") == "no-store"
@@ -340,6 +340,7 @@ def test_get_remains_available_and_mutation_rejects_while_worker_is_busy(
         status, started, _ = _post_command(base_url, {"operation": "run_all"})
         assert status == 200
         assert started["active_operation"] == "run_all"
+        run_id = cast(str, started["active_run_id"])
         assert entered.wait(timeout=5)
 
         began = monotonic()
@@ -348,7 +349,11 @@ def test_get_remains_available_and_mutation_rejects_while_worker_is_busy(
         assert status == 200
         assert elapsed < 2
         assert running["active_operation"] == "run_all"
-        node_runs = running["runs"][-1]["node_runs"]
+        summary = next(item for item in running["run_summaries"] if item["run_id"] == run_id)
+        assert summary["state"] == "running"
+        status, detail, _ = _request(base_url, f"/api/studio/runs/{run_id}")
+        assert status == 200
+        node_runs = detail["run"]["node_runs"]
         assert node_runs[0]["state"] == "running"
 
         status, failure, _ = _post_command(base_url, {"operation": "run_all"})
@@ -360,7 +365,11 @@ def test_get_remains_available_and_mutation_rejects_while_worker_is_busy(
         status, completed, _ = _request(base_url, "/api/studio/status")
         assert status == 200
         assert completed["active_operation"] is None
-        assert completed["runs"][-1]["state"] == "completed"
+        summary = next(item for item in completed["run_summaries"] if item["run_id"] == run_id)
+        assert summary["state"] == "completed"
+        status, detail, _ = _request(base_url, f"/api/studio/runs/{run_id}")
+        assert status == 200
+        assert detail["run"]["state"] == "completed"
 
 
 def test_http_log_projection_does_not_follow_tampered_paths_outside_work_root(
@@ -386,8 +395,9 @@ def test_http_log_projection_does_not_follow_tampered_paths_outside_work_root(
         )
         run_status, run_payload, _ = _post_command(base_url, {"operation": "run_all"})
         assert run_status == 200, run_payload
+        run_id = cast(str, run_payload["active_run_id"])
         assert application.wait_until_idle(timeout=5)
-        completed = application.inspect().runs[-1]
+        completed = application.inspect_run_detail(run_id).run
         node_run = completed.node_runs[0]
 
         outside = tmp_path / "outside"
@@ -401,9 +411,15 @@ def test_http_log_projection_does_not_follow_tampered_paths_outside_work_root(
                 (str(outside), str(outside_logs), node_run.node_run_id),
             )
 
-        status, envelope, _ = _request(base_url, "/api/studio/status")
+        status, envelope, _ = _request(
+            base_url,
+            f"/api/studio/runs/{run_id}/node-runs/{node_run.node_run_id}/logs",
+        )
         assert status == 200
-        log = next(item for item in envelope["logs"] if item["node_run_id"] == node_run.node_run_id)
+        assert envelope["contract_version"] == "0.2.1"
+        assert envelope["run_id"] == run_id
+        log = envelope["log"]
+        assert log["node_run_id"] == node_run.node_run_id
         assert log["stdout"] == ""
         assert log["stderr"] == ""
         assert log["stdout_available"] is False

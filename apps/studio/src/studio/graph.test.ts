@@ -8,6 +8,7 @@ import {
   edgeId,
   inspectGraph,
   isStudioConnectionValid,
+  nodeExecutionSignatureMatches,
 } from './graph'
 import {
   dataSourceDefinition,
@@ -25,7 +26,7 @@ const connection = (
   targetHandle = 'in',
 ): Connection => ({ source, target, sourceHandle, targetHandle })
 
-describe('Studio 0.2.0 Graph interactions', () => {
+describe('Studio 0.2.1 Graph interactions', () => {
   it('按精确 data_type、one 占用和 DAG cycle 拒绝连接', () => {
     expect(
       isStudioConnectionValid(
@@ -292,5 +293,59 @@ describe('Studio 0.2.0 Graph interactions', () => {
     expect(inspectGraph(invalidSchemaSnapshot).map((item) => item.code)).toContain(
       'E_PARAMETER_SCHEMA_INVALID',
     )
+  })
+
+  it('当前 Graph 只有完整 execution signature 一致时才叠加 Run snapshot', () => {
+    const runGraph = projectSnapshot.project.graph
+    const withMovedUi: GraphWire = {
+      ...runGraph,
+      nodes: runGraph.nodes.map((node) =>
+        node.node_id === 'transform' ? { ...node, ui_position: { x: 999, y: 999 } } : node,
+      ),
+    }
+    expect(nodeExecutionSignatureMatches(withMovedUi, runGraph, 'transform')).toBe(true)
+
+    const withReorderedParameterKeys: GraphWire = {
+      ...runGraph,
+      nodes: runGraph.nodes.map((node) =>
+        node.node_id === 'transform'
+          ? { ...node, parameters: { model_name: 'Synthetic Model', strength: 3 } }
+          : node,
+      ),
+    }
+    expect(nodeExecutionSignatureMatches(withReorderedParameterKeys, runGraph, 'transform'))
+      .toBe(true)
+
+    const changedParameters: GraphWire = {
+      ...runGraph,
+      nodes: runGraph.nodes.map((node) =>
+        node.node_id === 'transform'
+          ? { ...node, parameters: { strength: 4, model_name: 'Synthetic Model' } }
+          : node,
+      ),
+    }
+    expect(nodeExecutionSignatureMatches(changedParameters, runGraph, 'transform')).toBe(false)
+
+    const changedVersion: GraphWire = {
+      ...runGraph,
+      nodes: runGraph.nodes.map((node) =>
+        node.node_id === 'transform' ? { ...node, definition_version: '0.2.0+changed' } : node,
+      ),
+    }
+    expect(nodeExecutionSignatureMatches(changedVersion, runGraph, 'transform')).toBe(false)
+
+    const changedIncoming: GraphWire = {
+      ...runGraph,
+      edges: runGraph.edges.map((edge) =>
+        edge.target_node_id === 'transform' ? { ...edge, ordinal: 0 } : edge,
+      ),
+    }
+    expect(nodeExecutionSignatureMatches(changedIncoming, runGraph, 'transform')).toBe(false)
+
+    const changedOnlyOutgoing: GraphWire = {
+      ...runGraph,
+      edges: runGraph.edges.filter((edge) => edge.source_node_id !== 'transform'),
+    }
+    expect(nodeExecutionSignatureMatches(changedOnlyOutgoing, runGraph, 'transform')).toBe(true)
   })
 })

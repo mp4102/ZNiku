@@ -2,15 +2,29 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
-import type { StudioCommand, StudioEnvelope } from './studio/contracts'
-import type { StudioGateway } from './studio/gateway'
+import type {
+  ExternalHandoffReadiness,
+  NodeLogEnvelope,
+  RunDetailEnvelope,
+  RunSummaryPageEnvelope,
+  StatusEnvelope,
+  StudioCommand,
+} from './studio/contracts'
+import { StudioGatewayError, type StudioGateway } from './studio/gateway'
 import {
-  handoffEnvelope,
+  failedDetailEnvelope,
   failedStatusEnvelope,
+  handoffDetailEnvelope,
+  handoffEnvelope,
+  handoffFixtureIds,
+  handoffLogEnvelope,
+  handoffReadinessEnvelope,
   projectSnapshot,
+  runningProgressDetail,
   runningProgressEnvelope,
   sourceDefinition,
   studioEnvelope,
+  threeRunDetail,
   threeRunEnvelope,
   threeRunFixtureIds,
   transformDefinition,
@@ -21,41 +35,117 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-class RecordingGateway implements StudioGateway {
-  readonly commands: StudioCommand[] = []
-  inspectCount = 0
-
-  constructor(public envelope: StudioEnvelope = studioEnvelope()) {}
-
-  async inspect(): Promise<StudioEnvelope> {
-    this.inspectCount += 1
-    return this.envelope
-  }
-
-  async command(command: StudioCommand): Promise<StudioEnvelope> {
-    this.commands.push(command)
-    return this.envelope
-  }
-}
-
 class Deferred<T> {
   readonly promise: Promise<T>
   resolve!: (value: T) => void
+  reject!: (error: unknown) => void
 
   constructor() {
-    this.promise = new Promise<T>((resolve) => {
+    this.promise = new Promise<T>((resolve, reject) => {
       this.resolve = resolve
+      this.reject = reject
     })
   }
 }
 
-describe('ZNIKU Studio 0.2.0 single Project workspace', () => {
+interface GatewayOptions {
+  readonly inspect?: (viewRunId: string | null, count: number) => Promise<StatusEnvelope> | StatusEnvelope
+  readonly listRuns?: (
+    cursor: string | null,
+    limit: number,
+  ) => Promise<RunSummaryPageEnvelope> | RunSummaryPageEnvelope
+  readonly detail?: (runId: string, count: number) => Promise<RunDetailEnvelope> | RunDetailEnvelope
+  readonly readiness?: (
+    runId: string,
+    nodeRunId: string,
+    probe: boolean,
+  ) => Promise<ExternalHandoffReadiness> | ExternalHandoffReadiness
+  readonly log?: (runId: string, nodeRunId: string) => Promise<NodeLogEnvelope> | NodeLogEnvelope
+  readonly command?: (command: StudioCommand) => Promise<StatusEnvelope> | StatusEnvelope
+}
+
+class RecordingGateway implements StudioGateway {
+  readonly commands: StudioCommand[] = []
+  readonly inspectArguments: Array<string | null> = []
+  readonly readinessArguments: Array<readonly [string, string, boolean]> = []
+  readonly historyArguments: Array<readonly [string | null, number]> = []
+  readonly logArguments: Array<readonly [string, string]> = []
+  inspectCount = 0
+  inspectRunCount = 0
+
+  constructor(
+    public envelope: StatusEnvelope = studioEnvelope(),
+    private readonly options: GatewayOptions = {},
+  ) {}
+
+  async inspect(viewRunId: string | null = null): Promise<StatusEnvelope> {
+    this.inspectCount += 1
+    this.inspectArguments.push(viewRunId)
+    return this.options.inspect?.(viewRunId, this.inspectCount) ?? this.envelope
+  }
+
+  async listRuns(cursor: string | null = null, limit = 20): Promise<RunSummaryPageEnvelope> {
+    this.historyArguments.push([cursor, limit])
+    if (this.options.listRuns) return this.options.listRuns(cursor, limit)
+    return { contract_version: '0.2.1', run_summaries: [], next_run_cursor: null }
+  }
+
+  async inspectRun(runId: string): Promise<RunDetailEnvelope> {
+    this.inspectRunCount += 1
+    if (this.options.detail) return this.options.detail(runId, this.inspectRunCount)
+    const reason = this.envelope.run_summaries.find((item) => item.run_id === runId)?.error?.reason
+    if (reason === 'cancelled' || reason === 'interrupted') return failedDetailEnvelope(reason)
+    if (Object.values(threeRunFixtureIds).includes(runId as never)) return threeRunDetail(runId)
+    return handoffDetailEnvelope()
+  }
+
+  async inspectLog(runId: string, nodeRunId: string): Promise<NodeLogEnvelope> {
+    this.logArguments.push([runId, nodeRunId])
+    if (this.options.log) return this.options.log(runId, nodeRunId)
+    const envelope = handoffLogEnvelope()
+    return { ...envelope, run_id: runId, log: { ...envelope.log, node_run_id: nodeRunId } }
+  }
+
+  async inspectReadiness(
+    runId: string,
+    nodeRunId: string,
+    probe: boolean,
+  ): Promise<ExternalHandoffReadiness> {
+    this.readinessArguments.push([runId, nodeRunId, probe])
+    if (this.options.readiness) return this.options.readiness(runId, nodeRunId, probe)
+    return probe
+      ? handoffReadinessEnvelope('probe_passed', true)
+      : handoffReadinessEnvelope('present', false)
+  }
+
+  async command(command: StudioCommand): Promise<StatusEnvelope> {
+    this.commands.push(command)
+    return this.options.command?.(command) ?? this.envelope
+  }
+}
+
+function unavailableGateway(message: string): StudioGateway {
+  const reject = () => Promise.reject(new Error(message))
+  return {
+    inspect: reject,
+    listRuns: reject,
+    inspectRun: reject,
+    inspectLog: reject,
+    inspectReadiness: reject,
+    command: reject,
+  }
+}
+
+async function flushReact(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
+describe('ZNIKU Studio 0.2.1 Project workspace', () => {
   it('Project Service 缺失时失败关闭，不回退旧正式投影或浏览器 mock', async () => {
-    const gateway: StudioGateway = {
-      inspect: () => Promise.reject(new Error('loopback offline')),
-      command: () => Promise.reject(new Error('loopback offline')),
-    }
-    render(<App gateway={gateway} />)
+    render(<App gateway={unavailableGateway('loopback offline')} />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Project Service 不可用')
     expect(screen.getByRole('alert')).toHaveTextContent('loopback offline')
@@ -70,7 +160,7 @@ describe('ZNIKU Studio 0.2.0 single Project workspace', () => {
     render(<App gateway={new RecordingGateway()} nodeIdFactory={() => ids.shift()!} />)
 
     expect(await screen.findByText('Synthetic Studio Project')).toBeInTheDocument()
-    expect(screen.getByText('Designer + Runtime')).toBeInTheDocument()
+    expect(screen.getByText('Current Graph')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Studio Designer 画布' })).toBeInTheDocument()
 
     await user.type(screen.getByLabelText('搜索节点'), 'manual_external')
@@ -90,10 +180,7 @@ describe('ZNIKU Studio 0.2.0 single Project workspace', () => {
   it('按 Python catalog 展示基础媒体节点与 VideoTransform presets', async () => {
     const user = userEvent.setup()
     const mediaSource = { ...sourceDefinition, type_id: 'zniku.media.source.video' }
-    const mrPreset = {
-      ...transformDefinition,
-      type_id: 'zniku.media.video_transform.mr.external',
-    }
+    const mrPreset = { ...transformDefinition, type_id: 'zniku.media.video_transform.mr.external' }
     const createdEnvelope = studioEnvelope({
       snapshot: {
         project: { ...projectSnapshot.project, graph: { nodes: [], edges: [] } },
@@ -101,32 +188,31 @@ describe('ZNIKU Studio 0.2.0 single Project workspace', () => {
       },
     })
     let currentEnvelope = studioEnvelope({ project_path: null, snapshot: null })
-    const commands: StudioCommand[] = []
-    const gateway: StudioGateway = {
-      inspect: async () => currentEnvelope,
-      command: async (command) => {
-        commands.push(command)
+    let gateway: RecordingGateway
+    gateway = new RecordingGateway(currentEnvelope, {
+      command: (command) => {
         if (command.operation === 'create_project') currentEnvelope = createdEnvelope
+        gateway.envelope = currentEnvelope
         return currentEnvelope
       },
-    }
+    })
     render(<App gateway={gateway} nodeIdFactory={() => 'node.mr'} />)
 
     expect(await screen.findByText('尚未打开工程')).toBeInTheDocument()
     await user.type(screen.getByLabelText('工程路径'), 'C:\\synthetic\\media.zniku')
     await user.click(screen.getByRole('button', { name: '新建' }))
-    await waitFor(() => expect(commands.at(-1)?.operation).toBe('create_project'))
+    await waitFor(() => expect(gateway.commands.at(-1)?.operation).toBe('create_project'))
 
     expect(await screen.findByRole('region', { name: '基础媒体节点' })).toBeInTheDocument()
     const presets = screen.getByRole('region', { name: 'VideoTransform presets' })
-    expect(within(presets).getByText('zniku.media.video_transform.mr.external')).toBeInTheDocument()
     await user.click(within(presets).getByRole('button', { name: /zniku\.media\.video_transform\.mr\.external/ }))
-
     expect(await screen.findByLabelText('node.mr 节点')).toBeInTheDocument()
-    expect(screen.getByLabelText('节点参数 JSON')).toHaveValue('{\n  "strength": 3\n}')
+    expect(screen.getByLabelText('节点参数 JSON')).toHaveValue(
+      '{\n  "strength": 3,\n  "model_name": "Synthetic Model"\n}',
+    )
   })
 
-  it('打开、新建、参数保存并通过真实命令执行 Run all', async () => {
+  it('打开、新建、参数保存并通过结构化命令执行 Run all', async () => {
     const user = userEvent.setup()
     const gateway = new RecordingGateway()
     render(<App gateway={gateway} />)
@@ -153,16 +239,17 @@ describe('ZNIKU Studio 0.2.0 single Project workspace', () => {
     }))
 
     fireEvent.click(await screen.findByLabelText('transform 节点'))
-    const editor = await screen.findByLabelText('节点参数 JSON')
-    fireEvent.change(editor, { target: { value: '{"strength":7}' } })
+    fireEvent.change(await screen.findByLabelText('节点参数 JSON'), {
+      target: { value: '{"strength":7,"model_name":"Synthetic Model"}' },
+    })
     await user.click(screen.getByRole('button', { name: '应用参数到 Draft' }))
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => {
       const command = gateway.commands.at(-1)
       expect(command?.operation).toBe('save_project')
       if (command?.operation === 'save_project') {
-        expect(command.project.graph.nodes.find((node) => node.node_id === 'transform')?.parameters).toEqual({ strength: 7 })
-        expect('definitions' in command.project).toBe(false)
+        expect(command.project.graph.nodes.find((node) => node.node_id === 'transform')?.parameters)
+          .toEqual({ strength: 7, model_name: 'Synthetic Model' })
       }
     })
 
@@ -173,193 +260,256 @@ describe('ZNIKU Studio 0.2.0 single Project workspace', () => {
     ]))
   })
 
-  it('同图展示 external handoff、日志和路径，并发送 Submit / Run to / Rerun', async () => {
+  it('External Handoff 队列展示路径、模型、日志并执行两阶段精确 Submit', async () => {
     const user = userEvent.setup()
     const gateway = new RecordingGateway(handoffEnvelope())
     render(<App gateway={gateway} />)
-    await screen.findByText('Synthetic Studio Project')
 
-    fireEvent.click(await screen.findByLabelText('transform 节点'))
+    const queueItem = await screen.findByLabelText('Handoff transform')
+    expect(queueItem).toHaveTextContent('Synthetic Model')
+    expect(queueItem).toHaveTextContent('已等待')
+    expect(queueItem).toHaveTextContent('C:\\synthetic\\source.mkv')
+    expect(queueItem).toHaveTextContent('C:\\synthetic\\attempt-transform\\output.mkv')
+    expect(within(queueItem).getByRole('button', { name: 'Copy input path' })).toBeEnabled()
+    expect(within(queueItem).getByRole('button', { name: 'Copy target path' })).toBeEnabled()
+
+    await user.click(within(queueItem).getByRole('button', { name: /transform/ }))
     expect(await screen.findByText('External handoff')).toBeInTheDocument()
-    expect(screen.getByText('C:\\synthetic\\source.mkv')).toBeInTheDocument()
-    expect(screen.getByText(/output\.mkv/)).toBeInTheDocument()
-    expect(screen.getByText('等待外部输出')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Submit external output' }))
+    expect(await screen.findByText('等待外部输出')).toBeInTheDocument()
+
+    await user.click(within(queueItem).getByRole('button', { name: 'Validate and submit' }))
+    await waitFor(() => expect(gateway.readinessArguments.at(-1)).toEqual([
+      handoffFixtureIds.run,
+      handoffFixtureIds.transformNodeRun,
+      true,
+    ]))
     await waitFor(() => expect(gateway.commands.at(-1)).toEqual({
       operation: 'submit_external',
-      node_run_id: '00000000-0000-4000-8000-000000000012',
+      run_id: handoffFixtureIds.run,
+      node_run_id: handoffFixtureIds.transformNodeRun,
+      handoff_id: handoffFixtureIds.handoff,
     }))
 
+    await user.click(screen.getByRole('button', { name: '查看当前 Graph' }))
     fireEvent.click(await screen.findByLabelText('transform 节点'))
     await user.click(screen.getByRole('button', { name: 'Run to here' }))
-    await waitFor(() => expect(gateway.commands.slice(-2).map((command) => command.operation)).toEqual([
-      'save_project',
-      'run_to',
-    ]))
-    expect(gateway.commands.at(-1)).toMatchObject({ node_id: 'transform' })
+    await waitFor(() => expect(gateway.commands.at(-1)).toMatchObject({
+      operation: 'run_to',
+      node_id: 'transform',
+    }))
 
     fireEvent.click(await screen.findByLabelText('transform 节点'))
     await user.click(screen.getByRole('button', { name: 'Rerun from here' }))
     await waitFor(() => expect(gateway.commands.at(-1)).toEqual({
       operation: 'rerun_from_here',
-      run_id: '00000000-0000-4000-8000-000000000010',
+      run_id: handoffFixtureIds.run,
       node_id: 'transform',
     }))
   })
 
   it.each(['cancelled', 'interrupted'] as const)(
-    '在同一 Graph 显示 completed/stale/failed、%s 原因、日志和输出路径',
+    '显示 completed/stale/failed、%s 原因，并将 failed Run 投影为 Next action',
     async (reason) => {
       render(<App gateway={new RecordingGateway(failedStatusEnvelope(reason))} />)
-      await screen.findByText('Synthetic Studio Project')
+      expect(await screen.findByText(`${handoffFixtureIds.run} 需要操作者处理`)).toBeInTheDocument()
 
       const sourceCard = await screen.findByLabelText('source 节点')
       expect(within(sourceCard).getByText('Completed')).toBeInTheDocument()
-      expect(within(sourceCard).getByText('Stale')).toBeInTheDocument()
-      fireEvent.click(sourceCard)
+      fireEvent.click(screen.getByRole('button', { name: '查看当前 Graph' }))
+      const currentSourceCard = await screen.findByLabelText('source 节点')
+      expect(within(currentSourceCard).getByText('Stale')).toBeInTheDocument()
+      fireEvent.click(currentSourceCard)
       expect(await screen.findByText('C:\\synthetic\\source.mkv')).toBeInTheDocument()
 
-      const failedCard = await screen.findByLabelText('transform 节点')
-      expect(within(failedCard).getByText('Failed')).toBeInTheDocument()
-      expect(within(failedCard).getByText('40%')).toBeInTheDocument()
-      fireEvent.click(failedCard)
+      fireEvent.click(screen.getByRole('button', { name: '定位失败节点' }))
       const runtime = await screen.findByLabelText('Runtime details')
+      expect(runtime).toHaveTextContent('failed')
+      expect(runtime).toHaveTextContent('40%')
       expect(runtime).toHaveTextContent(reason)
       expect(runtime).toHaveTextContent(reason === 'cancelled' ? '操作者取消' : '应用重启中断')
     },
   )
 
-  it('active_operation 期间禁用全部 Project Service 动作', async () => {
-    const gateway = new RecordingGateway(
-      handoffEnvelope(),
-    )
-    gateway.envelope = { ...gateway.envelope, active_operation: 'run_all' }
+  it('active_operation 期间禁用全部 Project Service mutation', async () => {
+    const gateway = new RecordingGateway({ ...handoffEnvelope(), active_operation: 'abandon_run' })
     render(<App gateway={gateway} />)
-    await screen.findByText('Synthetic Studio Project')
+    const queueItem = await screen.findByLabelText('Handoff transform')
 
-    fireEvent.click(await screen.findByLabelText('transform 节点'))
-    for (const name of [
-      '打开',
-      '新建',
-      '保存',
-      'Run all',
-      'Run to here',
-      'Rerun from here',
-      'Submit external output',
-    ]) {
+    for (const name of ['打开', '新建', '保存', 'Run all', 'Run to here', 'Rerun from here']) {
       expect(screen.getByRole('button', { name })).toBeDisabled()
     }
+    expect(within(queueItem).getByRole('button', { name: 'Validate and submit' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Abandon Run' })).toBeDisabled()
   })
 
-  it.fails('后启动的 completed 局部 Run 不隐藏仍 waiting 的整图 Run', async () => {
+  it('后启动的 completed 局部 Run 不隐藏仍 waiting 的整图 Run', async () => {
     render(<App gateway={new RecordingGateway(threeRunEnvelope())} />)
-    await screen.findByText('Synthetic Studio Project')
 
-    expect(
-      screen.getByText(`${threeRunFixtureIds.waitingFullRun} · running`),
-    ).toBeInTheDocument()
-    expect(within(screen.getByLabelText('transform 节点')).getByText('Waiting external')).toBeInTheDocument()
+    const selector = await screen.findByRole('combobox', { name: '查看 Run' })
+    expect(selector).toHaveValue(threeRunFixtureIds.waitingFullRun)
+    expect(within(selector).getAllByRole('option')).toHaveLength(3)
+    expect(await screen.findByText('transform 等待人工外部输出')).toBeInTheDocument()
+    expect(within(screen.getByLabelText('transform 节点')).getByText('Waiting external'))
+      .toBeInTheDocument()
   })
 
-  it.fails('手动选择 Run 后 refresh 不抢占选择且全局 actionable Run 保持轮询', async () => {
+  it('手动选择 terminal Run 后 refresh 不抢占选择且全局 Next action 保持更新', async () => {
     vi.useFakeTimers()
     const gateway = new RecordingGateway(threeRunEnvelope())
     render(<App gateway={gateway} />)
-    await act(async () => {
-      await Promise.resolve()
-    })
+    await flushReact()
 
     const selector = screen.getByRole('combobox', { name: '查看 Run' })
     fireEvent.change(selector, { target: { value: threeRunFixtureIds.laterLocalRun } })
+    await flushReact()
     expect(selector).toHaveValue(threeRunFixtureIds.laterLocalRun)
+    expect(screen.getByText(`${threeRunFixtureIds.waitingFullRun} 需要操作者处理`))
+      .toBeInTheDocument()
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_501)
     })
     expect(gateway.inspectCount).toBeGreaterThan(1)
     expect(selector).toHaveValue(threeRunFixtureIds.laterLocalRun)
-
-    fireEvent.change(selector, { target: { value: threeRunFixtureIds.waitingFullRun } })
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_501)
-    })
-    expect(selector).toHaveValue(threeRunFixtureIds.waitingFullRun)
   })
 
-  it.fails('Run 为非终态时即使 active_operation=null 也持续轮询', async () => {
+  it('Run 非终态且 active_operation=null 时仍持续轮询', async () => {
+    vi.useFakeTimers()
     const gateway = new RecordingGateway(handoffEnvelope())
     render(<App gateway={gateway} />)
-    await screen.findByText('Synthetic Studio Project')
+    await flushReact()
     expect(gateway.inspectCount).toBe(1)
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1_650))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_501)
+    })
     expect(gateway.inspectCount).toBeGreaterThan(1)
   })
 
-  it.fails('非终态 Run 的慢 inspect 必须 single-flight', async () => {
+  it('view Run 404 后仅按 fresh authority 重建选择，不重新选回缓存旧 Run', async () => {
     vi.useFakeTimers()
-    const slow = new Deferred<StudioEnvelope>()
-    let inspectCount = 0
-    const gateway: StudioGateway = {
-      inspect: () => {
-        inspectCount += 1
-        if (inspectCount === 1) return Promise.resolve(runningProgressEnvelope(0.1))
-        if (inspectCount === 2) return slow.promise
-        if (inspectCount === 3) return Promise.resolve(runningProgressEnvelope(0.8))
-        return Promise.resolve(runningProgressEnvelope(0.2))
-      },
-      command: () => Promise.resolve(runningProgressEnvelope(0.8)),
+    const oldPage = new Deferred<RunSummaryPageEnvelope>()
+    const initial = { ...threeRunEnvelope(), next_run_cursor: 'cursor.old' }
+    const freshSummary = initial.run_summaries.find(
+      (item) => item.run_id === threeRunFixtureIds.laterLocalRun,
+    )!
+    const fresh = {
+      ...initial,
+      // 模拟 status 窗口短暂滞后：精确 404 的 ID 仍出现在 fresh status 中，也不得重选。
+      run_summaries: [initial.run_summaries[1]!, freshSummary],
+      active_run_id: threeRunFixtureIds.waitingFullRun,
+      next_run_cursor: null,
     }
-    render(<App gateway={gateway} />)
-    await act(async () => {
-      await Promise.resolve()
+    const gateway = new RecordingGateway(initial, {
+      listRuns: () => oldPage.promise,
+      inspect: (viewRunId, count) => {
+        if (count === 1) return initial
+        if (count === 2) {
+          expect(viewRunId).toBe(threeRunFixtureIds.waitingFullRun)
+          throw new StudioGatewayError('Run 不存在', {
+            code: 'E_PROJECT_SERVICE_RUN_NOT_FOUND',
+            httpStatus: 404,
+          })
+        }
+        expect(viewRunId).toBeNull()
+        return fresh
+      },
     })
-    expect(screen.getByText('Synthetic Studio Project')).toBeInTheDocument()
+    render(<App gateway={gateway} />)
+    await flushReact()
+    const selector = screen.getByRole('combobox', { name: '查看 Run' }) as HTMLSelectElement
+    expect(selector).toHaveValue(threeRunFixtureIds.waitingFullRun)
+    fireEvent.click(screen.getByRole('button', { name: '加载更早 Run' }))
+    await flushReact()
+    expect(gateway.historyArguments).toEqual([['cursor.old', 20]])
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_501)
+    })
+
+    expect(gateway.inspectArguments.slice(0, 3)).toEqual([
+      null,
+      threeRunFixtureIds.waitingFullRun,
+      null,
+    ])
+    expect(selector).toHaveValue(threeRunFixtureIds.laterLocalRun)
+    expect([...selector.options].map((option) => option.value)).not.toContain(
+      threeRunFixtureIds.waitingFullRun,
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '先前选择的 Run 已不存在，已重新选择可用 Run。',
+    )
+
+    await act(async () => oldPage.resolve({
+      contract_version: '0.2.1',
+      run_summaries: [initial.run_summaries[1]!],
+      next_run_cursor: 'cursor.stale',
+    }))
+    expect([...selector.options].map((option) => option.value)).not.toContain(
+      threeRunFixtureIds.waitingFullRun,
+    )
+    expect(screen.queryByRole('button', { name: '加载更早 Run' })).not.toBeInTheDocument()
+  })
+
+  it('非终态 Run 的慢 status inspect 保持 single-flight', async () => {
+    vi.useFakeTimers()
+    const slow = new Deferred<StatusEnvelope>()
+    let progress = 0.1
+    const gateway = new RecordingGateway(runningProgressEnvelope(progress, null), {
+      inspect: (_viewRunId, count) => {
+        if (count === 1) return runningProgressEnvelope(0.1, null)
+        if (count === 2) return slow.promise
+        return runningProgressEnvelope(progress, null)
+      },
+      detail: () => runningProgressDetail(progress),
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
     fireEvent.click(screen.getByLabelText('source 节点'))
     expect(screen.getByText('running · 10%')).toBeInTheDocument()
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1501)
+      await vi.advanceTimersByTimeAsync(5_000)
     })
-    expect(inspectCount).toBe(2)
+    expect(gateway.inspectCount).toBe(2)
+
+    progress = 0.8
     await act(async () => {
-      slow.resolve(runningProgressEnvelope(0.8))
+      slow.resolve(runningProgressEnvelope(progress, null))
       await Promise.resolve()
     })
     expect(screen.getByText('running · 80%')).toBeInTheDocument()
   })
 
-  it.fails('Project generation 变化后慢 inspect 不得回退可见进度', async () => {
+  it('Project generation 变化后迟到 status 不得回退可见进度', async () => {
     vi.useFakeTimers()
-    const slow = new Deferred<StudioEnvelope>()
-    let inspectCount = 0
-    const gateway: StudioGateway = {
-      inspect: () => {
-        inspectCount += 1
-        if (inspectCount === 1) return Promise.resolve(runningProgressEnvelope(0.1, null))
-        return slow.promise
+    const slow = new Deferred<StatusEnvelope>()
+    let progress = 0.1
+    const gateway = new RecordingGateway(runningProgressEnvelope(progress, null), {
+      inspect: (_viewRunId, count) =>
+        count === 1 ? runningProgressEnvelope(0.1, null) : slow.promise,
+      detail: () => runningProgressDetail(progress),
+      command: () => {
+        progress = 0.8
+        return { ...runningProgressEnvelope(progress, null), project_path: 'C:\\synthetic\\reopen.zniku' }
       },
-      command: () => Promise.resolve(runningProgressEnvelope(0.8, null)),
-    }
-    render(<App gateway={gateway} />)
-    await act(async () => {
-      await Promise.resolve()
     })
+    render(<App gateway={gateway} />)
+    await flushReact()
     fireEvent.click(screen.getByLabelText('source 节点'))
     expect(screen.getByText('running · 10%')).toBeInTheDocument()
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_501)
+      await vi.advanceTimersByTimeAsync(751)
     })
-    expect(inspectCount).toBe(2)
+    expect(gateway.inspectCount).toBe(2)
 
     fireEvent.change(screen.getByLabelText('工程路径'), {
       target: { value: 'C:\\synthetic\\reopen.zniku' },
     })
     fireEvent.click(screen.getByRole('button', { name: '打开' }))
-    await act(async () => {
-      await Promise.resolve()
-    })
+    await flushReact()
+    fireEvent.click(screen.getByLabelText('source 节点'))
     expect(screen.getByText('running · 80%')).toBeInTheDocument()
 
     await act(async () => {
@@ -370,24 +520,512 @@ describe('ZNIKU Studio 0.2.0 single Project workspace', () => {
     expect(screen.queryByText('running · 20%')).not.toBeInTheDocument()
   })
 
-  it('只允许对引用 Run 执行闭包内的节点发起 Rerun', async () => {
-    const envelope = handoffEnvelope()
-    const run = envelope.runs[0]!
-    const sourceOnly = {
-      ...run,
-      selected_targets: ['source'],
-      node_runs: run.node_runs.filter((nodeRun) => nodeRun.node_id === 'source'),
-    }
-    const gateway = new RecordingGateway({
-      ...envelope,
-      runs: [sourceOnly],
-      active_run_id: sourceOnly.run_id,
+  it('命令等待时切换 viewRunId 仍由命令 owner 释放 busy', async () => {
+    const slowRun = new Deferred<StatusEnvelope>()
+    const envelope = threeRunEnvelope()
+    const gateway = new RecordingGateway(envelope, {
+      command: (command) => command.operation === 'run_all' ? slowRun.promise : envelope,
     })
     render(<App gateway={gateway} />)
-    await screen.findByText('Synthetic Studio Project')
+    await screen.findByRole('combobox', { name: '查看 Run' })
 
-    fireEvent.click(await screen.findByLabelText('transform 节点'))
+    fireEvent.click(screen.getByRole('button', { name: 'Run all' }))
+    await waitFor(() => expect(gateway.commands.at(-1)?.operation).toBe('run_all'))
+    fireEvent.change(screen.getByRole('combobox', { name: '查看 Run' }), {
+      target: { value: threeRunFixtureIds.laterLocalRun },
+    })
+    expect(screen.getByRole('button', { name: 'Run all' })).toBeDisabled()
+
+    await act(async () => {
+      slowRun.resolve(envelope)
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Run all' })).toBeEnabled())
+  })
+
+  it('detail channel 失败时保留最后可信进度，只禁用 detail mutation', async () => {
+    vi.useFakeTimers()
+    let detailCount = 0
+    const gateway = new RecordingGateway(runningProgressEnvelope(0.6, null), {
+      detail: () => {
+        detailCount += 1
+        if (detailCount === 1) return runningProgressDetail(0.6)
+        throw new Error('detail offline')
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    expect(screen.getByText('running · 60%')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    expect(screen.getByText('running · 60%')).toBeInTheDocument()
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('DETAIL STALE')
+    expect(screen.getByRole('button', { name: 'Rerun from here' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Run all' })).toBeEnabled()
+  })
+
+  it('只允许对引用 Run 执行闭包内的节点发起 Rerun', async () => {
+    const envelope = threeRunEnvelope()
+    const summary = envelope.run_summaries.find(
+      (item) => item.run_id === threeRunFixtureIds.laterLocalRun,
+    )!
+    const gateway = new RecordingGateway(
+      studioEnvelope({ active_run_id: summary.run_id, run_summaries: [summary] }),
+      { detail: () => threeRunDetail(summary.run_id) },
+    )
+    render(<App gateway={gateway} />)
+    await screen.findByText('Run snapshot')
+
+    fireEvent.click(screen.getByRole('button', { name: '查看当前 Graph' }))
+    fireEvent.click(screen.getByLabelText('transform 节点'))
     expect(screen.getByRole('button', { name: 'Run to here' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Rerun from here' })).toBeDisabled()
+  })
+
+  it('actionable waiting Run 可显式 abandon，命令保持精确 Run identity', async () => {
+    const gateway = new RecordingGateway(handoffEnvelope())
+    render(<App gateway={gateway} />)
+    const button = await screen.findByRole('button', { name: 'Abandon Run' })
+    expect(button).toBeEnabled()
+
+    fireEvent.click(button)
+    await waitFor(() => expect(gateway.commands.at(-1)).toEqual({
+      operation: 'abandon_run',
+      run_id: handoffFixtureIds.run,
+    }))
+  })
+
+  it('Run history 使用每页 next cursor 连续翻页并保留 session 已见 summaries', async () => {
+    const user = userEvent.setup()
+    const fixture = threeRunEnvelope()
+    const first = fixture.run_summaries[0]!
+    const second = fixture.run_summaries[1]!
+    const third = fixture.run_summaries[2]!
+    const gateway = new RecordingGateway(
+      { ...fixture, run_summaries: [first], next_run_cursor: 'cursor.page.1' },
+      {
+        listRuns: (cursor) =>
+          cursor === 'cursor.page.1'
+            ? {
+                contract_version: '0.2.1',
+                run_summaries: [second],
+                next_run_cursor: 'cursor.page.2',
+              }
+            : {
+                contract_version: '0.2.1',
+                run_summaries: [third],
+                next_run_cursor: null,
+              },
+      },
+    )
+    render(<App gateway={gateway} />)
+
+    await user.click(await screen.findByRole('button', { name: '加载更早 Run' }))
+    await waitFor(() => expect(gateway.historyArguments).toEqual([['cursor.page.1', 20]]))
+    await user.click(await screen.findByRole('button', { name: '加载更早 Run' }))
+    await waitFor(() => expect(gateway.historyArguments).toEqual([
+      ['cursor.page.1', 20],
+      ['cursor.page.2', 20],
+    ]))
+
+    const selector = screen.getByRole('combobox', { name: '查看 Run' }) as HTMLSelectElement
+    expect([...selector.options].map((option) => option.value)).toEqual(expect.arrayContaining([
+      first.run_id,
+      second.run_id,
+      third.run_id,
+    ]))
+    expect(screen.queryByRole('button', { name: '加载更早 Run' })).not.toBeInTheDocument()
+  })
+
+  it('旧工程历史分页失败不能污染新工程或释放新分页 owner', async () => {
+    const user = userEvent.setup()
+    const oldPage = new Deferred<RunSummaryPageEnvelope>()
+    const newPage = new Deferred<RunSummaryPageEnvelope>()
+    const other = studioEnvelope({
+      project_path: 'C:\\synthetic\\other.zniku',
+      run_summaries: [],
+      next_run_cursor: 'cursor.new',
+      active_run_id: null,
+    })
+    let gateway: RecordingGateway
+    gateway = new RecordingGateway(
+      studioEnvelope({ next_run_cursor: 'cursor.old' }),
+      {
+        listRuns: (cursor) => (cursor === 'cursor.old' ? oldPage.promise : newPage.promise),
+        command: (command) => {
+          if (command.operation === 'open_project') gateway.envelope = other
+          return gateway.envelope
+        },
+      },
+    )
+    render(<App gateway={gateway} />)
+
+    await user.click(await screen.findByRole('button', { name: '加载更早 Run' }))
+    fireEvent.change(screen.getByLabelText('工程路径'), {
+      target: { value: 'C:\\synthetic\\other.zniku' },
+    })
+    await user.click(screen.getByRole('button', { name: '打开' }))
+    await waitFor(() => expect(gateway.commands.at(-1)?.operation).toBe('open_project'))
+
+    const newPageButton = await screen.findByRole('button', { name: '加载更早 Run' })
+    await user.click(newPageButton)
+    await waitFor(() => expect(gateway.historyArguments.at(-1)?.[0]).toBe('cursor.new'))
+    await act(async () => oldPage.reject(new Error('old history failed')))
+
+    expect(screen.queryByText('old history failed')).not.toBeInTheDocument()
+    expect(newPageButton).toBeDisabled()
+
+    await act(async () => newPage.resolve({
+      contract_version: '0.2.1',
+      run_summaries: [],
+      next_run_cursor: null,
+    }))
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '加载更早 Run' })).not.toBeInTheDocument()
+    })
+  })
+
+  it('Node A 慢日志不能覆盖或丢失随后选中的 Node B 日志', async () => {
+    const slowA = new Deferred<NodeLogEnvelope>()
+    let sourceCalls = 0
+    const makeLog = (nodeRunId: string, stdout: string): NodeLogEnvelope => ({
+      contract_version: '0.2.1',
+      run_id: handoffFixtureIds.run,
+      log: {
+        ...handoffLogEnvelope().log,
+        node_run_id: nodeRunId,
+        stdout,
+      },
+    })
+    const gateway = new RecordingGateway(handoffEnvelope(), {
+      log: (_runId, nodeRunId) => {
+        if (nodeRunId === handoffFixtureIds.sourceNodeRun && sourceCalls++ === 0) {
+          return slowA.promise
+        }
+        return makeLog(
+          nodeRunId,
+          nodeRunId === handoffFixtureIds.sourceNodeRun ? 'A newest log' : 'B trusted log',
+        )
+      },
+    })
+    render(<App gateway={gateway} />)
+    await screen.findByLabelText('source 节点')
+
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    await waitFor(() => expect(gateway.logArguments.at(-1)?.[1]).toBe(handoffFixtureIds.sourceNodeRun))
+    fireEvent.click(screen.getByLabelText('transform 节点'))
+    expect(await screen.findByText('B trusted log')).toBeInTheDocument()
+
+    await act(async () => {
+      slowA.resolve(makeLog(handoffFixtureIds.sourceNodeRun, 'A late log'))
+      await Promise.resolve()
+    })
+    expect(screen.getByText('B trusted log')).toBeInTheDocument()
+    expect(screen.queryByText('A late log')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    expect(await screen.findByText('A newest log')).toBeInTheDocument()
+  })
+
+  it('同一 log 资源的旧 failure 不能把更新成功标为 stale', async () => {
+    const slowFailure = new Deferred<NodeLogEnvelope>()
+    let sourceCalls = 0
+    const makeLog = (nodeRunId: string, stdout: string): NodeLogEnvelope => ({
+      contract_version: '0.2.1',
+      run_id: handoffFixtureIds.run,
+      log: { ...handoffLogEnvelope().log, node_run_id: nodeRunId, stdout },
+    })
+    const gateway = new RecordingGateway(handoffEnvelope(), {
+      log: (_runId, nodeRunId) => {
+        if (nodeRunId === handoffFixtureIds.sourceNodeRun && sourceCalls++ === 0) {
+          return slowFailure.promise
+        }
+        return makeLog(nodeRunId, nodeRunId === handoffFixtureIds.sourceNodeRun ? 'A recovered' : 'B log')
+      },
+    })
+    render(<App gateway={gateway} />)
+    await screen.findByLabelText('source 节点')
+
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    await waitFor(() => expect(gateway.logArguments.at(-1)?.[1]).toBe(handoffFixtureIds.sourceNodeRun))
+    fireEvent.click(screen.getByLabelText('transform 节点'))
+    expect(await screen.findByText('B log')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    expect(await screen.findByText('A recovered')).toBeInTheDocument()
+
+    await act(async () => {
+      slowFailure.reject(new Error('A obsolete failure'))
+      await Promise.resolve()
+    })
+    expect(screen.getByText('A recovered')).toBeInTheDocument()
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('LOG OK')
+    expect(screen.queryByText('A obsolete failure')).not.toBeInTheDocument()
+  })
+
+  it('旧 generation 的 detail failure 不得把新成功标为 stale', async () => {
+    vi.useFakeTimers()
+    const slowFailure = new Deferred<RunDetailEnvelope>()
+    let progress = 0.1
+    let gateway: RecordingGateway
+    gateway = new RecordingGateway(runningProgressEnvelope(progress, null), {
+      detail: (_runId, count) => {
+        if (count === 1) return runningProgressDetail(0.1)
+        if (count === 2) return slowFailure.promise
+        return runningProgressDetail(progress)
+      },
+      command: () => {
+        progress = 0.8
+        const next = {
+          ...runningProgressEnvelope(progress, null),
+          project_path: 'C:\\synthetic\\detail-new.zniku',
+        }
+        gateway.envelope = next
+        return next
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    expect(gateway.inspectRunCount).toBe(2)
+
+    fireEvent.change(screen.getByLabelText('工程路径'), {
+      target: { value: 'C:\\synthetic\\detail-new.zniku' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '打开' }))
+    await flushReact()
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    expect(screen.getByText('running · 80%')).toBeInTheDocument()
+
+    await act(async () => {
+      slowFailure.reject(new Error('old detail offline'))
+      await Promise.resolve()
+    })
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('DETAIL OK')
+    expect(screen.queryByText('old detail offline')).not.toBeInTheDocument()
+  })
+
+  it('长时间显式 probe 独占同 handoff、去重点击并最终精确 Submit', async () => {
+    vi.useFakeTimers()
+    const slowProbe = new Deferred<ExternalHandoffReadiness>()
+    const gateway = new RecordingGateway(handoffEnvelope(), {
+      readiness: (_runId, _nodeRunId, probe) =>
+        probe ? slowProbe.promise : handoffReadinessEnvelope('present', false),
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    const submit = within(screen.getByLabelText('Handoff transform')).getByRole('button', {
+      name: 'Validate and submit',
+    })
+    fireEvent.click(submit)
+    fireEvent.click(submit)
+    await flushReact()
+    expect(gateway.readinessArguments.filter((item) => item[2])).toHaveLength(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_501)
+    })
+    expect(gateway.readinessArguments.filter((item) => !item[2])).toHaveLength(1)
+
+    await act(async () => {
+      slowProbe.resolve(handoffReadinessEnvelope('probe_passed', true))
+      await Promise.resolve()
+    })
+    await flushReact()
+    expect(gateway.commands.filter(
+      (command) => command.operation === 'submit_external',
+    )).toEqual([{
+      operation: 'submit_external',
+      run_id: handoffFixtureIds.run,
+      node_run_id: handoffFixtureIds.transformNodeRun,
+      handoff_id: handoffFixtureIds.handoff,
+    }])
+  })
+
+  it('generation 切换后迟到的显式 probe 不得 Submit 或回写旧 readiness', async () => {
+    vi.useFakeTimers()
+    const slowProbe = new Deferred<ExternalHandoffReadiness>()
+    let gateway: RecordingGateway
+    gateway = new RecordingGateway(handoffEnvelope(), {
+      readiness: (_runId, _nodeRunId, probe) =>
+        probe ? slowProbe.promise : handoffReadinessEnvelope('present', false),
+      command: (command) => {
+        if (command.operation === 'open_project') {
+          gateway.envelope = studioEnvelope({
+            project_path: 'C:\\synthetic\\probe-new.zniku',
+            run_summaries: [],
+            active_run_id: null,
+          })
+        }
+        return gateway.envelope
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    fireEvent.click(
+      within(screen.getByLabelText('Handoff transform')).getByRole('button', {
+        name: 'Validate and submit',
+      }),
+    )
+    await flushReact()
+
+    fireEvent.change(screen.getByLabelText('工程路径'), {
+      target: { value: 'C:\\synthetic\\probe-new.zniku' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '打开' }))
+    await flushReact()
+
+    await act(async () => {
+      slowProbe.resolve(handoffReadinessEnvelope('probe_passed', true))
+      await Promise.resolve()
+    })
+    expect(gateway.commands.filter((command) => command.operation === 'submit_external')).toHaveLength(0)
+    expect(screen.queryByText('Ready to submit')).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('C:\\synthetic\\probe-new.zniku')).toBeInTheDocument()
+  })
+
+  it('多 handoff readiness 按当前可操作资源集合聚合 stale', async () => {
+    const baseDetail = structuredClone(handoffDetailEnvelope())
+    const firstWaiting = baseDetail.run.node_runs.find((item) => item.node_id === 'transform')!
+    const secondNodeRunId = '00000000-0000-4000-8000-000000000082'
+    const secondHandoffId = '00000000-0000-4000-8000-000000000083'
+    const graphSnapshot = {
+      ...baseDetail.run.graph_snapshot,
+      nodes: [
+        ...baseDetail.run.graph_snapshot.nodes,
+        {
+          ...baseDetail.run.graph_snapshot.nodes.find((item) => item.node_id === 'transform')!,
+          node_id: 'transform.b',
+        },
+      ],
+    }
+    const nodeRuns = [
+      ...baseDetail.run.node_runs,
+      {
+        ...firstWaiting,
+        node_run_id: secondNodeRunId,
+        node_id: 'transform.b',
+        external_handoff: {
+          ...firstWaiting.external_handoff!,
+          handoff_id: secondHandoffId,
+          node_run_id: secondNodeRunId,
+          output_targets: [
+            {
+              ...firstWaiting.external_handoff!.output_targets[0]!,
+              path: 'C:\\synthetic\\attempt-transform-b\\output.mkv',
+            },
+          ],
+        },
+      },
+    ]
+    const detail: RunDetailEnvelope = {
+      ...baseDetail,
+      run: { ...baseDetail.run, graph_snapshot: graphSnapshot, node_runs: nodeRuns },
+    }
+    const baseStatus = handoffEnvelope()
+    const status: StatusEnvelope = {
+      ...baseStatus,
+      run_summaries: [
+      {
+        ...baseStatus.run_summaries[0]!,
+        node_count: 4,
+        state_counts: {
+          pending: 1,
+          running: 0,
+          waiting_external: 2,
+          completed: 1,
+          failed: 0,
+        },
+      },
+      ],
+    }
+    const gateway = new RecordingGateway(status, {
+      detail: () => detail,
+      readiness: (runId, nodeRunId) => {
+        if (nodeRunId === handoffFixtureIds.transformNodeRun) throw new Error('handoff A offline')
+        return {
+          ...handoffReadinessEnvelope('present', false),
+          run_id: runId,
+          node_run_id: nodeRunId,
+          handoff_id: secondHandoffId,
+        }
+      },
+    })
+    render(<App gateway={gateway} />)
+
+    await screen.findByLabelText('Handoff transform.b')
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('READINESS STALE')
+    const submitButtons = screen.getAllByRole('button', { name: 'Validate and submit' })
+    expect(submitButtons).toHaveLength(2)
+    for (const button of submitButtons) expect(button).toBeDisabled()
+  })
+
+  it('same-project reopen 与 save 保留历史 terminal 选择，真实换 path 才清理', async () => {
+    const user = userEvent.setup()
+    const fixture = threeRunEnvelope()
+    const latest = fixture.run_summaries[0]!
+    const terminal = fixture.run_summaries[2]!
+    const initial = {
+      ...fixture,
+      run_summaries: [latest],
+      next_run_cursor: 'cursor.terminal',
+    }
+    let gateway: RecordingGateway
+    gateway = new RecordingGateway(initial, {
+      listRuns: () => ({
+        contract_version: '0.2.1',
+        run_summaries: [terminal],
+        next_run_cursor: null,
+      }),
+      command: (command) => {
+        const next =
+          command.operation === 'open_project' && command.path === 'C:\\synthetic\\other.zniku'
+            ? studioEnvelope({
+                project_path: 'C:\\synthetic\\other.zniku',
+                run_summaries: [],
+                active_run_id: null,
+              })
+            : initial
+        gateway.envelope = next
+        return next
+      },
+    })
+    render(<App gateway={gateway} />)
+
+    await user.click(await screen.findByRole('button', { name: '加载更早 Run' }))
+    const selector = screen.getByRole('combobox', { name: '查看 Run' }) as HTMLSelectElement
+    fireEvent.change(selector, { target: { value: terminal.run_id } })
+    await waitFor(() => expect(selector).toHaveValue(terminal.run_id))
+
+    await user.click(screen.getByRole('button', { name: '打开' }))
+    await waitFor(() => expect(gateway.commands.at(-1)?.operation).toBe('open_project'))
+    expect(selector).toHaveValue(terminal.run_id)
+    expect([...selector.options].map((option) => option.value)).toContain(terminal.run_id)
+
+    await user.click(screen.getByRole('button', { name: '查看当前 Graph' }))
+    fireEvent.click(screen.getByLabelText('transform 节点'))
+    fireEvent.change(screen.getByLabelText('节点参数 JSON'), {
+      target: { value: '{"strength":4,"model_name":"Synthetic Model"}' },
+    })
+    await user.click(screen.getByRole('button', { name: '应用参数到 Draft' }))
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(gateway.commands.at(-1)?.operation).toBe('save_project'))
+    expect(selector).toHaveValue(terminal.run_id)
+    expect([...selector.options].map((option) => option.value)).toContain(terminal.run_id)
+
+    await user.clear(screen.getByLabelText('工程路径'))
+    await user.type(screen.getByLabelText('工程路径'), 'C:\\synthetic\\other.zniku')
+    await user.click(screen.getByRole('button', { name: '打开' }))
+    await waitFor(() => expect(gateway.commands.at(-1)).toEqual({
+      operation: 'open_project',
+      path: 'C:\\synthetic\\other.zniku',
+    }))
+    expect(selector).toHaveValue('')
+    expect([...selector.options].map((option) => option.value)).not.toContain(terminal.run_id)
   })
 })
