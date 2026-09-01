@@ -1,4 +1,4 @@
-"""锁定 0.2.0 的单一架构权威、正式 Python namespace 与只读文档归档边界。"""
+"""锁定 Graph Core 的单一上位权威、正式 Python namespace 与只读文档归档边界。"""
 
 from __future__ import annotations
 
@@ -49,17 +49,27 @@ def test_graph_core_is_the_only_authority_and_media_contract_is_subordinate() ->
     }
 
     assert active_files == {
+        Path("av-enhance-flow-v2.7-template-contract.md"),
         Path("graph-core-baseline.md"),
         Path("media-node-contract.md"),
+        Path("studio-run-observability.md"),
     }
     baseline = (ACTIVE_ARCHITECTURE / "graph-core-baseline.md").read_text("utf-8")
     media_contract = (ACTIVE_ARCHITECTURE / "media-node-contract.md").read_text("utf-8")
+    observability = (ACTIVE_ARCHITECTURE / "studio-run-observability.md").read_text("utf-8")
+    av27_contract = (ACTIVE_ARCHITECTURE / "av-enhance-flow-v2.7-template-contract.md").read_text(
+        "utf-8"
+    )
     assert "已批准的唯一 0.2.0 目标架构基线" in baseline
     assert "Phase 0\u20135 已实施" in baseline
     assert "Phase 5 尚未实施" not in baseline
     assert "graph-core-baseline.md" in media_contract
     assert "本文从属于" in media_contract
     assert "发生冲突时以上位基线为准" in media_contract
+    for subordinate_design in (observability, av27_contract):
+        assert "graph-core-baseline.md" in subordinate_design
+        assert "下位设计" in subordinate_design
+        assert "上位架构权威" in subordinate_design
 
 
 def test_all_legacy_architecture_documents_are_archived() -> None:

@@ -2,8 +2,10 @@
 
 import type {
   ArtifactWire,
+  NodeRunWire,
   NodeDefinitionWire,
   ProjectSnapshotWire,
+  RunWire,
   StudioEnvelope,
 } from './contracts'
 
@@ -253,6 +255,219 @@ export function handoffEnvelope(): StudioEnvelope {
       },
     ],
   })
+}
+
+/**
+ * 固定现场问题的三个 Run：较早的局部完成、仍待人工交接的整图 Run、以及最后启动的局部完成。
+ *
+ * ``active_run_id`` 故意指向最后一个局部 Run；Studio 重载时仍应优先展示唯一 actionable 的整图
+ * Run。所有标识、时间和路径均为合成值，不依赖本机媒体或历史数据库。
+ */
+export const threeRunFixtureIds = {
+  earlierLocalRun: '00000000-0000-4000-8000-000000000040',
+  waitingFullRun: '00000000-0000-4000-8000-000000000050',
+  laterLocalRun: '00000000-0000-4000-8000-000000000060',
+} as const
+
+export function threeRunEnvelope(): StudioEnvelope {
+  const base = handoffEnvelope()
+  const waitingBase = base.runs[0]!
+  const waitingSourceBase = waitingBase.node_runs[0]!
+  const waitingTransformBase = waitingBase.node_runs[1]!
+  const waitingSourceRunId = '00000000-0000-4000-8000-000000000051'
+  const waitingTransformRunId = '00000000-0000-4000-8000-000000000052'
+  const waitingArtifactId = '00000000-0000-4000-8000-000000000071'
+  const waitingArtifact: ArtifactWire = {
+    ...inputArtifact,
+    artifact_id: waitingArtifactId,
+    path: 'C:\\synthetic\\waiting-full\\source.mkv',
+    producer_node_run_id: waitingSourceRunId,
+  }
+  const waitingSource: NodeRunWire = {
+    ...waitingSourceBase,
+    node_run_id: waitingSourceRunId,
+    run_id: threeRunFixtureIds.waitingFullRun,
+    output_artifact_ids: [waitingArtifactId],
+    work_dir: 'C:\\synthetic\\waiting-full\\source',
+    log_path: 'C:\\synthetic\\waiting-full\\source\\logs',
+    created_at: '2026-08-24T00:01:00Z',
+    started_at: '2026-08-24T00:01:00Z',
+    ended_at: '2026-08-24T00:01:01Z',
+  }
+  const waitingTransform: NodeRunWire = {
+    ...waitingTransformBase,
+    node_run_id: waitingTransformRunId,
+    run_id: threeRunFixtureIds.waitingFullRun,
+    input_artifact_ids: [waitingArtifactId],
+    work_dir: 'C:\\synthetic\\waiting-full\\transform',
+    log_path: 'C:\\synthetic\\waiting-full\\transform\\logs',
+    created_at: '2026-08-24T00:01:01Z',
+    started_at: '2026-08-24T00:01:01Z',
+    external_handoff: {
+      handoff_id: '00000000-0000-4000-8000-000000000053',
+      node_run_id: waitingTransformRunId,
+      input_artifact_ids: [waitingArtifactId],
+      output_targets: [
+        {
+          port_id: 'out',
+          path: 'C:\\synthetic\\waiting-full\\transform\\output.mkv',
+          ordinal: null,
+        },
+      ],
+      instructions: '使用合成外部工具处理后写入目标路径。',
+      created_at: '2026-08-24T00:01:01Z',
+    },
+  }
+  const waitingSink: NodeRunWire = {
+    node_run_id: '00000000-0000-4000-8000-000000000054',
+    run_id: threeRunFixtureIds.waitingFullRun,
+    node_id: 'sink',
+    definition_version: '0.2.0',
+    attempt: 1,
+    state: 'pending',
+    input_artifact_ids: [],
+    output_artifact_ids: [],
+    created_at: '2026-08-24T00:01:01Z',
+    work_dir: 'C:\\synthetic\\waiting-full\\sink',
+    started_at: null,
+    ended_at: null,
+    progress: null,
+    exit_code: null,
+    log_path: null,
+    error: null,
+    reused_from_result_id: null,
+    external_handoff: null,
+  }
+  const waitingRun: RunWire = {
+    ...waitingBase,
+    run_id: threeRunFixtureIds.waitingFullRun,
+    selected_targets: [],
+    state: 'running',
+    node_runs: [waitingSource, waitingTransform, waitingSink],
+    created_at: '2026-08-24T00:01:00Z',
+    started_at: '2026-08-24T00:01:00Z',
+    ended_at: null,
+  }
+
+  const completedLocalRun = (
+    runId: string,
+    nodeRunId: string,
+    artifactId: string,
+    timestamp: string,
+  ): { readonly run: RunWire; readonly artifact: ArtifactWire } => {
+    const artifact: ArtifactWire = {
+      ...inputArtifact,
+      artifact_id: artifactId,
+      path: `C:\\synthetic\\local-${runId.slice(-2)}\\source.mkv`,
+      producer_node_run_id: nodeRunId,
+    }
+    const nodeRun: NodeRunWire = {
+      ...waitingSourceBase,
+      node_run_id: nodeRunId,
+      run_id: runId,
+      output_artifact_ids: [artifactId],
+      created_at: timestamp,
+      started_at: timestamp,
+      ended_at: timestamp,
+      work_dir: `C:\\synthetic\\local-${runId.slice(-2)}\\source`,
+      log_path: `C:\\synthetic\\local-${runId.slice(-2)}\\source\\logs`,
+    }
+    return {
+      artifact,
+      run: {
+        ...waitingBase,
+        run_id: runId,
+        selected_targets: ['source'],
+        state: 'completed',
+        node_runs: [nodeRun],
+        created_at: timestamp,
+        started_at: timestamp,
+        ended_at: timestamp,
+      },
+    }
+  }
+
+  const earlier = completedLocalRun(
+    threeRunFixtureIds.earlierLocalRun,
+    '00000000-0000-4000-8000-000000000041',
+    '00000000-0000-4000-8000-000000000072',
+    '2026-08-24T00:00:30Z',
+  )
+  const later = completedLocalRun(
+    threeRunFixtureIds.laterLocalRun,
+    '00000000-0000-4000-8000-000000000061',
+    '00000000-0000-4000-8000-000000000073',
+    '2026-08-24T00:02:00Z',
+  )
+
+  return {
+    ...base,
+    active_run_id: threeRunFixtureIds.laterLocalRun,
+    active_operation: null,
+    runs: [earlier.run, waitingRun, later.run],
+    artifacts: [earlier.artifact, waitingArtifact, later.artifact],
+    latest_results: [
+      {
+        node_id: 'source',
+        result_id: '00000000-0000-4000-8000-000000000074',
+        stale: false,
+        stale_reason: null,
+        updated_at: '2026-08-24T00:02:00Z',
+      },
+    ],
+    logs: [
+      {
+        node_run_id: waitingTransformRunId,
+        stdout: '等待合成外部输出',
+        stderr: '',
+        stdout_available: true,
+        stderr_available: true,
+        stdout_truncated: false,
+        stderr_truncated: false,
+      },
+    ],
+  }
+}
+
+/** 构造 automatic Source 节点的受控进度响应，用于验证轮询与乱序响应。 */
+export function runningProgressEnvelope(
+  progress: number,
+  activeOperation: StudioEnvelope['active_operation'] = 'run_all',
+): StudioEnvelope {
+  const base = handoffEnvelope()
+  const run = base.runs[0]!
+  const source = run.node_runs[0]!
+  const transform = run.node_runs[1]!
+  const runningSource: NodeRunWire = {
+    ...source,
+    state: 'running',
+    output_artifact_ids: [],
+    ended_at: null,
+    progress,
+    exit_code: null,
+  }
+  const pendingTransform: NodeRunWire = {
+    ...transform,
+    state: 'pending',
+    input_artifact_ids: [],
+    started_at: null,
+    progress: null,
+    log_path: null,
+    external_handoff: null,
+  }
+  return {
+    ...base,
+    active_operation: activeOperation,
+    artifacts: [],
+    latest_results: [],
+    logs: [],
+    runs: [
+      {
+        ...run,
+        node_runs: [runningSource, pendingTransform],
+      },
+    ],
+  }
 }
 
 export function failedStatusEnvelope(

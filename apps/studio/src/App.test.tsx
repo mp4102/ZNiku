@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import type { StudioCommand, StudioEnvelope } from './studio/contracts'
 import type { StudioGateway } from './studio/gateway'
@@ -8,12 +8,18 @@ import {
   handoffEnvelope,
   failedStatusEnvelope,
   projectSnapshot,
+  runningProgressEnvelope,
   sourceDefinition,
   studioEnvelope,
+  threeRunEnvelope,
+  threeRunFixtureIds,
   transformDefinition,
 } from './studio/test-fixtures'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 class RecordingGateway implements StudioGateway {
   readonly commands: StudioCommand[] = []
@@ -29,6 +35,17 @@ class RecordingGateway implements StudioGateway {
   async command(command: StudioCommand): Promise<StudioEnvelope> {
     this.commands.push(command)
     return this.envelope
+  }
+}
+
+class Deferred<T> {
+  readonly promise: Promise<T>
+  resolve!: (value: T) => void
+
+  constructor() {
+    this.promise = new Promise<T>((resolve) => {
+      this.resolve = resolve
+    })
   }
 }
 
@@ -234,14 +251,123 @@ describe('ZNIKU Studio 0.2.0 single Project workspace', () => {
     }
   })
 
-  it('Run 为 running 但没有 active_operation 时不持续轮询', async () => {
+  it.fails('后启动的 completed 局部 Run 不隐藏仍 waiting 的整图 Run', async () => {
+    render(<App gateway={new RecordingGateway(threeRunEnvelope())} />)
+    await screen.findByText('Synthetic Studio Project')
+
+    expect(
+      screen.getByText(`${threeRunFixtureIds.waitingFullRun} · running`),
+    ).toBeInTheDocument()
+    expect(within(screen.getByLabelText('transform 节点')).getByText('Waiting external')).toBeInTheDocument()
+  })
+
+  it.fails('手动选择 Run 后 refresh 不抢占选择且全局 actionable Run 保持轮询', async () => {
+    vi.useFakeTimers()
+    const gateway = new RecordingGateway(threeRunEnvelope())
+    render(<App gateway={gateway} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const selector = screen.getByRole('combobox', { name: '查看 Run' })
+    fireEvent.change(selector, { target: { value: threeRunFixtureIds.laterLocalRun } })
+    expect(selector).toHaveValue(threeRunFixtureIds.laterLocalRun)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_501)
+    })
+    expect(gateway.inspectCount).toBeGreaterThan(1)
+    expect(selector).toHaveValue(threeRunFixtureIds.laterLocalRun)
+
+    fireEvent.change(selector, { target: { value: threeRunFixtureIds.waitingFullRun } })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_501)
+    })
+    expect(selector).toHaveValue(threeRunFixtureIds.waitingFullRun)
+  })
+
+  it.fails('Run 为非终态时即使 active_operation=null 也持续轮询', async () => {
     const gateway = new RecordingGateway(handoffEnvelope())
     render(<App gateway={gateway} />)
     await screen.findByText('Synthetic Studio Project')
     expect(gateway.inspectCount).toBe(1)
 
-    await new Promise((resolve) => window.setTimeout(resolve, 850))
-    expect(gateway.inspectCount).toBe(1)
+    await new Promise((resolve) => window.setTimeout(resolve, 1_650))
+    expect(gateway.inspectCount).toBeGreaterThan(1)
+  })
+
+  it.fails('非终态 Run 的慢 inspect 必须 single-flight', async () => {
+    vi.useFakeTimers()
+    const slow = new Deferred<StudioEnvelope>()
+    let inspectCount = 0
+    const gateway: StudioGateway = {
+      inspect: () => {
+        inspectCount += 1
+        if (inspectCount === 1) return Promise.resolve(runningProgressEnvelope(0.1))
+        if (inspectCount === 2) return slow.promise
+        if (inspectCount === 3) return Promise.resolve(runningProgressEnvelope(0.8))
+        return Promise.resolve(runningProgressEnvelope(0.2))
+      },
+      command: () => Promise.resolve(runningProgressEnvelope(0.8)),
+    }
+    render(<App gateway={gateway} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen.getByText('Synthetic Studio Project')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    expect(screen.getByText('running · 10%')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1501)
+    })
+    expect(inspectCount).toBe(2)
+    await act(async () => {
+      slow.resolve(runningProgressEnvelope(0.8))
+      await Promise.resolve()
+    })
+    expect(screen.getByText('running · 80%')).toBeInTheDocument()
+  })
+
+  it.fails('Project generation 变化后慢 inspect 不得回退可见进度', async () => {
+    vi.useFakeTimers()
+    const slow = new Deferred<StudioEnvelope>()
+    let inspectCount = 0
+    const gateway: StudioGateway = {
+      inspect: () => {
+        inspectCount += 1
+        if (inspectCount === 1) return Promise.resolve(runningProgressEnvelope(0.1, null))
+        return slow.promise
+      },
+      command: () => Promise.resolve(runningProgressEnvelope(0.8, null)),
+    }
+    render(<App gateway={gateway} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    expect(screen.getByText('running · 10%')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_501)
+    })
+    expect(inspectCount).toBe(2)
+
+    fireEvent.change(screen.getByLabelText('工程路径'), {
+      target: { value: 'C:\\synthetic\\reopen.zniku' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '打开' }))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen.getByText('running · 80%')).toBeInTheDocument()
+
+    await act(async () => {
+      slow.resolve(runningProgressEnvelope(0.2, null))
+      await Promise.resolve()
+    })
+    expect(screen.getByText('running · 80%')).toBeInTheDocument()
+    expect(screen.queryByText('running · 20%')).not.toBeInTheDocument()
   })
 
   it('只允许对引用 Run 执行闭包内的节点发起 Rerun', async () => {

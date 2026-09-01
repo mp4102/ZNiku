@@ -428,6 +428,113 @@ def test_run_all_waits_for_manual_handoff_then_submit_registers_output(
     assert Path(output.path).read_text(encoding="utf-8") == "manual-result"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="Phase 1 将禁止普通 Run all 静默创建第二个 non-terminal Run",
+)
+def test_run_all_rejects_duplicate_when_waiting_run_is_actionable(tmp_path: Path) -> None:
+    """已有 waiting_external Run 时返回稳定冲突，并且不得留下第二个 Run。"""
+
+    store = _store(tmp_path, include_manual=True)
+    application = ProjectServiceApplication(
+        work_root=tmp_path / "work",
+        python_adapters=_adapters({}),
+    )
+    application.command({"operation": "open_project", "path": str(store.path)})
+    application.command({"operation": "run_all"})
+    assert application.wait_until_idle(timeout=5)
+    before = application.inspect()
+    waiting = before.runs[-1]
+    assert waiting.state is RunState.RUNNING
+    assert _latest(waiting, "manual").state is NodeRunState.WAITING_EXTERNAL
+    before_ids = tuple(run.run_id for run in before.runs)
+
+    conflict: ProjectServiceError | None = None
+    try:
+        application.command({"operation": "run_all"})
+    except ProjectServiceError as error:
+        conflict = error
+    finally:
+        # 当前缺陷会真的启动第二个 worker；必须收束它，避免预期失败测试泄漏后台线程。
+        assert application.wait_until_idle(timeout=5)
+    after = application.inspect()
+
+    assert conflict is not None
+    assert conflict.code == "E_PROJECT_SERVICE_RUN_CONFLICT"
+    assert conflict.http_status == 409
+    assert getattr(conflict, "related_run_ids", ()) == (waiting.run_id,)
+    assert tuple(run.run_id for run in after.runs) == before_ids
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Phase 1 将提供无状态副作用的 external handoff readiness 查询",
+)
+def test_missing_handoff_target_readiness_is_read_only(tmp_path: Path) -> None:
+    """缺失目标只报告 missing，不得失败 attempt、登记 Artifact 或推进下游。"""
+
+    store = _store(tmp_path, include_manual=True)
+    application = ProjectServiceApplication(
+        work_root=tmp_path / "work",
+        python_adapters=_adapters({}),
+    )
+    application.command({"operation": "open_project", "path": str(store.path)})
+    application.command({"operation": "run_all"})
+    assert application.wait_until_idle(timeout=5)
+    before = application.inspect()
+    waiting_run = before.runs[-1]
+    waiting = _latest(waiting_run, "manual")
+    assert waiting.state is NodeRunState.WAITING_EXTERNAL
+    assert waiting.external_handoff is not None
+    target = waiting.external_handoff.output_targets[0]
+    assert not Path(target.path).exists()
+    attempt_root = Path(waiting.work_dir)
+
+    def attempt_tree() -> tuple[tuple[str, bool, int, int], ...]:
+        return tuple(
+            (
+                str(path.relative_to(attempt_root)),
+                path.is_file(),
+                path.stat().st_size,
+                path.stat().st_mtime_ns,
+            )
+            for path in sorted(attempt_root.rglob("*"))
+        )
+
+    before_tree = attempt_tree()
+
+    try:
+        readiness = application.inspect_external_readiness(  # type: ignore[attr-defined]
+            run_id=waiting_run.run_id,
+            node_run_id=waiting.node_run_id,
+            probe=False,
+        )
+    finally:
+        after = application.inspect()
+        after_run = next(run for run in after.runs if run.run_id == waiting_run.run_id)
+        after_waiting = _latest(after_run, "manual")
+        assert after_run == waiting_run
+        assert after_waiting.state is NodeRunState.WAITING_EXTERNAL
+        assert after_waiting.error is None
+        assert after.artifacts == before.artifacts
+        assert after.latest_results == before.latest_results
+        assert not Path(target.path).exists()
+        assert attempt_tree() == before_tree
+
+    assert readiness.contract_version == "0.2.1"
+    assert readiness.run_id == waiting_run.run_id
+    assert readiness.node_run_id == waiting.node_run_id
+    assert readiness.handoff_id == waiting.external_handoff.handoff_id
+    assert readiness.probe_requested is False
+    assert readiness.ready_for_submit is False
+    assert len(readiness.targets) == 1
+    assert readiness.targets[0].port_id == target.port_id
+    assert readiness.targets[0].path == target.path
+    assert readiness.targets[0].state == "missing"
+    assert readiness.targets[0].size is None
+    assert readiness.targets[0].mtime_ns is None
+
+
 def test_terminal_rerun_creates_new_run_and_reuses_unaffected_source(tmp_path: Path) -> None:
     store = _store(tmp_path)
     calls: dict[str, list[str]] = {}
