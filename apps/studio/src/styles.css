@@ -1214,6 +1214,48 @@ button {
   font: 600 8px/1 'IBM Plex Mono', monospace;
 }
 
+.node-progress--indeterminate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.node-progress--indeterminate i {
+  width: 7px;
+  height: 7px;
+  border: 1px solid currentcolor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: zniku-progress-spin .8s linear infinite;
+}
+
+.node-progress-detail {
+  clear: both;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  color: var(--muted);
+  font: 500 7px/1.3 'IBM Plex Mono', monospace;
+}
+
+.runtime-progress-detail {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+  color: var(--muted);
+  font: 500 9px/1.4 'IBM Plex Mono', monospace;
+}
+
+@keyframes zniku-progress-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-progress--indeterminate i { animation: none; }
+}
+
 .inspector-content details {
   margin-top: 12px;
   color: var(--muted);

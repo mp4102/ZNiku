@@ -1,8 +1,9 @@
 """实现 Phase 4 首批真实媒体节点的 Python adapters。
 
 除 SourceMedia 返回只读外部引用、OutputFile 按操作者给出的绝对路径显式发布外，
-adapter 只操作 Runner 分配的 attempt 输出。FFmpeg 始终通过 argv 与 ``shell=False`` 运行；失败会清理
-本 attempt 已声明输出，并且不会返回可登记的部分 Artifact、checkpoint 或 Evidence。
+adapter 只操作 Runner 分配的 attempt 输出。FFmpeg 始终通过 argv 与 ``shell=False`` 运行；失败会尝试
+确认回收进程并清理本 attempt 已声明输出，无法确认回收时给出稳定失败码。任何失败都不会返回可登记的
+部分 Artifact、checkpoint 或 Evidence。
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
+from typing import BinaryIO, Literal
 from uuid import uuid4
 
 from zniku.media.probe import (
@@ -27,6 +29,8 @@ from zniku.media.probe import (
 from zniku.runtime import (
     FrameRange,
     ProducedOutput,
+    ProgressError,
+    ProgressInfrastructureError,
     PythonAdapterContext,
     PythonAdapterResult,
     RunnerInput,
@@ -53,6 +57,27 @@ class SegmentRange:
             "end_frame": self.end_frame,
             "frame_count": self.frame_count,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class _FFmpegProgressSpec:
+    """把 FFmpeg 机器字段映射到一个已证明可靠的 denominator。
+
+    ``offset`` 与 ``extent`` 只服务于 Split 的多进程累计帧数；它们不能用于猜测未知输出总量。
+    没有可信 spec 的 adapter 仍使用同一流式进程与日志路径，但保持 indeterminate。
+    """
+
+    field: Literal["frame", "out_time_us"]
+    unit: Literal["frames", "microseconds"]
+    total: int
+    offset: int = 0
+    extent: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.total <= 0 or self.offset < 0 or self.offset > self.total:
+            raise ValueError("FFmpeg progress denominator 无效")
+        if self.extent is not None and (self.extent <= 0 or self.offset + self.extent > self.total):
+            raise ValueError("FFmpeg progress extent 无效")
 
 
 def source_media(context: PythonAdapterContext) -> PythonAdapterResult:
@@ -93,6 +118,15 @@ def video_transform(context: PythonAdapterContext) -> PythonAdapterResult:
         filter_value = f"fps={frame_rate.numerator}/{frame_rate.denominator}"
     else:
         raise MediaNodeError("E_MEDIA_TRANSFORM_OPERATION_UNKNOWN", f"未知 operation {operation!r}")
+    progress_spec = (
+        _FFmpegProgressSpec(
+            field="frame",
+            unit="frames",
+            total=exact_video_frame_count(source),
+        )
+        if operation in {"identity", "scale"}
+        else None
+    )
 
     try:
         _run_ffmpeg(
@@ -117,6 +151,7 @@ def video_transform(context: PythonAdapterContext) -> PythonAdapterResult:
                 "matroska",
                 str(target.path),
             ],
+            progress_spec=progress_spec,
         )
     except Exception:
         _cleanup_outputs(context.outputs)
@@ -136,6 +171,7 @@ def split_video(context: PythonAdapterContext) -> PythonAdapterResult:
     )
     outputs = {output.port_id: output for output in context.outputs}
     actual_counts: dict[str, int] = {}
+    completed_frames = 0
     try:
         for segment in segments:
             target = outputs[segment.port_id]
@@ -164,8 +200,16 @@ def split_video(context: PythonAdapterContext) -> PythonAdapterResult:
                     "matroska",
                     str(target.path),
                 ],
+                progress_spec=_FFmpegProgressSpec(
+                    field="frame",
+                    unit="frames",
+                    total=input_frames,
+                    offset=completed_frames,
+                    extent=segment.frame_count,
+                ),
             )
             actual_counts[segment.port_id] = exact_video_frame_count(target.path)
+            completed_frames += segment.frame_count
         for segment in segments:
             if actual_counts[segment.port_id] != segment.frame_count:
                 raise MediaNodeError(
@@ -237,7 +281,15 @@ def merge_video(context: PythonAdapterContext) -> PythonAdapterResult:
         ]
     )
     try:
-        _run_ffmpeg(context, argv)
+        _run_ffmpeg(
+            context,
+            argv,
+            progress_spec=_FFmpegProgressSpec(
+                field="frame",
+                unit="frames",
+                total=sum(input_counts),
+            ),
+        )
         output_count = exact_video_frame_count(target.path)
         if output_count != sum(input_counts):
             raise MediaNodeError(
@@ -257,6 +309,7 @@ def encode_video(context: PythonAdapterContext) -> PythonAdapterResult:
 
     source = _single_input(context, "video").path
     target = _single_output(context, "video")
+    input_frames = exact_video_frame_count(source)
     codec = _optional_string(context.node.parameters, "codec", "libx264")
     if codec not in {"libx264", "libx265", "ffv1"}:
         raise MediaNodeError("E_MEDIA_ENCODE_CODEC_UNKNOWN", f"未知 codec {codec!r}")
@@ -296,7 +349,15 @@ def encode_video(context: PythonAdapterContext) -> PythonAdapterResult:
         ]
     )
     try:
-        _run_ffmpeg(context, argv)
+        _run_ffmpeg(
+            context,
+            argv,
+            progress_spec=_FFmpegProgressSpec(
+                field="frame",
+                unit="frames",
+                total=input_frames,
+            ),
+        )
     except Exception:
         _cleanup_outputs(context.outputs)
         raise
@@ -341,6 +402,7 @@ def output_file(context: PythonAdapterContext) -> PythonAdapterResult:
         raise MediaNodeError("E_MEDIA_OUTPUT_INPUT_COUNT", "OutputFile 必须精确绑定一个输入")
     published_output = _single_output(context, "published")
     source = _nonempty_file(context.inputs[0].path)
+    source_size = source.stat().st_size
     source_kind = context.inputs[0].kind
     require_media_kind(probe_media(source), source_kind)
     mode = _required_string(context.node.parameters, "mode")
@@ -389,10 +451,17 @@ def output_file(context: PythonAdapterContext) -> PythonAdapterResult:
         temporary = parent / f".{target.name}.zniku-{uuid4().hex}.tmp"
         try:
             with source.open("rb") as source_stream, temporary.open("xb") as target_stream:
-                shutil.copyfileobj(source_stream, target_stream, length=1024 * 1024)
+                _copy_stream_with_progress(
+                    context,
+                    source_stream,
+                    target_stream,
+                    total=source_size,
+                )
             shutil.copystat(source, temporary)
             require_media_kind(probe_media(temporary), source_kind)
             os.replace(temporary, target)
+        except (ProgressError, ProgressInfrastructureError):
+            raise
         except Exception as error:
             # 外部路径不属于 attempt；失败候选保留给操作者检查，绝不越权清理。
             raise MediaNodeError(
@@ -402,10 +471,17 @@ def output_file(context: PythonAdapterContext) -> PythonAdapterResult:
     else:
         try:
             with source.open("rb") as source_stream, target.open("xb") as target_stream:
-                shutil.copyfileobj(source_stream, target_stream, length=1024 * 1024)
+                _copy_stream_with_progress(
+                    context,
+                    source_stream,
+                    target_stream,
+                    total=source_size,
+                )
             shutil.copystat(source, target)
         except FileExistsError as error:
             raise MediaNodeError("E_MEDIA_OUTPUT_EXISTS", "目标在发布期间出现") from error
+        except (ProgressError, ProgressInfrastructureError):
+            raise
         except Exception as error:
             # 失败的外部 partial 不登记 Artifact，也不得由 Runtime 越权删除。
             raise MediaNodeError(
@@ -476,7 +552,19 @@ def parse_segments(
     return tuple(segments)
 
 
-def _run_ffmpeg(context: PythonAdapterContext, argv: Sequence[str]) -> None:
+def _run_ffmpeg(
+    context: PythonAdapterContext,
+    argv: Sequence[str],
+    *,
+    progress_spec: _FFmpegProgressSpec | None = None,
+) -> None:
+    """流式执行 FFmpeg，并只解释专属 ``-progress`` pipe 的机器字段。
+
+    stderr 始终由子进程直接追加到 attempt 日志；stdout 只承载 FFmpeg 的 progress protocol，
+    同时原样写入 stdout 日志以便诊断。任何异常都会先尝试终止并确认回收子进程；若操作系统仍报告
+    producer 存活，则以明确 cleanup failure 上抛，不能误报已经回收。
+    """
+
     executable = resolve_media_tool("ffmpeg")
     command = [
         executable,
@@ -485,26 +573,216 @@ def _run_ffmpeg(context: PythonAdapterContext, argv: Sequence[str]) -> None:
         "error",
         "-nostdin",
         "-y",
+        "-progress",
+        "pipe:1",
+        "-nostats",
         *argv,
     ]
+    process: subprocess.Popen[bytes] | None = None
     try:
         with (
             context.stdout_log_path.open("ab") as stdout_stream,
             context.stderr_log_path.open("ab") as stderr_stream,
         ):
-            completed = subprocess.run(
-                command,
-                cwd=context.work_dir,
-                stdin=subprocess.DEVNULL,
-                stdout=stdout_stream,
-                stderr=stderr_stream,
-                shell=False,
-                check=False,
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=context.work_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=stderr_stream,
+                    shell=False,
+                )
+            except (OSError, ValueError) as error:
+                raise MediaNodeError("E_MEDIA_FFMPEG_START_FAILED", str(error)) from error
+            progress_fields: dict[bytes, bytes] = {}
+            try:
+                if process.stdout is None:
+                    raise MediaNodeError(
+                        "E_MEDIA_FFMPEG_PROGRESS_PIPE",
+                        "FFmpeg progress pipe 未建立",
+                    )
+                with process.stdout:
+                    for raw_line in process.stdout:
+                        stdout_stream.write(raw_line)
+                        stdout_stream.flush()
+                        _consume_ffmpeg_progress(
+                            context,
+                            raw_line,
+                            fields=progress_fields,
+                            progress_spec=progress_spec,
+                        )
+                return_code = process.wait()
+            except BaseException as error:
+                _terminate_process(process, cause=error)
+                raise
+    except MediaNodeError:
+        raise
+    except OSError as error:
+        if process is not None:
+            _terminate_process(process, cause=error)
+        raise MediaNodeError("E_MEDIA_FFMPEG_IO_FAILED", str(error)) from error
+    if return_code != 0:
+        raise MediaNodeError("E_MEDIA_FFMPEG_FAILED", f"FFmpeg 退出码为 {return_code}")
+
+
+def _consume_ffmpeg_progress(
+    context: PythonAdapterContext,
+    raw_line: bytes,
+    *,
+    fields: dict[bytes, bytes],
+    progress_spec: _FFmpegProgressSpec | None,
+) -> None:
+    """消费一个 FFmpeg progress 机器行；其他 stdout 文本只记日志、不推断进度。"""
+
+    line = raw_line.rstrip(b"\r\n")
+    key, separator, value = line.partition(b"=")
+    if not separator:
+        return
+    if key == b"progress":
+        if value not in {b"continue", b"end"}:
+            raise MediaNodeError(
+                "E_MEDIA_FFMPEG_PROGRESS_INVALID",
+                "FFmpeg progress 终止字段无效",
             )
-    except (OSError, ValueError) as error:
-        raise MediaNodeError("E_MEDIA_FFMPEG_START_FAILED", str(error)) from error
-    if completed.returncode != 0:
-        raise MediaNodeError("E_MEDIA_FFMPEG_FAILED", f"FFmpeg 退出码为 {completed.returncode}")
+        _emit_ffmpeg_progress(context, fields, progress_spec)
+        fields.clear()
+        return
+    if key not in {b"frame", b"out_time_us", b"total_size"}:
+        return
+    if key in fields:
+        raise MediaNodeError(
+            "E_MEDIA_FFMPEG_PROGRESS_INVALID",
+            f"FFmpeg progress 字段 {key.decode('ascii')} 重复",
+        )
+    fields[key] = value
+
+
+def _emit_ffmpeg_progress(
+    context: PythonAdapterContext,
+    fields: Mapping[bytes, bytes],
+    progress_spec: _FFmpegProgressSpec | None,
+) -> None:
+    if progress_spec is None:
+        return
+    raw_current = fields.get(progress_spec.field.encode("ascii"))
+    if raw_current is None:
+        return
+    normalized = raw_current.strip()
+    if not normalized.isdigit():
+        raise MediaNodeError(
+            "E_MEDIA_FFMPEG_PROGRESS_INVALID",
+            f"FFmpeg {progress_spec.field} 不是非负 integer",
+        )
+    measured = int(normalized)
+    if progress_spec.extent is not None and measured > progress_spec.extent:
+        raise MediaNodeError(
+            "E_MEDIA_FFMPEG_PROGRESS_RANGE",
+            "FFmpeg progress 超出当前 Split segment",
+        )
+    current = progress_spec.offset + measured
+    if current > progress_spec.total:
+        raise MediaNodeError(
+            "E_MEDIA_FFMPEG_PROGRESS_RANGE",
+            "FFmpeg progress 超出可信 denominator",
+        )
+    _report_progress(
+        context,
+        current=current,
+        total=progress_spec.total,
+        unit=progress_spec.unit,
+    )
+
+
+def _report_progress(
+    context: PythonAdapterContext,
+    *,
+    current: int,
+    total: int,
+    unit: Literal["frames", "bytes", "microseconds"],
+) -> None:
+    reporter = context.progress
+    if reporter is None:
+        return
+    reporter.report(
+        fraction=current / total,
+        current=current,
+        total=total,
+        unit=unit,
+    )
+
+
+def _terminate_process(
+    process: subprocess.Popen[bytes],
+    *,
+    cause: BaseException,
+) -> None:
+    """终止并确认回收 FFmpeg；失败时保留触发清理的原始异常链。
+
+    ``terminate``/``kill`` 返回或抛错都不能证明进程已退出。每个等待阶段后重新读取 ``poll``，
+    最终仍存活时以稳定 cleanup failure 失败关闭，避免 Runtime 在 producer 尚存活时收敛 attempt。
+    """
+
+    cleanup_errors: list[str] = []
+
+    def poll() -> int | None:
+        try:
+            return process.poll()
+        except OSError as error:
+            cleanup_errors.append(f"poll: {error}")
+            return None
+
+    def wait(stage: str) -> None:
+        try:
+            process.wait(timeout=2)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            cleanup_errors.append(f"{stage}: {error}")
+
+    if poll() is not None:
+        return
+    try:
+        process.terminate()
+    except OSError as error:
+        cleanup_errors.append(f"terminate: {error}")
+    wait("terminate wait")
+    if poll() is not None:
+        return
+
+    try:
+        process.kill()
+    except OSError as error:
+        cleanup_errors.append(f"kill: {error}")
+    wait("kill wait")
+    if poll() is not None:
+        return
+
+    detail = "; ".join(cleanup_errors) or "进程在 terminate/kill 后仍报告存活"
+    raise MediaNodeError(
+        "E_MEDIA_FFMPEG_CLEANUP_FAILED",
+        f"FFmpeg producer 无法确认回收：{detail}",
+    ) from cause
+
+
+def _copy_stream_with_progress(
+    context: PythonAdapterContext,
+    source: BinaryIO,
+    target: BinaryIO,
+    *,
+    total: int,
+) -> None:
+    """逐块复制并按已读取的源字节数上报；源大小漂移时失败关闭。"""
+
+    current = 0
+    while chunk := source.read(1024 * 1024):
+        written = target.write(chunk)
+        if written != len(chunk):
+            raise MediaNodeError("E_MEDIA_OUTPUT_WRITE_INCOMPLETE", "目标文件发生短写")
+        current += written
+        if current > total:
+            raise MediaNodeError("E_MEDIA_OUTPUT_SOURCE_CHANGED", "复制期间源文件大小增加")
+        _report_progress(context, current=current, total=total, unit="bytes")
+    if current != total:
+        raise MediaNodeError("E_MEDIA_OUTPUT_SOURCE_CHANGED", "复制期间源文件大小减少")
 
 
 def _single_input(context: PythonAdapterContext, port_id: str) -> RunnerInput:

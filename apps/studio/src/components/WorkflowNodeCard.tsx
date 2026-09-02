@@ -52,8 +52,24 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
       )}
       {state && <span className={`run-chip run-chip--${state}`}>{statusLabels[state]}</span>}
       {stale && <span className="run-chip run-chip--stale">Stale</span>}
-      {data.nodeRun?.progress !== null && data.nodeRun?.progress !== undefined && (
-        <span className="node-progress">{Math.round(data.nodeRun.progress * 100)}%</span>
+      {data.progress.mode === 'determinate' && data.progress.fraction !== null && (
+        <span className="node-progress">{Math.round(data.progress.fraction * 100)}%</span>
+      )}
+      {data.progress.mode === 'indeterminate' && (
+        <span className="node-progress node-progress--indeterminate" aria-label="进度不确定">
+          <i aria-hidden="true" /> Working…
+        </span>
+      )}
+      {(data.progress.measurement || data.progress.elapsed) && (
+        <span className="node-progress-detail">
+          {data.progress.measurement && (
+            <span>
+              {data.progress.measurement.current} / {data.progress.measurement.total}{' '}
+              {data.progress.measurement.unit}
+            </span>
+          )}
+          {data.progress.elapsed && <span>{data.progress.elapsed}</span>}
+        </span>
       )}
 
       {data.outputs.map((port, index) => (

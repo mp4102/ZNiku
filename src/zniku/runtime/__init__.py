@@ -21,6 +21,13 @@ from .models import (
     new_runtime_id,
     utc_now,
 )
+from .progress import (
+    ProgressError,
+    ProgressInfrastructureError,
+    ProgressReporter,
+    ProgressSample,
+    ProgressUnit,
+)
 from .repository import (
     RuntimeConflictError,
     RuntimeDataError,
@@ -101,6 +108,11 @@ __all__ = [
     "NodeValidatorResult",
     "OutputPathSpec",
     "ProducedOutput",
+    "ProgressError",
+    "ProgressInfrastructureError",
+    "ProgressReporter",
+    "ProgressSample",
+    "ProgressUnit",
     "PythonAdapter",
     "PythonAdapterContext",
     "PythonAdapterResult",

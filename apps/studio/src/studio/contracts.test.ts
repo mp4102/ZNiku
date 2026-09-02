@@ -7,6 +7,7 @@ import {
   parseStatusEnvelope,
   parseStudioCommand,
   StudioContractError,
+  type RunDetailEnvelope,
 } from './contracts'
 import {
   handoffDetailEnvelope,
@@ -15,6 +16,7 @@ import {
   handoffLogEnvelope,
   handoffReadinessEnvelope,
   handoffSummary,
+  runningProgressDetail,
   studioEnvelope,
 } from './test-fixtures'
 
@@ -94,6 +96,123 @@ describe('Studio Project Service 0.2.1 contract', () => {
         targets: [{ ...handoffReadinessEnvelope().targets[0], state: 'unknown' }],
       }),
     ).toThrow(StudioContractError)
+  })
+
+  it('严格校验 progress sample 测量组合、Run binding 与 automatic latest attempt', () => {
+    const base = runningProgressDetail(0.2)
+    const valid = {
+      ...base,
+      progress_samples: [
+        {
+          node_run_id: handoffFixtureIds.sourceNodeRun,
+          fraction: 0.8000000005,
+          current: 80,
+          total: 100,
+          unit: 'frames' as const,
+          observed_at: '2026-08-24T00:00:02Z',
+        },
+      ],
+    }
+    expect(parseRunDetailEnvelope(valid).progress_samples[0]?.current).toBe(80)
+
+    const outsideParent = {
+      ...valid,
+      run: {
+        ...valid.run,
+        node_runs: valid.run.node_runs.map((item) =>
+          item.node_run_id === handoffFixtureIds.sourceNodeRun
+            ? { ...item, run_id: '00000000-0000-4000-8000-00000000f00d' }
+            : item,
+        ),
+      },
+    }
+    expect(() => parseRunDetailEnvelope(outsideParent)).toThrow(StudioContractError)
+
+    const commandProjection = {
+      ...valid,
+      run: {
+        ...valid.run,
+        definitions_snapshot: valid.run.definitions_snapshot.map((definition) =>
+          definition.type_id === 'test.source'
+            ? {
+                ...definition,
+                executor: {
+                  kind: 'command' as const,
+                  executable: 'synthetic-tool',
+                  argv: ['--progress-like-output'],
+                },
+              }
+            : definition,
+        ),
+      },
+    }
+    expect(() => parseRunDetailEnvelope(commandProjection)).toThrow(StudioContractError)
+
+    const invalidSamples = [
+      { ...valid.progress_samples[0]!, current: 1, total: null, unit: null },
+      { ...valid.progress_samples[0]!, fraction: 0.8, current: 101, total: 100 },
+      { ...valid.progress_samples[0]!, fraction: 0.7 },
+      { ...valid.progress_samples[0]!, fraction: 0.1 },
+      { ...valid.progress_samples[0]!, unit: 'seconds' },
+      { ...valid.progress_samples[0]!, observed_at: 'not-a-timestamp' },
+      { ...valid.progress_samples[0]!, unexpected: true },
+      {
+        ...valid.progress_samples[0]!,
+        node_run_id: '00000000-0000-4000-8000-ffffffffffff',
+      },
+    ]
+    for (const sample of invalidSamples) {
+      expect(() => parseRunDetailEnvelope({ ...base, progress_samples: [sample] })).toThrow(
+        StudioContractError,
+      )
+    }
+    expect(() =>
+      parseRunDetailEnvelope({
+        ...base,
+        progress_samples: [valid.progress_samples[0], valid.progress_samples[0]],
+      }),
+    ).toThrow(/重复/)
+
+    const terminal = handoffDetailEnvelope()
+    expect(() =>
+      parseRunDetailEnvelope({ ...terminal, progress_samples: [valid.progress_samples[0]] }),
+    ).toThrow(/不是 running attempt/)
+
+    const manual = structuredClone(base) as unknown as {
+      run: RunDetailEnvelope['run'] & { node_runs: Array<Record<string, unknown>> }
+      progress_samples: unknown[]
+    }
+    const manualNodeRun = manual.run.node_runs.find((item) => item.node_id === 'transform')!
+    Object.assign(manualNodeRun, {
+      state: 'running',
+      started_at: '2026-08-24T00:00:02Z',
+      progress: null,
+      external_handoff: null,
+    })
+    manual.progress_samples = [
+      {
+        ...valid.progress_samples[0],
+        node_run_id: handoffFixtureIds.transformNodeRun,
+        fraction: 0.5,
+        current: null,
+        total: null,
+        unit: null,
+      },
+    ]
+    expect(() => parseRunDetailEnvelope(manual)).toThrow(/不是 automatic Python executor/)
+
+    const oldAttempt = structuredClone(base) as unknown as {
+      run: RunDetailEnvelope['run'] & { node_runs: Array<Record<string, unknown>> }
+      progress_samples: unknown[]
+    }
+    oldAttempt.run.node_runs.push({
+      ...oldAttempt.run.node_runs[0]!,
+      node_run_id: '00000000-0000-4000-8000-000000000099',
+      attempt: 2,
+      progress: null,
+    })
+    oldAttempt.progress_samples = [{ ...valid.progress_samples[0], fraction: 0.5, current: null, total: null, unit: null }]
+    expect(() => parseRunDetailEnvelope(oldAttempt)).toThrow(/不是节点的唯一最新 attempt/)
   })
 
   it('active_operation 与 command 均覆盖 abandon_run 和精确 Submit identity', () => {

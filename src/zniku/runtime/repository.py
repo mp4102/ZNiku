@@ -9,9 +9,10 @@ checkpoint/resume。
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from itertools import combinations, pairwise
@@ -50,6 +51,8 @@ from zniku.runtime.models import (
     StaleReason,
 )
 
+type _InterruptedProgress = tuple[str, int, float]
+
 
 class RuntimeRepositoryError(RuntimeError):
     """Runtime repository 无法安全完成操作时的公共错误。"""
@@ -69,6 +72,17 @@ class RuntimeConflictError(RuntimeRepositoryError):
 
 class RuntimeDataError(RuntimeRepositoryError):
     """SQLite 内容无法严格重建为 Runtime 模型。"""
+
+
+def _validated_progress(value: object) -> float:
+    """在所有 ``model_copy(update=...)`` 前显式守住 strict finite fraction 合同。"""
+
+    if type(value) is not float or not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise RuntimeConflictError(
+            "E_NODE_RUN_PROGRESS_INVALID",
+            "progress 必须是位于 0.0..1.0 的有限 float",
+        )
+    return value
 
 
 def _dump_json(value: Any) -> str:
@@ -943,6 +957,8 @@ class RuntimeRepository:
     ) -> NodeRun:
         """迁移非成功终态；completed 只能经 result 原子登记或结果复用形成。"""
 
+        if progress is not None:
+            progress = _validated_progress(progress)
         occurred_at = _normalize_write_timestamp(occurred_at, context="occurred_at")
         allowed = {
             NodeRunState.PENDING: frozenset({NodeRunState.RUNNING, NodeRunState.WAITING_EXTERNAL}),
@@ -983,6 +999,12 @@ class RuntimeRepository:
                     "Run snapshot 缺少 NodeRun 的 NodeDefinition",
                 )
             if current.state is NodeRunState.PENDING:
+                if progress is not None:
+                    connection.rollback()
+                    raise RuntimeConflictError(
+                        "E_NODE_RUN_START_PROGRESS_UNEXPECTED",
+                        "pending 启动或 handoff 不接受 progress；首个可信 sample 必须经 Reporter",
+                    )
                 if error is not None or exit_code is not None:
                     raise RuntimeConflictError(
                         "E_NODE_RUN_START_FIELDS",
@@ -1031,7 +1053,8 @@ class RuntimeRepository:
                 update.update(
                     {
                         "started_at": occurred_at,
-                        "progress": 0.0 if progress is None else progress,
+                        # 没有可信 reporter sample 时必须保持 indeterminate，不能伪造 0%。
+                        "progress": progress,
                         "log_path": log_path,
                     }
                 )
@@ -1043,6 +1066,22 @@ class RuntimeRepository:
                         "E_HANDOFF_UNEXPECTED", "automatic running 不接受 handoff"
                     )
             else:
+                if current.state is NodeRunState.WAITING_EXTERNAL and progress is not None:
+                    connection.rollback()
+                    raise RuntimeConflictError(
+                        "E_NODE_RUN_MANUAL_PROGRESS_UNEXPECTED",
+                        "manual_external attempt 没有 Reporter，终态不得伪造 determinate progress",
+                    )
+                if (
+                    progress is not None
+                    and current.progress is not None
+                    and progress < current.progress
+                ):
+                    connection.rollback()
+                    raise RuntimeConflictError(
+                        "E_NODE_RUN_PROGRESS_REGRESSION",
+                        "终态事务不得把最后可信 progress 向后改写",
+                    )
                 update.update(
                     {
                         "ended_at": occurred_at,
@@ -1066,22 +1105,66 @@ class RuntimeRepository:
             connection.commit()
         return self.get_node_run(node_run_id)
 
-    def update_progress(self, node_run_id: str, progress: float) -> NodeRun:
-        """仅更新当前 running attempt 的单调进度，不创建额外持久状态。"""
+    def inspect_progress_target(
+        self,
+        run_id: str,
+        node_run_id: str,
+        attempt: int,
+    ) -> NodeRun:
+        """只读确认 reporter 仍绑定最新 ``running`` automatic attempt。"""
 
+        with self._read_connection() as connection:
+            current = self._read_node_run(connection, node_run_id)
+            self._assert_progress_target(
+                connection,
+                current,
+                run_id=run_id,
+                attempt=attempt,
+            )
+            return current
+
+    def update_progress(
+        self,
+        node_run_id: str,
+        progress: float,
+        *,
+        run_id: str | None = None,
+        attempt: int | None = None,
+    ) -> NodeRun:
+        """仅更新当前 running attempt 的单调进度，不创建额外持久状态。
+
+        Runtime reporter 同时传入 ``run_id`` 与 ``attempt``，使 identity 与写入在同一事务校验；
+        可选值只保留既有 Repository 调用兼容。
+        """
+
+        progress = _validated_progress(progress)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             current = self._read_node_run(connection, node_run_id)
-            run = self._read_run(connection, current.run_id)
-            if run.state is not RunState.RUNNING:
-                raise RuntimeConflictError(
-                    "E_NODE_RUN_PARENT_NOT_RUNNING",
-                    "只有 running Run 的 NodeRun 可以更新进度",
-                )
-            self._assert_latest_attempt(connection, current)
-            if current.state is not NodeRunState.RUNNING:
+            if (run_id is None) != (attempt is None):
                 connection.rollback()
-                raise RuntimeConflictError("E_NODE_RUN_NOT_RUNNING", "只有 running 可更新进度")
+                raise RuntimeConflictError(
+                    "E_PROGRESS_BINDING_PARTIAL",
+                    "run_id 与 attempt 必须同时提供或同时省略",
+                )
+            if run_id is None or attempt is None:
+                run = self._read_run(connection, current.run_id)
+                if run.state is not RunState.RUNNING:
+                    raise RuntimeConflictError(
+                        "E_NODE_RUN_PARENT_NOT_RUNNING",
+                        "只有 running Run 的 NodeRun 可以更新进度",
+                    )
+                self._assert_latest_attempt(connection, current)
+                if current.state is not NodeRunState.RUNNING:
+                    connection.rollback()
+                    raise RuntimeConflictError("E_NODE_RUN_NOT_RUNNING", "只有 running 可更新进度")
+            else:
+                self._assert_progress_target(
+                    connection,
+                    current,
+                    run_id=run_id,
+                    attempt=attempt,
+                )
             if current.progress is not None and progress < current.progress:
                 connection.rollback()
                 raise RuntimeConflictError("E_NODE_RUN_PROGRESS_REGRESSION", "progress 不得回退")
@@ -1145,7 +1228,8 @@ class RuntimeRepository:
                         "state": NodeRunState.FAILED,
                         "started_at": failed_at,
                         "ended_at": failed_at,
-                        "progress": 0.0,
+                        # prepare 尚未开始执行，也没有 reporter sample，必须保持 indeterminate。
+                        "progress": None,
                         "log_path": log_path,
                         "error": error,
                     }
@@ -1660,10 +1744,22 @@ class RuntimeRepository:
             connection.commit()
             return latest
 
-    def recover_interrupted(self, *, recovered_at: datetime) -> tuple[NodeRun, ...]:
-        """将所有遗留 running attempt 原子失败为 interrupted，保留 waiting_external。"""
+    def recover_interrupted(
+        self,
+        *,
+        recovered_at: datetime,
+        final_progress: Mapping[str, _InterruptedProgress] | None = None,
+    ) -> tuple[NodeRun, ...]:
+        """将遗留 running attempt 原子失败为 interrupted，保留 waiting_external。
+
+        进程内 reporter 可能持有尚未达到限频持久化门槛的最后可信 fraction。调用方可按
+        ``node_run_id -> (run_id, attempt, fraction)`` 传入这些 sample；Repository 会在同一事务中
+        重新绑定完整 attempt identity、拒绝回退或未知目标，并把最后 fraction 与 failed 终态
+        一起提交。
+        """
 
         recovered_at = _normalize_write_timestamp(recovered_at, context="recovered_at")
+        progress_samples = dict(final_progress or {})
         recovered_ids: list[str] = []
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -1679,11 +1775,43 @@ class RuntimeRepository:
                     "E_NODE_RUN_PARENT_NOT_RUNNING",
                     "遗留 running NodeRun 的 parent Run 必须仍为 running",
                 )
+            currents_by_id = {current.node_run_id: current for current in currents}
+            unknown_ids = set(progress_samples).difference(currents_by_id)
+            if unknown_ids:
+                connection.rollback()
+                raise RuntimeConflictError(
+                    "E_PROGRESS_RECOVERY_TARGET",
+                    "恢复进度只允许绑定本事务中的遗留 running attempt",
+                )
             for current in currents:
+                recovered_progress = current.progress
+                sample = progress_samples.get(current.node_run_id)
+                if sample is not None:
+                    if type(sample) is not tuple or len(sample) != 3:
+                        connection.rollback()
+                        raise RuntimeConflictError(
+                            "E_PROGRESS_RECOVERY_BINDING",
+                            "恢复进度必须携带完整 run_id/attempt/fraction",
+                        )
+                    run_id, attempt, fraction = sample
+                    self._assert_progress_target(
+                        connection,
+                        current,
+                        run_id=run_id,
+                        attempt=attempt,
+                    )
+                    recovered_progress = _validated_progress(fraction)
+                    if current.progress is not None and recovered_progress < current.progress:
+                        connection.rollback()
+                        raise RuntimeConflictError(
+                            "E_NODE_RUN_PROGRESS_REGRESSION",
+                            "恢复终态不得把最后可信 progress 向后改写",
+                        )
                 updated = current.model_copy(
                     update={
                         "state": NodeRunState.FAILED,
                         "ended_at": recovered_at,
+                        "progress": recovered_progress,
                         "error": RuntimeFailure(
                             reason=FailureReason.INTERRUPTED,
                             message="应用重启时发现遗留 running attempt；只能从头重跑",
@@ -2286,6 +2414,49 @@ class RuntimeRepository:
             raise RuntimeConflictError(
                 "E_NODE_RUN_ATTEMPT_SUPERSEDED",
                 "已有更高 attempt，旧 NodeRun 不得再迁移、绑定、失败或复用",
+            )
+
+    def _assert_progress_target(
+        self,
+        connection: sqlite3.Connection,
+        node_run: NodeRun,
+        *,
+        run_id: str,
+        attempt: int,
+    ) -> None:
+        """在一个 SQLite snapshot/事务内验证 reporter 的完整 authority binding。"""
+
+        if (
+            type(run_id) is not str
+            or not run_id
+            or type(attempt) is not int
+            or attempt < 1
+            or node_run.run_id != run_id
+            or node_run.attempt != attempt
+        ):
+            raise RuntimeConflictError(
+                "E_PROGRESS_BINDING",
+                "reporter 的 run_id/node_run_id/attempt 与持久 attempt 不一致",
+            )
+        run = self._read_run(connection, run_id)
+        if run.state is not RunState.RUNNING:
+            raise RuntimeConflictError(
+                "E_PROGRESS_PARENT_NOT_RUNNING",
+                "只有 running Run 的 attempt 可以接受 progress",
+            )
+        latest = connection.execute(
+            "SELECT max(attempt) FROM node_runs WHERE run_id = ? AND node_id = ?",
+            (node_run.run_id, node_run.node_id),
+        ).fetchone()[0]
+        if latest != node_run.attempt:
+            raise RuntimeConflictError(
+                "E_PROGRESS_ATTEMPT_SUPERSEDED",
+                "reporter 绑定的 attempt 已被更高 attempt 取代",
+            )
+        if node_run.state is not NodeRunState.RUNNING:
+            raise RuntimeConflictError(
+                "E_PROGRESS_NOT_RUNNING",
+                "只有最新 running attempt 可以接受 progress",
             )
 
     @staticmethod

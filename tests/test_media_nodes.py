@@ -11,7 +11,9 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Mapping
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -53,8 +55,41 @@ from zniku.runtime import (
     RunnerInput,
     RuntimeService,
 )
+from zniku.runtime.runner import OutputTarget
 
 ROOT = Path(__file__).parents[1]
+
+
+class RecordingProgress:
+    """记录 adapter 上报的原始测量值，不替代 Runtime Reporter 合同测试。"""
+
+    def __init__(self) -> None:
+        self.samples: list[tuple[float, int | float | None, int | float | None, str | None]] = []
+
+    def report(
+        self,
+        *,
+        fraction: float,
+        current: int | float | None = None,
+        total: int | float | None = None,
+        unit: str | None = None,
+    ) -> None:
+        self.samples.append((fraction, current, total, unit))
+
+
+def _progress_context(tmp_path: Path, reporter: RecordingProgress) -> Any:
+    work_dir = tmp_path / "adapter-progress"
+    work_dir.mkdir(parents=True)
+    stdout_log_path = work_dir / "stdout.log"
+    stderr_log_path = work_dir / "stderr.log"
+    stdout_log_path.touch()
+    stderr_log_path.touch()
+    return SimpleNamespace(
+        work_dir=work_dir,
+        stdout_log_path=stdout_log_path,
+        stderr_log_path=stderr_log_path,
+        progress=reporter,
+    )
 
 
 def _request(
@@ -289,6 +324,328 @@ def test_probe_falls_back_from_zero_avg_rate_and_uses_shell_false(
             "timeout": 60,
         }
     ]
+
+
+def test_ffmpeg_progress_parser_only_accepts_machine_blocks_and_split_offset(
+    tmp_path: Path,
+) -> None:
+    reporter = RecordingProgress()
+    context = _progress_context(tmp_path, reporter)
+    fields: dict[bytes, bytes] = {}
+    spec = media_adapters_module._FFmpegProgressSpec(
+        field="frame",
+        unit="frames",
+        total=10,
+        offset=4,
+        extent=6,
+    )
+
+    media_adapters_module._consume_ffmpeg_progress(
+        context,
+        b"frame: 999 fps=99 human text\n",
+        fields=fields,
+        progress_spec=spec,
+    )
+    media_adapters_module._consume_ffmpeg_progress(
+        context,
+        b"progress=continue\n",
+        fields=fields,
+        progress_spec=spec,
+    )
+    assert reporter.samples == []
+
+    media_adapters_module._consume_ffmpeg_progress(
+        context,
+        b"frame=2\n",
+        fields=fields,
+        progress_spec=spec,
+    )
+    media_adapters_module._consume_ffmpeg_progress(
+        context,
+        b"progress=continue\n",
+        fields=fields,
+        progress_spec=spec,
+    )
+    assert reporter.samples == [(0.6, 6, 10, "frames")]
+
+    media_adapters_module._consume_ffmpeg_progress(
+        context,
+        b"frame=10\n",
+        fields=fields,
+        progress_spec=None,
+    )
+    media_adapters_module._consume_ffmpeg_progress(
+        context,
+        b"progress=end\n",
+        fields=fields,
+        progress_spec=None,
+    )
+    assert reporter.samples == [(0.6, 6, 10, "frames")]
+
+
+def test_frame_rate_transform_and_mux_remain_indeterminate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reporter = RecordingProgress()
+    observed_specs: list[object] = []
+
+    def fake_run_ffmpeg(
+        _context: Any,
+        _argv: Any,
+        *,
+        progress_spec: object = None,
+    ) -> None:
+        observed_specs.append(progress_spec)
+
+    monkeypatch.setattr(media_adapters_module, "_run_ffmpeg", fake_run_ffmpeg)
+    transform_context = _progress_context(tmp_path / "transform", reporter)
+    transform_context.node = SimpleNamespace(
+        parameters={"operation": "frame_rate", "frame_rate": "24/1"}
+    )
+    transform_context.inputs = (
+        RunnerInput("video", "artifact.video", "VideoFile", tmp_path / "input.mkv"),
+    )
+    transform_context.outputs = (
+        OutputTarget("video", "VideoFile", transform_context.work_dir / "output.mkv"),
+    )
+    media_adapters_module.video_transform(transform_context)
+
+    mux_context = _progress_context(tmp_path / "mux", reporter)
+    mux_context.node = SimpleNamespace(parameters={})
+    mux_context.inputs = (
+        RunnerInput("video", "artifact.video", "VideoFile", tmp_path / "input.mkv"),
+    )
+    mux_context.outputs = (OutputTarget("media", "MediaFile", mux_context.work_dir / "output.mkv"),)
+    media_adapters_module.mux_media(mux_context)
+
+    assert observed_specs == [None, None]
+    assert reporter.samples == []
+
+
+def test_output_copy_reports_exact_chunk_bytes(tmp_path: Path) -> None:
+    reporter = RecordingProgress()
+    context = _progress_context(tmp_path, reporter)
+    payload = b"x" * (2 * 1024 * 1024 + 17)
+    target = BytesIO()
+
+    media_adapters_module._copy_stream_with_progress(
+        context,
+        BytesIO(payload),
+        target,
+        total=len(payload),
+    )
+
+    assert target.getvalue() == payload
+    assert [sample[1] for sample in reporter.samples] == [
+        1024 * 1024,
+        2 * 1024 * 1024,
+        len(payload),
+    ]
+    assert all(sample[2:] == (len(payload), "bytes") for sample in reporter.samples)
+    assert [sample[0] for sample in reporter.samples] == sorted(
+        sample[0] for sample in reporter.samples
+    )
+
+
+def test_ffmpeg_reporter_failure_terminates_then_kills_stubborn_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RejectingProgress(RecordingProgress):
+        def report(
+            self,
+            *,
+            fraction: float,
+            current: int | float | None = None,
+            total: int | float | None = None,
+            unit: str | None = None,
+        ) -> None:
+            raise RuntimeError("synthetic reporter failure")
+
+    class StubbornProcess:
+        def __init__(self) -> None:
+            self.stdout = BytesIO(b"frame=1\nprogress=continue\n")
+            self.terminate_called = False
+            self.kill_called = False
+            self.wait_timeouts: list[float | None] = []
+            self.return_code: int | None = None
+
+        def poll(self) -> int | None:
+            return self.return_code
+
+        def terminate(self) -> None:
+            self.terminate_called = True
+
+        def kill(self) -> None:
+            self.kill_called = True
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_timeouts.append(timeout)
+            if len(self.wait_timeouts) == 1:
+                assert timeout is not None
+                raise subprocess.TimeoutExpired("ffmpeg", timeout)
+            self.return_code = -9
+            return -9
+
+    reporter = RejectingProgress()
+    context = _progress_context(tmp_path, reporter)
+    process = StubbornProcess()
+    monkeypatch.setattr(media_adapters_module, "resolve_media_tool", lambda _name: "ffmpeg")
+    monkeypatch.setattr(
+        "zniku.media.adapters.subprocess.Popen",
+        lambda *_args, **_kwargs: process,
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic reporter failure"):
+        media_adapters_module._run_ffmpeg(
+            context,
+            ["-i", "synthetic", "output.mkv"],
+            progress_spec=media_adapters_module._FFmpegProgressSpec(
+                field="frame",
+                unit="frames",
+                total=10,
+            ),
+        )
+
+    assert process.terminate_called is True
+    assert process.kill_called is True
+    assert process.wait_timeouts == [2, 2]
+
+
+@pytest.mark.parametrize("kill_raises", [False, True])
+def test_ffmpeg_cleanup_failure_preserves_original_cause_when_process_stays_alive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    kill_raises: bool,
+) -> None:
+    original = RuntimeError("synthetic reporter failure")
+
+    class RejectingProgress(RecordingProgress):
+        def report(
+            self,
+            *,
+            fraction: float,
+            current: int | float | None = None,
+            total: int | float | None = None,
+            unit: str | None = None,
+        ) -> None:
+            raise original
+
+    class UnreapableProcess:
+        def __init__(self) -> None:
+            self.stdout = BytesIO(b"frame=1\nprogress=continue\n")
+            self.terminate_called = False
+            self.kill_called = False
+            self.poll_calls = 0
+            self.wait_timeouts: list[float | None] = []
+
+        def poll(self) -> None:
+            self.poll_calls += 1
+            return None
+
+        def terminate(self) -> None:
+            self.terminate_called = True
+
+        def kill(self) -> None:
+            self.kill_called = True
+            if kill_raises:
+                raise OSError("synthetic kill failure")
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_timeouts.append(timeout)
+            assert timeout is not None
+            raise subprocess.TimeoutExpired("ffmpeg", timeout)
+
+    reporter = RejectingProgress()
+    context = _progress_context(tmp_path, reporter)
+    process = UnreapableProcess()
+    monkeypatch.setattr(media_adapters_module, "resolve_media_tool", lambda _name: "ffmpeg")
+    monkeypatch.setattr(
+        "zniku.media.adapters.subprocess.Popen",
+        lambda *_args, **_kwargs: process,
+    )
+
+    with pytest.raises(MediaNodeError) as captured:
+        media_adapters_module._run_ffmpeg(
+            context,
+            ["-i", "synthetic", "output.mkv"],
+            progress_spec=media_adapters_module._FFmpegProgressSpec(
+                field="frame",
+                unit="frames",
+                total=10,
+            ),
+        )
+
+    assert captured.value.code == "E_MEDIA_FFMPEG_CLEANUP_FAILED"
+    assert captured.value.__cause__ is original
+    assert "kill" in str(captured.value)
+    assert process.terminate_called is True
+    assert process.kill_called is True
+    assert process.poll_calls == 3
+    assert process.wait_timeouts == [2, 2]
+
+
+def test_real_slow_ffmpeg_emits_multiple_machine_progress_samples(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ffmpeg, _ffprobe = _require_tools()
+    reporter = RecordingProgress()
+    context = _progress_context(tmp_path, reporter)
+    target = context.work_dir / "slow-progress.mkv"
+    popen_calls: list[tuple[list[str], dict[str, object]]] = []
+    real_popen = subprocess.Popen
+
+    def spy_popen(command: list[str], **kwargs: Any) -> subprocess.Popen[bytes]:
+        popen_calls.append((command, dict(kwargs)))
+        return real_popen(command, **kwargs)
+
+    monkeypatch.setattr(media_adapters_module, "resolve_media_tool", lambda _name: ffmpeg)
+    monkeypatch.setattr("zniku.media.adapters.subprocess.Popen", spy_popen)
+    media_adapters_module._run_ffmpeg(
+        context,
+        [
+            "-stats_period",
+            "0.1",
+            "-re",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=10:duration=2.4",
+            "-an",
+            "-c:v",
+            "ffv1",
+            "-f",
+            "matroska",
+            str(target),
+        ],
+        progress_spec=media_adapters_module._FFmpegProgressSpec(
+            field="frame",
+            unit="frames",
+            total=24,
+        ),
+    )
+
+    assert target.is_file()
+    intermediate = [sample for sample in reporter.samples if 0.0 < sample[0] < 1.0]
+    assert len(intermediate) >= 2
+    assert [sample[0] for sample in reporter.samples] == sorted(
+        sample[0] for sample in reporter.samples
+    )
+    assert all(sample[2:] == (24, "frames") for sample in reporter.samples)
+    assert len(popen_calls) == 1
+    command, options = popen_calls[0]
+    assert command[command.index("-progress") : command.index("-progress") + 2] == [
+        "-progress",
+        "pipe:1",
+    ]
+    assert "-nostats" in command
+    assert options["shell"] is False
+    assert options["stdout"] is subprocess.PIPE
+    assert options["stderr"] is not subprocess.PIPE
+    assert "progress=end" in context.stdout_log_path.read_text(encoding="utf-8")
 
 
 def test_short_media_chain_preserves_split_and_merge_counts_and_publishes(
@@ -598,12 +955,17 @@ def test_split_rejects_gaps_and_cleans_only_attempt_outputs_on_failure(
     real_run = media_adapters_module._run_ffmpeg
     calls = 0
 
-    def fail_second(context: Any, argv: Any) -> None:
+    def fail_second(
+        context: Any,
+        argv: Any,
+        *,
+        progress_spec: Any = None,
+    ) -> None:
         nonlocal calls
         calls += 1
         if calls == 2:
             raise MediaNodeError("E_TEST_SECOND_SEGMENT", "synthetic second segment failure")
-        real_run(context, argv)
+        real_run(context, argv, progress_spec=progress_spec)
 
     monkeypatch.setattr(media_adapters_module, "_run_ffmpeg", fail_second)
     work_root = tmp_path / "partial"

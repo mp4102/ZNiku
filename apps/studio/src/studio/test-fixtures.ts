@@ -521,6 +521,35 @@ export function runningProgressDetail(progress: number): RunDetailEnvelope {
   }
 }
 
+export function projectedProgressDetail(
+  persisted: number,
+  fraction: number,
+  options: {
+    readonly current?: number | null
+    readonly total?: number | null
+    readonly unit?: 'frames' | 'bytes' | 'microseconds' | 'items' | null
+    readonly observedAt?: string
+  } = {},
+): RunDetailEnvelope {
+  const detail = runningProgressDetail(persisted)
+  const current = options.current === undefined ? Math.round(fraction * 100) : options.current
+  const total = options.total === undefined ? 100 : options.total
+  const unit = options.unit === undefined ? 'frames' : options.unit
+  return {
+    ...detail,
+    progress_samples: [
+      {
+        node_run_id: handoffFixtureIds.sourceNodeRun,
+        fraction,
+        current,
+        total,
+        unit,
+        observed_at: options.observedAt ?? '2026-08-24T00:00:02Z',
+      },
+    ],
+  }
+}
+
 export function failedStatusEnvelope(reason: 'cancelled' | 'interrupted'): StatusEnvelope {
   const message = reason === 'cancelled' ? '操作者取消当前 attempt' : '应用重启中断当前 attempt'
   return studioEnvelope({

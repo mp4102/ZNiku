@@ -11,10 +11,12 @@ DAG 顺序执行 ready 节点、登记完整结果、复用启动前仍适用的
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from time import monotonic
+from typing import Never, cast
 from uuid import UUID
 
 from pydantic import JsonValue, ValidationError
@@ -37,7 +39,20 @@ from .models import (
     new_runtime_id,
     utc_now,
 )
-from .repository import RuntimeRepository
+from .progress import (
+    BoundProgressReporter,
+    MonotonicClock,
+    ProgressError,
+    ProgressInfrastructureError,
+    ProgressSample,
+    WallClock,
+)
+from .repository import (
+    RuntimeConflictError,
+    RuntimeNotFoundError,
+    RuntimeRepository,
+    RuntimeRepositoryError,
+)
 from .reuse import ReuseCandidate, analyze_reuse, capture_node_signature
 from .runner import (
     HandoffInput,
@@ -94,6 +109,8 @@ class RuntimeService:
         media_probe: MediaProbe | None = None,
         ffprobe_executable: str = "ffprobe",
         artifact_quick_probe: ArtifactQuickProbe | None = None,
+        progress_wall_clock: WallClock | None = None,
+        progress_monotonic_clock: MonotonicClock | None = None,
     ) -> None:
         root = Path(work_root)
         try:
@@ -113,13 +130,37 @@ class RuntimeService:
             ffprobe_executable=ffprobe_executable,
         )
         self._artifact_quick_probe = artifact_quick_probe or _default_artifact_quick_probe
-        self._repository.recover_interrupted(recovered_at=utc_now())
+        self._progress_wall_clock = progress_wall_clock or utc_now
+        self._progress_monotonic_clock = progress_monotonic_clock or monotonic
+        self._progress_lock = threading.RLock()
+        self._progress_samples: dict[str, ProgressSample] = {}
+        self._progress_reporters: dict[str, BoundProgressReporter] = {}
+        self.recover_interrupted()
 
     @property
     def repository(self) -> RuntimeRepository:
         """公开共享同一 ``.zniku`` authority 的 Runtime Repository。"""
 
         return self._repository
+
+    def progress_snapshot(self, run_id: str) -> tuple[ProgressSample, ...]:
+        """返回当前进程中绑定指定 Run 的不可变细粒度 progress snapshot。
+
+        该投影不是恢复信息；终态 attempt 会被移除，新 ``RuntimeService`` 实例从空 map 开始。
+        Project Service 仍须按其捕获的 Run snapshot 精确过滤最新 running automatic attempt。
+        """
+
+        with self._progress_lock:
+            return tuple(
+                sorted(
+                    (
+                        sample
+                        for sample in self._progress_samples.values()
+                        if sample.run_id == run_id
+                    ),
+                    key=lambda sample: (sample.observed_at, sample.node_run_id),
+                )
+            )
 
     def create_run(self, *, selected_targets: tuple[str, ...] = ()) -> Run:
         """从当前 Project 建立普通 snapshot，并为选中闭包创建 attempt 1。
@@ -409,9 +450,33 @@ class RuntimeService:
         )
 
     def recover_interrupted(self) -> tuple[NodeRun, ...]:
-        """显式重复执行幂等的启动恢复；waiting_external 始终保留。"""
+        """显式重复执行幂等启动恢复；先关闭 reporter，再原子写入最后可信 fraction。"""
 
-        return self._repository.recover_interrupted(recovered_at=utc_now())
+        # 不能先写 failed 再关闭 reporter：限频窗口内的最后 sample 只存在于内存，顺序颠倒会永久
+        # 丢失它。这里只在 progress lock 下复制引用，随后由 reporter 自己的锁串行 close/report，
+        # 避免持有 progress lock 等待 reporter 时与 publish/remove 回调形成锁反转。
+        with self._progress_lock:
+            reporters = tuple(self._progress_reporters.values())
+        final_progress: dict[str, tuple[str, int, float]] = {}
+        for reporter in reporters:
+            sample = reporter.close()
+            if sample is not None:
+                final_progress[sample.node_run_id] = (
+                    sample.run_id,
+                    sample.attempt,
+                    sample.fraction,
+                )
+
+        recovered = self._repository.recover_interrupted(
+            recovered_at=utc_now(),
+            final_progress=final_progress,
+        )
+        recovered_ids = {node_run.node_run_id for node_run in recovered}
+        with self._progress_lock:
+            for node_run_id in recovered_ids:
+                self._progress_samples.pop(node_run_id, None)
+                self._progress_reporters.pop(node_run_id, None)
+        return recovered
 
     def _process_ready(self, run: Run, node_run: NodeRun) -> None:
         resolved = self._resolve_inputs(run, node_run.node_id)
@@ -442,17 +507,111 @@ class RuntimeService:
             occurred_at=started_at,
             log_path=log_path,
         )
+        reporter = self._progress_reporter(running)
         try:
-            result = self._runner.run_automatic(request)
-            self._register_runner_result(running, result)
+            result = self._runner.run_automatic(request, progress=reporter)
+        except ProgressError as error:
+            sample = reporter.close()
+            self._fail_progress_node_run(running, error, progress=self._sample_fraction(sample))
+        except ProgressInfrastructureError as error:
+            reporter.close()
+            self._raise_progress_infrastructure(error)
         except RunnerError as error:
-            self._fail_node_run(running, error)
+            sample = reporter.close()
+            self._fail_node_run(running, error, progress=self._sample_fraction(sample))
         except RuntimeServiceError as error:
+            sample = reporter.close()
             self._fail_service_node_run(
                 running,
                 error,
                 reason=FailureReason.EXECUTION_ERROR,
+                progress=self._sample_fraction(sample),
             )
+        else:
+            sample = reporter.close()
+            try:
+                self._register_runner_result(running, result)
+            except RuntimeServiceError as error:
+                self._fail_service_node_run(
+                    running,
+                    error,
+                    reason=FailureReason.EXECUTION_ERROR,
+                    progress=self._sample_fraction(sample),
+                )
+
+    def _progress_reporter(self, node_run: NodeRun) -> BoundProgressReporter:
+        """为唯一 running automatic attempt 构造不暴露 Repository 的 reporter。"""
+
+        reporter = BoundProgressReporter(
+            node_run.run_id,
+            node_run.node_run_id,
+            node_run.attempt,
+            validate_target=self._validate_progress_target,
+            persist=self._persist_progress,
+            publish=self._publish_progress,
+            remove=self._remove_progress,
+            wall_clock=self._progress_wall_clock,
+            monotonic_clock=self._progress_monotonic_clock,
+        )
+        with self._progress_lock:
+            self._progress_reporters[node_run.node_run_id] = reporter
+        return reporter
+
+    def _validate_progress_target(self, run_id: str, node_run_id: str, attempt: int) -> None:
+        try:
+            self._repository.inspect_progress_target(run_id, node_run_id, attempt)
+        except (RuntimeConflictError, RuntimeNotFoundError) as error:
+            self._raise_progress_target_error(error)
+        except RuntimeRepositoryError as error:
+            raise ProgressInfrastructureError(error) from error
+
+    def _persist_progress(
+        self,
+        run_id: str,
+        node_run_id: str,
+        attempt: int,
+        fraction: float,
+    ) -> None:
+        try:
+            self._repository.update_progress(
+                node_run_id,
+                fraction,
+                run_id=run_id,
+                attempt=attempt,
+            )
+        except (RuntimeConflictError, RuntimeNotFoundError) as error:
+            self._raise_progress_target_error(error)
+        except RuntimeRepositoryError as error:
+            raise ProgressInfrastructureError(error) from error
+
+    def _publish_progress(self, sample: ProgressSample) -> None:
+        with self._progress_lock:
+            self._progress_samples[sample.node_run_id] = sample
+
+    def _remove_progress(self, node_run_id: str) -> None:
+        with self._progress_lock:
+            self._progress_samples.pop(node_run_id, None)
+            self._progress_reporters.pop(node_run_id, None)
+
+    @staticmethod
+    def _raise_progress_target_error(error: RuntimeRepositoryError) -> Never:
+        raw_code = str(getattr(error, "code", "E_PROGRESS_TARGET_INVALID"))
+        code = raw_code if raw_code.startswith("E_PROGRESS_") else "E_PROGRESS_TARGET_INVALID"
+        raise ProgressError(code, str(error)) from error
+
+    @staticmethod
+    def _raise_progress_infrastructure(error: ProgressInfrastructureError) -> Never:
+        cause = error.cause
+        if isinstance(cause, RuntimeRepositoryError):
+            raise cause
+        raise RuntimeServiceError(
+            "E_SERVICE_PROGRESS_INFRASTRUCTURE",
+            str(cause) or type(cause).__name__,
+        ) from cause
+
+    @staticmethod
+    def _sample_fraction(sample: ProgressSample | None) -> float | None:
+        return None if sample is None else sample.fraction
 
     def _prepare_manual(self, node_run: NodeRun, request: NodeExecutionRequest) -> None:
         try:
@@ -758,6 +917,7 @@ class RuntimeService:
         error: RunnerError,
         *,
         external_submission: bool = False,
+        progress: float | None = None,
     ) -> NodeRun:
         reason = _failure_reason(error.reason, external_submission=external_submission)
         return self._repository.transition_node_run(
@@ -771,6 +931,7 @@ class RuntimeService:
                 if error.stdout_log_path is not None
                 else node_run.log_path
             ),
+            progress=progress,
         )
 
     def _fail_service_node_run(
@@ -779,6 +940,7 @@ class RuntimeService:
         error: RuntimeServiceError,
         *,
         reason: FailureReason,
+        progress: float | None = None,
     ) -> NodeRun:
         """把成功登记前发现的 Service/Runner 合同错误收敛为当前 attempt 失败。"""
 
@@ -788,6 +950,28 @@ class RuntimeService:
             occurred_at=utc_now(),
             error=RuntimeFailure(reason=reason, message=str(error)[:4096]),
             log_path=node_run.log_path,
+            progress=progress,
+        )
+
+    def _fail_progress_node_run(
+        self,
+        node_run: NodeRun,
+        error: ProgressError,
+        *,
+        progress: float | None,
+    ) -> NodeRun:
+        """把非法 reporter sample 收敛为 execution_error，并原子保留此前可信 fraction。"""
+
+        return self._repository.transition_node_run(
+            node_run.node_run_id,
+            NodeRunState.FAILED,
+            occurred_at=utc_now(),
+            error=RuntimeFailure(
+                reason=FailureReason.EXECUTION_ERROR,
+                message=str(error)[:4096],
+            ),
+            log_path=node_run.log_path,
+            progress=progress,
         )
 
     def _runtime_handoff(

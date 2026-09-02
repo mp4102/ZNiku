@@ -128,10 +128,21 @@ describe('FetchStudioGateway 0.2.1', () => {
 
   it('即使 payload 通过 Schema，也拒绝与请求不一致的资源 identity', async () => {
     const detail = handoffDetailEnvelope()
+    const otherRunId = '00000000-0000-4000-8000-ffffffffffff'
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        response({ ...detail, run: { ...detail.run, run_id: '00000000-0000-4000-8000-ffffffffffff' } }),
+        response({
+          ...detail,
+          run: {
+            ...detail.run,
+            run_id: otherRunId,
+            node_runs: detail.run.node_runs.map((nodeRun) => ({
+              ...nodeRun,
+              run_id: otherRunId,
+            })),
+          },
+        }),
       ),
     )
 

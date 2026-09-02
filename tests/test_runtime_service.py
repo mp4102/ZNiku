@@ -460,7 +460,7 @@ def test_manual_prepare_failure_becomes_failed_attempt_and_can_rerun(tmp_path: P
     assert failed.error is not None
     assert failed.error.reason is FailureReason.EXECUTION_ERROR
     assert failed.started_at == failed.ended_at
-    assert failed.progress == 0.0
+    assert failed.progress is None
     assert failed.external_handoff is None
 
     rerun = service.rerun_from_start(run.run_id, "manual")

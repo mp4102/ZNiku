@@ -1,6 +1,6 @@
 # ZNIKU Studio v0.2.1 Run 可观察性设计
 
-- 状态：**v0.2.1 Phase 0 已冻结的下位设计**
+- 状态：**v0.2.1 Phase 0 已冻结；Phase 1–2 已实施并通过门禁**
 - 日期：2026-09-01
 - 上位架构权威：[`graph-core-baseline.md`](graph-core-baseline.md)
 - 实施计划：[`../v0.2.1-execution-plan.md`](../v0.2.1-execution-plan.md)
@@ -191,8 +191,9 @@ RunDetailEnvelope
 `run` 是已有领域模型的完整只读序列化；`artifacts` 是该 Run 所有 NodeRun 的 input/output Artifact ID 的
 去重闭包。任何 Artifact ID 无法解析都视为 Project 数据错误并失败关闭，不得返回半份 detail。
 
-`progress_samples` 只包含当前进程仍可提供细粒度观测的 automatic NodeRun；不存在 sample 时，Studio 从
-`NodeRun.progress` 显示最后持久 fraction，或显示 indeterminate。该字段不改变 `Run` 或 `NodeRun` 模型。
+`progress_samples` 只包含当前进程仍可提供细粒度观测的 automatic Python NodeRun；command 与
+manual_external 不进入该投影。Python attempt 不存在 sample 时，Studio 从 `NodeRun.progress` 显示最后持久
+fraction；command 保持 indeterminate。该字段不改变 `Run` 或 `NodeRun` 模型。
 
 ### 4.6 定向日志
 

@@ -6,13 +6,14 @@
 
 ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用已完成结果的 GUI Studio。
 
-## 0.2.0 重构状态
+## 0.2.0 Core 与 v0.2.1 开发状态
 
-- 目标版本：`ZNIKU Studio 0.2.0`
-- 开发分支：`v0.2.0`
-- 当前阶段：**Phase 0–5 已完成——0.2.0 Core 已完成 legacy 清理与最小自动化验收**
+- 目标版本：`ZNIKU Studio 0.2.0`（按 v0.2.1 计划在 Phase 6 前保持 package/product 版本不变）
+- 已交付基线：`ZNIKU Studio 0.2.0` Phase 0–5，Core 已完成 legacy 清理与最小自动化验收
+- 当前开发分支：`v0.2.1`
+- 当前增量阶段：**v0.2.1 Phase 0–2 已完成；Phase 3 待实施**
 - 唯一目标架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
-- 当前实现版本：`0.2.0`，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
+- 当前实现版本：`0.2.0`；package/product 版本按计划保持不变，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
   `zniku.project_service` 与 `zniku.media`
 - 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
 
@@ -20,6 +21,10 @@ Phase 1 已建立 Graph Core 与 `.zniku` Store，Phase 2 已用新的最小 Run
 替换 Runtime 领域入口，Phase 3 已把自由节点画布接到这些 Python authority，Phase 4 已加入首批真实媒体
 NodeDefinition、FFmpeg adapters、FFprobe 与轻量 validators。Phase 5 已删除旧 Compiler、Evidence、固定
 pipeline、Real Acceptance 和旧生成投影的实现、测试与工具；CI 只验证当前 0.2.0 产品面。
+
+v0.2.1 Phase 1 已补齐 Run 选择、轮询和人工交接闭环；Phase 2 已接通 automatic Python/FFmpeg 的可信
+进度、限频持久化、Project Service 实时投影与 Studio determinate/indeterminate 展示。AVEnhanceFlow
+v2.7.0 专用节点包和模板仍属于 Phase 3–4，尚未实现，也未写入通用 Runtime。
 
 ## 产品核心
 

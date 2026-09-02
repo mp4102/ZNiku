@@ -368,7 +368,102 @@ export function parseRunSummaryPageEnvelope(value: unknown): RunSummaryPageEnvel
 }
 
 export function parseRunDetailEnvelope(value: unknown): RunDetailEnvelope {
-  return parseWith(value, validateRunDetail, 'Studio Run detail')
+  const detail = parseWith<RunDetailEnvelope>(value, validateRunDetail, 'Studio Run detail')
+  validateProgressSamples(detail)
+  return detail
+}
+
+function progressContractError(message: string): never {
+  throw new StudioContractError(`Studio Run detail progress_samples 不符合 0.2.1 合同：${message}`)
+}
+
+function validateProgressSamples(detail: RunDetailEnvelope): void {
+  /**
+   * JSON Schema 能冻结字段、枚举和各字段范围，但无法表达跨字段比值和跨数组 identity。
+   * 这里继续以 fail-closed 方式验证 Python ``model_validator`` 及 Run envelope 关系，避免 mock、
+   * 缓存代理或错误 Service 把旧 attempt／manual 节点的 sample 叠加到当前画布。
+   */
+  const nodeRuns = new Map(detail.run.node_runs.map((item) => [item.node_run_id, item]))
+  const latestByNode = new Map<string, { readonly attempt: number; readonly nodeRunId: string }>()
+  const ambiguousLatest = new Set<string>()
+  for (const item of detail.run.node_runs) {
+    if (item.run_id !== detail.run.run_id) {
+      progressContractError(
+        `node_run_id ${item.node_run_id} 的 run_id 不属于当前 Run ${detail.run.run_id}`,
+      )
+    }
+    const current = latestByNode.get(item.node_id)
+    if (!current || item.attempt > current.attempt) {
+      latestByNode.set(item.node_id, { attempt: item.attempt, nodeRunId: item.node_run_id })
+      ambiguousLatest.delete(item.node_id)
+    } else if (item.attempt === current.attempt && item.node_run_id !== current.nodeRunId) {
+      ambiguousLatest.add(item.node_id)
+    }
+  }
+
+  const graphNodes = new Map(detail.run.graph_snapshot.nodes.map((item) => [item.node_id, item]))
+  const definitions = new Map(
+    detail.run.definitions_snapshot.map((item) => [`${item.type_id}@${item.version}`, item]),
+  )
+  const seen = new Set<string>()
+
+  for (const sample of detail.progress_samples) {
+    if (seen.has(sample.node_run_id)) {
+      progressContractError(`node_run_id ${sample.node_run_id} 重复`)
+    }
+    seen.add(sample.node_run_id)
+
+    const measurement = [sample.current, sample.total, sample.unit]
+    const present = measurement.filter((item) => item !== null).length
+    if (present !== 0 && present !== measurement.length) {
+      progressContractError('current/total/unit 必须全部出现或全部为 null')
+    }
+    if (!Number.isFinite(sample.fraction) || sample.fraction < 0 || sample.fraction > 1) {
+      progressContractError('fraction 必须是 0.0..1.0 的有限数')
+    }
+    if (sample.current !== null && sample.total !== null) {
+      if (
+        !Number.isInteger(sample.current) ||
+        !Number.isInteger(sample.total) ||
+        sample.current < 0 ||
+        sample.total <= 0 ||
+        sample.current > sample.total
+      ) {
+        progressContractError('current/total 范围无效')
+      }
+      if (Math.abs(sample.fraction - sample.current / sample.total) > 1e-9) {
+        progressContractError('fraction 与 current/total 不一致')
+      }
+    }
+
+    const nodeRun = nodeRuns.get(sample.node_run_id)
+    if (!nodeRun) progressContractError(`node_run_id ${sample.node_run_id} 不属于当前 Run`)
+    if (
+      ambiguousLatest.has(nodeRun.node_id) ||
+      latestByNode.get(nodeRun.node_id)?.nodeRunId !== nodeRun.node_run_id
+    ) {
+      progressContractError(`node_run_id ${sample.node_run_id} 不是节点的唯一最新 attempt`)
+    }
+    if (nodeRun.state !== 'running') {
+      progressContractError(`node_run_id ${sample.node_run_id} 不是 running attempt`)
+    }
+    if (nodeRun.progress !== null && sample.fraction < nodeRun.progress) {
+      progressContractError(`node_run_id ${sample.node_run_id} 的投影低于持久进度`)
+    }
+
+    const graphNode = graphNodes.get(nodeRun.node_id)
+    if (!graphNode || graphNode.definition_version !== nodeRun.definition_version) {
+      progressContractError(`node_run_id ${sample.node_run_id} 无法绑定 Run snapshot node`)
+    }
+    const definition = definitions.get(`${graphNode.type_id}@${graphNode.definition_version}`)
+    if (
+      !definition ||
+      definition.execution_mode !== 'automatic' ||
+      definition.executor.kind !== 'python'
+    ) {
+      progressContractError(`node_run_id ${sample.node_run_id} 不是 automatic Python executor`)
+    }
+  }
 }
 
 export function parseNodeLogEnvelope(value: unknown): NodeLogEnvelope {

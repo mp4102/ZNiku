@@ -20,6 +20,7 @@ import {
   handoffLogEnvelope,
   handoffReadinessEnvelope,
   projectSnapshot,
+  projectedProgressDetail,
   runningProgressDetail,
   runningProgressEnvelope,
   sourceDefinition,
@@ -324,7 +325,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
       fireEvent.click(screen.getByRole('button', { name: '定位失败节点' }))
       const runtime = await screen.findByLabelText('Runtime details')
       expect(runtime).toHaveTextContent('failed')
-      expect(runtime).toHaveTextContent('40%')
+      expect(runtime).not.toHaveTextContent('40%')
       expect(runtime).toHaveTextContent(reason)
       expect(runtime).toHaveTextContent(reason === 'cancelled' ? '操作者取消' : '应用重启中断')
     },
@@ -461,7 +462,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
         if (count === 2) return slow.promise
         return runningProgressEnvelope(progress, null)
       },
-      detail: () => runningProgressDetail(progress),
+      detail: () => projectedProgressDetail(0.05, progress),
     })
     render(<App gateway={gateway} />)
     await flushReact()
@@ -479,6 +480,131 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
       await Promise.resolve()
     })
     expect(screen.getByText('running · 80%')).toBeInTheDocument()
+  })
+
+  it('优先展示 live projection，并在节点卡与 Inspector 显示测量值和 wall elapsed', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:00:05Z'))
+    const detail = projectedProgressDetail(0.2, 0.8, {
+      current: 80,
+      total: 100,
+      unit: 'frames',
+    })
+    const gateway = new RecordingGateway(runningProgressEnvelope(0.2, null), {
+      detail: () => detail,
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+
+    const card = screen.getByLabelText('source 节点')
+    expect(within(card).getByText('80%')).toBeInTheDocument()
+    expect(within(card).getByText('80 / 100 frames')).toBeInTheDocument()
+    expect(within(card).getByText('elapsed 5s')).toBeInTheDocument()
+    expect(screen.getByLabelText('Run summary')).not.toHaveTextContent('%')
+
+    fireEvent.click(card)
+    expect(screen.getByLabelText('Runtime details')).toHaveTextContent('running · 80%')
+    expect(screen.getByLabelText('Runtime progress details')).toHaveTextContent('80 / 100 frames')
+    expect(screen.getByLabelText('Runtime progress details')).toHaveTextContent('elapsed 5s')
+  })
+
+  it('running automatic 无可信 fraction 时显示 indeterminate，waiting/completed 不伪造百分比', async () => {
+    const commandBase = runningProgressDetail(0.4)
+    const commandDetail: RunDetailEnvelope = {
+      ...commandBase,
+      run: {
+        ...commandBase.run,
+        definitions_snapshot: commandBase.run.definitions_snapshot.map((definition) =>
+          definition.type_id === sourceDefinition.type_id
+            ? {
+                ...definition,
+                executor: { kind: 'command' as const, executable: 'synthetic', argv: [] },
+              }
+            : definition,
+        ),
+        node_runs: commandBase.run.node_runs,
+      },
+    }
+    render(
+      <App
+        gateway={new RecordingGateway(runningProgressEnvelope(0, null), {
+          detail: () => commandDetail,
+        })}
+      />,
+    )
+    const runningCard = await screen.findByLabelText('source 节点')
+    expect(within(runningCard).getByLabelText('进度不确定')).toHaveTextContent('Working…')
+    expect(within(runningCard).queryByText('0%')).not.toBeInTheDocument()
+    expect(within(runningCard).queryByText('40%')).not.toBeInTheDocument()
+    fireEvent.click(runningCard)
+    expect(screen.getByLabelText('Runtime details')).not.toHaveTextContent('0%')
+    expect(screen.getByLabelText('Runtime details')).not.toHaveTextContent('40%')
+    expect(screen.getByLabelText('Runtime progress details')).toHaveTextContent('indeterminate')
+
+    cleanup()
+    const waitingBase = handoffDetailEnvelope()
+    const waitingDetail: RunDetailEnvelope = {
+      ...waitingBase,
+      run: {
+        ...waitingBase.run,
+        node_runs: waitingBase.run.node_runs.map((item) =>
+          item.node_id === 'transform' ? { ...item, progress: 0 } : item,
+        ),
+      },
+    }
+    render(
+      <App
+        gateway={new RecordingGateway(handoffEnvelope(), { detail: () => waitingDetail })}
+      />,
+    )
+    const waitingCard = await screen.findByLabelText('transform 节点')
+    expect(within(waitingCard).getByText('Waiting external')).toBeInTheDocument()
+    expect(within(waitingCard).queryByText('0%')).not.toBeInTheDocument()
+    const completedCard = screen.getByLabelText('source 节点')
+    expect(within(completedCard).getByText('Completed')).toBeInTheDocument()
+    expect(within(completedCard).queryByText('100%')).not.toBeInTheDocument()
+    fireEvent.click(waitingCard)
+    expect(screen.getByLabelText('Runtime details')).not.toHaveTextContent('0%')
+  })
+
+  it('failed automatic 显示最后可信 persisted fraction 和失败原因，不补到 100%', async () => {
+    const base = runningProgressDetail(0.4)
+    const error = { reason: 'cancelled' as const, message: '操作者取消 automatic attempt' }
+    const failedDetail: RunDetailEnvelope = {
+      ...base,
+      run: {
+        ...base.run,
+        state: 'failed',
+        ended_at: '2026-08-24T00:00:03Z',
+        error,
+        node_runs: base.run.node_runs.map((item) =>
+          item.node_id === 'source'
+            ? {
+                ...item,
+                state: 'failed' as const,
+                ended_at: '2026-08-24T00:00:03Z',
+                progress: 0.4,
+                error,
+              }
+            : item,
+        ),
+      },
+    }
+    render(
+      <App
+        gateway={new RecordingGateway(failedStatusEnvelope('cancelled'), {
+          detail: () => failedDetail,
+        })}
+      />,
+    )
+    const card = await screen.findByLabelText('source 节点')
+    expect(within(card).getByText('40%')).toBeInTheDocument()
+    expect(within(card).queryByText('100%')).not.toBeInTheDocument()
+    fireEvent.click(card)
+    const runtime = screen.getByLabelText('Runtime details')
+    expect(runtime).toHaveTextContent('failed · 40%')
+    expect(runtime).toHaveTextContent('操作者取消 automatic attempt')
+    expect(runtime).not.toHaveTextContent('100%')
   })
 
   it('Project generation 变化后迟到 status 不得回退可见进度', async () => {
@@ -518,6 +644,76 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     })
     expect(screen.getByText('running · 80%')).toBeInTheDocument()
     expect(screen.queryByText('running · 20%')).not.toBeInTheDocument()
+  })
+
+  it('切换 view Run 后旧 Run 的迟到 progress projection 不得覆盖新 Run', async () => {
+    vi.useFakeTimers()
+    const runA = handoffFixtureIds.run
+    const runB = '00000000-0000-4000-8000-000000000020'
+    const sourceB = '00000000-0000-4000-8000-000000000021'
+    const initial = runningProgressEnvelope(0.2, null)
+    const summaryA = initial.run_summaries[0]!
+    const envelope: StatusEnvelope = {
+      ...initial,
+      run_summaries: [
+        summaryA,
+        {
+          ...summaryA,
+          run_id: runB,
+          created_at: '2026-08-23T23:59:00Z',
+          started_at: '2026-08-23T23:59:00Z',
+          latest_activity_at: '2026-08-23T23:59:02Z',
+        },
+      ],
+    }
+    const detailA = projectedProgressDetail(0.2, 0.8, { current: 80, total: 100 })
+    const baseB = projectedProgressDetail(0.1, 0.3, { current: 30, total: 100 })
+    const detailB: RunDetailEnvelope = {
+      ...baseB,
+      progress_samples: baseB.progress_samples.map((sample) => ({
+        ...sample,
+        node_run_id: sourceB,
+      })),
+      run: {
+        ...baseB.run,
+        run_id: runB,
+        node_runs: baseB.run.node_runs.map((item) => ({
+          ...item,
+          run_id: runB,
+          node_run_id: item.node_id === 'source' ? sourceB : `${item.node_run_id.slice(0, -2)}2${item.node_run_id.slice(-1)}`,
+        })),
+      },
+    }
+    const slowA = new Deferred<RunDetailEnvelope>()
+    let runACalls = 0
+    const gateway = new RecordingGateway(envelope, {
+      detail: (runId) => {
+        if (runId === runB) return detailB
+        runACalls += 1
+        return runACalls === 1 ? detailA : slowA.promise
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    expect(within(screen.getByLabelText('source 节点')).getByText('80%')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    fireEvent.change(screen.getByRole('combobox', { name: '查看 Run' }), {
+      target: { value: runB },
+    })
+    await flushReact()
+    expect(within(screen.getByLabelText('source 节点')).getByText('30%')).toBeInTheDocument()
+
+    await act(async () => {
+      slowA.resolve(projectedProgressDetail(0.2, 0.9, { current: 90, total: 100 }))
+      await Promise.resolve()
+    })
+    expect(screen.getByRole('combobox', { name: '查看 Run' })).toHaveValue(runB)
+    expect(within(screen.getByLabelText('source 节点')).getByText('30%')).toBeInTheDocument()
+    expect(within(screen.getByLabelText('source 节点')).queryByText('90%')).not.toBeInTheDocument()
+    expect(runA).toBe(handoffFixtureIds.run)
   })
 
   it('命令等待时切换 viewRunId 仍由命令 owner 释放 busy', async () => {
@@ -565,6 +761,402 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('DETAIL STALE')
     expect(screen.getByRole('button', { name: 'Rerun from here' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Run all' })).toBeEnabled()
+  })
+
+  it.each([
+    ['projection 回退', projectedProgressDetail(0.2, 0.6, { current: 60, total: 100 })],
+    ['projection 消失', runningProgressDetail(0.2)],
+  ])('同 attempt 的%s保留最后可信值并立即定向 reinspect', async (_label, regressed) => {
+    vi.useFakeTimers()
+    const fresh = new Deferred<RunDetailEnvelope>()
+    const first = projectedProgressDetail(0.2, 0.8, { current: 80, total: 100 })
+    const gateway = new RecordingGateway(runningProgressEnvelope(0.2, null), {
+      detail: (_runId, count) => {
+        if (count === 1) return first
+        if (count === 2) return regressed
+        return fresh.promise
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    expect(within(screen.getByLabelText('source 节点')).getByText('80%')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    expect(gateway.inspectRunCount).toBe(3)
+    expect(within(screen.getByLabelText('source 节点')).getByText('80%')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('E_STUDIO_PROGRESS_REGRESSION')
+
+    await act(async () => {
+      fresh.resolve(projectedProgressDetail(0.2, 0.9, { current: 90, total: 100 }))
+      await Promise.resolve()
+    })
+    expect(within(screen.getByLabelText('source 节点')).getByText('90%')).toBeInTheDocument()
+  })
+
+  it('同 attempt 持续回退时只立即重查一次，之后恢复 750ms 节奏', async () => {
+    vi.useFakeTimers()
+    const repeatedRegression = new Deferred<RunDetailEnvelope>()
+    const nextScheduled = new Deferred<RunDetailEnvelope>()
+    const first = projectedProgressDetail(0.2, 0.8, { current: 80, total: 100 })
+    const regressed = projectedProgressDetail(0.2, 0.6, { current: 60, total: 100 })
+    const gateway = new RecordingGateway(runningProgressEnvelope(0.2, null), {
+      detail: (_runId, count) => {
+        if (count === 1) return first
+        if (count === 2) return regressed
+        if (count === 3) return repeatedRegression.promise
+        return nextScheduled.promise
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    expect(gateway.inspectRunCount).toBe(3)
+
+    await act(async () => {
+      repeatedRegression.resolve(regressed)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(gateway.inspectRunCount).toBe(3)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(749)
+    })
+    expect(gateway.inspectRunCount).toBe(3)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(gateway.inspectRunCount).toBe(4)
+  })
+
+  it('terminal status 不得让旧 running detail flight 冒领 final refresh', async () => {
+    vi.useFakeTimers()
+    const terminalStatus = new Deferred<StatusEnvelope>()
+    const staleRunningDetail = new Deferred<RunDetailEnvelope>()
+    const initialStatus = runningProgressEnvelope(0.2, null)
+    const first = projectedProgressDetail(0.2, 0.4, { current: 40, total: 100 })
+    const endedAt = '2026-08-24T00:00:03Z'
+    const completedDetail: RunDetailEnvelope = {
+      ...first,
+      progress_samples: [],
+      run: {
+        ...first.run,
+        state: 'completed',
+        ended_at: endedAt,
+        node_runs: first.run.node_runs.map((nodeRun) => ({
+          ...nodeRun,
+          state: 'completed' as const,
+          started_at: nodeRun.started_at ?? endedAt,
+          ended_at: endedAt,
+          progress: nodeRun.node_id === 'source' ? 1 : null,
+          error: null,
+          external_handoff: null,
+        })),
+      },
+    }
+    const completedStatus: StatusEnvelope = {
+      ...initialStatus,
+      active_operation: null,
+      run_summaries: initialStatus.run_summaries.map((summary) => ({
+        ...summary,
+        state: 'completed' as const,
+        state_counts: {
+          pending: 0,
+          running: 0,
+          waiting_external: 0,
+          completed: summary.node_count,
+          failed: 0,
+        },
+        actionable: false,
+        requires_operator_action: false,
+        ended_at: endedAt,
+        latest_activity_at: endedAt,
+      })),
+    }
+    const gateway = new RecordingGateway(initialStatus, {
+      inspect: (_viewRunId, count) => (count === 1 ? initialStatus : terminalStatus.promise),
+      detail: (_runId, count) => {
+        if (count === 1) return first
+        if (count === 2) return staleRunningDetail.promise
+        return completedDetail
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    expect(gateway.inspectCount).toBe(2)
+    expect(gateway.inspectRunCount).toBe(2)
+
+    await act(async () => {
+      terminalStatus.resolve(completedStatus)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(gateway.inspectRunCount).toBe(2)
+
+    await act(async () => {
+      staleRunningDetail.resolve(first)
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(gateway.inspectRunCount).toBe(3)
+    expect(within(screen.getByLabelText('source 节点')).getByText('Completed')).toBeInTheDocument()
+    expect(within(screen.getByLabelText('source 节点')).queryByText('40%')).not.toBeInTheDocument()
+  })
+
+  it('terminal fresh 已排队时旧 detail 失败仍必须遵守 750ms backoff', async () => {
+    vi.useFakeTimers()
+    const terminalStatus = new Deferred<StatusEnvelope>()
+    const failingRunningDetail = new Deferred<RunDetailEnvelope>()
+    const initialStatus = runningProgressEnvelope(0.2, null)
+    const first = projectedProgressDetail(0.2, 0.4, { current: 40, total: 100 })
+    const endedAt = '2026-08-24T00:00:03Z'
+    const completedDetail: RunDetailEnvelope = {
+      ...first,
+      progress_samples: [],
+      run: {
+        ...first.run,
+        state: 'completed',
+        ended_at: endedAt,
+        node_runs: first.run.node_runs.map((nodeRun) => ({
+          ...nodeRun,
+          state: 'completed' as const,
+          started_at: nodeRun.started_at ?? endedAt,
+          ended_at: endedAt,
+          progress: nodeRun.node_id === 'source' ? 1 : null,
+          error: null,
+          external_handoff: null,
+        })),
+      },
+    }
+    const completedStatus: StatusEnvelope = {
+      ...initialStatus,
+      active_operation: null,
+      run_summaries: initialStatus.run_summaries.map((summary) => ({
+        ...summary,
+        state: 'completed' as const,
+        state_counts: {
+          pending: 0,
+          running: 0,
+          waiting_external: 0,
+          completed: summary.node_count,
+          failed: 0,
+        },
+        actionable: false,
+        requires_operator_action: false,
+        ended_at: endedAt,
+        latest_activity_at: endedAt,
+      })),
+    }
+    const gateway = new RecordingGateway(initialStatus, {
+      inspect: (_viewRunId, count) => (count === 1 ? initialStatus : terminalStatus.promise),
+      detail: (_runId, count) => {
+        if (count === 1) return first
+        if (count === 2) return failingRunningDetail.promise
+        return completedDetail
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    expect(gateway.inspectRunCount).toBe(2)
+
+    await act(async () => {
+      terminalStatus.resolve(completedStatus)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      failingRunningDetail.reject(new Error('stale running detail failed'))
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(gateway.inspectRunCount).toBe(2)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(749)
+    })
+    expect(gateway.inspectRunCount).toBe(2)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(gateway.inspectRunCount).toBe(3)
+    expect(within(screen.getByLabelText('source 节点')).getByText('Completed')).toBeInTheDocument()
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('DETAIL OK')
+  })
+
+  it('running projection 转 completed 时按终态显示且不误触发回退重查', async () => {
+    vi.useFakeTimers()
+    const first = projectedProgressDetail(0.2, 0.8, { current: 80, total: 100 })
+    const completed: RunDetailEnvelope = {
+      ...first,
+      progress_samples: [],
+      run: {
+        ...first.run,
+        state: 'completed',
+        ended_at: '2026-08-24T00:00:03Z',
+        node_runs: first.run.node_runs.map((nodeRun) =>
+          nodeRun.node_id === 'source'
+            ? {
+                ...nodeRun,
+                state: 'completed',
+                progress: null,
+                ended_at: '2026-08-24T00:00:03Z',
+              }
+            : nodeRun,
+        ),
+      },
+    }
+    const gateway = new RecordingGateway(runningProgressEnvelope(0.2, null), {
+      detail: (_runId, count) => (count === 1 ? first : completed),
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    const sourceCard = screen.getByLabelText('source 节点')
+    expect(within(sourceCard).getByText('80%')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    expect(gateway.inspectRunCount).toBe(2)
+    expect(within(sourceCard).getByText('Completed')).toBeInTheDocument()
+    expect(within(sourceCard).queryByText('80%')).not.toBeInTheDocument()
+    expect(screen.queryByText(/E_STUDIO_PROGRESS_REGRESSION/)).not.toBeInTheDocument()
+  })
+
+  it('更高 attempt 使用新 node_run_id 建立新的 progress 生命周期', async () => {
+    vi.useFakeTimers()
+    const first = projectedProgressDetail(0.2, 0.8, { current: 80, total: 100 })
+    const oldSource = first.run.node_runs[0]!
+    const next: RunDetailEnvelope = {
+      ...first,
+      progress_samples: [],
+      run: {
+        ...first.run,
+        node_runs: [
+          {
+            ...oldSource,
+            state: 'failed',
+            ended_at: '2026-08-24T00:00:03Z',
+            progress: 0.8,
+            error: { reason: 'interrupted', message: '旧 attempt 已结束' },
+          },
+          {
+            ...oldSource,
+            node_run_id: '00000000-0000-4000-8000-000000000099',
+            attempt: 2,
+            created_at: '2026-08-24T00:00:04Z',
+            started_at: '2026-08-24T00:00:04Z',
+            progress: 0.1,
+          },
+          ...first.run.node_runs.slice(1),
+        ],
+      },
+    }
+    const gateway = new RecordingGateway(runningProgressEnvelope(0.2, null), {
+      detail: (_runId, count) => (count === 1 ? first : next),
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    expect(within(screen.getByLabelText('source 节点')).getByText('80%')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(751)
+    })
+    expect(within(screen.getByLabelText('source 节点')).getByText('10%')).toBeInTheDocument()
+    expect(screen.queryByText(/E_STUDIO_PROGRESS_REGRESSION/)).not.toBeInTheDocument()
+  })
+
+  it('detail 轮询保持 single-flight，失败按独立 750/1500/3000/5000 退避且不拖慢 status', async () => {
+    vi.useFakeTimers()
+    const slow = new Deferred<RunDetailEnvelope>()
+    let mode: 'slow' | 'failed' | 'recovered' = 'slow'
+    const gateway = new RecordingGateway(runningProgressEnvelope(0.4, null), {
+      inspect: (_viewRunId, count) => {
+        const envelope = runningProgressEnvelope(0.4, null)
+        return {
+          ...envelope,
+          run_summaries: envelope.run_summaries.map((summary) => ({
+            ...summary,
+            latest_activity_at: `2026-08-24T00:00:${String(Math.min(59, count)).padStart(2, '0')}Z`,
+          })),
+        }
+      },
+      detail: (_runId, count) => {
+        if (count === 1) return runningProgressDetail(0.4)
+        if (mode === 'slow') return slow.promise
+        if (mode === 'recovered') return runningProgressDetail(0.7)
+        throw new Error('detail offline')
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(gateway.inspectRunCount).toBe(2)
+    expect(gateway.inspectCount).toBeGreaterThan(2)
+
+    mode = 'failed'
+    await act(async () => {
+      slow.reject(new Error('detail offline'))
+      await Promise.resolve()
+    })
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('DETAIL STALE')
+    expect(screen.getByRole('alert')).toHaveTextContent('detail offline')
+    const afterSlowFailure = gateway.inspectRunCount
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(749)
+    })
+    expect(gateway.inspectRunCount).toBe(afterSlowFailure)
+    expect(screen.getByRole('alert')).toHaveTextContent('detail offline')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(gateway.inspectRunCount).toBe(afterSlowFailure + 1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_499)
+    })
+    expect(gateway.inspectRunCount).toBe(afterSlowFailure + 1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(gateway.inspectRunCount).toBe(afterSlowFailure + 2)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_999)
+    })
+    expect(gateway.inspectRunCount).toBe(afterSlowFailure + 2)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(gateway.inspectRunCount).toBe(afterSlowFailure + 3)
+    mode = 'recovered'
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_999)
+    })
+    expect(gateway.inspectRunCount).toBe(afterSlowFailure + 3)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(gateway.inspectRunCount).toBe(afterSlowFailure + 4)
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('DETAIL OK')
+    expect(within(screen.getByLabelText('source 节点')).getByText('70%')).toBeInTheDocument()
+    expect(screen.queryByText('detail offline')).not.toBeInTheDocument()
   })
 
   it('只允许对引用 Run 执行闭包内的节点发起 Rerun', async () => {

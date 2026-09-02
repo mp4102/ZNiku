@@ -30,6 +30,8 @@ from zniku.graph import (
 )
 from zniku.runtime.models import FrameRange
 
+from .progress import ProgressError, ProgressInfrastructureError, ProgressReporter
+
 _MEDIA_TYPES = frozenset({"MediaFile", "VideoFile", "AudioFile"})
 _DEFAULT_OUTPUT_SUFFIX = {
     "MediaFile": ".mkv",
@@ -163,7 +165,11 @@ class ProducedOutput:
 
 @dataclass(frozen=True, slots=True)
 class PythonAdapterContext:
-    """Python adapter 的最小稳定调用上下文。"""
+    """Python adapter 的最小稳定调用上下文。
+
+    ``progress`` 只在 Runtime 为 automatic Python attempt 注入可信 reporter 时存在；command
+    executor 不会取得该对象，manual external 也不构造本上下文。
+    """
 
     node_run_id: str
     attempt: int
@@ -174,6 +180,7 @@ class PythonAdapterContext:
     outputs: tuple[OutputTarget, ...]
     stdout_log_path: Path
     stderr_log_path: Path
+    progress: ProgressReporter | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,8 +464,17 @@ class NodeRunner:
         self._validators = dict(validators or {})
         self._media_probe = media_probe or self._build_ffprobe(ffprobe_executable)
 
-    def run_automatic(self, request: NodeExecutionRequest) -> RunnerResult:
-        """执行 automatic attempt；失败时只抛错，不返回部分 Artifact/Result。"""
+    def run_automatic(
+        self,
+        request: NodeExecutionRequest,
+        *,
+        progress: ProgressReporter | None = None,
+    ) -> RunnerResult:
+        """执行 automatic attempt；失败时只抛错，不返回部分 Artifact/Result。
+
+        Reporter 只传给受信任 Python adapter。command executor 第一版没有冻结机器可读进度协议，
+        即使调用方误传 reporter 也保持 indeterminate。
+        """
 
         ordered_inputs = self._validate_request(request)
         if request.definition.execution_mode is not ExecutionMode.AUTOMATIC:
@@ -466,6 +482,7 @@ class NodeRunner:
         layout = self._create_layout(request.node_run_id)
         targets = self._output_targets(request, layout)
         self._create_output_parents(targets, layout)
+        executor = request.definition.executor
         context = PythonAdapterContext(
             node_run_id=request.node_run_id,
             attempt=request.attempt,
@@ -476,10 +493,10 @@ class NodeRunner:
             outputs=targets,
             stdout_log_path=layout.stdout_log_path,
             stderr_log_path=layout.stderr_log_path,
+            progress=progress if isinstance(executor, PythonExecutorSpec) else None,
         )
 
         try:
-            executor = request.definition.executor
             if isinstance(executor, PythonExecutorSpec):
                 adapter_result, exit_code = self._run_python(executor, context), None
                 produced = self._resolve_produced_outputs(
@@ -888,6 +905,9 @@ class NodeRunner:
             )
         try:
             result = adapter(context)
+        except (ProgressError, ProgressInfrastructureError):
+            # Progress 的稳定合同码与 Repository 失败语义必须穿过 adapter 边界。
+            raise
         except (RunnerCancelled, RunnerInterrupted, asyncio.CancelledError, KeyboardInterrupt):
             raise
         except (SystemExit, GeneratorExit) as error:

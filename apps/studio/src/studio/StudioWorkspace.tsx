@@ -22,7 +22,12 @@ import {
   type OnSelectionChangeParams,
 } from '@xyflow/react'
 import { WorkflowNodeCard } from '../components/WorkflowNodeCard'
-import type { WorkflowEdge, WorkflowNode, WorkflowNodeData } from '../model'
+import type {
+  WorkflowEdge,
+  WorkflowNode,
+  WorkflowNodeData,
+  WorkflowProgressData,
+} from '../model'
 import type {
   ArtifactWire,
   EdgeWire,
@@ -32,6 +37,7 @@ import type {
   NodeDefinitionWire,
   NodeInstanceWire,
   NodeLogEnvelope,
+  NodeProgressProjectionWire,
   NodeRunWire,
   ProjectSnapshotWire,
   RunDetailEnvelope,
@@ -78,6 +84,18 @@ interface ReadinessProbeFlight {
   readonly generation: number
   readonly token: symbol
   readonly promise: Promise<ExternalHandoffReadiness | null>
+}
+
+interface DetailFlight {
+  readonly generation: number
+  readonly token: symbol
+  readonly authorityRevision: string
+  readonly promise: Promise<RunDetailEnvelope | null>
+}
+
+interface DetailBackoff {
+  readonly failureIndex: number
+  readonly retryAt: number
 }
 
 function nodeRunResourceKey(runId: string, nodeRunId: string): string {
@@ -165,6 +183,16 @@ function summaryRevision(summary: RunSummaryWire | undefined): string {
   ])
 }
 
+function summaryAuthorityRevision(summary: RunSummaryWire | undefined): string {
+  if (!summary) return ''
+  return JSON.stringify([
+    summary.run_id,
+    summary.state,
+    summary.state_counts,
+    summary.error,
+  ])
+}
+
 function statusPollDelay(status: StatusEnvelope | null): number {
   if (!status) return 5_000
   if (
@@ -174,6 +202,12 @@ function statusPollDelay(status: StatusEnvelope | null): number {
     return 750
   }
   return status.run_summaries.some((summary) => summary.actionable) ? 1_500 : 5_000
+}
+
+function detailPollDelay(summary: RunSummaryWire | undefined): number | null {
+  if (!summary) return 5_000
+  if (isTerminal(summary)) return null
+  return summary.state_counts.running > 0 ? 750 : 1_500
 }
 
 function targetLabel(summary: RunSummaryWire): string {
@@ -204,6 +238,57 @@ function elapsedLabel(createdAt: string): string {
   const hours = Math.floor(minutes / 60)
   if (hours < 48) return `已等待 ${hours}h ${minutes % 60}m`
   return `已等待 ${Math.floor(hours / 24)}d ${hours % 24}h`
+}
+
+function runtimeElapsedLabel(nodeRun: NodeRunWire): string | null {
+  if (!nodeRun.started_at) return null
+  const started = Date.parse(nodeRun.started_at)
+  const ended = nodeRun.ended_at ? Date.parse(nodeRun.ended_at) : Date.now()
+  if (!Number.isFinite(started) || !Number.isFinite(ended)) return null
+  const seconds = Math.max(0, Math.floor((ended - started) / 1_000))
+  if (seconds < 60) return `elapsed ${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `elapsed ${minutes}m ${seconds % 60}s`
+  return `elapsed ${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
+function nodeProgressView(
+  nodeRun: NodeRunWire | null,
+  definition: NodeDefinitionWire,
+  projection: NodeProgressProjectionWire | null,
+): WorkflowProgressData {
+  if (!nodeRun) return { mode: 'none', fraction: null, measurement: null, elapsed: null }
+  const elapsed = runtimeElapsedLabel(nodeRun)
+  const supportsDeterminateProgress =
+    definition.execution_mode === 'automatic' && definition.executor.kind === 'python'
+  if (nodeRun.state === 'completed' || nodeRun.reused_from_result_id !== null) {
+    return { mode: 'completed', fraction: null, measurement: null, elapsed }
+  }
+  if (nodeRun.state === 'waiting_external' || nodeRun.state === 'pending') {
+    return { mode: 'none', fraction: null, measurement: null, elapsed }
+  }
+  if (nodeRun.state === 'running') {
+    if (supportsDeterminateProgress && projection) {
+      return {
+        mode: 'determinate',
+        fraction: projection.fraction,
+        measurement: projection.current === null ? null : projection,
+        elapsed,
+      }
+    }
+    if (supportsDeterminateProgress && nodeRun.progress !== null) {
+      return { mode: 'determinate', fraction: nodeRun.progress, measurement: null, elapsed }
+    }
+    return { mode: 'indeterminate', fraction: null, measurement: null, elapsed }
+  }
+  if (
+    nodeRun.state === 'failed' &&
+    supportsDeterminateProgress &&
+    nodeRun.progress !== null
+  ) {
+    return { mode: 'determinate', fraction: nodeRun.progress, measurement: null, elapsed }
+  }
+  return { mode: 'none', fraction: null, measurement: null, elapsed }
 }
 
 function isTerminal(summary: RunSummaryWire | undefined): boolean {
@@ -246,23 +331,60 @@ function monotonicDetail(
     return { detail: incoming, regressed: false }
   }
   const trusted = new Map(previous.run.node_runs.map((item) => [item.node_run_id, item]))
+  const trustedSamples = new Map(
+    previous.progress_samples.map((item) => [item.node_run_id, item]),
+  )
+  const incomingSamples = new Map(
+    incoming.progress_samples.map((item) => [item.node_run_id, item]),
+  )
   let regressed = false
   const nodeRuns = incoming.run.node_runs.map((item) => {
     const prior = trusted.get(item.node_run_id)
+    if (prior?.attempt !== item.attempt) return item
+    let nextItem = item
     if (
-      prior?.attempt === item.attempt &&
       prior.progress !== null &&
-      item.progress !== null &&
-      item.progress < prior.progress
+      (item.state === 'running' || item.state === 'failed') &&
+      (item.progress === null || item.progress < prior.progress)
     ) {
       regressed = true
-      return { ...item, progress: prior.progress }
+      nextItem = { ...item, progress: prior.progress }
     }
-    return item
+    // completed/reused 已进入新的终态语义；此时 reporter projection 按合同必须消失，
+    // 不能把正常的 100% 完成转换误判为回退并触发无限定向重查。
+    if (item.state !== 'running' && item.state !== 'failed') return nextItem
+    const priorSample = trustedSamples.get(item.node_run_id)
+    const nextSample = incomingSamples.get(item.node_run_id)
+    const priorFraction = priorSample?.fraction ?? prior.progress
+    const nextFraction = nextSample?.fraction ?? nextItem.progress
+    if (priorFraction === null || (nextFraction !== null && nextFraction >= priorFraction)) {
+      return nextItem
+    }
+
+    regressed = true
+    if (item.state === 'running' && priorSample?.fraction === priorFraction) {
+      incomingSamples.set(item.node_run_id, priorSample)
+      return nextItem
+    }
+    incomingSamples.delete(item.node_run_id)
+    return { ...item, progress: priorFraction }
   })
+  const progressSamples = incoming.progress_samples.flatMap((item) => {
+    const trustedItem = incomingSamples.get(item.node_run_id)
+    return trustedItem ? [trustedItem] : []
+  })
+  for (const [nodeRunId, sample] of incomingSamples) {
+    if (!progressSamples.some((item) => item.node_run_id === nodeRunId)) progressSamples.push(sample)
+  }
   return {
     regressed,
-    detail: regressed ? { ...incoming, run: { ...incoming.run, node_runs: nodeRuns } } : incoming,
+    detail: regressed
+      ? {
+          ...incoming,
+          run: { ...incoming.run, node_runs: nodeRuns },
+          progress_samples: progressSamples,
+        }
+      : incoming,
   }
 }
 
@@ -296,6 +418,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const [parameterText, setParameterText] = useState('{}')
   const [bottomOpen, setBottomOpen] = useState(true)
   const [pollEpoch, setPollEpoch] = useState(0)
+  const [detailPollEpoch, setDetailPollEpoch] = useState(0)
 
   const statusRef = useRef<StatusEnvelope | null>(null)
   const detailRef = useRef<RunDetailEnvelope | null>(null)
@@ -326,9 +449,18 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     log: new Map<string, number>(),
   })
   const readinessProbeFlightRef = useRef(new Map<string, ReadinessProbeFlight>())
+  const detailFlightRef = useRef(new Map<string, DetailFlight>())
+  const detailBackoffRef = useRef(new Map<string, DetailBackoff>())
+  const detailReinspectRef = useRef(new Set<string>())
+  const detailRegressionEpisodeRef = useRef(new Set<string>())
+  const detailQueuedRevisionRef = useRef(new Map<string, string>())
+  const consumedDetailPollEpochRef = useRef(0)
+  const detailBoundaryErrorRef = useRef<string | null>(null)
+  const statusBoundaryErrorRef = useRef<string | null>(null)
   const selectedLogResourceRef = useRef<string | null>(null)
   const busyRef = useRef(false)
   const detailSummaryRevisionRef = useRef('')
+  const detailRequestedSummaryRevisionRef = useRef('')
 
   const markStatusHealth = useCallback((stale: boolean) => {
     setStatusHealth((current) => ({
@@ -403,7 +535,13 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           setHistoryCursor(next.next_run_cursor)
         }
       }
-      setBoundaryError(null)
+      const priorStatusError = statusBoundaryErrorRef.current
+      statusBoundaryErrorRef.current = null
+      if (priorStatusError !== null) {
+        setBoundaryError((current) =>
+          current === priorStatusError ? detailBoundaryErrorRef.current : current,
+        )
+      }
       setClientHint(next.error ? `${next.error.code}: ${next.error.message}` : null)
       markStatusHealth(false)
     },
@@ -421,46 +559,125 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       setResourceHealth(emptyResourceHealth())
       selectedLogResourceRef.current = null
       detailSummaryRevisionRef.current = ''
+      detailRequestedSummaryRevisionRef.current = ''
+      const priorDetailError = detailBoundaryErrorRef.current
+      detailBoundaryErrorRef.current = null
+      if (priorDetailError !== null) {
+        setBoundaryError((current) => (current === priorDetailError ? null : current))
+      }
+      detailFlightRef.current.clear()
+      detailBackoffRef.current.clear()
+      detailReinspectRef.current.clear()
+      detailRegressionEpisodeRef.current.clear()
+      detailQueuedRevisionRef.current.clear()
     }
   }, [])
 
   const loadDetail = useCallback(
-    async (runId: string, generation: number): Promise<RunDetailEnvelope | null> => {
-      const sequence = ++sequenceRef.current.detail
+    (runId: string, generation: number): Promise<RunDetailEnvelope | null> => {
+      if (generation !== generationRef.current || runId !== viewRunIdRef.current) {
+        return Promise.resolve(null)
+      }
       const resourceKey = runId
-      latestIssuedSequenceRef.current.detail.set(resourceKey, sequence)
-      try {
-        const incoming = await effectiveGateway.inspectRun(runId)
-        if (
-          generation !== generationRef.current ||
-          runId !== viewRunIdRef.current ||
-          sequence !== latestIssuedSequenceRef.current.detail.get(resourceKey) ||
-          sequence <= (acceptedResourceSequenceRef.current.detail.get(resourceKey) ?? 0)
-        ) {
+      const requestedSummary = statusRef.current?.run_summaries.find(
+        (item) => item.run_id === runId,
+      )
+      const requestedSummaryRevision = summaryRevision(requestedSummary)
+      const requestedAuthorityRevision = summaryAuthorityRevision(requestedSummary)
+      const existing = detailFlightRef.current.get(resourceKey)
+      if (existing?.generation === generation) {
+        if (existing.authorityRevision !== requestedAuthorityRevision) {
+          // terminal/final status 不得被旧 running detail flight 消费；旧请求结束后排队 fresh detail。
+          detailQueuedRevisionRef.current.set(resourceKey, requestedSummaryRevision)
+        }
+        return existing.promise
+      }
+      if (existing) detailFlightRef.current.delete(resourceKey)
+
+      const token = Symbol(resourceKey)
+      detailRequestedSummaryRevisionRef.current = requestedSummaryRevision
+      const request = (async (): Promise<RunDetailEnvelope | null> => {
+        const sequence = ++sequenceRef.current.detail
+        latestIssuedSequenceRef.current.detail.set(resourceKey, sequence)
+        try {
+          const incoming = await effectiveGateway.inspectRun(runId)
+          if (
+            generation !== generationRef.current ||
+            runId !== viewRunIdRef.current ||
+            sequence !== latestIssuedSequenceRef.current.detail.get(resourceKey) ||
+            sequence <= (acceptedResourceSequenceRef.current.detail.get(resourceKey) ?? 0)
+          ) {
+            return null
+          }
+          acceptedResourceSequenceRef.current.detail.set(resourceKey, sequence)
+          const merged = monotonicDetail(detailRef.current, incoming)
+          detailRef.current = merged.detail
+          setDetail(merged.detail)
+          detailBackoffRef.current.delete(resourceKey)
+          const priorDetailError = detailBoundaryErrorRef.current
+          detailBoundaryErrorRef.current = null
+          if (priorDetailError !== null) {
+            setBoundaryError((current) => (current === priorDetailError ? null : current))
+          }
+          if (merged.regressed) {
+            if (!detailRegressionEpisodeRef.current.has(resourceKey)) {
+              detailRegressionEpisodeRef.current.add(resourceKey)
+              detailReinspectRef.current.add(resourceKey)
+            }
+            setClientHint('E_STUDIO_PROGRESS_REGRESSION：已保留最后可信进度并重新检查。')
+          } else {
+            detailRegressionEpisodeRef.current.delete(resourceKey)
+          }
+          // 只能确认请求发起时的 summary revision；不得让旧 running 响应冒领 terminal revision。
+          detailSummaryRevisionRef.current = requestedSummaryRevision
+          detailRequestedSummaryRevisionRef.current = requestedSummaryRevision
+          markResourceHealth('detail', resourceKey, false)
+          return merged.detail
+        } catch (error) {
+          if (
+            generation === generationRef.current &&
+            runId === viewRunIdRef.current &&
+            sequence === latestIssuedSequenceRef.current.detail.get(resourceKey)
+          ) {
+            const previous = detailBackoffRef.current.get(resourceKey)
+            const failureIndex = previous?.failureIndex ?? 0
+            const delay = failureBackoff[Math.min(failureIndex, failureBackoff.length - 1)]!
+            detailBackoffRef.current.set(resourceKey, {
+              failureIndex: Math.min(failureIndex + 1, failureBackoff.length),
+              retryAt: Date.now() + delay,
+            })
+            markResourceHealth('detail', resourceKey, true)
+            const message = error instanceof Error ? error.message : 'Run detail 读取失败'
+            detailBoundaryErrorRef.current = message
+            setBoundaryError(message)
+          }
           return null
         }
-        acceptedResourceSequenceRef.current.detail.set(resourceKey, sequence)
-        const merged = monotonicDetail(detailRef.current, incoming)
-        detailRef.current = merged.detail
-        setDetail(merged.detail)
-        if (merged.regressed) {
-          setClientHint('E_STUDIO_PROGRESS_REGRESSION：已保留最后可信进度并重新检查。')
-        }
-        const summary = statusRef.current?.run_summaries.find((item) => item.run_id === runId)
-        detailSummaryRevisionRef.current = summaryRevision(summary)
-        markResourceHealth('detail', resourceKey, false)
-        return merged.detail
-      } catch (error) {
+      })()
+      const guarded = request.finally(() => {
+        const current = detailFlightRef.current.get(resourceKey)
+        if (current?.generation !== generation || current.token !== token) return
+        detailFlightRef.current.delete(resourceKey)
+        const queuedRevision = detailQueuedRevisionRef.current.get(resourceKey)
+        const queuedRefresh =
+          queuedRevision !== undefined && queuedRevision !== requestedSummaryRevision
+        if (queuedRevision !== undefined) detailQueuedRevisionRef.current.delete(resourceKey)
+        const immediateReinspect = detailReinspectRef.current.delete(resourceKey)
         if (
+          (queuedRefresh || immediateReinspect) &&
           generation === generationRef.current &&
-          runId === viewRunIdRef.current &&
-          sequence === latestIssuedSequenceRef.current.detail.get(resourceKey)
+          runId === viewRunIdRef.current
         ) {
-          markResourceHealth('detail', resourceKey, true)
-          setBoundaryError(error instanceof Error ? error.message : 'Run detail 读取失败')
+          setDetailPollEpoch((value) => value + 1)
         }
-        return null
-      }
+      })
+      detailFlightRef.current.set(resourceKey, {
+        generation,
+        token,
+        authorityRevision: requestedAuthorityRevision,
+        promise: guarded,
+      })
+      return guarded
     },
     [effectiveGateway, markResourceHealth],
   )
@@ -565,6 +782,8 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     let active = true
     setLoading(true)
     setBoundaryError(null)
+    detailBoundaryErrorRef.current = null
+    statusBoundaryErrorRef.current = null
     const sequence = ++sequenceRef.current.status
     effectiveGateway
       .inspect(null)
@@ -591,7 +810,9 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       .catch((error: unknown) => {
         if (active && generation === generationRef.current) {
           markStatusHealth(true)
-          setBoundaryError(error instanceof Error ? error.message : 'Project Service inspect 失败')
+          const message = error instanceof Error ? error.message : 'Project Service inspect 失败'
+          statusBoundaryErrorRef.current = message
+          setBoundaryError(message)
         }
       })
       .finally(() => {
@@ -649,7 +870,9 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         }
         if (!nextStatus && generation === generationRef.current) {
           markStatusHealth(true)
-          setBoundaryError(error instanceof Error ? error.message : 'Project Service status 读取失败')
+          const message = error instanceof Error ? error.message : 'Project Service status 读取失败'
+          statusBoundaryErrorRef.current = message
+          setBoundaryError(message)
         }
       }
 
@@ -662,10 +885,6 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       }
 
       if (!nextStatus) {
-        const existingDetail = detailRef.current
-        if (existingDetail && viewRunIdRef.current) {
-          await loadDetail(viewRunIdRef.current, generation)
-        }
         schedule(failureBackoff[Math.min(failureIndex++, failureBackoff.length - 1)]!)
         return
       }
@@ -693,30 +912,26 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         setClientHint('先前选择的 Run 已不存在，已重新选择可用 Run。')
       }
 
-      let selectedDetail = detailRef.current
       const selectedSummary = merged.find((summary) => summary.run_id === selected)
       const revision = summaryRevision(selectedSummary)
-      if (
-        selected &&
-        (selectedDetail?.run.run_id !== selected ||
-          !isTerminal(selectedSummary) ||
-          detailSummaryRevisionRef.current !== revision)
-      ) {
-        selectedDetail = (await loadDetail(selected, generation)) ?? detailRef.current
-      }
-
-      if (selected && selectedDetail?.run.run_id === selected) {
-        const waiting = [...latestNodeRuns(selectedDetail.run).values()].filter(
-          (item) => item.state === 'waiting_external' && item.external_handoff !== null,
-        )
-        for (const nodeRun of waiting) {
-          if (cancelled || generation !== generationRef.current) return
-          await loadReadiness(selected, nodeRun.node_run_id, false, generation)
-        }
-      }
-
       const finalRefresh = previousOperation !== null && nextStatus.active_operation === null
       previousOperation = nextStatus.active_operation
+      const revisionNeedsRefresh =
+        detailSummaryRevisionRef.current !== revision &&
+        detailRequestedSummaryRevisionRef.current !== revision
+      if (
+        selected &&
+        (finalRefresh ||
+          detailRef.current?.run.run_id !== selected ||
+          revisionNeedsRefresh)
+      ) {
+        detailRequestedSummaryRevisionRef.current = revision
+        // status 的 revision 可以在 Runtime 活跃时持续推进；detail channel 已失败时必须尊重
+        // 自己的 750/1500/3000/5000 退避，不能被每次轻量 status 成功强制穿透。
+        if (!detailBackoffRef.current.has(selected)) {
+          setDetailPollEpoch((value) => value + 1)
+        }
+      }
       schedule(finalRefresh ? 0 : statusPollDelay(nextStatus))
     }
 
@@ -728,13 +943,78 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   }, [
     acceptStatus,
     effectiveGateway,
-    loadDetail,
-    loadReadiness,
     loading,
     markStatusHealth,
     pollEpoch,
     setTrustedViewRunId,
   ])
+
+  useEffect(() => {
+    if (loading || !viewRunId) return
+    const generation = generationRef.current
+    const runId = viewRunId
+    let cancelled = false
+    let timer: number | null = null
+    const forced = detailPollEpoch > consumedDetailPollEpochRef.current
+    consumedDetailPollEpochRef.current = detailPollEpoch
+
+    const schedule = (delay: number) => {
+      if (!cancelled && generation === generationRef.current) {
+        timer = window.setTimeout(() => void cycle(), delay)
+      }
+    }
+
+    const cycle = async () => {
+      if (
+        cancelled ||
+        generation !== generationRef.current ||
+        runId !== viewRunIdRef.current
+      ) {
+        return
+      }
+      const backoff = detailBackoffRef.current.get(runId)
+      if (backoff && backoff.retryAt > Date.now()) {
+        schedule(backoff.retryAt - Date.now())
+        return
+      }
+
+      const selectedDetail = await loadDetail(runId, generation)
+      if (
+        cancelled ||
+        generation !== generationRef.current ||
+        runId !== viewRunIdRef.current
+      ) {
+        return
+      }
+      if (selectedDetail) {
+        const waiting = [...latestNodeRuns(selectedDetail.run).values()].filter(
+          (item) => item.state === 'waiting_external' && item.external_handoff !== null,
+        )
+        for (const nodeRun of waiting) {
+          if (cancelled || generation !== generationRef.current) return
+          await loadReadiness(runId, nodeRun.node_run_id, false, generation)
+        }
+      }
+
+      const failed = detailBackoffRef.current.get(runId)
+      if (!selectedDetail && failed) {
+        schedule(Math.max(0, failed.retryAt - Date.now()))
+        return
+      }
+      const summary = statusRef.current?.run_summaries.find((item) => item.run_id === runId)
+      const delay = detailPollDelay(summary)
+      if (delay !== null) schedule(delay)
+    }
+
+    const summary = statusRef.current?.run_summaries.find((item) => item.run_id === runId)
+    const normalDelay = detailRef.current?.run.run_id === runId ? detailPollDelay(summary) : 0
+    if (forced) void cycle()
+    else if (normalDelay !== null) schedule(normalDelay)
+    return () => {
+      cancelled = true
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [detailPollEpoch, loadDetail, loadReadiness, loading, pollEpoch, viewRunId])
 
   const allSummaries = useMemo(
     () => mergeSummaries(status?.run_summaries ?? [], historySummaries),
@@ -781,6 +1061,16 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     () => new Map((detail?.artifacts ?? []).map((artifact) => [artifact.artifact_id, artifact])),
     [detail?.artifacts],
   )
+  const progressSamplesByNodeRun = useMemo(
+    () =>
+      new Map(
+        (detail?.run.run_id === viewRunId ? detail.progress_samples : []).map((sample) => [
+          sample.node_run_id,
+          sample,
+        ]),
+      ),
+    [detail, viewRunId],
+  )
   const definitionsByKey = useMemo(
     () => new Map(definitions.map((definition) => [`${definition.type_id}@${definition.version}`, definition])),
     [definitions],
@@ -791,6 +1081,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       graph.nodes.flatMap((node, index) => {
         const definition = definitionsByKey.get(`${node.type_id}@${node.definition_version}`)
         if (!definition) return []
+        const nodeRun = activeNodeRuns.get(node.node_id) ?? null
         const data: WorkflowNodeData = {
           label: node.node_id,
           typeId: node.type_id,
@@ -798,7 +1089,12 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           executorKind: definition.executor.kind,
           inputs: definition.input_ports,
           outputs: definition.output_ports,
-          nodeRun: activeNodeRuns.get(node.node_id) ?? null,
+          nodeRun,
+          progress: nodeProgressView(
+            nodeRun,
+            definition,
+            nodeRun ? progressSamplesByNodeRun.get(nodeRun.node_run_id) ?? null : null,
+          ),
           latestResult: latestResults.get(node.node_id) ?? null,
         }
         return [
@@ -815,7 +1111,14 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           },
         ]
       }),
-    [activeNodeRuns, definitionsByKey, graph.nodes, latestResults, selectedNodeIds],
+    [
+      activeNodeRuns,
+      definitionsByKey,
+      graph.nodes,
+      latestResults,
+      progressSamplesByNodeRun,
+      selectedNodeIds,
+    ],
   )
 
   const flowEdges = useMemo<WorkflowEdge[]>(
@@ -838,7 +1141,24 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const selectedNode = graph.nodes.find((node) => selectedNodeIds.has(node.node_id)) ?? null
   const selectedDefinition = selectedNode ? definitionForNode(selectedNode, definitions) : null
   const selectedEdge = graph.edges.find((edge) => selectedEdgeIds.has(edgeId(edge))) ?? null
-  const selectedNodeRun = selectedNode ? activeNodeRuns.get(selectedNode.node_id) ?? null : null
+  const selectedNodeRunAuthority = selectedNode
+    ? activeNodeRuns.get(selectedNode.node_id) ?? null
+    : null
+  const selectedProgress =
+    selectedNodeRunAuthority && selectedDefinition
+      ? nodeProgressView(
+          selectedNodeRunAuthority,
+          selectedDefinition,
+          progressSamplesByNodeRun.get(selectedNodeRunAuthority.node_run_id) ?? null,
+        )
+      : null
+  const selectedNodeRun = selectedNodeRunAuthority
+    ? {
+        ...selectedNodeRunAuthority,
+        progress:
+          selectedProgress?.mode === 'determinate' ? selectedProgress.fraction : null,
+      }
+    : null
   const selectedLogResourceKey =
     viewRunId && selectedNodeRun?.log_path
       ? `${viewRunId}/${selectedNodeRun.node_run_id}`
@@ -1412,6 +1732,22 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
             <section><h3>Typed ports</h3>{(['input_ports', 'output_ports'] as const).map((direction) => <div className="port-group" key={direction}><span className="port-group-label">{direction}</span>{selectedDefinition[direction].length ? selectedDefinition[direction].map((port) => <div className="port-summary" key={port.port_id}><span>{port.port_id}</span><code>{port.data_type} · {port.cardinality}{port.required ? ' · required' : ''}</code></div>) : <div className="port-empty">none</div>}</div>)}</section>
             <section><h3>Parameters</h3><textarea aria-label="节点参数 JSON" value={parameterText} onChange={(event) => setParameterText(event.target.value)} rows={8} readOnly={!graphEditable} /><button className="button button--primary inspector-action" type="button" disabled={busy || !graphEditable} onClick={applyParameters}>应用参数到 Draft</button><details><summary>parameter_schema</summary><pre>{JSON.stringify(selectedDefinition.parameter_schema, null, 2)}</pre></details></section>
             {selectedNodeRun && <section aria-label="Runtime details"><h3>Runtime · attempt {selectedNodeRun.attempt}</h3><div className={`runtime-status runtime-status--${selectedNodeRun.state}`}>{selectedNodeRun.state}{selectedNodeRun.progress !== null ? ` · ${Math.round(selectedNodeRun.progress * 100)}%` : ''}{selectedNodeRun.reused_from_result_id ? ' · reused' : ''}</div>{selectedNodeRun.error && <p className="runtime-error">{selectedNodeRun.error.reason}<br />{selectedNodeRun.error.message}</p>}{selectedOutputs.map((artifact) => <div className="output-path" key={artifact.artifact_id}><span>{artifact.producer_port_id}</span><code>{artifact.path}</code></div>)}{selectedNodeRun.external_handoff && <div className="handoff-panel"><strong>External handoff</strong>{selectedNodeRun.external_handoff.instructions && <p>{selectedNodeRun.external_handoff.instructions}</p>}<span>Inputs</span>{handoffInputs.map((path, index) => <div className="handoff-path" key={`${selectedNodeRun.external_handoff!.input_artifact_ids[index]}-${index}`}><code>{path}</code><button type="button" onClick={() => void copyPath(path)}>Copy input path</button></div>)}<span>Targets</span>{selectedNodeRun.external_handoff.output_targets.map((target) => <div className="handoff-path" key={`${target.port_id}-${target.ordinal ?? 'one'}`}><code>{target.port_id}{target.ordinal === null ? '' : ` #${target.ordinal}`} · {target.path}</code><button type="button" onClick={() => void copyPath(target.path)}>Copy target path</button></div>)}<div className="readiness-state">Readiness · {readinessLabel(readiness.get(selectedNodeRun.node_run_id) ?? null)}</div><button className="button button--primary inspector-action" type="button" disabled={detailMutationBlocked || health.readiness.stale || selectedNodeRun.state !== 'waiting_external' || !readiness.get(selectedNodeRun.node_run_id) || readiness.get(selectedNodeRun.node_run_id)!.targets.some((target) => target.state !== 'present' && target.state !== 'probe_passed')} onClick={() => void validateAndSubmit(selectedNodeRun)}>Validate and submit</button></div>}{(selectedLog || selectedNodeRun.log_path) && <div className="node-logs">{selectedNodeRun.log_path && <code>{selectedNodeRun.log_path}</code>}<h4>stdout{selectedLog?.stdout_truncated ? '（尾部截断）' : ''}</h4><pre>{health.log.stale ? '（日志通道离线，保留最后可信内容）' : selectedLog?.stdout_available ? selectedLog.stdout || '（空）' : '（不可用）'}</pre><h4>stderr{selectedLog?.stderr_truncated ? '（尾部截断）' : ''}</h4><pre>{health.log.stale ? '（日志通道离线，保留最后可信内容）' : selectedLog?.stderr_available ? selectedLog.stderr || '（空）' : '（不可用）'}</pre></div>}</section>}
+            {selectedNodeRun && selectedProgress && (
+              selectedProgress.mode === 'indeterminate' ||
+              selectedProgress.measurement !== null ||
+              selectedProgress.elapsed !== null
+            ) && (
+              <div className="runtime-progress-detail" aria-label="Runtime progress details">
+                {selectedProgress.mode === 'indeterminate' && <span>indeterminate</span>}
+                {selectedProgress.measurement && (
+                  <span>
+                    {selectedProgress.measurement.current} / {selectedProgress.measurement.total}{' '}
+                    {selectedProgress.measurement.unit}
+                  </span>
+                )}
+                {selectedProgress.elapsed && <span>{selectedProgress.elapsed}</span>}
+              </div>
+            )}
           </div>
         ) : selectedEdge ? (
           <div className="inspector-content"><section><h3>Edge</h3><p>{selectedEdge.source_node_id}.{selectedEdge.source_port_id} → {selectedEdge.target_node_id}.{selectedEdge.target_port_id}</p>{selectedEdge.ordinal !== null && <label className="ordinal-editor">Ordinal<input aria-label="Edge ordinal" type="number" min={0} value={selectedEdge.ordinal} disabled={!graphEditable} onChange={(event) => updateGraph((current) => reorderEdge(current, edgeId(selectedEdge), Number(event.target.value)))} /></label>}<button className="button button--danger inspector-action" type="button" disabled={!graphEditable} onClick={deleteSelected}>删除所选连接</button></section></div>

@@ -18,7 +18,7 @@ from typing import Final
 
 from pydantic import ValidationError
 
-from zniku.graph import NodeDefinition
+from zniku.graph import ExecutionMode, NodeDefinition, PythonExecutorSpec
 from zniku.project import Project, ProjectStore, ProjectStoreError
 from zniku.runtime import (
     Artifact,
@@ -38,6 +38,7 @@ from zniku.runtime import (
     Scheduler,
     utc_now,
 )
+from zniku.runtime.progress import MonotonicClock, WallClock
 from zniku.runtime.runner import MediaProbe, NodeValidator
 
 from .models import (
@@ -48,6 +49,7 @@ from .models import (
     ExternalOutputReadiness,
     NodeLogEnvelope,
     NodeLogProjection,
+    NodeProgressProjection,
     OpenProjectCommand,
     ProjectServiceFailure,
     RerunFromHereCommand,
@@ -97,6 +99,8 @@ class ProjectServiceApplication:
         validators: Mapping[str, NodeValidator] | None = None,
         media_probe: MediaProbe | None = None,
         artifact_quick_probe: ArtifactQuickProbe | None = None,
+        progress_wall_clock: WallClock | None = None,
+        progress_monotonic_clock: MonotonicClock | None = None,
     ) -> None:
         root = Path(work_root)
         try:
@@ -131,6 +135,8 @@ class ProjectServiceApplication:
         self._validators = dict(validators or {})
         self._media_probe = media_probe
         self._artifact_quick_probe = artifact_quick_probe
+        self._progress_wall_clock = progress_wall_clock
+        self._progress_monotonic_clock = progress_monotonic_clock
         self._state = threading.Condition(threading.RLock())
         self._store: ProjectStore | None = None
         self._runtime: RuntimeService | None = None
@@ -260,7 +266,7 @@ class ProjectServiceApplication:
             return RunDetailEnvelope(
                 run=run,
                 artifacts=self._collect_run_artifacts(run, runtime),
-                progress_samples=(),
+                progress_samples=self._project_progress(run, runtime),
             )
         except (RuntimeRepositoryError, ValidationError) as failure:
             raise self._translate_failure(failure) from failure
@@ -579,6 +585,8 @@ class ProjectServiceApplication:
             validators=self._validators,
             media_probe=self._media_probe,
             artifact_quick_probe=self._artifact_quick_probe,
+            progress_wall_clock=self._progress_wall_clock,
+            progress_monotonic_clock=self._progress_monotonic_clock,
         )
 
     def _session_view(
@@ -691,6 +699,64 @@ class ProjectServiceApplication:
                 collected.append(runtime.repository.get_artifact(artifact_id))
                 seen.add(artifact_id)
         return tuple(collected)
+
+    @staticmethod
+    def _project_progress(
+        run: Run,
+        runtime: RuntimeService,
+    ) -> tuple[NodeProgressProjection, ...]:
+        """把 Runtime 进程投影精确绑定到捕获 Run 的最新 running automatic attempts。"""
+
+        samples = {sample.node_run_id: sample for sample in runtime.progress_snapshot(run.run_id)}
+        latest: dict[str, NodeRun] = {}
+        for historical in run.node_runs:
+            previous = latest.get(historical.node_id)
+            if previous is None or historical.attempt > previous.attempt:
+                latest[historical.node_id] = historical
+        nodes = {node.node_id: node for node in run.graph_snapshot.nodes}
+        definitions = {
+            (definition.type_id, definition.version): definition
+            for definition in run.definitions_snapshot
+        }
+        projected: list[NodeProgressProjection] = []
+        for node_id in Scheduler(run.graph_snapshot).topological_order:
+            latest_run = latest.get(node_id)
+            if latest_run is None or latest_run.state is not NodeRunState.RUNNING:
+                continue
+            node = nodes[node_id]
+            definition = definitions.get((node.type_id, node.definition_version))
+            if definition is None:
+                raise RuntimeRepositoryError(
+                    "E_PROGRESS_DEFINITION_MISSING",
+                    "Run progress 投影无法解析 exact NodeDefinition",
+                )
+            if definition.execution_mode is not ExecutionMode.AUTOMATIC or not isinstance(
+                definition.executor, PythonExecutorSpec
+            ):
+                continue
+            sample = samples.get(latest_run.node_run_id)
+            if sample is None:
+                continue
+            if (
+                sample.run_id != run.run_id
+                or sample.attempt != latest_run.attempt
+                or (latest_run.progress is not None and sample.fraction < latest_run.progress)
+            ):
+                raise RuntimeRepositoryError(
+                    "E_PROGRESS_PROJECTION_BINDING",
+                    "进程 progress sample 低于持久 authority 或绑定错误",
+                )
+            projected.append(
+                NodeProgressProjection(
+                    node_run_id=latest_run.node_run_id,
+                    fraction=sample.fraction,
+                    current=sample.current,
+                    total=sample.total,
+                    unit=sample.unit,
+                    observed_at=sample.observed_at,
+                )
+            )
+        return tuple(projected)
 
     @staticmethod
     def _summarize_run(run: Run) -> RunSummary:
