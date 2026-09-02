@@ -103,6 +103,7 @@ def test_active_guidance_points_only_to_the_graph_core_authority() -> None:
             "`zniku.runtime`",
             "`zniku.project_service`",
             "`zniku.media`",
+            "`zniku.avenhance_v27`",
         )
     )
     assert "0.1.0 contracts" in package_doc
@@ -142,6 +143,7 @@ def test_legacy_python_implementation_is_not_shipped_as_product_code() -> None:
 
     assert {init_file.parent.name for init_file in package_root.glob("*/__init__.py")} == {
         "graph",
+        "avenhance_v27",
         "media",
         "project",
         "project_service",

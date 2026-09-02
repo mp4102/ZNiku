@@ -5,6 +5,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from zniku.avenhance_v27 import (
+    av27_python_adapters,
+    av27_validators,
+    built_in_av27_definitions,
+)
 from zniku.media import (
     built_in_media_definitions,
     media_artifact_quick_probe,
@@ -49,13 +54,13 @@ def main() -> int:
 
 
 def build_application(work_root: Path) -> ProjectServiceApplication:
-    """构造正式 Phase 4 host；Python 媒体目录是 Studio 节点合同的唯一权威。"""
+    """构造本地 host；Python 普通媒体与 v2.7 节点目录是唯一合同权威。"""
 
     return ProjectServiceApplication(
         work_root=work_root,
-        definition_catalog=built_in_media_definitions(),
-        python_adapters=media_python_adapters(),
-        validators=media_validators(),
+        definition_catalog=(*built_in_media_definitions(), *built_in_av27_definitions()),
+        python_adapters={**media_python_adapters(), **av27_python_adapters()},
+        validators={**media_validators(), **av27_validators()},
         media_probe=runner_media_probe,
         artifact_quick_probe=media_artifact_quick_probe,
     )

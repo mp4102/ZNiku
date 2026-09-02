@@ -16,6 +16,7 @@ from zniku.graph import (
     CommandExecutorSpec,
     Edge,
     ExecutionMode,
+    ExecutorOutputPathSpec,
     Graph,
     ManualExternalExecutorSpec,
     NodeDefinition,
@@ -275,6 +276,169 @@ def test_service_persists_runner_external_path_and_frame_range(tmp_path: Path) -
 
     assert artifact.path == str(external.resolve())
     assert artifact.frame_range == FrameRange(start_frame=0, end_frame=42)
+
+
+def test_service_projects_complete_registered_artifact_metadata_to_runner_input(
+    tmp_path: Path,
+) -> None:
+    source = NodeDefinition(
+        type_id="test.metadata-source",
+        version="0.2.1",
+        output_ports=_data_output(),
+        execution_mode=ExecutionMode.AUTOMATIC,
+        executor=PythonExecutorSpec(adapter="tests:metadata-source"),
+        validator=ValidatorSpec(adapter="tests:metadata-source"),
+    )
+    sink = _python_definition(
+        "test.metadata-sink",
+        "tests:metadata-sink",
+        inputs=_data_input(),
+        outputs=_data_output(),
+    )
+    graph = Graph(
+        nodes=(
+            NodeInstance(
+                node_id="source", type_id=source.type_id, definition_version=source.version
+            ),
+            NodeInstance(node_id="sink", type_id=sink.type_id, definition_version=sink.version),
+        ),
+        edges=(
+            Edge(
+                source_node_id="source",
+                source_port_id="out",
+                target_node_id="sink",
+                target_port_id="in",
+            ),
+        ),
+    )
+    observed: list[PythonAdapterContext] = []
+
+    def source_adapter(context: PythonAdapterContext) -> PythonAdapterResult:
+        context.outputs[0].path.write_bytes(b"source")
+        return PythonAdapterResult(
+            outputs=(
+                ProducedOutput(
+                    port_id="out",
+                    path=context.outputs[0].path,
+                    frame_range=FrameRange(start_frame=4, end_frame=9),
+                ),
+            )
+        )
+
+    def source_validator(_context: NodeValidatorContext) -> NodeValidatorResult:
+        return NodeValidatorResult(
+            passed=True,
+            media_info_extensions={"out": {"test.metadata": {"frame_count": 5}}},
+        )
+
+    def sink_adapter(context: PythonAdapterContext) -> PythonAdapterResult:
+        observed.append(context)
+        context.outputs[0].path.write_bytes(context.inputs[0].path.read_bytes())
+        return PythonAdapterResult()
+
+    service = RuntimeService(
+        _store(tmp_path, graph, (source, sink), filename="runner-input-metadata.zniku"),
+        tmp_path / "runner-input-work",
+        python_adapters={
+            "tests:metadata-source": source_adapter,
+            "tests:metadata-sink": sink_adapter,
+        },
+        validators={"tests:metadata-source": source_validator},
+    )
+    run = service.run_until_blocked(service.create_run().run_id)
+    source_node_run = _latest_attempt(run.node_runs, "source")
+    source_artifact = service.repository.get_artifact(source_node_run.output_artifact_ids[0])
+
+    assert len(observed) == 1
+    runner_input = observed[0].inputs[0]
+    assert runner_input.artifact_id == source_artifact.artifact_id
+    assert runner_input.producer_node_run_id == source_node_run.node_run_id
+    assert runner_input.producer_port_id == "out"
+    assert runner_input.artifact_ordinal == source_artifact.ordinal
+    assert runner_input.frame_range == FrameRange(start_frame=4, end_frame=9)
+    assert runner_input.media_info == {"test.metadata": {"frame_count": 5}}
+    assert runner_input.size == source_artifact.size
+    assert runner_input.mtime_ns == source_artifact.mtime_ns
+
+
+def test_service_projects_executor_output_paths_for_all_three_modes(tmp_path: Path) -> None:
+    python_definition = NodeDefinition(
+        type_id="test.paths-python",
+        version="0.2.1",
+        output_ports=_data_output(),
+        execution_mode=ExecutionMode.AUTOMATIC,
+        executor=PythonExecutorSpec(
+            adapter="tests:paths-python",
+            output_paths=(
+                ExecutorOutputPathSpec(port_id="out", relative_path="python/result.bin"),
+            ),
+        ),
+    )
+    command_code = "from pathlib import Path; import sys; Path(sys.argv[1]).write_bytes(b'cmd')"
+    command_definition = NodeDefinition(
+        type_id="test.paths-command",
+        version="0.2.1",
+        output_ports=_data_output(),
+        execution_mode=ExecutionMode.AUTOMATIC,
+        executor=CommandExecutorSpec(
+            executable=sys.executable,
+            argv=("-c", command_code, "{output:out}"),
+            output_paths=(
+                ExecutorOutputPathSpec(port_id="out", relative_path="command/result.bin"),
+            ),
+        ),
+    )
+    manual_definition = NodeDefinition(
+        type_id="test.paths-manual",
+        version="0.2.1",
+        output_ports=_data_output(),
+        execution_mode=ExecutionMode.MANUAL_EXTERNAL,
+        executor=ManualExternalExecutorSpec(
+            output_paths=(
+                ExecutorOutputPathSpec(port_id="out", relative_path="manual/result.bin"),
+            ),
+        ),
+    )
+    definitions = (python_definition, command_definition, manual_definition)
+    graph = Graph(
+        nodes=tuple(
+            NodeInstance(
+                node_id=definition.type_id.removeprefix("test.paths-"),
+                type_id=definition.type_id,
+                definition_version=definition.version,
+            )
+            for definition in definitions
+        )
+    )
+
+    def python_adapter(context: PythonAdapterContext) -> PythonAdapterResult:
+        context.outputs[0].path.write_bytes(b"python")
+        return PythonAdapterResult()
+
+    service = RuntimeService(
+        _store(tmp_path, graph, definitions, filename="executor-output-paths.zniku"),
+        tmp_path / "executor-output-paths-work",
+        python_adapters={"tests:paths-python": python_adapter},
+    )
+    run = service.run_until_blocked(service.create_run().run_id)
+
+    python_run = _latest_attempt(run.node_runs, "python")
+    command_run = _latest_attempt(run.node_runs, "command")
+    manual_run = _latest_attempt(run.node_runs, "manual")
+    python_artifact = service.repository.get_artifact(python_run.output_artifact_ids[0])
+    command_artifact = service.repository.get_artifact(command_run.output_artifact_ids[0])
+
+    assert Path(python_artifact.path).relative_to(Path(python_run.work_dir) / "outputs") == Path(
+        "python/result.bin"
+    )
+    assert Path(command_artifact.path).relative_to(Path(command_run.work_dir) / "outputs") == Path(
+        "command/result.bin"
+    )
+    assert manual_run.state is NodeRunState.WAITING_EXTERNAL
+    assert manual_run.external_handoff is not None
+    assert Path(manual_run.external_handoff.output_targets[0].path).relative_to(
+        Path(manual_run.work_dir) / "outputs"
+    ) == Path("manual/result.bin")
 
 
 def test_manual_handoff_respects_definition_input_port_order(tmp_path: Path) -> None:

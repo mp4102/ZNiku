@@ -148,9 +148,18 @@
           "default": "command",
           "title": "Kind",
           "type": "string"
+        },
+        "output_paths": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExecutorOutputPathSpec"
+          },
+          "title": "Output Paths",
+          "type": "array"
         }
       },
       "required": [
+        "output_paths",
         "kind",
         "executable",
         "argv"
@@ -597,6 +606,31 @@
       "title": "ExecutionMode",
       "type": "string"
     },
+    "ExecutorOutputPathSpec": {
+      "additionalProperties": false,
+      "description": "声明一个 output port 在 attempt ``outputs`` 下的受控相对路径。\n\n该路径属于受信任的 executor definition，不是 Node 参数或客户端运行时输入。这里先拒绝\nWindows/UNC/绝对路径、NUL 与显式 ``.``/``..`` 段；Runner 仍须在实际 attempt 目录建立后\n再执行 resolve/containment 检查，以关闭 symlink/reparse-point 逃逸。",
+      "properties": {
+        "port_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "relative_path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Relative Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "port_id",
+        "relative_path"
+      ],
+      "title": "ExecutorOutputPathSpec",
+      "type": "object"
+    },
     "ExecutorSpec": {
       "discriminator": {
         "mapping": {
@@ -1000,9 +1034,18 @@
           "default": "manual_external",
           "title": "Kind",
           "type": "string"
+        },
+        "output_paths": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExecutorOutputPathSpec"
+          },
+          "title": "Output Paths",
+          "type": "array"
         }
       },
       "required": [
+        "output_paths",
         "kind",
         "instructions"
       ],
@@ -1665,9 +1708,18 @@
           "default": "python",
           "title": "Kind",
           "type": "string"
+        },
+        "output_paths": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExecutorOutputPathSpec"
+          },
+          "title": "Output Paths",
+          "type": "array"
         }
       },
       "required": [
+        "output_paths",
         "kind",
         "adapter"
       ],

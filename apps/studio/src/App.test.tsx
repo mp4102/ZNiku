@@ -518,7 +518,12 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
           definition.type_id === sourceDefinition.type_id
             ? {
                 ...definition,
-                executor: { kind: 'command' as const, executable: 'synthetic', argv: [] },
+                executor: {
+                  kind: 'command' as const,
+                  executable: 'synthetic',
+                  argv: [],
+                  output_paths: [],
+                },
               }
             : definition,
         ),

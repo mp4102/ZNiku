@@ -23,10 +23,28 @@ export interface PortSpecWire {
   readonly required: boolean
 }
 
+export interface ExecutorOutputPathSpecWire {
+  readonly port_id: string
+  readonly relative_path: string
+}
+
 export type ExecutorSpecWire =
-  | { readonly kind: 'python'; readonly adapter: string }
-  | { readonly kind: 'command'; readonly executable: string; readonly argv: ReadonlyArray<string> }
-  | { readonly kind: 'manual_external'; readonly instructions: string | null }
+  | {
+      readonly kind: 'python'
+      readonly adapter: string
+      readonly output_paths: ReadonlyArray<ExecutorOutputPathSpecWire>
+    }
+  | {
+      readonly kind: 'command'
+      readonly executable: string
+      readonly argv: ReadonlyArray<string>
+      readonly output_paths: ReadonlyArray<ExecutorOutputPathSpecWire>
+    }
+  | {
+      readonly kind: 'manual_external'
+      readonly instructions: string | null
+      readonly output_paths: ReadonlyArray<ExecutorOutputPathSpecWire>
+    }
 
 export interface NodeDefinitionWire {
   readonly type_id: string

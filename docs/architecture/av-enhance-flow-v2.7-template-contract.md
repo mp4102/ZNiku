@@ -1,6 +1,6 @@
 # ZNIKU Studio v0.2.1 AVEnhanceFlow v2.7.0 模板与节点合同
 
-- 状态：**Phase 0 冻结的 v0.2.1 下位设计；尚未实现**
+- 状态：**Phase 0 设计已冻结；Phase 3 节点包与通用 Runner plumbing 已实现；Phase 4 模板尚未实现**
 - ZNIKU NodeDefinition 版本：`0.2.1`
 - 模板 profile：`AVEnhanceFlow 2.7.0`
 - 上位架构权威：[`graph-core-baseline.md`](graph-core-baseline.md)
@@ -127,6 +127,9 @@ Graph 派生，不增加 template phase 表、plan 文件或 Runtime 状态。
   `str(Fraction)` 形式的正整数秒或已约分正有理秒；两者都不接受 float；
 - frame range 一律为零基半开区间 `[start_frame, end_frame)`；
 - ordinal 从 `0` 开始连续；显示 label 不承担身份或排序语义。
+
+这里的 ordinal 是 ZNIKU Graph/Artifact 的零基 ordinal。参考实现内部若使用一基业务编号，只允许在
+adapter 的显示或临时命名边界显式转换；不得把一基编号写回 Graph edge ordinal 或混作排序 authority。
 
 `2.7.0` 是外部流程 profile 版本，`0.2.1` 是 ZNIKU NodeDefinition 精确版本，两者不能共用一个 version 字段。
 
@@ -390,7 +393,7 @@ planner 不属于 v0.2.1。
 - Enhancement/FI 的 `model_name` 非空必填，`model_version` 可缺失；
 - stage-wide version 的缺失/具体值必须全节目一致；builder 从一个 stage object 复制到该 stage 全部节点；
 - 不存在 `tool`、`tool_version` 或第二套软件版本 authority；
-- `actual_scale_factor` 是全节目正整数；`1` 自动接受，`>1` 必须显式；
+- `actual_scale_factor` 是全节目正整数；实测 `1` 可省略并自动规范为 `1`，`>1` 必须显式；
 - validator 只记录 `operator_declared=true`，不能声称从像素证明实际模型。
 
 ### 5.4 Project Service endpoints 与 commands
@@ -511,6 +514,9 @@ geometry/signal。
   `extradata_hash`/language/title/default/forced disposition summary；`extradata_hash` 只是 FFprobe 读取的 codec
   header/config hash，不是媒体 payload SHA；不保存 packet 数组、ledger、内容 SHA 或 Evidence。
 
+“fresh admission”指 Source 首次引用，或 locator 的 size/mtime 变化导致普通 reuse 失效时重新执行上述
+接纳；第二个 Run 在 Source 未变化时复用 completed Source/Admission，不为每个 Run 无条件重复整片扫描。
+
 ### 7.2 SourceAdmission
 
 职责：在任何 MR external handoff、Split 或 FinalMux 之前，对本次全部 Source 做一次普通 barrier admission。
@@ -600,7 +606,7 @@ start_frame / end_frame
 
 ### 7.5 Enhancement external
 
-参数包含 `model_name`、可选 `model_version`、`actual_scale_factor`、expected input/output geometry、N/FPS 和
+参数包含 `model_name`、可选 `model_version`、可选 `actual_scale_factor`、expected input/output geometry、N/FPS 和
 chapter/leaf identity。
 
 合同：
@@ -608,8 +614,10 @@ chapter/leaf identity。
 - handoff target 固定 `.mov`；输入/输出严格 `N→N`，FPS 不变；
 - 输出恰好一条 ProRes 422 HQ `yuv422p10le` 视频；
 - SAR 缺失或 1:1、progressive、零旋转、无 HDR/显式颜色冲突；
-- 相对 1920×1080 横纵倍率相同且为正整数 k；k 必须等于 `actual_scale_factor`；
-- 附加 audio/subtitle/timecode 可存在，但 Merge 只消费 video；
+- 相对 1920×1080 横纵倍率相同且为正整数 k；若声明，k 必须等于 `actual_scale_factor`；
+- 附加 audio、subtitle 或 `tmcd/timecode` data 可存在，但 Merge 只消费 video；attachment、unknown codec
+  和其他 data 失败关闭；
+- 实测 `k=1` 时可以省略 `actual_scale_factor`；实测 `k>1` 时必须显式声明且等于 k；
 - 同节目所有 leaves 的 geometry、scale 和 model declaration 一致；
 - 一个 leaf 失败不使其他 completed leaves 回退。
 
@@ -713,6 +721,9 @@ FinalMux.media → OutputFile.in
 
 FinalMux 只在 attempt 内产生 `final.mkv`；OutputFile 以显式 `mode=copy`、canonical `target_path` 和
 `overwrite` 发布。Output 失败不回滚 Final。
+
+因此 Phase 3 的“最终名称与 overwrite 由显式参数决定”精确落在后续通用 OutputFile，而不进入 FinalMux
+参数；Phase 4 的 Python builder 负责生成 canonical `target_path`。FinalMux 本身没有外部发布权限。
 
 canonical path：
 

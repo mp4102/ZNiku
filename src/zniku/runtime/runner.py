@@ -13,9 +13,10 @@ import math
 import re
 import subprocess
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -42,6 +43,27 @@ _PLACEHOLDER = re.compile(
     r"^\{(?P<kind>workdir|input|inputs|output|param)(?::(?P<name>[^{}:]+))?\}$"
 )
 _HANDOFF_SCHEMA_VERSION = 1
+_MEDIA_INFO_NAMESPACE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)+$")
+
+
+def _readonly_json(value: object) -> object:
+    """把已完成严格 JSON 校验的值递归转换为只读视图。"""
+
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _readonly_json(item) for key, item in value.items()})
+    if isinstance(value, list | tuple):
+        return tuple(_readonly_json(item) for item in value)
+    return value
+
+
+def _plain_json(value: object) -> object:
+    """把内部只读 JSON 视图还原为可被持久模型正常冻结的普通值。"""
+
+    if isinstance(value, Mapping):
+        return {key: _plain_json(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_plain_json(item) for item in value]
+    return value
 
 
 class RunnerFailureReason(StrEnum):
@@ -105,13 +127,31 @@ class RunnerInterrupted(Exception):
 
 @dataclass(frozen=True, slots=True)
 class RunnerInput:
-    """把一个已登记 Artifact 绑定到 NodeDefinition input port。"""
+    """把 Repository 已登记 Artifact 的完整只读事实绑定到 input port。
+
+    ``ordinal`` 是 edge 的 input ordinal；``artifact_ordinal`` 则来自 Artifact 自身，两者不能
+    混用。adapter/validator 只能读取这里的 ``media_info``，不得从 NodeResult 摘要或客户端
+    补充另一份媒体 authority。
+    """
 
     port_id: str
     artifact_id: str
     kind: str
     path: Path
     ordinal: int | None = None
+    producer_node_run_id: str | None = None
+    producer_port_id: str | None = None
+    artifact_ordinal: int | None = None
+    frame_range: FrameRange | None = None
+    media_info: Mapping[str, object] = field(default_factory=dict)
+    size: int | None = None
+    mtime_ns: int | None = None
+
+    @property
+    def input_ordinal(self) -> int | None:
+        """以合同名称公开 edge input ordinal，同时兼容既有 ``ordinal`` API。"""
+
+        return self.ordinal
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,16 +225,17 @@ class PythonAdapterContext:
 
 @dataclass(frozen=True, slots=True)
 class PythonAdapterResult:
-    """Python adapter 返回的声明输出与可选普通摘要。"""
+    """Python adapter 返回声明输出、诊断摘要与 per-port 原始 producer facts。"""
 
     outputs: tuple[ProducedOutput, ...] = ()
     media_summary: Mapping[str, object] = field(default_factory=dict)
     validation_summary: Mapping[str, object] = field(default_factory=dict)
+    producer_metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
 class ValidatedOutput:
-    """传给节点 validator 的、已通过默认轻量检查的输出。"""
+    """传给节点 validator 的默认 probe 与独立原始 producer metadata。"""
 
     port_id: str
     kind: str
@@ -202,6 +243,7 @@ class ValidatedOutput:
     size: int
     mtime_ns: int
     media_info: Mapping[str, object]
+    producer_metadata: Mapping[str, object] = field(default_factory=dict)
     frame_range: FrameRange | None = None
 
 
@@ -216,12 +258,15 @@ class NodeValidatorContext:
 
 @dataclass(frozen=True, slots=True)
 class NodeValidatorResult:
-    """节点 validator 的 pass/fail 结论；warning 永不阻断。"""
+    """节点 validator 的 pass/fail 结论与通过后才可合并的媒体扩展。"""
 
     passed: bool
     summary: Mapping[str, object] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
     message: str | None = None
+    media_info_extensions: Mapping[str, Mapping[str, Mapping[str, object]]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -504,11 +549,13 @@ class NodeRunner:
                 )
                 media_summary = adapter_result.media_summary
                 validation_summary = adapter_result.validation_summary
+                producer_metadata = adapter_result.producer_metadata
             elif isinstance(executor, CommandExecutorSpec):
                 exit_code = self._run_command(executor, context)
                 produced = targets
                 media_summary = {}
                 validation_summary = {}
+                producer_metadata = {}
             else:
                 raise self._configuration_error(
                     "E_RUNNER_EXECUTOR_INVALID",
@@ -521,6 +568,7 @@ class NodeRunner:
                 exit_code=exit_code,
                 media_summary=media_summary,
                 adapter_validation_summary=validation_summary,
+                producer_metadata=producer_metadata,
             )
         except RunnerError:
             raise
@@ -616,6 +664,7 @@ class NodeRunner:
                 exit_code=None,
                 media_summary=submitted.media_summary,
                 adapter_validation_summary=submitted.validation_summary,
+                producer_metadata={},
             )
         except RunnerError:
             raise
@@ -668,6 +717,7 @@ class NodeRunner:
             layout,
             produced,
             exit_code=None,
+            producer_metadata={},
         )
         return validated
 
@@ -701,6 +751,48 @@ class NodeRunner:
                     "E_RUNNER_INPUT_KIND_INVALID",
                     f"{item.port_id!r} 需要 {port.data_type}，实际为 {item.kind}",
                 )
+            try:
+                if item.ordinal is not None and (
+                    isinstance(item.ordinal, bool)
+                    or not isinstance(item.ordinal, int)
+                    or item.ordinal < 0
+                ):
+                    raise TypeError("input ordinal 必须是非负 integer 或 None")
+                if item.producer_node_run_id is not None and (
+                    not isinstance(item.producer_node_run_id, str) or not item.producer_node_run_id
+                ):
+                    raise TypeError("producer_node_run_id 必须是非空 string 或 None")
+                if item.producer_port_id is not None and (
+                    not isinstance(item.producer_port_id, str) or not item.producer_port_id
+                ):
+                    raise TypeError("producer_port_id 必须是非空 string 或 None")
+                if item.artifact_ordinal is not None and (
+                    isinstance(item.artifact_ordinal, bool)
+                    or not isinstance(item.artifact_ordinal, int)
+                    or item.artifact_ordinal < 0
+                ):
+                    raise TypeError("artifact_ordinal 必须是非负 integer 或 None")
+                if item.frame_range is not None and not isinstance(item.frame_range, FrameRange):
+                    raise TypeError("frame_range 必须是 FrameRange 或 None")
+                if item.size is not None and (
+                    isinstance(item.size, bool) or not isinstance(item.size, int) or item.size < 0
+                ):
+                    raise TypeError("size 必须是非负 integer 或 None")
+                if item.mtime_ns is not None and (
+                    isinstance(item.mtime_ns, bool)
+                    or not isinstance(item.mtime_ns, int)
+                    or item.mtime_ns < 0
+                ):
+                    raise TypeError("mtime_ns 必须是非负 integer 或 None")
+                media_info = self._strict_readonly_mapping(
+                    item.media_info,
+                    field_name="input.media_info",
+                )
+            except (SystemExit, GeneratorExit, Exception) as error:
+                raise self._configuration_error(
+                    "E_RUNNER_INPUT_METADATA_INVALID",
+                    str(error) or "input Artifact metadata 无效",
+                ) from error
             resolved_input = self._assert_readable_input(item.path)
             grouped[item.port_id].append(
                 RunnerInput(
@@ -709,6 +801,13 @@ class NodeRunner:
                     kind=item.kind,
                     path=resolved_input,
                     ordinal=item.ordinal,
+                    producer_node_run_id=item.producer_node_run_id,
+                    producer_port_id=item.producer_port_id,
+                    artifact_ordinal=item.artifact_ordinal,
+                    frame_range=item.frame_range,
+                    media_info=media_info,
+                    size=item.size,
+                    mtime_ns=item.mtime_ns,
                 )
             )
 
@@ -953,6 +1052,10 @@ class NodeRunner:
                 result.validation_summary,
                 field_name="validation_summary",
             )
+            producer_metadata = self._strict_producer_metadata(
+                result.producer_metadata,
+                declared_ports={port.port_id for port in context.definition.output_ports},
+            )
         except (SystemExit, GeneratorExit, Exception) as error:
             raise RunnerError(
                 "E_RUNNER_ADAPTER_RESULT_INVALID",
@@ -965,6 +1068,7 @@ class NodeRunner:
             outputs=result.outputs,
             media_summary=media_summary,
             validation_summary=validation_summary,
+            producer_metadata=producer_metadata,
         )
 
     def _normalize_manual_submission(
@@ -1213,12 +1317,14 @@ class NodeRunner:
         exit_code: int | None,
         media_summary: Mapping[str, object],
         adapter_validation_summary: Mapping[str, object],
+        producer_metadata: Mapping[str, Mapping[str, object]],
     ) -> RunnerResult:
         validated, node_validation = self._validate_outputs(
             request,
             layout,
             outputs,
             exit_code=exit_code,
+            producer_metadata=producer_metadata,
         )
         artifacts = tuple(
             RunnerArtifact(
@@ -1229,13 +1335,16 @@ class NodeRunner:
                 producer_port_id=item.port_id,
                 ordinal=None,
                 frame_range=item.frame_range,
-                media_info=item.media_info,
+                media_info=cast(Mapping[str, object], _plain_json(item.media_info)),
                 size=item.size,
                 mtime_ns=item.mtime_ns,
             )
             for item in validated
         )
-        output_media = {item.port_id: dict(item.media_info) for item in validated}
+        output_media = {
+            item.port_id: cast(dict[str, object], _plain_json(item.media_info))
+            for item in validated
+        }
         validation: dict[str, object] = {
             "default": {
                 item.port_id: {
@@ -1270,6 +1379,7 @@ class NodeRunner:
         outputs: tuple[OutputTarget, ...],
         *,
         exit_code: int | None,
+        producer_metadata: Mapping[str, Mapping[str, object]],
     ) -> tuple[tuple[ValidatedOutput, ...], NodeValidatorResult | None]:
         """执行不产生结果 identity 的共享输出验证路径。"""
 
@@ -1298,10 +1408,13 @@ class NodeRunner:
                     stdout_log_path=layout.stdout_log_path,
                     stderr_log_path=layout.stderr_log_path,
                 )
-            media_info: Mapping[str, object] = {}
+            media_info: Mapping[str, object] = MappingProxyType({})
             if output.kind in _MEDIA_TYPES:
                 try:
-                    media_info = dict(self._media_probe(resolved, output.kind))
+                    media_info = self._strict_readonly_mapping(
+                        self._media_probe(resolved, output.kind),
+                        field_name=f"probe.{output.port_id}",
+                    )
                 except RunnerError:
                     raise
                 except (SystemExit, GeneratorExit) as error:
@@ -1330,12 +1443,16 @@ class NodeRunner:
                     size=stat.st_size,
                     mtime_ns=stat.st_mtime_ns,
                     media_info=media_info,
+                    producer_metadata=producer_metadata.get(output.port_id, MappingProxyType({})),
                     frame_range=output.frame_range,
                 )
             )
 
         values = tuple(validated)
-        return values, self._run_node_validator(request, layout, values)
+        node_validation = self._run_node_validator(request, layout, values)
+        if node_validation is not None:
+            values = self._merge_media_info_extensions(values, node_validation)
+        return values, node_validation
 
     def _run_node_validator(
         self,
@@ -1389,6 +1506,10 @@ class NodeRunner:
                 raise TypeError("warnings 必须是 tuple[str, ...]")
             if result.message is not None and not isinstance(result.message, str):
                 raise TypeError("message 必须是 string 或 None")
+            media_info_extensions = self._strict_media_info_extensions(
+                result.media_info_extensions,
+                outputs=outputs,
+            )
         except (SystemExit, GeneratorExit, Exception) as error:
             raise RunnerError(
                 "E_RUNNER_VALIDATOR_RESULT_INVALID",
@@ -1402,6 +1523,7 @@ class NodeRunner:
             summary=summary,
             warnings=result.warnings,
             message=result.message,
+            media_info_extensions=media_info_extensions,
         )
         if not validated_result.passed:
             raise RunnerError(
@@ -1412,6 +1534,112 @@ class NodeRunner:
                 stderr_log_path=layout.stderr_log_path,
             )
         return validated_result
+
+    @staticmethod
+    def _merge_media_info_extensions(
+        outputs: tuple[ValidatedOutput, ...],
+        result: NodeValidatorResult,
+    ) -> tuple[ValidatedOutput, ...]:
+        """只在 validator 已整体通过后合并已校验 namespace extension。"""
+
+        merged: list[ValidatedOutput] = []
+        for output in outputs:
+            media_info = dict(output.media_info)
+            extensions = result.media_info_extensions.get(output.port_id, {})
+            media_info.update(extensions)
+            merged.append(
+                replace(
+                    output,
+                    media_info=cast(Mapping[str, object], _readonly_json(media_info)),
+                )
+            )
+        return tuple(merged)
+
+    @classmethod
+    def _strict_producer_metadata(
+        cls,
+        value: Mapping[str, Mapping[str, object]],
+        *,
+        declared_ports: set[str],
+    ) -> Mapping[str, Mapping[str, object]]:
+        """严格收敛 adapter 的 per-port 原始事实，不解释任何业务字段。"""
+
+        if not isinstance(value, Mapping):
+            raise TypeError("producer_metadata 必须是 mapping")
+        normalized: dict[str, Mapping[str, object]] = {}
+        for port_id, metadata in value.items():
+            if type(port_id) is not str or not port_id:
+                raise TypeError("producer_metadata 的 port key 必须是非空 string")
+            if port_id in normalized:
+                raise TypeError(f"producer_metadata 的 port {port_id!r} 重复")
+            if port_id not in declared_ports:
+                raise TypeError(f"producer_metadata 引用未知 output port {port_id!r}")
+            normalized[port_id] = cls._strict_readonly_mapping(
+                metadata,
+                field_name=f"producer_metadata.{port_id}",
+            )
+        return cast(
+            Mapping[str, Mapping[str, object]],
+            MappingProxyType(normalized),
+        )
+
+    @classmethod
+    def _strict_media_info_extensions(
+        cls,
+        value: Mapping[str, Mapping[str, Mapping[str, object]]],
+        *,
+        outputs: tuple[ValidatedOutput, ...],
+    ) -> Mapping[str, Mapping[str, Mapping[str, object]]]:
+        """验证 validator extension 的 port、namespace、JSON 与不可覆盖边界。"""
+
+        if not isinstance(value, Mapping):
+            raise TypeError("media_info_extensions 必须是 mapping")
+        outputs_by_port = {item.port_id: item for item in outputs}
+        normalized: dict[str, Mapping[str, Mapping[str, object]]] = {}
+        for port_id, namespaces in value.items():
+            if type(port_id) is not str or not port_id:
+                raise TypeError("media_info_extensions 的 port key 必须是非空 string")
+            if port_id in normalized:
+                raise TypeError(f"media_info_extensions 的 port {port_id!r} 重复")
+            output = outputs_by_port.get(port_id)
+            if output is None:
+                raise TypeError(f"media_info_extensions 引用未知 output port {port_id!r}")
+            if not isinstance(namespaces, Mapping):
+                raise TypeError(f"media_info_extensions.{port_id} 必须是 mapping")
+            normalized_namespaces: dict[str, Mapping[str, object]] = {}
+            for namespace, extension in namespaces.items():
+                if type(namespace) is not str or _MEDIA_INFO_NAMESPACE.fullmatch(namespace) is None:
+                    raise TypeError(
+                        f"media_info_extensions.{port_id} namespace 不是稳定点分 identifier"
+                    )
+                if namespace in normalized_namespaces:
+                    raise TypeError(f"media_info_extensions.{port_id} namespace {namespace!r} 重复")
+                if namespace in output.media_info:
+                    raise TypeError(
+                        f"media_info_extensions.{port_id} 不得覆盖既有 namespace {namespace!r}"
+                    )
+                normalized_namespaces[namespace] = cls._strict_readonly_mapping(
+                    extension,
+                    field_name=f"media_info_extensions.{port_id}.{namespace}",
+                )
+            normalized[port_id] = cast(
+                Mapping[str, Mapping[str, object]],
+                MappingProxyType(normalized_namespaces),
+            )
+        return cast(
+            Mapping[str, Mapping[str, Mapping[str, object]]],
+            MappingProxyType(normalized),
+        )
+
+    @classmethod
+    def _strict_readonly_mapping(
+        cls,
+        value: Mapping[str, object],
+        *,
+        field_name: str,
+    ) -> Mapping[str, object]:
+        normalized = cls._strict_summary_mapping(value, field_name=field_name)
+        return cast(Mapping[str, object], _readonly_json(normalized))
 
     @classmethod
     def _strict_summary_mapping(
@@ -1428,6 +1656,8 @@ class NodeRunner:
         for key, item in value.items():
             if type(key) is not str:
                 raise TypeError(f"{field_name} 的键必须是 string")
+            if key in result:
+                raise TypeError(f"{field_name} 的键 {key!r} 重复")
             result[key] = cls._strict_json_value(item, field_name=f"{field_name}.{key}")
         return result
 

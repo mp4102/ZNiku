@@ -1,6 +1,6 @@
 name: ZNIKU Studio CI
 
-# Phase 5 唯一正式 Studio 门：验证当前 Project Service wire contract、Designer、类型、测试与生产构建。
+# 正式 Studio 门：验证当前 Project Service wire contract、Designer、类型、测试与生产构建。
 
 on:
   push:

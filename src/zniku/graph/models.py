@@ -7,8 +7,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from enum import StrEnum
+from pathlib import PureWindowsPath
 from typing import Annotated, Any, Literal, Never, Self, cast
 
 from jsonschema import Draft202012Validator
@@ -254,7 +256,58 @@ class ExecutionMode(StrEnum):
     MANUAL_EXTERNAL = "manual_external"
 
 
-class PythonExecutorSpec(GraphModel):
+class ExecutorOutputPathSpec(GraphModel):
+    """声明一个 output port 在 attempt ``outputs`` 下的受控相对路径。
+
+    该路径属于受信任的 executor definition，不是 Node 参数或客户端运行时输入。这里先拒绝
+    Windows/UNC/绝对路径、NUL 与显式 ``.``/``..`` 段；Runner 仍须在实际 attempt 目录建立后
+    再执行 resolve/containment 检查，以关闭 symlink/reparse-point 逃逸。
+    """
+
+    port_id: Identifier
+    relative_path: NonBlankText
+
+    @field_validator("relative_path")
+    @classmethod
+    def validate_relative_path(cls, value: str) -> str:
+        normalized = _ensure_non_blank(value, field_name="output_relative_path")
+        if "\x00" in normalized:
+            raise ValueError("E_EXECUTOR_OUTPUT_PATH_NUL: output relative_path 不得包含 NUL")
+        windows_path = PureWindowsPath(normalized)
+        raw_parts = re.split(r"[\\/]", normalized)
+        if (
+            windows_path.is_absolute()
+            or bool(windows_path.drive)
+            or bool(windows_path.root)
+            or any(part in {".", ".."} for part in raw_parts)
+        ):
+            raise ValueError(
+                "E_EXECUTOR_OUTPUT_PATH_INVALID: output relative_path 必须是无 . 或 .. 的相对路径"
+            )
+        return normalized
+
+
+class _OutputPathExecutorSpec(GraphModel):
+    """让三种 executor 使用同一 output path declaration 形状。"""
+
+    output_paths: tuple[ExecutorOutputPathSpec, ...] = ()
+
+    @field_validator("output_paths", mode="before")
+    @classmethod
+    def normalize_output_paths(cls, value: Any) -> Any:
+        return tuple(value) if isinstance(value, list) else value
+
+    @model_validator(mode="after")
+    def validate_unique_output_paths(self) -> Self:
+        port_ids = tuple(item.port_id for item in self.output_paths)
+        if len(port_ids) != len(set(port_ids)):
+            raise ValueError(
+                "E_EXECUTOR_OUTPUT_PATH_DUPLICATE: executor output_paths 的 port_id 不得重复"
+            )
+        return self
+
+
+class PythonExecutorSpec(_OutputPathExecutorSpec):
     """引用由本地可信插件提供的 Python adapter。"""
 
     kind: Literal["python"] = "python"
@@ -266,7 +319,7 @@ class PythonExecutorSpec(GraphModel):
         return _ensure_non_blank(value, field_name="adapter")
 
 
-class CommandExecutorSpec(GraphModel):
+class CommandExecutorSpec(_OutputPathExecutorSpec):
     """声明必须以 ``shell=False`` 直接启动的 executable 与 argv。"""
 
     kind: Literal["command"] = "command"
@@ -294,7 +347,7 @@ class CommandExecutorSpec(GraphModel):
         return normalized
 
 
-class ManualExternalExecutorSpec(GraphModel):
+class ManualExternalExecutorSpec(_OutputPathExecutorSpec):
     """声明由操作者在外部完成处理并提交输出的 handoff。"""
 
     kind: Literal["manual_external"] = "manual_external"
@@ -352,6 +405,18 @@ class NodeDefinition(GraphModel):
             raise ValueError("E_OUTPUT_ORDERED_MANY: ordered_many 只适用于输入端口")
         if any(port.required for port in self.output_ports):
             raise ValueError("E_OUTPUT_REQUIRED: required 只适用于输入端口")
+
+        declared_outputs = set(output_ids)
+        unknown_output_paths = tuple(
+            item.port_id
+            for item in self.executor.output_paths
+            if item.port_id not in declared_outputs
+        )
+        if unknown_output_paths:
+            raise ValueError(
+                "E_EXECUTOR_OUTPUT_PORT_UNKNOWN: executor output_paths 只能引用已声明 output port："
+                + ", ".join(repr(item) for item in unknown_output_paths)
+            )
 
         is_manual = isinstance(self.executor, ManualExternalExecutorSpec)
         if self.execution_mode is ExecutionMode.MANUAL_EXTERNAL and not is_manual:

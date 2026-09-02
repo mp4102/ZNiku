@@ -233,6 +233,63 @@ def test_command_preserves_literal_braces_and_can_escape_exact_placeholder(
     ]
 
 
+def test_runner_input_preserves_complete_readonly_artifact_metadata(tmp_path: Path) -> None:
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"source")
+    source_stat = source.stat()
+    observed: list[RunnerInput] = []
+
+    def adapter(context: PythonAdapterContext) -> PythonAdapterResult:
+        item = context.inputs[0]
+        observed.append(item)
+        with pytest.raises(TypeError):
+            cast(dict[str, object], item.media_info)["changed"] = True
+        with pytest.raises(TypeError):
+            cast(dict[str, object], item.media_info["nested"])["value"] = 2
+        context.outputs[0].path.write_bytes(b"result")
+        return PythonAdapterResult()
+
+    definition = NodeDefinition(
+        type_id="test.input-metadata",
+        version="0.2.1",
+        input_ports=(PortSpec(port_id="in", data_type="DataFile", required=True),),
+        output_ports=(PortSpec(port_id="out", data_type="DataFile"),),
+        execution_mode=ExecutionMode.AUTOMATIC,
+        executor=PythonExecutorSpec(adapter="tests:input-metadata"),
+    )
+    frame_range = FrameRange(start_frame=10, end_frame=20)
+    runner_input = RunnerInput(
+        port_id="in",
+        artifact_id="artifact.input",
+        kind="DataFile",
+        path=source,
+        ordinal=None,
+        producer_node_run_id=str(uuid4()),
+        producer_port_id="source",
+        artifact_ordinal=3,
+        frame_range=frame_range,
+        media_info={"nested": {"value": 1}, "items": [1, 2]},
+        size=source_stat.st_size,
+        mtime_ns=source_stat.st_mtime_ns,
+    )
+
+    NodeRunner(
+        tmp_path / "work",
+        python_adapters={"tests:input-metadata": adapter},
+    ).run_automatic(request_for(definition, inputs=(runner_input,)))
+
+    assert len(observed) == 1
+    item = observed[0]
+    assert item.input_ordinal is None
+    assert item.producer_node_run_id == runner_input.producer_node_run_id
+    assert item.producer_port_id == "source"
+    assert item.artifact_ordinal == 3
+    assert item.frame_range == frame_range
+    assert item.media_info["items"] == (1, 2)
+    assert item.size == source_stat.st_size
+    assert item.mtime_ns == source_stat.st_mtime_ns
+
+
 def test_missing_one_of_multiple_outputs_returns_no_partial_result(tmp_path: Path) -> None:
     definition = python_data_definition(outputs=("first", "second"))
 
@@ -371,6 +428,104 @@ def test_python_adapter_result_fields_fail_closed(tmp_path: Path) -> None:
         assert captured.value.reason is RunnerFailureReason.ADAPTER_FAILED
 
 
+def test_producer_metadata_reaches_validator_and_only_validated_extension_persists(
+    tmp_path: Path,
+) -> None:
+    observed: list[NodeValidatorContext] = []
+
+    def adapter(context: PythonAdapterContext) -> PythonAdapterResult:
+        context.outputs[0].path.write_bytes(b"synthetic-video")
+        return PythonAdapterResult(
+            producer_metadata={"video": {"output_frames": 12}},
+        )
+
+    def validator(context: NodeValidatorContext) -> NodeValidatorResult:
+        observed.append(context)
+        output = context.outputs[0]
+        assert output.producer_metadata == {"output_frames": 12}
+        assert "zniku.avenhance.v27" not in output.media_info
+        with pytest.raises(TypeError):
+            cast(dict[str, object], output.producer_metadata)["output_frames"] = 13
+        return NodeValidatorResult(
+            passed=True,
+            media_info_extensions={"video": {"zniku.avenhance.v27": {"frame_count": 12}}},
+        )
+
+    definition = NodeDefinition(
+        type_id="test.producer-metadata",
+        version="0.2.1",
+        output_ports=(PortSpec(port_id="video", data_type="VideoFile"),),
+        execution_mode=ExecutionMode.AUTOMATIC,
+        executor=PythonExecutorSpec(adapter="tests:producer-metadata"),
+        validator=ValidatorSpec(adapter="tests:producer-metadata"),
+    )
+    result = NodeRunner(
+        tmp_path / "work",
+        python_adapters={"tests:producer-metadata": adapter},
+        validators={"tests:producer-metadata": validator},
+        media_probe=lambda _path, _kind: {
+            "streams": [{"codec_type": "video"}],
+            "format": {"format_name": "synthetic"},
+        },
+    ).run_automatic(request_for(definition))
+
+    assert len(observed) == 1
+    media_info = result.artifacts[0].media_info
+    assert media_info["streams"] == [{"codec_type": "video"}]
+    assert media_info["zniku.avenhance.v27"] == {"frame_count": 12}
+    assert "output_frames" not in json.dumps(media_info)
+
+
+def test_raw_producer_metadata_without_validator_is_not_persisted(tmp_path: Path) -> None:
+    def adapter(context: PythonAdapterContext) -> PythonAdapterResult:
+        context.outputs[0].path.write_bytes(b"candidate")
+        return PythonAdapterResult(producer_metadata={"data": {"measured": 7}})
+
+    result = NodeRunner(
+        tmp_path / "work",
+        python_adapters={"tests.adapters:write": adapter},
+    ).run_automatic(request_for(python_data_definition()))
+
+    assert result.artifacts[0].media_info == {}
+    assert result.media_summary["outputs"] == {"data": {}}
+
+
+def test_producer_metadata_rejects_unknown_port_duplicate_and_non_json(
+    tmp_path: Path,
+) -> None:
+    class DuplicatePortMapping(dict[str, object]):
+        def items(self) -> Any:
+            return (("data", {}), ("data", {}))
+
+    invalid_values: tuple[object, ...] = (
+        {"unknown": {}},
+        cast(Any, {"data": []}),
+        cast(Any, {1: {}}),
+        cast(Any, {"data": {"path": Path("not-json")}}),
+        cast(Any, {"data": {"value": float("nan")}}),
+        cast(Any, DuplicatePortMapping()),
+    )
+    definition = python_data_definition()
+
+    for index, producer_metadata in enumerate(invalid_values):
+
+        def adapter(
+            context: PythonAdapterContext,
+            *,
+            metadata: Any = producer_metadata,
+        ) -> PythonAdapterResult:
+            context.outputs[0].path.write_bytes(b"candidate")
+            return PythonAdapterResult(producer_metadata=metadata)
+
+        with pytest.raises(RunnerError) as captured:
+            NodeRunner(
+                tmp_path / f"producer-metadata-{index}",
+                python_adapters={"tests.adapters:write": adapter},
+            ).run_automatic(request_for(definition))
+        assert captured.value.code == "E_RUNNER_ADAPTER_RESULT_INVALID"
+        assert captured.value.reason is RunnerFailureReason.ADAPTER_FAILED
+
+
 def test_python_adapter_external_output_is_explicit_and_preserves_frame_range(
     tmp_path: Path,
 ) -> None:
@@ -481,6 +636,100 @@ def test_validator_result_fields_fail_closed(tmp_path: Path) -> None:
             ).run_automatic(request_for(definition))
         assert captured.value.code == "E_RUNNER_VALIDATOR_RESULT_INVALID"
         assert captured.value.reason is RunnerFailureReason.VALIDATOR_FAILED
+
+
+def test_validator_media_info_extensions_fail_closed_on_invalid_shape_or_conflict(
+    tmp_path: Path,
+) -> None:
+    def adapter(context: PythonAdapterContext) -> PythonAdapterResult:
+        context.outputs[0].path.write_bytes(b"candidate")
+        return PythonAdapterResult()
+
+    definition = NodeDefinition(
+        type_id="test.validator-extensions",
+        version="0.2.1",
+        output_ports=(PortSpec(port_id="video", data_type="VideoFile"),),
+        execution_mode=ExecutionMode.AUTOMATIC,
+        executor=PythonExecutorSpec(adapter="tests:validator-extensions"),
+        validator=ValidatorSpec(adapter="tests:validator-extensions"),
+    )
+    invalid_extensions = (
+        cast(Any, None),
+        cast(Any, {"unknown": {"vendor.meta": {}}}),
+        cast(Any, {"video": {"not_dotted": {}}}),
+        cast(Any, {"video": {"vendor.meta": []}}),
+        cast(Any, {"video": {"vendor.meta": {"path": Path("not-json")}}}),
+        cast(Any, {"video": {"vendor.meta": {"value": float("inf")}}}),
+        cast(Any, {"video": {"probe.namespace": {"new": True}}}),
+    )
+
+    for index, extensions in enumerate(invalid_extensions):
+
+        def validator(
+            _context: NodeValidatorContext,
+            *,
+            value: Any = extensions,
+        ) -> NodeValidatorResult:
+            return NodeValidatorResult(passed=True, media_info_extensions=value)
+
+        with pytest.raises(RunnerError) as captured:
+            NodeRunner(
+                tmp_path / f"validator-extension-{index}",
+                python_adapters={"tests:validator-extensions": adapter},
+                validators={"tests:validator-extensions": validator},
+                media_probe=lambda _path, _kind: {
+                    "streams": [{"codec_type": "video"}],
+                    "probe.namespace": {"existing": True},
+                },
+            ).run_automatic(request_for(definition))
+        assert captured.value.code == "E_RUNNER_VALIDATOR_RESULT_INVALID"
+        assert captured.value.reason is RunnerFailureReason.VALIDATOR_FAILED
+
+
+def test_command_and_manual_validators_never_receive_producer_metadata(
+    tmp_path: Path,
+) -> None:
+    observed: list[dict[str, object]] = []
+
+    def validator(context: NodeValidatorContext) -> NodeValidatorResult:
+        observed.append(dict(context.outputs[0].producer_metadata))
+        return NodeValidatorResult(passed=True)
+
+    command_code = "from pathlib import Path; import sys; Path(sys.argv[1]).write_bytes(b'cmd')"
+    command_definition = NodeDefinition(
+        type_id="test.command-no-producer-metadata",
+        version="0.2.1",
+        output_ports=(PortSpec(port_id="out", data_type="DataFile"),),
+        execution_mode=ExecutionMode.AUTOMATIC,
+        executor=CommandExecutorSpec(
+            executable=sys.executable,
+            argv=("-c", command_code, "{output:out}"),
+        ),
+        validator=ValidatorSpec(adapter="tests:no-producer-metadata"),
+    )
+    NodeRunner(
+        tmp_path / "command",
+        validators={"tests:no-producer-metadata": validator},
+    ).run_automatic(request_for(command_definition))
+
+    manual_definition = NodeDefinition(
+        type_id="test.manual-no-producer-metadata",
+        version="0.2.1",
+        output_ports=(PortSpec(port_id="out", data_type="DataFile"),),
+        execution_mode=ExecutionMode.MANUAL_EXTERNAL,
+        executor=ManualExternalExecutorSpec(),
+        validator=ValidatorSpec(adapter="tests:no-producer-metadata"),
+    )
+    manual_request = request_for(manual_definition)
+    manual_runner = NodeRunner(
+        tmp_path / "manual",
+        validators={"tests:no-producer-metadata": validator},
+    )
+    handoff = manual_runner.prepare_manual(manual_request)
+    Path(handoff.outputs[0].path).write_bytes(b"manual")
+    manual_runner.submit_manual(manual_request, handoff)
+
+    assert observed == [{}, {}]
 
 
 def test_plugin_system_exit_is_confined_to_current_attempt(tmp_path: Path) -> None:

@@ -63,6 +63,7 @@ from .runner import (
     NodeExecutionRequest,
     NodeRunner,
     NodeValidator,
+    OutputPathSpec,
     PythonAdapter,
     RunnerArtifact,
     RunnerError,
@@ -776,6 +777,10 @@ class RuntimeService:
             definition=definition,
             node=node,
             inputs=inputs.runner_inputs,
+            output_paths=tuple(
+                OutputPathSpec(port_id=item.port_id, relative_path=item.relative_path)
+                for item in definition.executor.output_paths
+            ),
         )
 
     def _resolve_inputs(self, run: Run, node_id: str) -> _ResolvedInputs:
@@ -817,6 +822,13 @@ class RuntimeService:
                     kind=artifact.kind,
                     path=Path(artifact.path),
                     ordinal=edge.ordinal,
+                    producer_node_run_id=artifact.producer_node_run_id,
+                    producer_port_id=artifact.producer_port_id,
+                    artifact_ordinal=artifact.ordinal,
+                    frame_range=artifact.frame_range,
+                    media_info=artifact.media_info,
+                    size=artifact.size,
+                    mtime_ns=artifact.mtime_ns,
                 )
             )
         # NodeRun 绑定沿用 Graph canonical edge 顺序；Runner/Handoff 面向插件，使用

@@ -11,10 +11,10 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - 目标版本：`ZNIKU Studio 0.2.0`（按 v0.2.1 计划在 Phase 6 前保持 package/product 版本不变）
 - 已交付基线：`ZNIKU Studio 0.2.0` Phase 0–5，Core 已完成 legacy 清理与最小自动化验收
 - 当前开发分支：`v0.2.1`
-- 当前增量阶段：**v0.2.1 Phase 0–2 已完成；Phase 3 待实施**
+- 当前增量阶段：**v0.2.1 Phase 0–3 已完成；Phase 4 待实施**
 - 唯一目标架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
 - 当前实现版本：`0.2.0`；package/product 版本按计划保持不变，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
-  `zniku.project_service` 与 `zniku.media`
+  `zniku.project_service`、`zniku.media` 与 `zniku.avenhance_v27`
 - 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
 
 Phase 1 已建立 Graph Core 与 `.zniku` Store，Phase 2 已用新的最小 Run、NodeRun、Artifact 与 NodeResult
@@ -23,8 +23,9 @@ NodeDefinition、FFmpeg adapters、FFprobe 与轻量 validators。Phase 5 已删
 pipeline、Real Acceptance 和旧生成投影的实现、测试与工具；CI 只验证当前 0.2.0 产品面。
 
 v0.2.1 Phase 1 已补齐 Run 选择、轮询和人工交接闭环；Phase 2 已接通 automatic Python/FFmpeg 的可信
-进度、限频持久化、Project Service 实时投影与 Studio determinate/indeterminate 展示。AVEnhanceFlow
-v2.7.0 专用节点包和模板仍属于 Phase 3–4，尚未实现，也未写入通用 Runtime。
+进度、限频持久化、Project Service 实时投影与 Studio determinate/indeterminate 展示。Phase 3 已实现
+AVEnhanceFlow v2.7.0 专用节点包及不带业务分支的通用 Runner metadata/output-path plumbing；Phase 4 的
+两段模板 builder 与 Studio 向导尚未实现。
 
 ## 产品核心
 
@@ -76,6 +77,10 @@ Graph Core 只校验 node／port／edge 存在、typed output→input、required
   OutputFile 的 exact definitions、Python adapters 和轻量 validators；MR、Enhancement、FI 是普通
   `manual_external` VideoTransform presets。详细合同见
   [首批媒体节点合同](docs/architecture/media-node-contract.md)。
+- `zniku.avenhance_v27`：提供 `zniku.avenhance.v27.*@0.2.1` 九类专用 definition、automatic
+  adapters、manual validators 与严格媒体 probe；固定流程仍只是下一阶段由 Python builder 生成的普通
+  DAG，不进入 Scheduler。详细合同见
+  [AVEnhanceFlow v2.7 模板与节点合同](docs/architecture/av-enhance-flow-v2.7-template-contract.md)。
 - Project 保存前与读取后都会执行同一 Graph Validator；非法图、未知工程 schema、损坏数据和缺失的精确
   NodeDefinition 默认 fail closed。
 - `.zniku` 可能包含本地路径和节点配置，默认由 Git 忽略；测试只在临时目录创建纯合成工程。
@@ -162,9 +167,10 @@ ZNiku/
 │   ├── runtime/                 # 0.2.0 Scheduler、Node Runner 与运行历史
 │   ├── project_service/         # 0.2.0 Studio DTO、application 与 loopback host
 │   ├── media/                   # 0.2.0 首批媒体 definitions、adapters、probe 与 validators
+│   ├── avenhance_v27/           # 0.2.1 v2.7 专用节点包；不含模板或第二套 Runtime
 ├── apps/studio/
 │   └── src/studio/              # 0.2.0 唯一正式 Designer 与 Runtime overlay
-├── tests/                       # 当前 0.2.0 单元、集成与架构权威门禁
+├── tests/                       # 0.2.0 Core 与 v0.2.1 增量单元、集成和架构权威门禁
 ├── tools/                       # Schema 一致性、Studio host 与短媒体 smoke 工具
 ├── docs/
 │   ├── architecture/
@@ -179,8 +185,8 @@ ZNiku/
 
 ## 本地运行与验证
 
-Python 需要 3.12 或更高版本及 `uv`；媒体节点还要求 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。以下门禁只
-验证当前 0.2.0 Graph Core、Project Store、Runtime、Project Service 与媒体节点：
+Python 需要 3.12 或更高版本及 `uv`；媒体节点还要求 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。以下门禁
+验证 0.2.0 Graph Core、Project Store、Runtime、Project Service，以及 v0.2.1 当前已实现的增量媒体节点：
 
 ```powershell
 uv lock --check

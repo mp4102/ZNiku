@@ -27,7 +27,7 @@ export const sourceDefinition: NodeDefinitionWire = {
   output_ports: [{ port_id: 'out', data_type: 'VideoFile', cardinality: 'one', required: false }],
   parameter_schema: emptySchema,
   execution_mode: 'automatic',
-  executor: { kind: 'python', adapter: 'tests.source' },
+  executor: { kind: 'python', adapter: 'tests.source', output_paths: [] },
   validator: null,
 }
 
@@ -46,7 +46,11 @@ export const transformDefinition: NodeDefinitionWire = {
     additionalProperties: false,
   },
   execution_mode: 'manual_external',
-  executor: { kind: 'manual_external', instructions: '处理输入并写入目标路径。' },
+  executor: {
+    kind: 'manual_external',
+    instructions: '处理输入并写入目标路径。',
+    output_paths: [],
+  },
   validator: null,
 }
 
@@ -57,7 +61,7 @@ export const sinkDefinition: NodeDefinitionWire = {
   output_ports: [],
   parameter_schema: emptySchema,
   execution_mode: 'automatic',
-  executor: { kind: 'python', adapter: 'tests.sink' },
+  executor: { kind: 'python', adapter: 'tests.sink', output_paths: [] },
   validator: null,
 }
 
@@ -68,7 +72,12 @@ export const dataSourceDefinition: NodeDefinitionWire = {
   output_ports: [{ port_id: 'out', data_type: 'DataFile', cardinality: 'one', required: false }],
   parameter_schema: emptySchema,
   execution_mode: 'automatic',
-  executor: { kind: 'command', executable: 'synthetic-tool', argv: ['--data'] },
+  executor: {
+    kind: 'command',
+    executable: 'synthetic-tool',
+    argv: ['--data'],
+    output_paths: [],
+  },
   validator: null,
 }
 
@@ -81,7 +90,12 @@ export const mergeDefinition: NodeDefinitionWire = {
   output_ports: [{ port_id: 'out', data_type: 'VideoFile', cardinality: 'one', required: false }],
   parameter_schema: emptySchema,
   execution_mode: 'automatic',
-  executor: { kind: 'command', executable: 'synthetic-tool', argv: ['--merge'] },
+  executor: {
+    kind: 'command',
+    executable: 'synthetic-tool',
+    argv: ['--merge'],
+    output_paths: [],
+  },
   validator: null,
 }
 

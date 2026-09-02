@@ -140,6 +140,7 @@ describe('Studio Project Service 0.2.1 contract', () => {
                   kind: 'command' as const,
                   executable: 'synthetic-tool',
                   argv: ['--progress-like-output'],
+                  output_paths: [],
                 },
               }
             : definition,

@@ -1,7 +1,7 @@
 name: ZNIKU Core CI
 
-# Phase 5 只验证 0.2.0 Graph Core、Project、Runtime、Project Service 与媒体节点。
-# 短媒体 smoke 在临时目录生成 12 帧合成视频，不读取用户媒体或旧 Real Acceptance 数据。
+# 验证 0.2.0 Core、v0.2.1 增量 Runtime 接线与专用媒体节点。
+# 媒体测试只在临时目录生成极短合成 payload，不读取用户媒体或旧 Real Acceptance 数据。
 
 on:
   push:
@@ -43,8 +43,10 @@ jobs:
           command -v ffprobe
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -F 'prores_ks'
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -F 'libx265'
 
-      - name: Test current 0.2.0 implementation
+      - name: Test current implementation
         run: uv run --locked --extra dev pytest
 
       - name: Run short synthetic media smoke

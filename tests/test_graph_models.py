@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import JsonValue, ValidationError
 
@@ -12,6 +14,7 @@ from zniku.graph import (
     CorePortType,
     Edge,
     ExecutionMode,
+    ExecutorOutputPathSpec,
     Graph,
     ManualExternalExecutorSpec,
     NodeDefinition,
@@ -305,7 +308,104 @@ def test_command_executor_preserves_argv_and_has_no_shell_switch() -> None:
     )
 
     assert executor.argv[1] == "{input}"
-    assert set(executor.model_dump()) == {"kind", "executable", "argv"}
+    assert set(executor.model_dump()) == {"kind", "executable", "argv", "output_paths"}
+    assert executor.output_paths == ()
+
+
+def test_all_executor_specs_round_trip_strict_per_port_output_paths() -> None:
+    declarations = (ExecutorOutputPathSpec(port_id="video", relative_path="nested/program.mp4"),)
+    executors = (
+        PythonExecutorSpec(adapter="plugins.video:run", output_paths=declarations),
+        CommandExecutorSpec(
+            executable="ffmpeg",
+            argv=("{output:video}",),
+            output_paths=declarations,
+        ),
+        ManualExternalExecutorSpec(
+            instructions="导出后提交",
+            output_paths=declarations,
+        ),
+    )
+
+    for executor in executors:
+        definition = NodeDefinition(
+            type_id=f"test.{executor.kind}",
+            version="0.2.1",
+            output_ports=(PortSpec(port_id="video", data_type="VideoFile"),),
+            execution_mode=(
+                ExecutionMode.MANUAL_EXTERNAL
+                if isinstance(executor, ManualExternalExecutorSpec)
+                else ExecutionMode.AUTOMATIC
+            ),
+            executor=executor,
+        )
+        restored = NodeDefinition.model_validate_json(definition.model_dump_json())
+
+        assert restored == definition
+        assert restored.executor.output_paths == declarations
+        assert "output_paths" not in {
+            key for key in restored.model_dump(mode="json") if key != "executor"
+        }
+
+
+def test_legacy_executor_json_defaults_output_paths_to_empty() -> None:
+    definition = NodeDefinition.model_validate_json(
+        json.dumps(
+            {
+                "type_id": "test.legacy",
+                "version": "0.2.0",
+                "output_ports": ({"port_id": "out", "data_type": "DataFile"},),
+                "execution_mode": "automatic",
+                "executor": {"kind": "python", "adapter": "tests:legacy"},
+            }
+        )
+    )
+
+    assert definition.executor.output_paths == ()
+    assert NodeDefinition.model_validate_json(definition.model_dump_json()) == definition
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        "",
+        ".",
+        "./result.mkv",
+        "../result.mkv",
+        "nested/../result.mkv",
+        "/absolute/result.mkv",
+        r"C:\absolute\result.mkv",
+        r"C:drive-relative.mkv",
+        r"\\server\share\result.mkv",
+        "nested/result\x00.mkv",
+    ),
+)
+def test_executor_output_paths_reject_unsafe_paths(relative_path: str) -> None:
+    with pytest.raises(ValidationError):
+        ExecutorOutputPathSpec(port_id="out", relative_path=relative_path)
+
+
+def test_definition_rejects_duplicate_or_unknown_executor_output_ports() -> None:
+    with pytest.raises(ValidationError, match="E_EXECUTOR_OUTPUT_PATH_DUPLICATE"):
+        PythonExecutorSpec(
+            adapter="tests:duplicate",
+            output_paths=(
+                ExecutorOutputPathSpec(port_id="out", relative_path="first.bin"),
+                ExecutorOutputPathSpec(port_id="out", relative_path="second.bin"),
+            ),
+        )
+
+    with pytest.raises(ValidationError, match="E_EXECUTOR_OUTPUT_PORT_UNKNOWN"):
+        NodeDefinition(
+            type_id="test.unknown-output-path",
+            version="0.2.1",
+            output_ports=(PortSpec(port_id="out", data_type="DataFile"),),
+            execution_mode=ExecutionMode.AUTOMATIC,
+            executor=PythonExecutorSpec(
+                adapter="tests:unknown",
+                output_paths=(ExecutorOutputPathSpec(port_id="other", relative_path="other.bin"),),
+            ),
+        )
 
 
 def test_edge_ordinal_is_non_negative_when_present() -> None:
