@@ -47,7 +47,21 @@ def _valid_parameters(type_id: str) -> dict[str, Any]:
         count = atomic_split_count_from_type_id(type_id)
         assert count is not None
         return {
+            "source_mode": "program",
+            "chapter_selector": {"mode": "single"},
+            "leaf_duration_minutes": 1,
             "planned_admission_artifact_id": "artifact-admission",
+            "planned_effective_video_artifact_ids": ["artifact-video"],
+            "chapters": [
+                {
+                    "chapter_id": "chapter-0001",
+                    "chapter_ordinal": 0,
+                    "label": "A",
+                    "source_ordinal": 0,
+                    "start_frame": 0,
+                    "end_frame": count * 100,
+                }
+            ],
             "segments": [
                 {
                     "port_id": port_id,

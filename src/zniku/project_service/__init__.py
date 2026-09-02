@@ -3,6 +3,8 @@
 from .host import make_project_service_handler, serve_project_service
 from .models import (
     PROJECT_SERVICE_CONTRACT_VERSION,
+    CreateAvEnhanceV27Command,
+    ExpandAvEnhanceV27Command,
     ExternalHandoffReadiness,
     ExternalOutputReadiness,
     NodeLogEnvelope,
@@ -15,12 +17,16 @@ from .models import (
     RunSummary,
     RunSummaryPageEnvelope,
     StatusEnvelope,
+    TemplatePreviewEnvelope,
     parse_project_service_command,
+    parse_template_preview_request,
 )
 from .service import ProjectServiceApplication, ProjectServiceError
 
 __all__ = [
     "PROJECT_SERVICE_CONTRACT_VERSION",
+    "CreateAvEnhanceV27Command",
+    "ExpandAvEnhanceV27Command",
     "ExternalHandoffReadiness",
     "ExternalOutputReadiness",
     "NodeLogEnvelope",
@@ -35,7 +41,9 @@ __all__ = [
     "RunSummary",
     "RunSummaryPageEnvelope",
     "StatusEnvelope",
+    "TemplatePreviewEnvelope",
     "make_project_service_handler",
     "parse_project_service_command",
+    "parse_template_preview_request",
     "serve_project_service",
 ]

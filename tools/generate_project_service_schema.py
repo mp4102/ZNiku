@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
+from zniku.avenhance_v27.template import TemplatePreviewRequest
 from zniku.project_service.models import (
     ExternalHandoffReadiness,
     NodeLogEnvelope,
@@ -15,6 +16,7 @@ from zniku.project_service.models import (
     RunDetailEnvelope,
     RunSummaryPageEnvelope,
     StatusEnvelope,
+    TemplatePreviewEnvelope,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,13 +37,17 @@ def require_serialized_properties(schema: object) -> None:
             require_serialized_properties(value)
 
 
-def namespace_command_definitions(schema: dict[str, object]) -> dict[str, object]:
-    """隔离 command input 与 response output 中同名但 required 语义不同的模型。"""
+def namespace_definitions(
+    schema: dict[str, object],
+    *,
+    namespace: str,
+) -> dict[str, object]:
+    """隔离不同 input 与 response 中同名但 required 语义不同的模型。"""
 
     raw_definitions = schema.pop("$defs", {})
     if not isinstance(raw_definitions, dict):
         raise RuntimeError("Project Service command $defs 必须是 object")
-    names = {name: f"Command_{name}" for name in raw_definitions}
+    names = {name: f"{namespace}_{name}" for name in raw_definitions}
 
     def rewrite(value: object) -> None:
         if isinstance(value, dict):
@@ -92,6 +98,7 @@ def render_schema() -> str:
         RunDetailEnvelope,
         NodeLogEnvelope,
         ExternalHandoffReadiness,
+        TemplatePreviewEnvelope,
     )
     envelope_schema: dict[str, object] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -119,8 +126,16 @@ def render_schema() -> str:
             raise RuntimeError(f"Project Service response root definition 冲突：{model.__name__}")
         envelope_definitions[model.__name__] = model_schema
 
+    preview_schema = TypeAdapter(TemplatePreviewRequest).json_schema()
+    preview_definitions = namespace_definitions(preview_schema, namespace="Preview")
+    for name, definition in preview_definitions.items():
+        if name in envelope_definitions:
+            raise RuntimeError(f"Project Service Schema definition 冲突：{name}")
+        envelope_definitions[name] = definition
+    envelope_definitions["TemplatePreviewRequest"] = preview_schema
+
     command_schema = TypeAdapter(ProjectServiceCommand).json_schema()
-    command_definitions = namespace_command_definitions(command_schema)
+    command_definitions = namespace_definitions(command_schema, namespace="Command")
     for name, definition in command_definitions.items():
         if name in envelope_definitions:
             raise RuntimeError(f"Project Service Schema definition 冲突：{name}")

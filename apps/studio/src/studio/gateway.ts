@@ -6,6 +6,8 @@
  */
 
 import {
+  parseAvEnhanceV27TemplatePreviewEnvelope,
+  parseAvEnhanceV27TemplatePreviewRequest,
   parseExternalHandoffReadiness,
   parseNodeLogEnvelope,
   parseRunDetailEnvelope,
@@ -14,6 +16,8 @@ import {
   parseStudioCommand,
   StudioContractError,
   type ExternalHandoffReadiness,
+  type AvEnhanceV27TemplatePreviewEnvelope,
+  type AvEnhanceV27TemplatePreviewRequestWire,
   type NodeLogEnvelope,
   type RunDetailEnvelope,
   type RunSummaryPageEnvelope,
@@ -32,6 +36,9 @@ export interface StudioGateway {
     nodeRunId: string,
     probe: boolean,
   ): Promise<ExternalHandoffReadiness>
+  previewAvEnhanceV27(
+    request: AvEnhanceV27TemplatePreviewRequestWire,
+  ): Promise<AvEnhanceV27TemplatePreviewEnvelope>
   command(command: StudioCommand): Promise<StatusEnvelope>
 }
 
@@ -173,6 +180,28 @@ export class FetchStudioGateway implements StudioGateway {
       )
     }
     return readiness
+  }
+
+  async previewAvEnhanceV27(
+    request: AvEnhanceV27TemplatePreviewRequestWire,
+  ): Promise<AvEnhanceV27TemplatePreviewEnvelope> {
+    const payload = parseAvEnhanceV27TemplatePreviewRequest(request)
+    const preview = await this.request(
+      '/api/studio/templates/av-enhance-v27/preview',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      parseAvEnhanceV27TemplatePreviewEnvelope,
+    )
+    const expectedPhase = payload.action === 'prepare' ? 'preparation' : 'expanded'
+    if (preview.phase !== expectedPhase) {
+      throw new StudioContractError(
+        `AVEnhanceFlow v2.7 preview phase 与 ${payload.action} action 不一致`,
+      )
+    }
+    return preview
   }
 
   async command(command: StudioCommand): Promise<StatusEnvelope> {

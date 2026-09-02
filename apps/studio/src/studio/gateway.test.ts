@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { StudioContractError, type StudioCommand } from './contracts'
+import {
+  StudioContractError,
+  type AvEnhanceV27TemplatePreviewEnvelope,
+  type AvEnhanceV27TemplatePreviewRequestWire,
+  type StudioCommand,
+} from './contracts'
 import { FetchStudioGateway, StudioGatewayError } from './gateway'
 import {
   handoffDetailEnvelope,
@@ -8,6 +13,7 @@ import {
   handoffLogEnvelope,
   handoffReadinessEnvelope,
   handoffSummary,
+  projectSnapshot,
 } from './test-fixtures'
 
 afterEach(() => {
@@ -20,6 +26,83 @@ function response(value: unknown, ok = true, status = 200): Response {
 }
 
 describe('FetchStudioGateway 0.2.1', () => {
+  it('只向固定 endpoint 发送严格 v2.7 preview request 并解析 Python response', async () => {
+    const payload: AvEnhanceV27TemplatePreviewRequestWire = {
+      action: 'prepare',
+      request: {
+        profile_version: '2.7.0',
+        project_path: 'C:\\synthetic\\av27.zniku',
+        project_id: 'project.av27',
+        project_name: 'Synthetic AV27',
+        source_mode: 'program',
+        sources: [
+          { source_path: 'C:\\synthetic\\source.mkv', source_ordinal: 0 },
+        ],
+        mr: { mode: 'off' },
+      },
+    }
+    const envelope: AvEnhanceV27TemplatePreviewEnvelope = {
+      contract_version: '0.2.1',
+      profile_version: '2.7.0',
+      phase: 'preparation',
+      project: projectSnapshot.project,
+      definitions: projectSnapshot.definitions,
+      profile: {
+        profile_version: '2.7.0',
+        phase: 'preparation',
+        status: 'preparation-compatible',
+        compatible: true,
+        diagnostics: [],
+      },
+      plan: {
+        source_count: 1,
+        chapter_count: 0,
+        leaf_count: 0,
+        mr_mode: 'off',
+        preparation_run_id: null,
+        effective_video_artifact_ids: [],
+        chapters: [],
+        manual_stages: [],
+        output_target_path: null,
+      },
+    }
+    const fetchMock = vi.fn().mockResolvedValue(response(envelope))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await new FetchStudioGateway('http://loopback.test').previewAvEnhanceV27(
+      payload,
+    )
+
+    expect(result.phase).toBe('preparation')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://loopback.test/api/studio/templates/av-enhance-v27/preview',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    )
+
+    const wrongPhase: AvEnhanceV27TemplatePreviewEnvelope = {
+      ...envelope,
+      phase: 'expanded',
+      profile: {
+        ...envelope.profile,
+        phase: 'expanded',
+        status: 'expanded-compatible',
+      },
+    }
+    fetchMock.mockResolvedValueOnce(response(wrongPhase))
+    await expect(
+      new FetchStudioGateway('http://loopback.test').previewAvEnhanceV27(payload),
+    ).rejects.toThrow(/phase 与 prepare action 不一致/)
+
+    const injected = { ...payload, definitions: [] } as unknown as AvEnhanceV27TemplatePreviewRequestWire
+    await expect(
+      new FetchStudioGateway('http://loopback.test').previewAvEnhanceV27(injected),
+    ).rejects.toThrow(StudioContractError)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('按闭合 error envelope 保留 duplicate Run conflict identity', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       response(

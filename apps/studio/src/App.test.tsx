@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import type {
+  AvEnhanceV27TemplatePreviewEnvelope,
+  AvEnhanceV27TemplatePreviewRequestWire,
   ExternalHandoffReadiness,
   NodeLogEnvelope,
   RunDetailEnvelope,
@@ -50,6 +52,9 @@ class Deferred<T> {
 }
 
 interface GatewayOptions {
+  readonly templatePreview?: (
+    request: AvEnhanceV27TemplatePreviewRequestWire,
+  ) => Promise<AvEnhanceV27TemplatePreviewEnvelope> | AvEnhanceV27TemplatePreviewEnvelope
   readonly inspect?: (viewRunId: string | null, count: number) => Promise<StatusEnvelope> | StatusEnvelope
   readonly listRuns?: (
     cursor: string | null,
@@ -71,6 +76,7 @@ class RecordingGateway implements StudioGateway {
   readonly readinessArguments: Array<readonly [string, string, boolean]> = []
   readonly historyArguments: Array<readonly [string | null, number]> = []
   readonly logArguments: Array<readonly [string, string]> = []
+  readonly templatePreviewArguments: AvEnhanceV27TemplatePreviewRequestWire[] = []
   inspectCount = 0
   inspectRunCount = 0
 
@@ -119,6 +125,14 @@ class RecordingGateway implements StudioGateway {
       : handoffReadinessEnvelope('present', false)
   }
 
+  async previewAvEnhanceV27(
+    request: AvEnhanceV27TemplatePreviewRequestWire,
+  ): Promise<AvEnhanceV27TemplatePreviewEnvelope> {
+    this.templatePreviewArguments.push(request)
+    if (this.options.templatePreview) return this.options.templatePreview(request)
+    throw new Error('本测试未配置 AVEnhanceFlow v2.7 template preview')
+  }
+
   async command(command: StudioCommand): Promise<StatusEnvelope> {
     this.commands.push(command)
     return this.options.command?.(command) ?? this.envelope
@@ -133,6 +147,7 @@ function unavailableGateway(message: string): StudioGateway {
     inspectRun: reject,
     inspectLog: reject,
     inspectReadiness: reject,
+    previewAvEnhanceV27: reject,
     command: reject,
   }
 }
@@ -153,6 +168,112 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     expect(screen.queryByText('GUI-0 Prototype')).not.toBeInTheDocument()
     expect(screen.queryByText('Expanded Plan')).not.toBeInTheDocument()
     expect(screen.queryByText('Real Acceptance')).not.toBeInTheDocument()
+  })
+
+  it('从 Templates 入口只提交 server-side AVEnhance v2.7 request，并加载创建后的 Graph', async () => {
+    const user = userEvent.setup()
+    const targetPath = 'C:\\synthetic\\av27.zniku'
+    const avSourceDefinition = {
+      ...sourceDefinition,
+      type_id: 'zniku.avenhance.v27.source_program',
+      version: '0.2.1',
+    }
+    const templateProject = {
+      project_id: 'project.local',
+      name: 'ZNIKU Project',
+      graph: {
+        nodes: [
+          {
+            node_id: 'source.program',
+            type_id: avSourceDefinition.type_id,
+            definition_version: avSourceDefinition.version,
+            parameters: {
+              source_path: 'C:\\synthetic\\source.mkv',
+              source_ordinal: 0,
+            },
+            ui_position: { x: 80, y: 120 },
+          },
+        ],
+        edges: [],
+      },
+    }
+    const templatePreview: AvEnhanceV27TemplatePreviewEnvelope = {
+      contract_version: '0.2.1',
+      profile_version: '2.7.0',
+      phase: 'preparation',
+      project: templateProject,
+      definitions: [avSourceDefinition],
+      profile: {
+        profile_version: '2.7.0',
+        phase: 'preparation',
+        status: 'preparation-compatible',
+        compatible: true,
+        diagnostics: [],
+      },
+      plan: {
+        source_count: 1,
+        chapter_count: 0,
+        leaf_count: 0,
+        mr_mode: 'off',
+        preparation_run_id: null,
+        effective_video_artifact_ids: [],
+        chapters: [],
+        manual_stages: [],
+        output_target_path: null,
+      },
+    }
+    const created = studioEnvelope({
+      project_path: targetPath,
+      snapshot: { project: templateProject, definitions: [avSourceDefinition] },
+    })
+    let gateway: RecordingGateway
+    gateway = new RecordingGateway(
+      studioEnvelope({ project_path: null, snapshot: null }),
+      {
+        templatePreview: () => templatePreview,
+        command: (command) => {
+          if (command.operation === 'create_av_enhance_v27') gateway.envelope = created
+          return gateway.envelope
+        },
+      },
+    )
+    render(<App gateway={gateway} />)
+
+    expect(await screen.findByText('尚未打开工程')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Templates' }))
+    await user.type(screen.getByLabelText('模板工程路径'), targetPath)
+    await user.type(screen.getByLabelText('Source 1 path'), 'C:\\synthetic\\source.mkv')
+    await user.click(screen.getByRole('button', { name: 'Server preview' }))
+    expect(await screen.findByText('preparation-compatible')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '创建 Preparation Project' }))
+
+    await waitFor(() =>
+      expect(gateway.commands.at(-1)).toEqual({
+        operation: 'create_av_enhance_v27',
+        request: {
+          profile_version: '2.7.0',
+          project_path: targetPath,
+          project_id: 'project.local',
+          project_name: 'ZNIKU Project',
+          source_mode: 'program',
+          sources: [
+            { source_path: 'C:\\synthetic\\source.mkv', source_ordinal: 0 },
+          ],
+          mr: { mode: 'off' },
+        },
+      }),
+    )
+    expect(screen.queryByRole('dialog', { name: 'AVEnhanceFlow v2.7.0 模板向导' })).not.toBeInTheDocument()
+    // JSDOM 没有画布尺寸，React Flow 会把尚未量测的节点标成不可见；节点存在即可证明
+    // command 返回的 Python snapshot 已替换当前 Graph，真实浏览器再由 fitView 完成视口定位。
+    expect(await screen.findByLabelText('source.program 节点')).toBeInTheDocument()
+    expect(screen.getByText(/AVEnhanceFlow 2\.7 · preparation-compatible/)).toBeVisible()
+    expect(gateway.templatePreviewArguments[0]).not.toHaveProperty('graph')
+    expect(gateway.templatePreviewArguments[0]).not.toHaveProperty('definitions')
+
+    fireEvent.click(screen.getByLabelText('source.program 节点'))
+    await user.click(screen.getByRole('button', { name: '应用参数到 Draft' }))
+    expect(screen.getByText(/自由编辑后已降级/)).toBeVisible()
   })
 
   it('使用单一画布搜索添加、复制节点，并实时阻断缺失 required input', async () => {

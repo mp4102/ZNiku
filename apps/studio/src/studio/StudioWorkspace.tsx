@@ -14,6 +14,7 @@ import {
   MarkerType,
   MiniMap,
   ReactFlow,
+  useReactFlow,
   type Connection,
   type EdgeChange,
   type EdgeMouseHandler,
@@ -22,6 +23,7 @@ import {
   type OnSelectionChangeParams,
 } from '@xyflow/react'
 import { WorkflowNodeCard } from '../components/WorkflowNodeCard'
+import { AvEnhanceV27Wizard } from './AvEnhanceV27Wizard'
 import type {
   WorkflowEdge,
   WorkflowNode,
@@ -30,6 +32,10 @@ import type {
 } from '../model'
 import type {
   ArtifactWire,
+  AvEnhanceV27ExpandRequestWire,
+  AvEnhanceV27PrepareRequestWire,
+  AvEnhanceV27TemplatePreviewEnvelope,
+  AvEnhanceV27TemplatePreviewRequestWire,
   EdgeWire,
   ExternalHandoffReadiness,
   GraphWire,
@@ -390,6 +396,7 @@ function monotonicDetail(
 
 export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: StudioWorkspaceProps) {
   const effectiveGateway = useMemo(() => gateway ?? createStudioGateway(), [gateway])
+  const { fitView } = useReactFlow()
   const [status, setStatus] = useState<StatusEnvelope | null>(null)
   const [historySummaries, setHistorySummaries] = useState<ReadonlyArray<RunSummaryWire>>([])
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
@@ -419,6 +426,13 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const [bottomOpen, setBottomOpen] = useState(true)
   const [pollEpoch, setPollEpoch] = useState(0)
   const [detailPollEpoch, setDetailPollEpoch] = useState(0)
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateProfile, setTemplateProfile] = useState<{
+    readonly status: string
+    readonly compatible: boolean
+    readonly modified: boolean
+  } | null>(null)
+  const [fitViewEpoch, setFitViewEpoch] = useState(0)
 
   const statusRef = useRef<StatusEnvelope | null>(null)
   const detailRef = useRef<RunDetailEnvelope | null>(null)
@@ -461,6 +475,10 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const busyRef = useRef(false)
   const detailSummaryRevisionRef = useRef('')
   const detailRequestedSummaryRevisionRef = useRef('')
+  const latestTemplatePreviewRef = useRef<{
+    readonly requestJson: string
+    readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
+  } | null>(null)
 
   const markStatusHealth = useCallback((stale: boolean) => {
     setStatusHealth((current) => ({
@@ -521,6 +539,10 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           setProjectId(next.snapshot.project.project_id)
           setProjectName(next.snapshot.project.name)
         }
+      }
+      if (pathChanged) {
+        latestTemplatePreviewRef.current = null
+        setTemplateProfile(null)
       }
       if (firstAuthority || pathChanged || options.resetHistory) {
         replaceHistory(next.run_summaries, next.next_run_cursor, false)
@@ -1236,6 +1258,11 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const updateGraph = useCallback((updater: (graph: GraphWire) => GraphWire) => {
     setDraft((current) => (current ? replaceGraph(current, updater(current.project.graph)) : current))
     setDirty(true)
+    setTemplateProfile((current) =>
+      current
+        ? { status: 'modified · profile check required', compatible: false, modified: true }
+        : current,
+    )
     setClientHint(null)
   }, [])
 
@@ -1442,17 +1469,31 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
             replaceProject:
               command.operation === 'open_project' ||
               command.operation === 'create_project' ||
-              command.operation === 'save_project',
+              command.operation === 'save_project' ||
+              command.operation === 'create_av_enhance_v27' ||
+              command.operation === 'expand_av_enhance_v27',
             clearGraphSelection:
-              command.operation === 'open_project' || command.operation === 'create_project',
+              command.operation === 'open_project' ||
+              command.operation === 'create_project' ||
+              command.operation === 'create_av_enhance_v27' ||
+              command.operation === 'expand_av_enhance_v27',
           })
         }
         if (!next) return null
 
         const last = commands.at(-1)
         if (last?.operation === 'save_project') return next
-        let selected = viewRunIdRef.current
         if (last?.operation === 'open_project' || last?.operation === 'create_project') {
+          latestTemplatePreviewRef.current = null
+          setTemplateProfile(null)
+        }
+        let selected = viewRunIdRef.current
+        if (
+          last?.operation === 'open_project' ||
+          last?.operation === 'create_project' ||
+          last?.operation === 'create_av_enhance_v27' ||
+          last?.operation === 'expand_av_enhance_v27'
+        ) {
           const knownSummaries = mergeSummaries(
             next.run_summaries,
             previousPath === next.project_path ? historySummariesRef.current : [],
@@ -1519,6 +1560,89 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     },
     [draft, executeCommands],
   )
+
+  const previewAvEnhanceV27 = useCallback(
+    async (
+      request: AvEnhanceV27TemplatePreviewRequestWire,
+    ): Promise<AvEnhanceV27TemplatePreviewEnvelope | null> => {
+      latestTemplatePreviewRef.current = null
+      setClientHint(null)
+      setBoundaryError(null)
+      const next = await effectiveGateway.previewAvEnhanceV27(request)
+      latestTemplatePreviewRef.current = {
+        requestJson: JSON.stringify(request),
+        envelope: next,
+      }
+      return next
+    },
+    [effectiveGateway],
+  )
+
+  const applyAvEnhanceV27Mutation = useCallback(
+    async (
+      command:
+        | { readonly operation: 'create_av_enhance_v27'; readonly request: AvEnhanceV27PrepareRequestWire }
+        | { readonly operation: 'expand_av_enhance_v27'; readonly request: AvEnhanceV27ExpandRequestWire },
+      expectedPhase: 'preparation' | 'expanded',
+    ): Promise<boolean> => {
+      const authority = latestTemplatePreviewRef.current
+      const expectedAction = expectedPhase === 'preparation' ? 'prepare' : 'expand'
+      const requestJson = JSON.stringify({ action: expectedAction, request: command.request })
+      if (
+        !authority ||
+        authority.requestJson !== requestJson ||
+        authority.envelope.phase !== expectedPhase ||
+        !authority.envelope.profile.compatible
+      ) {
+        latestTemplatePreviewRef.current = null
+        setClientHint('E_STUDIO_TEMPLATE_PREVIEW_REQUIRED：请重新取得 compatible server preview。')
+        return false
+      }
+      const next = await executeCommands([command])
+      if (!next) {
+        latestTemplatePreviewRef.current = null
+        return false
+      }
+      setTemplateProfile({
+        status: authority.envelope.profile.status,
+        compatible: authority.envelope.profile.compatible,
+        modified: false,
+      })
+      latestTemplatePreviewRef.current = null
+      setShowRunSnapshot(false)
+      setSelectedNodeIds(new Set())
+      setSelectedEdgeIds(new Set())
+      setFitViewEpoch((value) => value + 1)
+      return true
+    },
+    [executeCommands],
+  )
+
+  const createAvEnhanceV27 = useCallback(
+    (request: AvEnhanceV27PrepareRequestWire) =>
+      applyAvEnhanceV27Mutation(
+        { operation: 'create_av_enhance_v27', request },
+        'preparation',
+      ),
+    [applyAvEnhanceV27Mutation],
+  )
+
+  const expandAvEnhanceV27 = useCallback(
+    (request: AvEnhanceV27ExpandRequestWire) =>
+      applyAvEnhanceV27Mutation(
+        { operation: 'expand_av_enhance_v27', request },
+        'expanded',
+      ),
+    [applyAvEnhanceV27Mutation],
+  )
+
+  useEffect(() => {
+    if (fitViewEpoch === 0) return
+    const timer = window.setTimeout(() => {
+      void fitView({ duration: 350, padding: 0.16 })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [fitView, fitViewEpoch])
 
   const validateAndSubmit = useCallback(
     async (nodeRun: NodeRunWire) => {
@@ -1620,9 +1744,43 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const snapshotChanged =
     !!currentRun && !!draft && currentRun.graph_snapshot !== draft.project.graph &&
     JSON.stringify(currentRun.graph_snapshot) !== JSON.stringify(draft.project.graph)
+  const hasAvEnhanceV27Nodes =
+    draft?.project.graph.nodes.some((node) => node.type_id.startsWith('zniku.avenhance.v27.')) ??
+    false
+  const visibleTemplateProfile =
+    templateProfile ??
+    (hasAvEnhanceV27Nodes
+      ? { status: 'v2.7 nodes · profile check required', compatible: false, modified: false }
+      : null)
+
+  const locateTemplateNode = (nodeId: string) => {
+    if (!draft?.project.graph.nodes.some((node) => node.node_id === nodeId)) {
+      setClientHint(`Template preview diagnostic 指向 ${nodeId}；该节点尚未写入当前 Project。`)
+      return
+    }
+    setTemplateOpen(false)
+    setShowRunSnapshot(false)
+    setSelectedNodeIds(new Set([nodeId]))
+    setSelectedEdgeIds(new Set())
+  }
 
   return (
     <main className={`app-shell studio-workspace ${bottomOpen ? 'has-bottom-drawer' : ''}`}>
+      <AvEnhanceV27Wizard
+        busy={serviceBusy || health.status.stale}
+        currentProjectId={projectId}
+        currentProjectName={projectName}
+        currentProjectPath={projectPath}
+        currentSnapshot={draft}
+        onClose={() => setTemplateOpen(false)}
+        onCreate={createAvEnhanceV27}
+        onExpand={expandAvEnhanceV27}
+        onLocateNode={locateTemplateNode}
+        onPreview={previewAvEnhanceV27}
+        open={templateOpen}
+        runSummaries={allSummaries}
+        serviceError={clientHint ?? boundaryError}
+      />
       <header className="topbar">
         <div className="brand-lockup">
           <div className="brand-mark">ZN</div>
@@ -1637,9 +1795,26 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
               ? `${draft.project.project_id} · ${draft.project.graph.nodes.length} nodes · ${dirty ? '未保存' : '已保存'}`
               : '0.2.1 Project Service wire authority'}
           </span>
+          {visibleTemplateProfile && (
+            <span
+              className={`workflow-profile-state ${visibleTemplateProfile.compatible ? 'is-compatible' : 'is-unverified'}`}
+              role="status"
+            >
+              AVEnhanceFlow 2.7 · {visibleTemplateProfile.status}
+              {visibleTemplateProfile.modified ? ' · 自由编辑后已降级' : ''}
+            </span>
+          )}
         </div>
 
         <div className="project-location">
+          <button
+            className="button button--template"
+            disabled={serviceBusy || health.status.stale}
+            onClick={() => setTemplateOpen(true)}
+            type="button"
+          >
+            Templates
+          </button>
           <input aria-label="工程路径" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder="D:\\Projects\\example.zniku" />
           <button className="button button--ghost" type="button" disabled={serviceBusy || health.status.stale || !projectPath.trim()} onClick={() => void executeCommands([{ operation: 'open_project', path: projectPath.trim() }])}>打开</button>
           <button className="button button--ghost" type="button" disabled={serviceBusy || health.status.stale || !projectPath.trim() || !projectId.trim() || !projectName.trim()} onClick={() => void executeCommands([{ operation: 'create_project', path: projectPath.trim(), project_id: projectId.trim(), name: projectName.trim() }])}>新建</button>

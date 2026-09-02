@@ -115,6 +115,123 @@
       "title": "Artifact",
       "type": "object"
     },
+    "Av27ProfileDiagnostic": {
+      "additionalProperties": false,
+      "description": "描述一个稳定、可定位但不扩大 Graph Core 的 profile 诊断。",
+      "properties": {
+        "code": {
+          "pattern": "^E_AV27_PREFLIGHT_[A-Z0-9_]+$",
+          "title": "Code",
+          "type": "string"
+        },
+        "field_path": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Path"
+        },
+        "message": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "node_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Node Id"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "node_id",
+        "field_path"
+      ],
+      "title": "Av27ProfileDiagnostic",
+      "type": "object"
+    },
+    "Av27ProfilePhase": {
+      "enum": [
+        "preparation",
+        "expanded"
+      ],
+      "type": "string"
+    },
+    "Av27ProfilePreflightResult": {
+      "additionalProperties": false,
+      "description": "返回 profile 状态；compatible 状态必须没有阻断诊断。",
+      "properties": {
+        "compatible": {
+          "title": "Compatible",
+          "type": "boolean"
+        },
+        "diagnostics": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Av27ProfileDiagnostic"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        },
+        "phase": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Av27ProfilePhase"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "profile_version": {
+          "const": "2.7.0",
+          "default": "2.7.0",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/Av27ProfileStatus"
+        }
+      },
+      "required": [
+        "profile_version",
+        "status",
+        "phase",
+        "compatible",
+        "diagnostics"
+      ],
+      "title": "Av27ProfilePreflightResult",
+      "type": "object"
+    },
+    "Av27ProfileStatus": {
+      "enum": [
+        "preparation-compatible",
+        "expanded-compatible",
+        "replan_required",
+        "incompatible"
+      ],
+      "type": "string"
+    },
     "Cardinality": {
       "description": "端口只支持单值或带显式顺序的多值输入。",
       "enum": [
@@ -123,6 +240,74 @@
       ],
       "title": "Cardinality",
       "type": "string"
+    },
+    "ChapterPlanProjection": {
+      "additionalProperties": false,
+      "description": "向 Studio 投影一个 Chapter 及其有序 leaves。",
+      "properties": {
+        "chapter_id": {
+          "title": "Chapter Id",
+          "type": "string"
+        },
+        "chapter_ordinal": {
+          "title": "Chapter Ordinal",
+          "type": "integer"
+        },
+        "end_frame": {
+          "title": "End Frame",
+          "type": "integer"
+        },
+        "end_time_seconds": {
+          "title": "End Time Seconds",
+          "type": "string"
+        },
+        "end_timecode": {
+          "title": "End Timecode",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "leaves": {
+          "items": {
+            "$ref": "#/$defs/LeafPlanProjection"
+          },
+          "title": "Leaves",
+          "type": "array"
+        },
+        "source_ordinal": {
+          "title": "Source Ordinal",
+          "type": "integer"
+        },
+        "start_frame": {
+          "title": "Start Frame",
+          "type": "integer"
+        },
+        "start_time_seconds": {
+          "title": "Start Time Seconds",
+          "type": "string"
+        },
+        "start_timecode": {
+          "title": "Start Timecode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chapter_id",
+        "chapter_ordinal",
+        "label",
+        "source_ordinal",
+        "start_frame",
+        "end_frame",
+        "start_time_seconds",
+        "end_time_seconds",
+        "start_timecode",
+        "end_timecode",
+        "leaves"
+      ],
+      "title": "ChapterPlanProjection",
+      "type": "object"
     },
     "CommandExecutorSpec": {
       "additionalProperties": false,
@@ -186,6 +371,47 @@
         "run_id"
       ],
       "title": "AbandonRunCommand",
+      "type": "object"
+    },
+    "Command_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "exact_frames": "#/$defs/Command_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Command_ExactTimesChapterSelector",
+          "single": "#/$defs/Command_SingleChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Command_SingleChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Command_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Command_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Command_CreateAvEnhanceV27Command": {
+      "additionalProperties": false,
+      "description": "以严格请求原子创建 AVEnhanceFlow v2.7 preparation Project。",
+      "properties": {
+        "operation": {
+          "const": "create_av_enhance_v27",
+          "title": "Operation",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/Command_PrepareRequest"
+        }
+      },
+      "required": [
+        "operation",
+        "request"
+      ],
+      "title": "CreateAvEnhanceV27Command",
       "type": "object"
     },
     "Command_CreateProjectCommand": {
@@ -276,6 +502,181 @@
       "title": "Edge",
       "type": "object"
     },
+    "Command_EnhancementDeclaration": {
+      "additionalProperties": false,
+      "description": "声明全节目 Enhancement 模型和规范化整数 scale。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "default": null,
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "EnhancementDeclaration",
+      "type": "object"
+    },
+    "Command_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "声明每个后续章的零基首帧。",
+      "properties": {
+        "frames": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Command_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "声明 canonical rational 秒形式的 program 章边界。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Command_ExpandAvEnhanceV27Command": {
+      "additionalProperties": false,
+      "description": "基于明确 preparation Run 原子展开 AVEnhanceFlow v2.7 Graph。",
+      "properties": {
+        "operation": {
+          "const": "expand_av_enhance_v27",
+          "title": "Operation",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/Command_ExpandRequest"
+        }
+      },
+      "required": [
+        "operation",
+        "request"
+      ],
+      "title": "ExpandAvEnhanceV27Command",
+      "type": "object"
+    },
+    "Command_ExpandRequest": {
+      "additionalProperties": false,
+      "description": "严格描述基于明确 preparation Run 展开后半图的操作者输入。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Command_ChapterSelector",
+          "default": null,
+          "title": "Chapter Selector"
+        },
+        "enhancement": {
+          "$ref": "#/$defs/Command_EnhancementDeclaration"
+        },
+        "frame_interpolation": {
+          "$ref": "#/$defs/Command_FrameInterpolationDeclaration"
+        },
+        "leaf_duration_minutes": {
+          "exclusiveMinimum": 0,
+          "title": "Leaf Duration Minutes",
+          "type": "integer"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "2.7.0",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Command_ProgramEncodeDeclaration"
+        },
+        "publication": {
+          "$ref": "#/$defs/Command_PublicationRequest"
+        }
+      },
+      "required": [
+        "profile_version",
+        "preparation_run_id",
+        "leaf_duration_minutes",
+        "enhancement",
+        "frame_interpolation",
+        "program_encode",
+        "publication"
+      ],
+      "title": "ExpandRequest",
+      "type": "object"
+    },
+    "Command_FrameInterpolationDeclaration": {
+      "additionalProperties": false,
+      "description": "声明全节目 Frame Interpolation 模型。",
+      "properties": {
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "default": null,
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "FrameInterpolationDeclaration",
+      "type": "object"
+    },
     "Command_Graph": {
       "additionalProperties": false,
       "description": "表示用户当前编辑的普通节点与有向边集合。",
@@ -307,6 +708,69 @@
       "type": "object"
     },
     "Command_JsonValue": {},
+    "Command_MrDeclaration": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Command_MrExternal",
+          "off": "#/$defs/Command_MrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Command_MrOff"
+        },
+        {
+          "$ref": "#/$defs/Command_MrExternal"
+        }
+      ]
+    },
+    "Command_MrExternal": {
+      "additionalProperties": false,
+      "description": "声明每个 Source 一个 external MR 节点及操作者模型记录。",
+      "properties": {
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "model_version"
+      ],
+      "title": "MrExternal",
+      "type": "object"
+    },
+    "Command_MrOff": {
+      "additionalProperties": false,
+      "description": "声明 preparation 不生成 MR 节点。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "MrOff",
+      "type": "object"
+    },
     "Command_NodeInstance": {
       "additionalProperties": false,
       "description": "将一个图节点绑定到精确 NodeDefinition 版本与参数。",
@@ -378,6 +842,79 @@
       "title": "OpenProjectCommand",
       "type": "object"
     },
+    "Command_PrepareRequest": {
+      "additionalProperties": false,
+      "description": "严格描述只生成 preparation Graph 的全部操作者输入。",
+      "properties": {
+        "mr": {
+          "$ref": "#/$defs/Command_MrDeclaration"
+        },
+        "profile_version": {
+          "const": "2.7.0",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "project_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "project_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Project Name",
+          "type": "string"
+        },
+        "project_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Project Path",
+          "type": "string"
+        },
+        "source_mode": {
+          "$ref": "#/$defs/Command_SourceMode"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/Command_SourceSpec"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "profile_version",
+        "project_path",
+        "project_id",
+        "project_name",
+        "source_mode",
+        "sources",
+        "mr"
+      ],
+      "title": "PrepareRequest",
+      "type": "object"
+    },
+    "Command_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
     "Command_Project": {
       "additionalProperties": false,
       "description": "表示一个 0.2.0 工程当前的可编辑 Graph。",
@@ -405,6 +942,42 @@
         "graph"
       ],
       "title": "Project",
+      "type": "object"
+    },
+    "Command_PublicationRequest": {
+      "additionalProperties": false,
+      "description": "声明 canonical Jellyfin 发布根、标题、年份和显式覆盖选择。",
+      "properties": {
+        "output_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Output Root",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 4,
+          "minLength": 4,
+          "title": "Year",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_root",
+        "title",
+        "year",
+        "overwrite"
+      ],
+      "title": "PublicationRequest",
       "type": "object"
     },
     "Command_RerunFromHereCommand": {
@@ -488,6 +1061,59 @@
         "project"
       ],
       "title": "SaveProjectCommand",
+      "type": "object"
+    },
+    "Command_SingleChapterSelector": {
+      "additionalProperties": false,
+      "description": "声明 program 的唯一 ``[0,N)`` 章。",
+      "properties": {
+        "mode": {
+          "const": "single",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "SingleChapterSelector",
+      "type": "object"
+    },
+    "Command_SourceMode": {
+      "enum": [
+        "program",
+        "pre_chaptered"
+      ],
+      "type": "string"
+    },
+    "Command_SourceSpec": {
+      "additionalProperties": false,
+      "description": "描述一个只读物理 Source 及其连续零基 ordinal。",
+      "properties": {
+        "chapter_label": {
+          "default": null,
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Chapter Label",
+          "type": "string"
+        },
+        "source_ordinal": {
+          "minimum": 0,
+          "title": "Source Ordinal",
+          "type": "integer"
+        },
+        "source_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_path",
+        "source_ordinal"
+      ],
+      "title": "SourceSpec",
       "type": "object"
     },
     "Command_SubmitExternalCommand": {
@@ -1012,6 +1638,61 @@
       "title": "LatestNodeResult",
       "type": "object"
     },
+    "LeafPlanProjection": {
+      "additionalProperties": false,
+      "description": "向 Studio 投影 Python 已计算的 leaf frame/time，不让 TS 复制 planner。",
+      "properties": {
+        "end_frame": {
+          "title": "End Frame",
+          "type": "integer"
+        },
+        "end_time_seconds": {
+          "title": "End Time Seconds",
+          "type": "string"
+        },
+        "end_timecode": {
+          "title": "End Timecode",
+          "type": "string"
+        },
+        "leaf_id": {
+          "title": "Leaf Id",
+          "type": "string"
+        },
+        "leaf_ordinal": {
+          "title": "Leaf Ordinal",
+          "type": "integer"
+        },
+        "port_id": {
+          "title": "Port Id",
+          "type": "string"
+        },
+        "start_frame": {
+          "title": "Start Frame",
+          "type": "integer"
+        },
+        "start_time_seconds": {
+          "title": "Start Time Seconds",
+          "type": "string"
+        },
+        "start_timecode": {
+          "title": "Start Timecode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "leaf_id",
+        "leaf_ordinal",
+        "port_id",
+        "start_frame",
+        "end_frame",
+        "start_time_seconds",
+        "end_time_seconds",
+        "start_timecode",
+        "end_timecode"
+      ],
+      "title": "LeafPlanProjection",
+      "type": "object"
+    },
     "ManualExternalExecutorSpec": {
       "additionalProperties": false,
       "description": "声明由操作者在外部完成处理并提交输出的 handoff。",
@@ -1051,6 +1732,48 @@
       ],
       "title": "ManualExternalExecutorSpec",
       "type": "object"
+    },
+    "ManualStageSummary": {
+      "additionalProperties": false,
+      "description": "告诉 Studio 人工节点数量与固定交接容器。",
+      "properties": {
+        "node_count": {
+          "minimum": 0,
+          "title": "Node Count",
+          "type": "integer"
+        },
+        "output_container": {
+          "enum": [
+            ".mkv",
+            ".mov"
+          ],
+          "title": "Output Container",
+          "type": "string"
+        },
+        "stage": {
+          "enum": [
+            "mosaic_restoration",
+            "enhancement",
+            "frame_interpolation"
+          ],
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "node_count",
+        "output_container"
+      ],
+      "title": "ManualStageSummary",
+      "type": "object"
+    },
+    "MrMode": {
+      "enum": [
+        "off",
+        "external"
+      ],
+      "type": "string"
     },
     "NodeDefinition": {
       "additionalProperties": false,
@@ -1559,6 +2282,447 @@
       "title": "PortSpec",
       "type": "object"
     },
+    "Preview_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "exact_frames": "#/$defs/Preview_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Preview_ExactTimesChapterSelector",
+          "single": "#/$defs/Preview_SingleChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Preview_SingleChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Preview_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Preview_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Preview_EnhancementDeclaration": {
+      "additionalProperties": false,
+      "description": "声明全节目 Enhancement 模型和规范化整数 scale。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "default": null,
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "EnhancementDeclaration",
+      "type": "object"
+    },
+    "Preview_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "声明每个后续章的零基首帧。",
+      "properties": {
+        "frames": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Preview_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "声明 canonical rational 秒形式的 program 章边界。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Preview_ExpandRequest": {
+      "additionalProperties": false,
+      "description": "严格描述基于明确 preparation Run 展开后半图的操作者输入。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Preview_ChapterSelector",
+          "default": null,
+          "title": "Chapter Selector"
+        },
+        "enhancement": {
+          "$ref": "#/$defs/Preview_EnhancementDeclaration"
+        },
+        "frame_interpolation": {
+          "$ref": "#/$defs/Preview_FrameInterpolationDeclaration"
+        },
+        "leaf_duration_minutes": {
+          "exclusiveMinimum": 0,
+          "title": "Leaf Duration Minutes",
+          "type": "integer"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "2.7.0",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Preview_ProgramEncodeDeclaration"
+        },
+        "publication": {
+          "$ref": "#/$defs/Preview_PublicationRequest"
+        }
+      },
+      "required": [
+        "profile_version",
+        "preparation_run_id",
+        "leaf_duration_minutes",
+        "enhancement",
+        "frame_interpolation",
+        "program_encode",
+        "publication"
+      ],
+      "title": "ExpandRequest",
+      "type": "object"
+    },
+    "Preview_ExpandTemplatePreviewRequest": {
+      "additionalProperties": false,
+      "description": "包装 expanded preview，不接受客户端 Artifact metadata。",
+      "properties": {
+        "action": {
+          "const": "expand",
+          "title": "Action",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/Preview_ExpandRequest"
+        }
+      },
+      "required": [
+        "action",
+        "request"
+      ],
+      "title": "ExpandTemplatePreviewRequest",
+      "type": "object"
+    },
+    "Preview_FrameInterpolationDeclaration": {
+      "additionalProperties": false,
+      "description": "声明全节目 Frame Interpolation 模型。",
+      "properties": {
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "default": null,
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "FrameInterpolationDeclaration",
+      "type": "object"
+    },
+    "Preview_MrDeclaration": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Preview_MrExternal",
+          "off": "#/$defs/Preview_MrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Preview_MrOff"
+        },
+        {
+          "$ref": "#/$defs/Preview_MrExternal"
+        }
+      ]
+    },
+    "Preview_MrExternal": {
+      "additionalProperties": false,
+      "description": "声明每个 Source 一个 external MR 节点及操作者模型记录。",
+      "properties": {
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "model_version"
+      ],
+      "title": "MrExternal",
+      "type": "object"
+    },
+    "Preview_MrOff": {
+      "additionalProperties": false,
+      "description": "声明 preparation 不生成 MR 节点。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "MrOff",
+      "type": "object"
+    },
+    "Preview_PrepareRequest": {
+      "additionalProperties": false,
+      "description": "严格描述只生成 preparation Graph 的全部操作者输入。",
+      "properties": {
+        "mr": {
+          "$ref": "#/$defs/Preview_MrDeclaration"
+        },
+        "profile_version": {
+          "const": "2.7.0",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "project_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "project_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Project Name",
+          "type": "string"
+        },
+        "project_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Project Path",
+          "type": "string"
+        },
+        "source_mode": {
+          "$ref": "#/$defs/Preview_SourceMode"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/Preview_SourceSpec"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "profile_version",
+        "project_path",
+        "project_id",
+        "project_name",
+        "source_mode",
+        "sources",
+        "mr"
+      ],
+      "title": "PrepareRequest",
+      "type": "object"
+    },
+    "Preview_PrepareTemplatePreviewRequest": {
+      "additionalProperties": false,
+      "description": "包装 preparation preview，不接受客户端 Graph 或 definition。",
+      "properties": {
+        "action": {
+          "const": "prepare",
+          "title": "Action",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/Preview_PrepareRequest"
+        }
+      },
+      "required": [
+        "action",
+        "request"
+      ],
+      "title": "PrepareTemplatePreviewRequest",
+      "type": "object"
+    },
+    "Preview_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Preview_PublicationRequest": {
+      "additionalProperties": false,
+      "description": "声明 canonical Jellyfin 发布根、标题、年份和显式覆盖选择。",
+      "properties": {
+        "output_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Output Root",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 4,
+          "minLength": 4,
+          "title": "Year",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_root",
+        "title",
+        "year",
+        "overwrite"
+      ],
+      "title": "PublicationRequest",
+      "type": "object"
+    },
+    "Preview_SingleChapterSelector": {
+      "additionalProperties": false,
+      "description": "声明 program 的唯一 ``[0,N)`` 章。",
+      "properties": {
+        "mode": {
+          "const": "single",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "SingleChapterSelector",
+      "type": "object"
+    },
+    "Preview_SourceMode": {
+      "enum": [
+        "program",
+        "pre_chaptered"
+      ],
+      "type": "string"
+    },
+    "Preview_SourceSpec": {
+      "additionalProperties": false,
+      "description": "描述一个只读物理 Source 及其连续零基 ordinal。",
+      "properties": {
+        "chapter_label": {
+          "default": null,
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Chapter Label",
+          "type": "string"
+        },
+        "source_ordinal": {
+          "minimum": 0,
+          "title": "Source Ordinal",
+          "type": "integer"
+        },
+        "source_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_path",
+        "source_ordinal"
+      ],
+      "title": "SourceSpec",
+      "type": "object"
+    },
     "ProgressUnit": {
       "enum": [
         "frames",
@@ -1601,7 +2765,9 @@
       "discriminator": {
         "mapping": {
           "abandon_run": "#/$defs/Command_AbandonRunCommand",
+          "create_av_enhance_v27": "#/$defs/Command_CreateAvEnhanceV27Command",
           "create_project": "#/$defs/Command_CreateProjectCommand",
+          "expand_av_enhance_v27": "#/$defs/Command_ExpandAvEnhanceV27Command",
           "open_project": "#/$defs/Command_OpenProjectCommand",
           "rerun_from_here": "#/$defs/Command_RerunFromHereCommand",
           "run_all": "#/$defs/Command_RunAllCommand",
@@ -1617,6 +2783,12 @@
         },
         {
           "$ref": "#/$defs/Command_CreateProjectCommand"
+        },
+        {
+          "$ref": "#/$defs/Command_CreateAvEnhanceV27Command"
+        },
+        {
+          "$ref": "#/$defs/Command_ExpandAvEnhanceV27Command"
         },
         {
           "$ref": "#/$defs/Command_SaveProjectCommand"
@@ -2251,6 +3423,165 @@
       ],
       "title": "StatusEnvelope",
       "type": "object"
+    },
+    "TemplatePhase": {
+      "enum": [
+        "preparation",
+        "expanded"
+      ],
+      "type": "string"
+    },
+    "TemplatePlanSummary": {
+      "additionalProperties": false,
+      "description": "保存 preview 所需的 display-ready server projection。",
+      "properties": {
+        "chapter_count": {
+          "minimum": 0,
+          "title": "Chapter Count",
+          "type": "integer"
+        },
+        "chapters": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ChapterPlanProjection"
+          },
+          "title": "Chapters",
+          "type": "array"
+        },
+        "effective_video_artifact_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Effective Video Artifact Ids",
+          "type": "array"
+        },
+        "leaf_count": {
+          "minimum": 0,
+          "title": "Leaf Count",
+          "type": "integer"
+        },
+        "manual_stages": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ManualStageSummary"
+          },
+          "title": "Manual Stages",
+          "type": "array"
+        },
+        "mr_mode": {
+          "$ref": "#/$defs/MrMode"
+        },
+        "output_target_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Target Path"
+        },
+        "preparation_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preparation Run Id"
+        },
+        "source_count": {
+          "exclusiveMinimum": 0,
+          "title": "Source Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source_count",
+        "chapter_count",
+        "leaf_count",
+        "mr_mode",
+        "preparation_run_id",
+        "effective_video_artifact_ids",
+        "chapters",
+        "manual_stages",
+        "output_target_path"
+      ],
+      "title": "TemplatePlanSummary",
+      "type": "object"
+    },
+    "TemplatePreviewEnvelope": {
+      "additionalProperties": false,
+      "description": "返回 Python builder 的完整普通 Graph、定义、计划投影与 profile 诊断。",
+      "properties": {
+        "contract_version": {
+          "const": "0.2.1",
+          "default": "0.2.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "definitions": {
+          "items": {
+            "$ref": "#/$defs/NodeDefinition"
+          },
+          "title": "Definitions",
+          "type": "array"
+        },
+        "phase": {
+          "$ref": "#/$defs/TemplatePhase"
+        },
+        "plan": {
+          "$ref": "#/$defs/TemplatePlanSummary"
+        },
+        "profile": {
+          "$ref": "#/$defs/Av27ProfilePreflightResult"
+        },
+        "profile_version": {
+          "const": "2.7.0",
+          "default": "2.7.0",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/Project"
+        }
+      },
+      "required": [
+        "contract_version",
+        "profile_version",
+        "phase",
+        "project",
+        "definitions",
+        "profile",
+        "plan"
+      ],
+      "title": "TemplatePreviewEnvelope",
+      "type": "object"
+    },
+    "TemplatePreviewRequest": {
+      "discriminator": {
+        "mapping": {
+          "expand": "#/$defs/Preview_ExpandTemplatePreviewRequest",
+          "prepare": "#/$defs/Preview_PrepareTemplatePreviewRequest"
+        },
+        "propertyName": "action"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Preview_PrepareTemplatePreviewRequest"
+        },
+        {
+          "$ref": "#/$defs/Preview_ExpandTemplatePreviewRequest"
+        }
+      ]
     },
     "UiPosition": {
       "additionalProperties": false,

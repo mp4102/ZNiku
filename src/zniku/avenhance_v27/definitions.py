@@ -101,6 +101,10 @@ def _identifier() -> SchemaObject:
     return {"type": "string", "minLength": 1, "maxLength": 128, "pattern": _IDENTIFIER_PATTERN}
 
 
+def _display_label() -> SchemaObject:
+    return {"type": "string", "minLength": 1, "maxLength": 256, "pattern": r"^\S(?:.*\S)?$"}
+
+
 def _rational() -> SchemaObject:
     return {"type": "string", "pattern": _RATIONAL_PATTERN}
 
@@ -291,11 +295,116 @@ def _segment_schema(port_id: str) -> SchemaObject:
     )
 
 
+def _chapter_selector_schema() -> SchemaObject:
+    """返回仅允许 server-side 精确 selector 三种形状的 Schema。"""
+
+    return {
+        "oneOf": [
+            _object_schema({"mode": {"const": "single"}}, required=("mode",)),
+            _object_schema(
+                {
+                    "mode": {"const": "exact_frames"},
+                    "frames": {
+                        "type": "array",
+                        "items": _positive_integer(),
+                        "minItems": 1,
+                        "uniqueItems": True,
+                    },
+                },
+                required=("mode", "frames"),
+            ),
+            _object_schema(
+                {
+                    "mode": {"const": "exact_times"},
+                    "times": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                        },
+                        "minItems": 1,
+                        "uniqueItems": True,
+                    },
+                },
+                required=("mode", "times"),
+            ),
+        ]
+    }
+
+
+def _resolved_chapter_schema() -> SchemaObject:
+    """返回由 Python builder 持久化的 resolved half-open Chapter 形状。"""
+
+    return _object_schema(
+        {
+            "chapter_id": _identifier(),
+            "chapter_ordinal": _ordinal(),
+            "label": _display_label(),
+            "source_ordinal": _ordinal(),
+            "start_frame": _ordinal(),
+            "end_frame": _positive_integer(),
+        },
+        required=(
+            "chapter_id",
+            "chapter_ordinal",
+            "label",
+            "source_ordinal",
+            "start_frame",
+            "end_frame",
+        ),
+    )
+
+
 def atomic_split_definition(count: int) -> NodeDefinition:
     """返回 output shape 与 count 一一绑定的 AtomicSplit 定义。"""
 
     port_ids = atomic_split_port_ids(count)
     segment_schemas = [_segment_schema(port_id) for port_id in port_ids]
+    parameter_schema = _root_schema(
+        {
+            "source_mode": {"type": "string", "enum": ["program", "pre_chaptered"]},
+            "chapter_selector": _chapter_selector_schema(),
+            "leaf_duration_minutes": _positive_integer(),
+            "planned_admission_artifact_id": _identifier(),
+            "planned_effective_video_artifact_ids": {
+                "type": "array",
+                "items": _identifier(),
+                "minItems": 1,
+                "uniqueItems": True,
+            },
+            "chapters": {
+                "type": "array",
+                "items": _resolved_chapter_schema(),
+                "minItems": 1,
+            },
+            "segments": {
+                "type": "array",
+                "prefixItems": cast(list[JsonValue], segment_schemas),
+                "items": False,
+                "minItems": count,
+                "maxItems": count,
+            },
+        },
+        required=(
+            "source_mode",
+            "leaf_duration_minutes",
+            "planned_admission_artifact_id",
+            "planned_effective_video_artifact_ids",
+            "chapters",
+            "segments",
+        ),
+    )
+    parameter_schema["allOf"] = [
+        {
+            "if": {
+                "properties": {"source_mode": {"const": "program"}},
+                "required": ["source_mode"],
+            },
+            "then": {"required": ["chapter_selector"]},
+            "else": {"not": {"required": ["chapter_selector"]}},
+        }
+    ]
     return NodeDefinition(
         type_id=atomic_split_type_id(count),
         version=AV27_NODE_VERSION,
@@ -311,19 +420,7 @@ def atomic_split_definition(count: int) -> NodeDefinition:
         output_ports=tuple(
             PortSpec(port_id=port_id, data_type="VideoFile") for port_id in port_ids
         ),
-        parameter_schema=_root_schema(
-            {
-                "planned_admission_artifact_id": _identifier(),
-                "segments": {
-                    "type": "array",
-                    "prefixItems": cast(list[JsonValue], segment_schemas),
-                    "items": False,
-                    "minItems": count,
-                    "maxItems": count,
-                },
-            },
-            required=("planned_admission_artifact_id", "segments"),
-        ),
+        parameter_schema=parameter_schema,
         execution_mode=ExecutionMode.AUTOMATIC,
         executor=PythonExecutorSpec(
             adapter=ATOMIC_SPLIT_ADAPTER,

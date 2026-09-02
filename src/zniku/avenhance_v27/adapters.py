@@ -178,6 +178,16 @@ def atomic_split(context: PythonAdapterContext) -> PythonAdapterResult:
     planned_gate = _required_text(context.node.parameters, "planned_admission_artifact_id")
     if gate.artifact_id != planned_gate:
         raise Av27MediaError("E_AV27_PLAN_INPUT_CHANGED", "Admission Artifact 已变化，必须重新规划")
+    planned_videos = _array_of_text(
+        context.node.parameters.get("planned_effective_video_artifact_ids"),
+        "planned_effective_video_artifact_ids",
+    )
+    actual_videos = tuple(item.artifact_id for item in videos)
+    if planned_videos != actual_videos:
+        raise Av27MediaError(
+            "E_AV27_PLAN_INPUT_CHANGED",
+            "effective-video Artifact 已变化，必须重新规划",
+        )
     output_ports = tuple(output.port_id for output in context.outputs)
     segments = parse_split_segments(
         context.node.parameters.get("segments"),
@@ -1124,6 +1134,16 @@ def _array_of_mappings(value: object, name: str) -> tuple[Mapping[str, object], 
     ):
         raise Av27MediaError("E_AV27_PARAMETER", f"{name} 必须是非空 object array")
     return tuple(item for item in value if isinstance(item, Mapping))
+
+
+def _array_of_text(value: object, name: str) -> tuple[str, ...]:
+    if (
+        not isinstance(value, list | tuple)
+        or not value
+        or any(not isinstance(item, str) or not item or item.strip() != item for item in value)
+    ):
+        raise Av27MediaError("E_AV27_PARAMETER", f"{name} 必须是非空 string array")
+    return tuple(item for item in value if isinstance(item, str))
 
 
 def _plain_json(value: object) -> object:

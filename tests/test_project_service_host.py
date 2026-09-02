@@ -313,6 +313,58 @@ def test_cross_origin_and_non_json_posts_have_no_project_side_effect(tmp_path: P
         assert application.inspect().project_path is None
 
 
+def test_av27_template_preview_http_route_is_read_only_and_strict(tmp_path: Path) -> None:
+    source = tmp_path / "source.mkv"
+    source.write_bytes(b"synthetic source")
+    target = tmp_path / "preview-only.zniku"
+    request = {
+        "action": "prepare",
+        "request": {
+            "profile_version": "2.7.0",
+            "project_path": str(target.resolve()),
+            "project_id": "project.http.av27",
+            "project_name": "HTTP AV27 preview",
+            "source_mode": "program",
+            "sources": [
+                {
+                    "source_path": str(source.resolve()),
+                    "source_ordinal": 0,
+                }
+            ],
+            "mr": {"mode": "off"},
+        },
+    }
+    application = ProjectServiceApplication(work_root=tmp_path / "work-preview")
+
+    with _serve(application) as (base_url, _):
+        status, preview, headers = _request(
+            base_url,
+            "/api/studio/templates/av-enhance-v27/preview",
+            method="POST",
+            payload=request,
+            origin="http://127.0.0.1:4173",
+        )
+        assert status == 200
+        assert preview["contract_version"] == "0.2.1"
+        assert preview["phase"] == "preparation"
+        assert preview["profile"]["status"] == "preparation-compatible"
+        assert headers.get("Cache-Control") == "no-store"
+        assert not target.exists()
+        assert application.inspect().project_path is None
+
+        invalid = cast(dict[str, Any], request["request"]).copy()
+        invalid["graph"] = {"nodes": [], "edges": []}
+        status, failure, _ = _request(
+            base_url,
+            "/api/studio/templates/av-enhance-v27/preview",
+            method="POST",
+            payload={"action": "prepare", "request": invalid},
+        )
+        assert status == 422
+        assert failure["error"]["code"] == "E_AV27_TEMPLATE_REQUEST_INVALID"
+        assert not target.exists()
+
+
 def test_get_remains_available_and_mutation_rejects_while_worker_is_busy(
     tmp_path: Path,
 ) -> None:

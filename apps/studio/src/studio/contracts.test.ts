@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  parseAvEnhanceV27TemplatePreviewEnvelope,
+  parseAvEnhanceV27TemplatePreviewRequest,
   parseExternalHandoffReadiness,
   parseNodeLogEnvelope,
   parseRunDetailEnvelope,
@@ -16,6 +18,7 @@ import {
   handoffLogEnvelope,
   handoffReadinessEnvelope,
   handoffSummary,
+  projectSnapshot,
   runningProgressDetail,
   studioEnvelope,
 } from './test-fixtures'
@@ -49,6 +52,86 @@ describe('Studio Project Service 0.2.1 contract', () => {
     expect(log.log.stdout_available).toBe(true)
     expect(readiness.targets[0]?.state).toBe('present')
     expect(page.next_run_cursor).toBe('cursor.synthetic')
+  })
+
+  it('按 Python Schema 解析 v2.7 template preview，并拒绝客户端 Graph 注入', () => {
+    const request = {
+      action: 'prepare' as const,
+      request: {
+        profile_version: '2.7.0' as const,
+        project_path: 'C:\\synthetic\\av27.zniku',
+        project_id: 'project.av27',
+        project_name: 'Synthetic AV27',
+        source_mode: 'program' as const,
+        sources: [
+          { source_path: 'C:\\synthetic\\source.mkv', source_ordinal: 0 },
+        ],
+        mr: { mode: 'off' as const },
+      },
+    }
+    expect(parseAvEnhanceV27TemplatePreviewRequest(request)).toEqual(request)
+    expect(parseStudioCommand({ operation: 'create_av_enhance_v27', request: request.request }))
+      .toEqual({ operation: 'create_av_enhance_v27', request: request.request })
+    expect(() =>
+      parseAvEnhanceV27TemplatePreviewRequest({ ...request, graph: projectSnapshot.project.graph }),
+    ).toThrow(StudioContractError)
+    expect(() =>
+      parseAvEnhanceV27TemplatePreviewRequest({
+        ...request,
+        request: { ...request.request, definitions: projectSnapshot.definitions },
+      }),
+    ).toThrow(StudioContractError)
+    expect(() =>
+      parseStudioCommand({
+        operation: 'create_av_enhance_v27',
+        request: { ...request.request, graph: projectSnapshot.project.graph },
+      }),
+    ).toThrow(StudioContractError)
+
+    const envelope = {
+      contract_version: '0.2.1' as const,
+      profile_version: '2.7.0' as const,
+      phase: 'preparation' as const,
+      project: projectSnapshot.project,
+      definitions: projectSnapshot.definitions,
+      profile: {
+        profile_version: '2.7.0' as const,
+        phase: 'preparation',
+        status: 'preparation-compatible',
+        compatible: true,
+        diagnostics: [],
+      },
+      plan: {
+        source_count: 1,
+        chapter_count: 0,
+        leaf_count: 0,
+        mr_mode: 'off' as const,
+        preparation_run_id: null,
+        effective_video_artifact_ids: [],
+        chapters: [],
+        manual_stages: [],
+        output_target_path: null,
+      },
+    }
+    expect(parseAvEnhanceV27TemplatePreviewEnvelope(envelope).phase).toBe('preparation')
+    expect(() =>
+      parseAvEnhanceV27TemplatePreviewEnvelope({ ...envelope, profile_version: '2.8.0' }),
+    ).toThrow(StudioContractError)
+    expect(() =>
+      parseAvEnhanceV27TemplatePreviewEnvelope({ ...envelope, unexpected: true }),
+    ).toThrow(StudioContractError)
+    expect(() =>
+      parseAvEnhanceV27TemplatePreviewEnvelope({
+        ...envelope,
+        profile: { ...envelope.profile, phase: 'expanded', status: 'expanded-compatible' },
+      }),
+    ).toThrow(/phase\/status\/compatible\/diagnostics 不一致/)
+    expect(() =>
+      parseAvEnhanceV27TemplatePreviewEnvelope({
+        ...envelope,
+        profile: { ...envelope.profile, compatible: false },
+      }),
+    ).toThrow(/phase\/status\/compatible\/diagnostics 不一致/)
   })
 
   it.each(['missing', 'empty', 'present', 'probe_passed', 'probe_failed'] as const)(

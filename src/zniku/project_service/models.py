@@ -11,6 +11,16 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 
+from zniku.avenhance_v27.preflight import Av27ProfilePreflightResult
+from zniku.avenhance_v27.template import (
+    AV27_PROFILE_VERSION,
+    ExpandRequest,
+    PrepareRequest,
+    TemplatePhase,
+    TemplatePlanSummary,
+    TemplatePreviewRequest,
+)
+from zniku.graph import NodeDefinition
 from zniku.project import Project, ProjectSnapshot
 from zniku.runtime import Artifact, LatestNodeResult, Run, RuntimeFailure
 from zniku.runtime.models import UtcTimestamp
@@ -241,6 +251,28 @@ class NodeLogEnvelope(ProjectServiceModel):
     log: NodeLogProjection
 
 
+class TemplatePreviewEnvelope(ProjectServiceModel):
+    """返回 Python builder 的完整普通 Graph、定义、计划投影与 profile 诊断。"""
+
+    contract_version: Literal["0.2.1"] = PROJECT_SERVICE_CONTRACT_VERSION
+    profile_version: Literal["2.7.0"] = AV27_PROFILE_VERSION
+    phase: TemplatePhase
+    project: Project
+    definitions: tuple[NodeDefinition, ...]
+    profile: Av27ProfilePreflightResult
+    plan: TemplatePlanSummary
+
+    @model_validator(mode="after")
+    def validate_phase(self) -> TemplatePreviewEnvelope:
+        """拒绝 builder phase、preflight phase 与 profile version 互相漂移。"""
+
+        if self.profile.profile_version != self.profile_version:
+            raise ValueError("E_AV27_TEMPLATE_PROFILE_VERSION: profile version 不一致")
+        if self.profile.phase != self.phase:
+            raise ValueError("E_AV27_TEMPLATE_PROFILE_PHASE: profile phase 不一致")
+        return self
+
+
 class OpenProjectCommand(ProjectServiceModel):
     """打开一个既有且结构合法的 ``.zniku``。"""
 
@@ -255,6 +287,20 @@ class CreateProjectCommand(ProjectServiceModel):
     path: LocalPath
     project_id: str
     name: str
+
+
+class CreateAvEnhanceV27Command(ProjectServiceModel):
+    """以严格请求原子创建 AVEnhanceFlow v2.7 preparation Project。"""
+
+    operation: Literal["create_av_enhance_v27"]
+    request: PrepareRequest
+
+
+class ExpandAvEnhanceV27Command(ProjectServiceModel):
+    """基于明确 preparation Run 原子展开 AVEnhanceFlow v2.7 Graph。"""
+
+    operation: Literal["expand_av_enhance_v27"]
+    request: ExpandRequest
 
 
 class SaveProjectCommand(ProjectServiceModel):
@@ -304,6 +350,8 @@ class AbandonRunCommand(ProjectServiceModel):
 type ProjectServiceCommand = Annotated[
     OpenProjectCommand
     | CreateProjectCommand
+    | CreateAvEnhanceV27Command
+    | ExpandAvEnhanceV27Command
     | SaveProjectCommand
     | RunAllCommand
     | RunToCommand
@@ -314,6 +362,7 @@ type ProjectServiceCommand = Annotated[
 ]
 
 _COMMAND_ADAPTER: TypeAdapter[ProjectServiceCommand] = TypeAdapter(ProjectServiceCommand)
+_TEMPLATE_PREVIEW_ADAPTER: TypeAdapter[TemplatePreviewRequest] = TypeAdapter(TemplatePreviewRequest)
 
 
 def parse_project_service_command(payload: Any) -> ProjectServiceCommand:
@@ -322,11 +371,19 @@ def parse_project_service_command(payload: Any) -> ProjectServiceCommand:
     return _COMMAND_ADAPTER.validate_python(payload, strict=True)
 
 
+def parse_template_preview_request(payload: Any) -> TemplatePreviewRequest:
+    """严格解析无副作用 template preview；不接受客户端 Graph、Artifact 或定义。"""
+
+    return _TEMPLATE_PREVIEW_ADAPTER.validate_python(payload, strict=True)
+
+
 __all__ = [
     "PROJECT_SERVICE_CONTRACT_VERSION",
     "AbandonRunCommand",
     "ActiveProjectOperation",
+    "CreateAvEnhanceV27Command",
     "CreateProjectCommand",
+    "ExpandAvEnhanceV27Command",
     "ExternalHandoffReadiness",
     "ExternalOutputReadiness",
     "NodeLogEnvelope",
@@ -346,5 +403,7 @@ __all__ = [
     "SaveProjectCommand",
     "StatusEnvelope",
     "SubmitExternalCommand",
+    "TemplatePreviewEnvelope",
     "parse_project_service_command",
+    "parse_template_preview_request",
 ]

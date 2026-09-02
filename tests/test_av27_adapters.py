@@ -441,6 +441,7 @@ def test_atomic_split_runs_once_per_physical_source_and_returns_source_counts(
         tmp_path,
         parameters={
             "planned_admission_artifact_id": "admission",
+            "planned_effective_video_artifact_ids": ["source-video-0", "source-video-1"],
             "segments": segments,
         },
         inputs=(*videos, gate),
@@ -538,6 +539,7 @@ def test_atomic_split_rejects_changed_plan_id_before_capacity_or_payload(
         tmp_path,
         parameters={
             "planned_admission_artifact_id": "admission",
+            "planned_effective_video_artifact_ids": ["stale-video"],
             "segments": [
                 {
                     "port_id": "leaf-0001",
@@ -588,6 +590,7 @@ def test_atomic_split_capacity_failure_is_before_payload_and_has_no_raw_authorit
         tmp_path,
         parameters={
             "planned_admission_artifact_id": "admission",
+            "planned_effective_video_artifact_ids": ["source-video"],
             "segments": [
                 {
                     "port_id": "leaf-0001",

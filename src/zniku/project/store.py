@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -457,6 +458,67 @@ class ProjectStore:
             _remove_owned_file(store.path, identity=owned_identity)
             raise _format_error("E_PROJECT_CREATE_FAILED", str(error)) from error
         return store
+
+    @classmethod
+    def create_atomically(
+        cls,
+        path: str | os.PathLike[str],
+        project: Project,
+        definitions: Iterable[NodeDefinition],
+    ) -> ProjectStore:
+        """在同目录完成初始化后，以 no-replace 原子发布新 Project。
+
+        普通 ``create`` 会先排他占有最终路径，适合内部和既有调用；模板创建还要求最终路径在完整
+        SQLite 通过自检前始终不可见。本方法因此先在目标同目录初始化一个仅由本调用拥有的临时
+        ``.zniku``，再用 hard link 的原子 create-if-absent 语义发布。目标已存在或并发竞争失败时
+        永不覆盖；任何失败清理都先核对 inode/file identity，只会触及本调用的临时文件以及确由
+        本调用发布的目标，不会删除竞态替换后的用户文件。
+
+        hard link 要求目标文件系统支持同目录链接。无法提供该原子原语时失败关闭，而不会退化为
+        可能覆盖目标的 rename/replace。
+        """
+
+        store = cls(path)
+        if not store.path.parent.exists():
+            raise _format_error("E_PROJECT_PARENT_MISSING", f"父目录不存在：{store.path.parent}")
+        snapshot = store._validated_snapshot(project, tuple(definitions))
+
+        # 固定短前缀避免合法但很长的最终文件名使同目录临时名超过文件系统单项长度限制。
+        temporary_path = store.path.parent / f".zniku-create-{uuid.uuid4().hex}.tmp.zniku"
+        temporary_identity: tuple[int, int] | None = None
+        published_identity: tuple[int, int] | None = None
+        try:
+            temporary_store = cls.create(
+                temporary_path,
+                snapshot.project,
+                snapshot.definitions,
+            )
+            temporary_stat = temporary_store.path.stat()
+            temporary_identity = (temporary_stat.st_dev, temporary_stat.st_ino)
+            try:
+                os.link(temporary_store.path, store.path)
+            except FileExistsError as error:
+                raise _format_error("E_PROJECT_EXISTS", f"工程已存在：{store.path}") from error
+            except OSError as error:
+                raise _format_error("E_PROJECT_CREATE_FAILED", str(error)) from error
+            published_identity = temporary_identity
+
+            try:
+                temporary_store.path.unlink()
+            except OSError as error:
+                # 发布后若无法移除临时链接，则撤销仍属于本调用的目标，避免以失败结果留下半完成状态。
+                _remove_owned_file(store.path, identity=published_identity)
+                raise _format_error("E_PROJECT_CREATE_FAILED", str(error)) from error
+            temporary_identity = None
+
+            try:
+                return cls.open(store.path)
+            except ProjectStoreError:
+                _remove_owned_file(store.path, identity=published_identity)
+                raise
+        finally:
+            if temporary_identity is not None:
+                _remove_owned_file(temporary_path, identity=temporary_identity)
 
     @classmethod
     def open(cls, path: str | os.PathLike[str]) -> ProjectStore:

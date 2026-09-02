@@ -89,6 +89,137 @@ export interface ProjectSnapshotWire {
   readonly definitions: ReadonlyArray<NodeDefinitionWire>
 }
 
+export type AvEnhanceV27SourceMode = 'program' | 'pre_chaptered'
+
+export interface AvEnhanceV27SourceSpecWire {
+  readonly source_path: string
+  readonly source_ordinal: number
+  readonly chapter_label?: string
+}
+
+export type AvEnhanceV27MrSpecWire =
+  | { readonly mode: 'off' }
+  | {
+      readonly mode: 'external'
+      readonly model_name: string
+      readonly model_version: string
+    }
+
+export interface AvEnhanceV27PrepareRequestWire {
+  readonly profile_version: '2.7.0'
+  readonly project_path: string
+  readonly project_id: string
+  readonly project_name: string
+  readonly source_mode: AvEnhanceV27SourceMode
+  readonly sources: ReadonlyArray<AvEnhanceV27SourceSpecWire>
+  readonly mr: AvEnhanceV27MrSpecWire
+}
+
+export type AvEnhanceV27ChapterSelectorWire =
+  | { readonly mode: 'single' }
+  | { readonly mode: 'exact_frames'; readonly frames: ReadonlyArray<number> }
+  | { readonly mode: 'exact_times'; readonly times: ReadonlyArray<string> }
+
+export interface AvEnhanceV27ExpandRequestWire {
+  readonly profile_version: '2.7.0'
+  readonly preparation_run_id: string
+  readonly chapter_selector?: AvEnhanceV27ChapterSelectorWire
+  readonly leaf_duration_minutes: number
+  readonly enhancement: {
+    readonly model_name: string
+    readonly model_version?: string
+    readonly actual_scale_factor?: number
+  }
+  readonly frame_interpolation: {
+    readonly model_name: string
+    readonly model_version?: string
+  }
+  readonly program_encode: { readonly encoder: 'gpu' | 'cpu' }
+  readonly publication: {
+    readonly output_root: string
+    readonly title: string
+    readonly year: string
+    readonly overwrite: boolean
+  }
+}
+
+export type AvEnhanceV27TemplatePreviewRequestWire =
+  | {
+      readonly action: 'prepare'
+      readonly request: AvEnhanceV27PrepareRequestWire
+    }
+  | {
+      readonly action: 'expand'
+      readonly request: AvEnhanceV27ExpandRequestWire
+    }
+
+export interface AvEnhanceV27ProfileDiagnosticWire {
+  readonly code: string
+  readonly message: string
+  readonly node_id: string | null
+  readonly field_path: string | null
+}
+
+export interface AvEnhanceV27LeafPlanWire {
+  readonly leaf_id: string
+  readonly leaf_ordinal: number
+  readonly port_id: string
+  readonly start_frame: number
+  readonly end_frame: number
+  readonly start_time_seconds: string
+  readonly end_time_seconds: string
+  readonly start_timecode: string
+  readonly end_timecode: string
+}
+
+export interface AvEnhanceV27ChapterPlanWire {
+  readonly chapter_id: string
+  readonly chapter_ordinal: number
+  readonly label: string
+  readonly source_ordinal: number
+  readonly start_frame: number
+  readonly end_frame: number
+  readonly start_time_seconds: string
+  readonly end_time_seconds: string
+  readonly start_timecode: string
+  readonly end_timecode: string
+  readonly leaves: ReadonlyArray<AvEnhanceV27LeafPlanWire>
+}
+
+export interface AvEnhanceV27TemplatePreviewEnvelope {
+  readonly contract_version: '0.2.1'
+  readonly profile_version: '2.7.0'
+  readonly phase: 'preparation' | 'expanded'
+  readonly project: ProjectWire
+  readonly definitions: ReadonlyArray<NodeDefinitionWire>
+  readonly profile: {
+    readonly profile_version: '2.7.0'
+    readonly phase: 'preparation' | 'expanded' | null
+    readonly status:
+      | 'preparation-compatible'
+      | 'expanded-compatible'
+      | 'replan_required'
+      | 'incompatible'
+    readonly compatible: boolean
+    readonly diagnostics: ReadonlyArray<AvEnhanceV27ProfileDiagnosticWire>
+  }
+  readonly plan: {
+    readonly source_count: number
+    readonly chapter_count: number
+    readonly leaf_count: number
+    readonly mr_mode: 'off' | 'external'
+    readonly preparation_run_id: string | null
+    readonly effective_video_artifact_ids: ReadonlyArray<string>
+    readonly chapters: ReadonlyArray<AvEnhanceV27ChapterPlanWire>
+    readonly manual_stages: ReadonlyArray<{
+      readonly stage: 'mosaic_restoration' | 'enhancement' | 'frame_interpolation'
+      readonly node_count: number
+      readonly output_container: '.mkv' | '.mov'
+    }>
+    readonly output_target_path: string | null
+  }
+}
+
 export type FailureReason =
   | 'execution_error'
   | 'validation_failed'
@@ -302,6 +433,8 @@ export type StudioOperation =
   | 'create_project'
   | 'open_project'
   | 'save_project'
+  | 'create_av_enhance_v27'
+  | 'expand_av_enhance_v27'
   | 'abandon_run'
   | ActiveStudioOperation
 
@@ -314,6 +447,14 @@ export type StudioCommand =
     }
   | { readonly operation: 'open_project'; readonly path: string }
   | { readonly operation: 'save_project'; readonly project: ProjectWire }
+  | {
+      readonly operation: 'create_av_enhance_v27'
+      readonly request: AvEnhanceV27PrepareRequestWire
+    }
+  | {
+      readonly operation: 'expand_av_enhance_v27'
+      readonly request: AvEnhanceV27ExpandRequestWire
+    }
   | { readonly operation: 'run_all' }
   | { readonly operation: 'run_to'; readonly node_id: string }
   | { readonly operation: 'rerun_from_here'; readonly run_id: string; readonly node_id: string }
@@ -352,6 +493,8 @@ const validateRunSummaryPage = compileDefinition('RunSummaryPageEnvelope')
 const validateRunDetail = compileDefinition('RunDetailEnvelope')
 const validateNodeLog = compileDefinition('NodeLogEnvelope')
 const validateExternalReadiness = compileDefinition('ExternalHandoffReadiness')
+const validateTemplatePreviewRequest = compileDefinition('TemplatePreviewRequest')
+const validateTemplatePreviewEnvelope = compileDefinition('TemplatePreviewEnvelope')
 const validateCommand = compileDefinition('ProjectServiceCommand')
 
 export class StudioContractError extends Error {
@@ -490,6 +633,48 @@ export function parseNodeLogEnvelope(value: unknown): NodeLogEnvelope {
 
 export function parseExternalHandoffReadiness(value: unknown): ExternalHandoffReadiness {
   return parseWith(value, validateExternalReadiness, 'Studio handoff readiness')
+}
+
+export function parseAvEnhanceV27TemplatePreviewRequest(
+  value: unknown,
+): AvEnhanceV27TemplatePreviewRequestWire {
+  return parseWith(
+    value,
+    validateTemplatePreviewRequest,
+    'AVEnhanceFlow v2.7 template preview request',
+  )
+}
+
+export function parseAvEnhanceV27TemplatePreviewEnvelope(
+  value: unknown,
+): AvEnhanceV27TemplatePreviewEnvelope {
+  const preview = parseWith<AvEnhanceV27TemplatePreviewEnvelope>(
+    value,
+    validateTemplatePreviewEnvelope,
+    'AVEnhanceFlow v2.7 template preview response',
+  )
+  const compatibleStatus =
+    preview.profile.status === 'preparation-compatible' ||
+    preview.profile.status === 'expanded-compatible'
+  if (
+    preview.profile.profile_version !== preview.profile_version ||
+    preview.profile.phase !== preview.phase ||
+    preview.profile.compatible !== compatibleStatus ||
+    (compatibleStatus && preview.profile.diagnostics.length > 0) ||
+    (!compatibleStatus && preview.profile.diagnostics.length === 0) ||
+    (preview.profile.status === 'preparation-compatible' &&
+      preview.profile.phase !== 'preparation') ||
+    ((preview.profile.status === 'expanded-compatible' ||
+      preview.profile.status === 'replan_required') &&
+      preview.profile.phase !== 'expanded')
+  ) {
+    // 这里只镜像 Python DTO 无法投影为 JSON Schema 的跨字段 model_validator；
+    // 不检查 Graph shape，也不在浏览器执行 template profile preflight。
+    throw new StudioContractError(
+      'AVEnhanceFlow v2.7 template preview response 的 phase/status/compatible/diagnostics 不一致',
+    )
+  }
+  return preview
 }
 
 export function parseStudioCommand(value: unknown): StudioCommand {

@@ -1,6 +1,6 @@
 # ZNIKU Studio v0.2.1 AVEnhanceFlow v2.7.0 模板与节点合同
 
-- 状态：**Phase 0 设计已冻结；Phase 3 节点包与通用 Runner plumbing 已实现；Phase 4 模板尚未实现**
+- 状态：**Phase 0 设计已冻结；Phase 3 节点包与通用 Runner plumbing 已实现；Phase 4 template、Project Service 与 Studio 已实现**
 - ZNIKU NodeDefinition 版本：`0.2.1`
 - 模板 profile：`AVEnhanceFlow 2.7.0`
 - 上位架构权威：[`graph-core-baseline.md`](graph-core-baseline.md)

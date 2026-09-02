@@ -226,11 +226,15 @@ def make_project_service_handler(
                 return
             parsed = urlsplit(self.path)
             if (
-                parsed.path != "/api/studio/command"
-                or parsed.query
+                parsed.query
                 or parsed.fragment
                 or parsed.scheme
                 or parsed.netloc
+                or parsed.path
+                not in {
+                    "/api/studio/command",
+                    "/api/studio/templates/av-enhance-v27/preview",
+                }
             ):
                 self._error(HTTPStatus.NOT_FOUND, "E_PROJECT_SERVICE_ROUTE", "未知 route")
                 return
@@ -258,7 +262,11 @@ def make_project_service_handler(
                 return
             try:
                 payload = _load_json(self.rfile.read(length))
-                envelope = application.command(payload)
+                envelope = (
+                    application.preview_av_enhance_v27(payload)
+                    if parsed.path == "/api/studio/templates/av-enhance-v27/preview"
+                    else application.command(payload)
+                )
             except _JsonPayloadError as error:
                 self._error(HTTPStatus.BAD_REQUEST, "E_PROJECT_SERVICE_JSON", str(error))
                 return

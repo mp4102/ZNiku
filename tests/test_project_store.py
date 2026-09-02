@@ -6,8 +6,11 @@ Artifact、Evidence 或日志。
 
 from __future__ import annotations
 
+import os
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 from typing import Any
 
 import pytest
@@ -244,6 +247,83 @@ def test_create_self_check_failure_only_cleans_its_owned_file(
         ProjectStore.create(path, valid_project(), definitions())
 
     assert not path.exists()
+
+
+def test_create_atomically_publishes_only_a_complete_project(tmp_path: Path) -> None:
+    path = tmp_path / "atomic.zniku"
+    project = valid_project(name="原子创建")
+
+    store = ProjectStore.create_atomically(path, project, definitions())
+
+    assert store.path == path
+    assert store.load() == ProjectSnapshot(project=project, definitions=definitions())
+    assert set(tmp_path.iterdir()) == {path}
+
+
+def test_create_atomically_never_overwrites_an_existing_target(tmp_path: Path) -> None:
+    path = tmp_path / "existing-atomic.zniku"
+    original = b"user-owned synthetic content"
+    path.write_bytes(original)
+
+    with pytest.raises(ProjectFormatError, match="E_PROJECT_EXISTS"):
+        ProjectStore.create_atomically(path, valid_project(), definitions())
+
+    assert path.read_bytes() == original
+    assert set(tmp_path.iterdir()) == {path}
+
+
+def test_create_atomically_initialization_failure_leaves_no_target_or_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "atomic-init-failure.zniku"
+
+    def reject_created_schema(store: ProjectStore) -> Any:
+        assert store.path != path
+        assert not path.exists()
+        raise ProjectFormatError("E_SYNTHETIC_ATOMIC_INIT", "合成临时 SQLite 初始化失败")
+
+    monkeypatch.setattr(ProjectStore, "_assert_file_and_schema", reject_created_schema)
+
+    with pytest.raises(ProjectFormatError, match="E_SYNTHETIC_ATOMIC_INIT"):
+        ProjectStore.create_atomically(path, valid_project(), definitions())
+
+    assert not path.exists()
+    assert tuple(tmp_path.iterdir()) == ()
+
+
+def test_create_atomically_concurrent_publish_has_exactly_one_winner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "atomic-race.zniku"
+    barrier = Barrier(2)
+    original_link = os.link
+
+    def synchronized_link(source: Path, target: Path) -> None:
+        barrier.wait(timeout=10)
+        original_link(source, target)
+
+    monkeypatch.setattr(os, "link", synchronized_link)
+
+    def create_candidate(name: str) -> tuple[str, str]:
+        try:
+            store = ProjectStore.create_atomically(
+                path,
+                valid_project(name=name),
+                definitions(),
+            )
+        except ProjectStoreError as error:
+            return "error", error.code
+        return "created", store.load().project.name
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = tuple(executor.map(create_candidate, ("并发候选 A", "并发候选 B")))
+
+    assert [kind for kind, _ in outcomes].count("created") == 1
+    assert [value for kind, value in outcomes if kind == "error"] == ["E_PROJECT_EXISTS"]
+    assert ProjectStore.open(path).load().project.name in {"并发候选 A", "并发候选 B"}
+    assert set(tmp_path.iterdir()) == {path}
 
 
 def test_unknown_schema_version_fails_without_migration(tmp_path: Path) -> None:
