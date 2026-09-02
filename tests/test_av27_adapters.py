@@ -622,6 +622,42 @@ def test_atomic_split_capacity_failure_is_before_payload_and_has_no_raw_authorit
     assert not context.outputs[0].path.exists()
 
 
+def test_merge_stream_copy_derives_exact_count_when_progress_omits_frame(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """部分 FFmpeg 构建的 stream-copy progress 无 frame，N 仍由 exact inputs 守恒。"""
+
+    inputs = (
+        _input(tmp_path, "videos", "leaf-0", ordinal=0, media_info=_namespace(2)),
+        _input(tmp_path, "videos", "leaf-1", ordinal=1, media_info=_namespace(3)),
+    )
+    context = _context(
+        tmp_path,
+        parameters={"expected_frames": 5},
+        inputs=inputs,
+        outputs=(("video", "VideoFile", "merge/merge.mov"),),
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(
+        _context: PythonAdapterContext,
+        argv: Sequence[str],
+        **_kwargs: object,
+    ) -> None:
+        command = list(argv)
+        calls.append(command)
+        Path(command[-1]).write_bytes(b"synthetic-merge")
+
+    monkeypatch.setattr(adapters, "_run_ffmpeg", fake_run)
+
+    result = adapters.merge_video(context)
+
+    assert len(calls) == 1
+    assert calls[0][calls[0].index("-c:v") + 1] == "copy"
+    assert result.producer_metadata == {"video": {"output_frames": 5}}
+
+
 @pytest.mark.parametrize(
     ("encoder", "codec", "required_tokens"),
     [
@@ -775,11 +811,11 @@ def test_final_program_mode_maps_both_ordered_audio_tracks(
         _context: PythonAdapterContext,
         argv: Sequence[str],
         **_kwargs: object,
-    ) -> int:
+    ) -> int | None:
         command = list(argv)
         calls.append(command)
         Path(command[-1]).write_bytes(b"synthetic-final")
-        return 10
+        return None
 
     monkeypatch.setattr(adapters, "_run_ffmpeg", fake_run)
 

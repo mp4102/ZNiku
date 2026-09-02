@@ -344,13 +344,16 @@ def merge_video(context: PythonAdapterContext) -> PythonAdapterResult:
     except BaseException:
         _cleanup_attempt_outputs(context)
         raise
-    if measured != expected:
+    if measured is not None and measured != expected:
         raise Av27MediaError(
             "E_AV27_MERGE_FRAME_COUNT",
             f"Merge producer frames={measured!r}，expected={expected}",
         )
+    # FFmpeg 对纯 stream-copy 在部分平台不输出 progress frame；成功 remux 的 N 由已验证输入和
+    # concat 守恒确定。若 producer 实际报告 frame，则上面的精确比较仍然失败关闭。
+    output_frames = expected
     return PythonAdapterResult(
-        producer_metadata={"video": {"output_frames": measured}},
+        producer_metadata={"video": {"output_frames": output_frames}},
         media_summary={"input_count": len(videos)},
     )
 
@@ -503,13 +506,16 @@ def final_mux(context: PythonAdapterContext) -> PythonAdapterResult:
     except BaseException:
         _cleanup_attempt_outputs(context)
         raise
-    if measured != expected:
+    if measured is not None and measured != expected:
         raise Av27MediaError(
             "E_AV27_FINAL_FRAME_COUNT",
             f"Final producer frames={measured!r}，expected={expected}",
         )
+    # Final 只 stream-copy 已验证的 Program video；FFmpeg 某些构建不为 copy 输出 progress frame。
+    # 成功退出后沿用 Program exact N，validator 仍独立闭合 header、duration、signal 与音轨。
+    output_frames = expected
     return PythonAdapterResult(
-        producer_metadata={"media": {"output_frames": measured}},
+        producer_metadata={"media": {"output_frames": output_frames}},
         media_summary={"source_mode": mode, "audio_stream_count": len(expected_audio)},
     )
 
