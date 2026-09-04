@@ -5,7 +5,7 @@
  * 回退到“高级 → 原始参数”，不会按节点类型猜测值、条件或媒体业务规则。
  */
 
-import { useMemo, type ChangeEvent, type ReactNode } from 'react'
+import { useMemo, useRef, type ChangeEvent, type ReactNode } from 'react'
 import type {
   JsonObject,
   JsonValue,
@@ -39,7 +39,18 @@ export interface SchemaParameterFormProps {
   readonly validation: ParameterDraftValidation
   readonly presentation: NodePresentationWire | null
   readonly readOnly?: boolean
+  readonly onPickPath?: (
+    request: ParameterPickerRequest,
+  ) => Promise<ReadonlyArray<string> | null>
+  readonly onPickError?: (error: unknown) => void
   readonly onChange: (draft: JsonObject) => void
+}
+
+export interface ParameterPickerRequest {
+  readonly pointer: string
+  readonly kind: 'open_file' | 'open_files' | 'select_directory' | 'save_file'
+  readonly label: string
+  readonly extensions: ReadonlyArray<string>
 }
 
 interface FieldContext {
@@ -47,6 +58,17 @@ interface FieldContext {
   readonly errors: ReadonlyArray<ParameterFieldError>
   readonly readOnly: boolean
   readonly presentations: ReadonlyMap<string, ParameterPresentationWire>
+  readonly onPickPath?: (
+    request: ParameterPickerRequest,
+  ) => Promise<ReadonlyArray<string> | null>
+  readonly onPickError?: (error: unknown) => void
+  readonly beginPicker: () => number
+  readonly pickerIsCurrent: (expectedRoot: JsonObject, flight: number) => boolean
+  readonly applyPickedValue: (
+    expectedRoot: JsonObject,
+    pointer: string,
+    value: JsonValue,
+  ) => void
   readonly onChange: (draft: JsonObject) => void
 }
 
@@ -128,6 +150,21 @@ function updateAtPointer(
   value: JsonValue,
 ): void {
   context.onChange(setPointer(context.root, pointer, value))
+}
+
+async function pickAndApply(
+  context: FieldContext,
+  expectedRoot: JsonObject,
+  flight: number,
+  request: ParameterPickerRequest,
+  apply: (paths: ReadonlyArray<string>) => void,
+): Promise<void> {
+  try {
+    const paths = await context.onPickPath?.(request)
+    if (paths && paths.length > 0 && context.pickerIsCurrent(expectedRoot, flight)) apply(paths)
+  } catch (error) {
+    if (context.pickerIsCurrent(expectedRoot, flight)) context.onPickError?.(error)
+  }
 }
 
 function ExplicitDefault({ props, value, label }: {
@@ -298,6 +335,13 @@ function ScalarField(props: FieldProps) {
       return <UnsupportedField pointer={pointer} reason="当前值不是 Schema 声明的 string" />
     }
     const multiline = hint === 'textarea'
+    const pickerKind = hint === 'file_path'
+      ? 'open_file'
+      : hint === 'directory_path'
+        ? 'select_directory'
+        : hint === 'save_file'
+          ? 'save_file'
+          : null
     const common = {
       'aria-label': labelled,
       disabled: readOnly,
@@ -313,11 +357,31 @@ function ScalarField(props: FieldProps) {
       <label className={`parameter-field ${ownErrors.length ? 'has-error' : ''}`}>
         <span className="parameter-field-label">{label}{required && <em>必填</em>}</span>
         {multiline ? <textarea {...common} rows={4} /> : <input {...common} type="text" />}
+        {pickerKind && (
+          <button
+            className="button button--ghost parameter-picker"
+            disabled={readOnly || !props.onPickPath}
+            onClick={() => {
+              const expectedRoot = props.root
+              const flight = props.beginPicker()
+              void pickAndApply(props, expectedRoot, flight, {
+                pointer,
+                kind: pickerKind,
+                label,
+                extensions: presentation?.picker?.extensions ?? [],
+              }, (paths) => {
+                const selected = paths[0]
+                if (selected !== undefined) props.applyPickedValue(expectedRoot, pointer, selected)
+              })
+            }}
+            type="button"
+          >
+            {pickerKind === 'select_directory' ? '选择文件夹' : pickerKind === 'save_file' ? '选择保存位置' : '选择文件'}
+          </button>
+        )}
         <ExplicitDefault props={props} value={value} label={label} />
         {!required && <OptionalClear context={props} pointer={pointer} present={value !== undefined} />}
-        {['file_path', 'file_paths', 'directory_path', 'save_file'].includes(hint) && (
-          <small className="parameter-picker-hint">路径选择器将在 Phase 2 接入；当前值仍是普通 ParameterDraft 字符串。</small>
-        )}
+        {pickerKind && <small className="parameter-picker-hint">选择只更新当前未应用设置；Python 仍会在应用和运行时验证路径。</small>}
         <FieldHelp schema={schema} presentation={presentation} />
         <FieldErrors errors={ownErrors} />
       </label>
@@ -419,6 +483,7 @@ function ArrayField(props: FieldProps) {
   }
   const items = Array.isArray(value) ? value : []
   const presentation = props.presentations.get(props.pointer)
+  const multipleFiles = presentation?.control_hint === 'file_paths'
   const prefix = props.schema.prefixItems ?? []
   const homogeneous = typeof props.schema.items === 'object' ? props.schema.items : null
   const maxFromTuple = props.schema.items === false ? prefix.length : Number.POSITIVE_INFINITY
@@ -452,6 +517,27 @@ function ArrayField(props: FieldProps) {
       >
         添加项目
       </button>
+      {multipleFiles && (
+        <button
+          className="button button--ghost parameter-picker"
+          disabled={props.readOnly || !props.onPickPath}
+          onClick={() => {
+            const expectedRoot = props.root
+            const flight = props.beginPicker()
+            void pickAndApply(props, expectedRoot, flight, {
+              pointer: props.pointer,
+              kind: 'open_files',
+              label: fieldLabel(props.name, presentation),
+              extensions: presentation?.picker?.extensions ?? [],
+            }, (paths) => {
+              props.applyPickedValue(expectedRoot, props.pointer, [...paths])
+            })
+          }}
+          type="button"
+        >
+          选择多个文件
+        </button>
+      )}
       <ExplicitDefault props={props} value={value} label={fieldLabel(props.name, presentation)} />
       <FieldHelp schema={props.schema} presentation={presentation} />
       {!props.required && <OptionalClear context={props} pointer={props.pointer} present={value !== undefined} />}
@@ -521,6 +607,8 @@ export function SchemaParameterForm({
   validation,
   presentation,
   readOnly = false,
+  onPickPath,
+  onPickError,
   onChange,
 }: SchemaParameterFormProps) {
   const renderIssue = localRenderIssue(schema)
@@ -530,6 +618,9 @@ export function SchemaParameterForm({
     [presentation],
   )
   const grouped = useMemo(() => groupFields(schema, draft, presentation), [draft, presentation, schema])
+  const latestDraftRef = useRef(draft)
+  const pickerFlightRef = useRef(0)
+  latestDraftRef.current = draft
   const rootProperties = effectiveRenderSchema(schema, draft).properties ?? {}
   const unknownRootKeys = Object.keys(draft).filter((key) => !Object.hasOwn(rootProperties, key))
   const context: FieldContext = {
@@ -537,6 +628,19 @@ export function SchemaParameterForm({
     errors: validation.errors,
     readOnly,
     presentations,
+    onPickPath,
+    onPickError,
+    beginPicker: () => {
+      pickerFlightRef.current += 1
+      return pickerFlightRef.current
+    },
+    pickerIsCurrent: (expectedRoot, flight) =>
+      latestDraftRef.current === expectedRoot && pickerFlightRef.current === flight,
+    applyPickedValue: (expectedRoot, pointer, value) => {
+      // 选择器打开期间若用户已编辑或切换 ParameterDraft，迟到路径不得覆盖较新的 session 状态。
+      if (latestDraftRef.current !== expectedRoot) return
+      onChange(setPointer(expectedRoot, pointer, value))
+    },
     onChange,
   }
   if (validation.compileError) {

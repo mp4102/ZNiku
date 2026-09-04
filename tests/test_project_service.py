@@ -241,7 +241,6 @@ def test_create_save_and_reopen_round_trip(tmp_path: Path) -> None:
         {
             "operation": "create_project",
             "path": str(path),
-            "project_id": "project.created",
             "name": "新建工程",
         }
     )
@@ -249,8 +248,10 @@ def test_create_save_and_reopen_round_trip(tmp_path: Path) -> None:
     assert created.project_path == str(path)
     assert created.snapshot is not None
     assert created.snapshot.project.graph == Graph()
+    generated_project_id = created.snapshot.project.project_id
+    assert len(generated_project_id) == 36
     replacement = Project(
-        project_id="project.created",
+        project_id=generated_project_id,
         name="已保存工程",
         graph=Graph(),
     )
@@ -280,7 +281,6 @@ def test_create_project_uses_injected_definition_catalog(tmp_path: Path) -> None
         {
             "operation": "create_project",
             "path": str(path),
-            "project_id": "project.catalog",
             "name": "目录工程",
         }
     )
@@ -292,6 +292,36 @@ def test_create_project_uses_injected_definition_catalog(tmp_path: Path) -> None
     )
     assert reopened.snapshot is not None
     assert reopened.snapshot.definitions == (definition,)
+
+
+def test_create_project_generates_identity_derives_name_and_never_overwrites(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "我的视频工程.zniku"
+    application = ProjectServiceApplication(work_root=tmp_path / "work")
+
+    created = application.command({"operation": "create_project", "path": str(path)})
+
+    assert created.snapshot is not None
+    assert created.snapshot.project.name == "我的视频工程"
+    assert len(created.snapshot.project.project_id) == 36
+    before = path.read_bytes()
+    with pytest.raises(ProjectServiceError) as existing:
+        application.command({"operation": "create_project", "path": str(path)})
+    assert existing.value.code == "E_PROJECT_EXISTS"
+    assert path.read_bytes() == before
+    assert application.inspect().snapshot == created.snapshot
+
+
+def test_create_project_rejects_client_supplied_identity() -> None:
+    with pytest.raises(ValidationError):
+        parse_project_service_command(
+            {
+                "operation": "create_project",
+                "path": "project.zniku",
+                "project_id": "client-controlled",
+            }
+        )
 
 
 def test_project_service_rejects_duplicate_definition_catalog(tmp_path: Path) -> None:

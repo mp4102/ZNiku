@@ -1,4 +1,4 @@
-/** 提供 Studio 顶层 Project 身份、路径命令与 Run Center 插槽。 */
+/** 提供 Studio 顶层创作者工程入口；路径与身份只留在明确展开的开发入口。 */
 
 import type { ReactNode } from 'react'
 
@@ -14,9 +14,13 @@ export interface ProjectShellProps {
   readonly serviceBusy: boolean
   readonly statusStale: boolean
   readonly canSave: boolean
+  readonly hostBridgeAvailable: boolean
+  readonly canResumeGuided: boolean
   readonly runCenter: ReactNode
   readonly onProjectPathChange: (value: string) => void
   readonly onOpenTemplates: () => void
+  readonly onHome: () => void
+  readonly onOpenWithPicker: () => void
   readonly onOpenProject: () => void
   readonly onCreateProject: () => void
   readonly onSaveProject: () => void
@@ -33,9 +37,13 @@ export function ProjectShell({
   serviceBusy,
   statusStale,
   canSave,
+  hostBridgeAvailable,
+  canResumeGuided,
   runCenter,
   onProjectPathChange,
   onOpenTemplates,
+  onHome,
+  onOpenWithPicker,
   onOpenProject,
   onCreateProject,
   onSaveProject,
@@ -50,20 +58,33 @@ export function ProjectShell({
         <span className="eyebrow">PROJECT GRAPH</span>
         <strong>{projectName ?? '打开或新建 .zniku 工程'}</strong>
         <span className="identity-meta">
-          {projectId ? `${projectId} · ${nodeCount} nodes · ${dirty ? '未保存' : '已保存'}` : '0.3.0 Project Service wire authority'}
+          {projectId ? `${nodeCount} 个节点 · ${dirty ? '有未保存更改' : '已保存'}` : '选择已有工程，或创建新的工作流'}
         </span>
         {profile && (
           <span className={`workflow-profile-state ${profile.compatible ? 'is-compatible' : 'is-unverified'}`} role="status">
-            AVEnhanceFlow 2.7 · {profile.status}{profile.modified ? ' · 自由编辑后已降级' : ''}
+            {profile.modified
+              ? '增强工作流已调整 · 运行前请重新检查'
+              : profile.compatible
+                ? '增强工作流已就绪'
+                : '增强工作流需要检查'}
           </span>
         )}
       </div>
       <div className="project-location">
-        <button className="button button--template" disabled={serviceBusy || statusStale} onClick={onOpenTemplates} type="button">Templates</button>
-        <input aria-label="工程路径" value={projectPath} onChange={(event) => onProjectPathChange(event.target.value)} placeholder="D:\\Projects\\example.zniku" />
-        <button className="button button--ghost" type="button" disabled={serviceBusy || statusStale || !projectPath.trim()} onClick={onOpenProject}>打开</button>
-        <button className="button button--ghost" type="button" disabled={serviceBusy || statusStale || !projectPath.trim() || !projectIdDraft.trim() || !projectNameDraft.trim()} onClick={onCreateProject}>新建</button>
-        <button className="button button--ghost" type="button" disabled={!canSave} onClick={onSaveProject}>保存</button>
+        <button className="button button--ghost" disabled={serviceBusy} onClick={onHome} type="button">工程首页</button>
+        <button className="button button--template" disabled={serviceBusy || statusStale || !projectId || !canResumeGuided} onClick={onOpenTemplates} title={projectId && !canResumeGuided ? '此工程不是可继续分析的增强视频工程' : undefined} type="button">{canResumeGuided ? '继续处理向导' : '处理向导'}</button>
+        <button className="button button--ghost" type="button" disabled={serviceBusy || statusStale || !hostBridgeAvailable} onClick={onOpenWithPicker}>打开工程</button>
+        <button className="button button--ghost" type="button" disabled={serviceBusy || !canSave} onClick={onSaveProject}>保存</button>
+        <details className="project-developer-entry">
+          <summary>开发入口</summary>
+          <label>工程路径<input aria-label="工程路径" value={projectPath} onChange={(event) => onProjectPathChange(event.target.value)} placeholder="D:\\Projects\\example.zniku" /></label>
+          <label>工程名称<input aria-label="开发入口工程名称" value={projectNameDraft} readOnly /></label>
+          <label>Project ID<input aria-label="开发入口 Project ID" value={projectIdDraft} readOnly /></label>
+          <div>
+            <button aria-label="打开" className="button button--ghost" type="button" disabled={serviceBusy || statusStale || !projectPath.trim()} onClick={onOpenProject}>按路径打开</button>
+            <button aria-label="新建" className="button button--ghost" type="button" disabled={serviceBusy || statusStale || !projectPath.trim() || !projectNameDraft.trim()} onClick={onCreateProject}>按路径新建空白工程</button>
+          </div>
+        </details>
       </div>
       {runCenter}
     </header>

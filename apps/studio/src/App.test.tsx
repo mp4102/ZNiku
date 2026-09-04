@@ -9,11 +9,13 @@ import type {
   NodeLogEnvelope,
   PresentationCatalogEnvelopeWire,
   RunDetailEnvelope,
+  RunSummaryWire,
   RunSummaryPageEnvelope,
   StatusEnvelope,
   StudioCommand,
 } from './studio/contracts'
 import { StudioGatewayError, type StudioGateway } from './studio/gateway'
+import type { HostBridge, HostCapabilitiesEnvelope, HostSelection } from './studio/host-bridge'
 import {
   failedDetailEnvelope,
   failedStatusEnvelope,
@@ -36,6 +38,7 @@ import {
 
 afterEach(() => {
   cleanup()
+  window.localStorage.clear()
   vi.useRealTimers()
 })
 
@@ -209,20 +212,200 @@ async function flushReact(): Promise<void> {
   })
 }
 
+function hostCapabilitiesEnvelope(): HostCapabilitiesEnvelope {
+  const capabilities: HostCapabilitiesEnvelope['capabilities'] = ([
+    'open_file', 'open_files', 'select_directory', 'save_file',
+    'reveal_in_file_manager', 'open_with_system_player',
+  ] as const).map((capability) => ({ capability, available: true, unavailable_reason: null }))
+  return { contract_version: '0.3.0', capabilities }
+}
+
 describe('ZNIKU Studio 0.3.0 Project workspace', () => {
   it('Project Service 缺失时失败关闭，不回退旧正式投影或浏览器 mock', async () => {
     render(<App gateway={unavailableGateway('loopback offline')} />)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Project Service 不可用')
-    expect(screen.getByRole('alert')).toHaveTextContent('loopback offline')
+    expect(await screen.findByText('本机服务暂时不可用')).toBeVisible()
+    expect(screen.getByText('Project Service 不可用')).toBeVisible()
+    expect(screen.getByText('loopback offline')).toBeVisible()
     expect(screen.queryByText('GUI-0 Prototype')).not.toBeInTheDocument()
     expect(screen.queryByText('Expanded Plan')).not.toBeInTheDocument()
     expect(screen.queryByText('Real Acceptance')).not.toBeInTheDocument()
   })
 
-  it('从 Templates 入口只提交 server-side AVEnhance v2.7 request，并加载创建后的 Graph', async () => {
+  it('Project Service 曾在线后变 stale，首页仍提供恢复动作且保留旧工程', async () => {
+    vi.useFakeTimers()
+    const current = studioEnvelope()
+    const gateway = new RecordingGateway(current, {
+      inspect: (_viewRunId, count) => {
+        if (count === 1) return current
+        throw new Error('D:\\private\\service.sock offline')
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    expect(screen.getByText('Synthetic Studio Project')).toBeInTheDocument()
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_001) })
+    expect(screen.getByText('本机服务暂时不可用')).toBeVisible()
+    expect(screen.getByRole('button', { name: '重新连接' })).toBeEnabled()
+    expect(screen.getByText('Synthetic Studio Project')).toBeInTheDocument()
+    expect(screen.queryByText('D:\\private\\service.sock offline')).not.toBeInTheDocument()
+  })
+
+  it('普通工程默认隐藏身份与路径，非 AV 工程不能进入伪恢复向导', async () => {
+    render(<App gateway={new RecordingGateway()} />)
+    await screen.findByText('Synthetic Studio Project')
+    const developer = screen.getByText('开发入口').closest('details')
+    const advanced = screen.getByText('高级工程信息').closest('details')
+    expect(developer).not.toHaveAttribute('open')
+    expect(advanced).not.toHaveAttribute('open')
+    expect(screen.getByLabelText('开发入口 Project ID')).not.toBeVisible()
+    expect(screen.getByText(projectSnapshot.project.project_id)).not.toBeVisible()
+    expect(screen.getByRole('button', { name: '处理向导' })).toBeDisabled()
+  })
+
+  it('节点卡按 Presentation picker hint 隐藏绝对路径，只展示人类文件摘要', async () => {
+    const pathDefinition = {
+      ...sourceDefinition,
+      type_id: 'test.path_source',
+      parameter_schema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object' as const,
+        properties: {
+          source_path: { type: 'string' as const },
+          output_root: { type: 'string' as const },
+          source_paths: { type: 'array' as const, items: { type: 'string' as const } },
+        },
+        required: ['source_path', 'output_root', 'source_paths'],
+        additionalProperties: false,
+      },
+    }
+    const pathSnapshot = {
+      project: {
+        project_id: 'project.paths',
+        name: 'Path summary',
+        graph: {
+          nodes: [{
+            node_id: 'path.source',
+            type_id: pathDefinition.type_id,
+            definition_version: pathDefinition.version,
+            parameters: {
+              source_path: 'D:\\private\\source.mkv',
+              output_root: 'D:\\private\\Library',
+              source_paths: ['D:\\private\\a.mkv', 'D:\\private\\b.mkv'],
+            },
+            ui_position: { x: 0, y: 0 },
+          }],
+          edges: [],
+        },
+      },
+      definitions: [pathDefinition],
+    }
+    const gateway = new RecordingGateway(studioEnvelope({ snapshot: pathSnapshot }), {
+      presentations: () => presentationEnvelope([
+        nodePresentation(pathDefinition, '素材输入', {
+          parameters: [
+            { parameter_pointer: '/source_path', label: '素材', description: null, group_id: 'paths', order: 1, importance: 'primary', control_hint: 'file_path', unit: null, placeholder: null, enum_labels: [], picker: { extensions: ['.mkv'] } },
+            { parameter_pointer: '/output_root', label: '成片文件夹', description: null, group_id: 'paths', order: 2, importance: 'primary', control_hint: 'directory_path', unit: null, placeholder: null, enum_labels: [], picker: null },
+            { parameter_pointer: '/source_paths', label: '章节', description: null, group_id: 'paths', order: 3, importance: 'primary', control_hint: 'file_paths', unit: null, placeholder: null, enum_labels: [], picker: { extensions: ['.mkv'] } },
+          ],
+          cardSummaryPaths: ['/source_path', '/output_root', '/source_paths'],
+        }),
+      ], [{ category_id: 'test', title: '测试节点', description: null, order: 1 }]),
+    })
+    render(<App gateway={gateway} />)
+
+    expect(await screen.findByText('素材：source.mkv')).toBeInTheDocument()
+    expect(screen.getByText('成片文件夹：Library')).toBeInTheDocument()
+    expect(screen.getByText('章节：a.mkv、b.mkv')).toBeInTheDocument()
+    expect(screen.queryByText('D:\\private\\source.mkv')).not.toBeInTheDocument()
+    expect(screen.queryByText('D:\\private\\Library')).not.toBeInTheDocument()
+  })
+
+  it('首页原生选择器 single-flight，等待期间锁定保存/关闭且卸载后迟到结果不 mutation', async () => {
+    const user = userEvent.setup()
+    const picker = new Deferred<ReadonlyArray<HostSelection> | null>()
+    const capabilities = hostCapabilitiesEnvelope()
+    const pick = vi.fn(() => picker.promise)
+    const hostBridge: HostBridge = {
+      configured: true,
+      inspectCapabilities: vi.fn(async () => capabilities),
+      pick,
+      launch: vi.fn(async () => undefined),
+    }
+    const gateway = new RecordingGateway()
+    const { unmount } = render(<App gateway={gateway} hostBridge={hostBridge} />)
+    const close = await screen.findByRole('button', { name: '关闭工程首页' })
+    await user.click(close)
+    fireEvent.click(screen.getByLabelText('transform 节点'))
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'strength' }), { target: { value: '7' } })
+    await user.click(screen.getByRole('button', { name: '应用设置' }))
+    expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: '工程首页' }))
+    const open = await screen.findByRole('button', { name: /打开已有工程/ })
+    await user.click(open)
+    expect(pick).toHaveBeenCalledTimes(1)
+    expect(open).toBeDisabled()
+    expect(screen.getByRole('button', { name: '关闭工程首页' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+
+    unmount()
+    await act(async () => {
+      picker.resolve([{ selection_handle: 'selection_1234567890_1234567890', path: 'D:\\private\\late.zniku' }])
+      await Promise.resolve()
+    })
+    expect(gateway.commands).not.toContainEqual(expect.objectContaining({ operation: 'open_project' }))
+  })
+
+  it('HostBridge capability 检查失败可从首页显式重试并恢复 picker', async () => {
+    const user = userEvent.setup()
+    let inspections = 0
+    const hostBridge: HostBridge = {
+      configured: true,
+      inspectCapabilities: vi.fn(async () => {
+        inspections += 1
+        if (inspections === 1) throw new Error('host unavailable')
+        return hostCapabilitiesEnvelope()
+      }),
+      pick: vi.fn(async () => null),
+      launch: vi.fn(async () => undefined),
+    }
+    render(<App gateway={new RecordingGateway()} hostBridge={hostBridge} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('桌面文件选择器暂时不可用')
+    await user.click(screen.getByRole('button', { name: '重试桌面连接' }))
+    await waitFor(() => expect(hostBridge.inspectCapabilities).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('button', { name: /打开已有工程/ })).toBeEnabled()
+  })
+
+  it('最近工程失败只展示安全任务文案，不把服务端绝对路径带回首页', async () => {
+    window.localStorage.setItem('zniku.studio.recent-projects.v1', JSON.stringify({
+      version: 1,
+      projects: [{
+        path: 'D:\\private\\missing.zniku',
+        name: 'Missing project',
+        opened_at: '2026-09-04T02:00:00Z',
+      }],
+    }))
+    const gateway = new RecordingGateway(studioEnvelope(), {
+      command: (command) => {
+        if (command.operation === 'open_project') {
+          throw new StudioGatewayError('D:\\private\\missing.zniku already vanished', {
+            code: 'E_PROJECT_SERVICE_PROJECT_NOT_FOUND',
+          })
+        }
+        return studioEnvelope()
+      },
+    })
+    render(<App gateway={gateway} />)
+    await userEvent.click(await screen.findByRole('button', { name: /Missing project/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('这个最近工程当前无法打开')
+    expect(screen.queryByText(/D:\\private\\missing\.zniku already vanished/)).not.toBeInTheDocument()
+  })
+
+  it('创作者向导只绑定本次 run_all 返回的 exact Run，并加载服务端生成的 Graph', async () => {
     const user = userEvent.setup()
     const targetPath = 'C:\\synthetic\\av27.zniku'
+    const exactRunId = '00000000-0000-4000-8000-000000000027'
+    const historicalRunId = '00000000-0000-4000-8000-000000000026'
     const avSourceDefinition = {
       ...sourceDefinition,
       type_id: 'zniku.avenhance.v27.source_program',
@@ -239,21 +422,16 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
       },
     }
     const templateProject = {
-      project_id: 'project.local',
+      project_id: 'project.guided',
       name: 'ZNIKU Project',
       graph: {
-        nodes: [
-          {
-            node_id: 'source.program',
-            type_id: avSourceDefinition.type_id,
-            definition_version: avSourceDefinition.version,
-            parameters: {
-              source_path: 'C:\\synthetic\\source.mkv',
-              source_ordinal: 0,
-            },
-            ui_position: { x: 80, y: 120 },
-          },
-        ],
+        nodes: [{
+          node_id: 'source.program',
+          type_id: avSourceDefinition.type_id,
+          definition_version: avSourceDefinition.version,
+          parameters: { source_path: 'C:\\synthetic\\source.mkv', source_ordinal: 0 },
+          ui_position: { x: 80, y: 120 },
+        }],
         edges: [],
       },
     }
@@ -281,53 +459,155 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
         manual_stages: [],
         output_target_path: null,
       },
+      creator: {
+        analyzed: false,
+        sources: [],
+        estimated_step_count: 1,
+        estimated_steps: '预计 1 个处理步骤',
+      },
     }
     const created = studioEnvelope({
       project_path: targetPath,
       snapshot: { project: templateProject, definitions: [avSourceDefinition] },
     })
+    const completedSummary = (runId: string, createdAt: string): RunSummaryWire => ({
+      run_id: runId,
+      project_id: 'project.guided',
+      target_mode: 'all',
+      selected_targets: [],
+      state: 'completed',
+      node_count: 1,
+      state_counts: { pending: 0, running: 0, waiting_external: 0, completed: 1, failed: 0 },
+      actionable: false,
+      requires_operator_action: false,
+      created_at: createdAt,
+      started_at: createdAt,
+      ended_at: createdAt,
+      latest_activity_at: createdAt,
+      error: null,
+    })
+    const historicalSummary = completedSummary(historicalRunId, '2026-09-02T01:00:00Z')
+    const exactSummary = completedSummary(exactRunId, '2026-09-02T01:01:00Z')
+    const expandedPreview = (preparationRunId: string): AvEnhanceV27TemplatePreviewEnvelope => ({
+      ...templatePreview,
+      phase: 'expanded',
+      profile: {
+        ...templatePreview.profile,
+        phase: 'expanded',
+        status: 'expanded-compatible',
+      },
+      plan: {
+        ...templatePreview.plan,
+        chapter_count: 1,
+        leaf_count: 2,
+        preparation_run_id: preparationRunId,
+        effective_video_artifact_ids: ['artifact.internal'],
+        manual_stages: [
+          { stage: 'enhancement', node_count: 2, output_container: '.mov' },
+          { stage: 'frame_interpolation', node_count: 1, output_container: '.mov' },
+        ],
+        output_target_path: 'D:\\Library\\Movie (2026) - Enhanced FI59p94 2160p.mkv',
+      },
+      creator: {
+        analyzed: true,
+        estimated_step_count: 3,
+        estimated_steps: '预计 3 个处理步骤',
+        sources: [{
+          source_ordinal: 0,
+          chapter_label: null,
+          display_name: 'source.mkv',
+          size_bytes: 123456789,
+          size_label: '117.7 MiB',
+          container: 'Matroska',
+          video_codec: 'HEVC',
+          pixel_format: 'yuv420p10le',
+          resolution: '3840 × 2160',
+          frame_rate: '30000/1001 fps（29.970）',
+          duration: '1 分 0 秒',
+          frame_count: '1,801 帧',
+          audio_tracks: [{
+            ordinal: 0,
+            codec: 'AAC',
+            channels: 2,
+            sample_rate: 48000,
+            language: 'jpn',
+            title: null,
+            label: 'AAC · 2 声道 · 48 kHz · jpn',
+          }],
+        }],
+      },
+    })
     let gateway: RecordingGateway
     gateway = new RecordingGateway(
       studioEnvelope({ project_path: null, snapshot: null }),
       {
-        templatePreview: () => templatePreview,
+        templatePreview: (request) => request.action === 'prepare'
+          ? templatePreview
+          : expandedPreview(request.request.preparation_run_id),
         command: (command) => {
-          if (command.operation === 'create_av_enhance_v27') gateway.envelope = created
+          if (command.operation === 'create_av_enhance_v27') {
+            gateway.envelope = { ...created, run_summaries: [historicalSummary] }
+          } else if (command.operation === 'run_all') {
+            gateway.envelope = {
+              ...created,
+              active_run_id: exactRunId,
+              run_summaries: [historicalSummary, exactSummary],
+            }
+          } else if (command.operation === 'expand_av_enhance_v27') {
+            gateway.envelope = { ...created, run_summaries: [historicalSummary, exactSummary] }
+          }
           return gateway.envelope
         },
       },
     )
-    render(<App gateway={gateway} />)
+    render(<App gateway={gateway} projectIdFactory={() => 'project.guided'} />)
 
     expect(await screen.findByText('尚未打开工程')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Templates' }))
-    await user.type(screen.getByLabelText('模板工程路径'), targetPath)
-    await user.type(screen.getByLabelText('Source 1 path'), 'C:\\synthetic\\source.mkv')
-    await user.click(screen.getByRole('button', { name: 'Server preview' }))
-    expect(await screen.findByText('preparation-compatible')).toBeVisible()
-    await user.click(screen.getByRole('button', { name: '创建 Preparation Project' }))
+    await user.click(screen.getByRole('button', { name: /新建视频工程/ }))
+    fireEvent.change(screen.getByLabelText('模板工程路径'), { target: { value: targetPath } })
+    fireEvent.change(screen.getByLabelText('Source 1 path'), {
+      target: { value: 'C:\\synthetic\\source.mkv' },
+    })
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    await user.click(screen.getByRole('button', { name: '下一步：设置' }))
+    await user.type(screen.getByLabelText('Publication title'), 'Movie')
+    await user.type(screen.getByLabelText('Publication year'), '2026')
+    fireEvent.change(screen.getByLabelText('Publication output root'), {
+      target: { value: 'D:\\Library' },
+    })
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
 
-    await waitFor(() =>
-      expect(gateway.commands.at(-1)).toEqual({
-        operation: 'create_av_enhance_v27',
-        request: {
-          profile_version: '2.7.0',
-          project_path: targetPath,
-          project_id: 'project.local',
-          project_name: 'ZNIKU Project',
-          source_mode: 'program',
-          sources: [
-            { source_path: 'C:\\synthetic\\source.mkv', source_ordinal: 0 },
-          ],
-          mr: { mode: 'off' },
-        },
+    await waitFor(() => expect(gateway.commands).toContainEqual({
+      operation: 'create_av_enhance_v27',
+      request: expect.objectContaining({
+        profile_version: '2.7.0',
+        project_path: targetPath,
+        project_id: 'project.guided',
+        source_mode: 'program',
+        sources: [{ source_path: 'C:\\synthetic\\source.mkv', source_ordinal: 0 }],
       }),
-    )
-    expect(screen.queryByRole('dialog', { name: 'AVEnhanceFlow v2.7.0 模板向导' })).not.toBeInTheDocument()
-    // JSDOM 没有画布尺寸，React Flow 会把尚未量测的节点标成不可见；节点存在即可证明
-    // command 返回的 Python snapshot 已替换当前 Graph，真实浏览器再由 fitView 完成视口定位。
+    }))
+    await waitFor(() => expect(gateway.templatePreviewArguments).toContainEqual({
+      action: 'expand',
+      request: expect.objectContaining({ preparation_run_id: exactRunId }),
+    }))
+    expect(gateway.templatePreviewArguments).not.toContainEqual({
+      action: 'expand',
+      request: expect.objectContaining({ preparation_run_id: historicalRunId }),
+    })
+    expect(await screen.findByText('117.7 MiB · Matroska')).toBeVisible()
+    expect(screen.queryByText(exactRunId)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认并创建工作流' }))
+    await waitFor(() => expect(gateway.commands).toContainEqual({
+      operation: 'expand_av_enhance_v27',
+      request: expect.objectContaining({ preparation_run_id: exactRunId }),
+    }))
+
+    expect(screen.queryByRole('dialog', { name: 'AVEnhanceFlow v2.7.0 创作者向导' })).not.toBeInTheDocument()
     expect(await screen.findByLabelText('source.program 节点')).toBeInTheDocument()
-    expect(screen.getByText(/AVEnhanceFlow 2\.7 · preparation-compatible/)).toBeVisible()
+    expect(screen.queryByText('C:\\synthetic\\source.mkv')).not.toBeInTheDocument()
+    expect(screen.getByText('增强工作流已就绪')).toBeVisible()
     expect(gateway.templatePreviewArguments[0]).not.toHaveProperty('graph')
     expect(gateway.templatePreviewArguments[0]).not.toHaveProperty('definitions')
 
@@ -336,7 +616,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
       target: { value: '1' },
     })
     await user.click(screen.getByRole('button', { name: '应用设置' }))
-    expect(screen.getByText(/自由编辑后已降级/)).toBeVisible()
+    expect(screen.getByText(/增强工作流已调整/)).toBeVisible()
   })
 
   it('使用单一画布搜索添加、复制节点，并实时阻断缺失 required input', async () => {
@@ -423,6 +703,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     render(<App gateway={gateway} />)
     await screen.findByText('Synthetic Studio Project')
 
+    await user.click(screen.getByText('开发入口'))
     await user.click(screen.getByRole('button', { name: '打开' }))
     await waitFor(() => expect(gateway.commands.at(-1)).toEqual({
       operation: 'open_project',
@@ -431,15 +712,13 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
 
     await user.clear(screen.getByLabelText('工程路径'))
     await user.type(screen.getByLabelText('工程路径'), 'C:\\synthetic\\new.zniku')
-    await user.clear(screen.getByLabelText('Project ID'))
-    await user.type(screen.getByLabelText('Project ID'), 'project.new')
+    await user.click(screen.getByText('高级工程信息'))
     await user.clear(screen.getByLabelText('Project name'))
     await user.type(screen.getByLabelText('Project name'), 'New Project')
     await user.click(screen.getByRole('button', { name: '新建' }))
     await waitFor(() => expect(gateway.commands.at(-1)).toEqual({
       operation: 'create_project',
       path: 'C:\\synthetic\\new.zniku',
-      project_id: 'project.new',
       name: 'New Project',
     }))
 

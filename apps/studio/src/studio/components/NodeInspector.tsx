@@ -6,6 +6,7 @@
 import type { ReactNode } from 'react'
 import { ArtifactMediaSummary, HandoffContract, HandoffPrecheckFailure, ReadinessMessages } from '../HandoffContract'
 import { SchemaParameterForm } from '../SchemaParameterForm'
+import type { ParameterPickerRequest } from '../SchemaParameterForm'
 import type {
   ArtifactWire,
   EdgeWire,
@@ -51,10 +52,16 @@ export interface NodeInspectorProps {
   readonly clientHint: string | null
   readonly boundaryError: string | null
   readonly onParameterDraftChange: (draft: JsonObject) => void
+  readonly onPickParameterPath?: (request: ParameterPickerRequest) => Promise<ReadonlyArray<string> | null>
+  readonly onParameterPickerError?: (error: unknown) => void
   readonly onParameterTextChange: (text: string) => void
   readonly onApplyParameters: () => void
   readonly onDiscardParameters: () => void
   readonly onCopyPath: (path: string) => void
+  readonly canRevealArtifact: boolean
+  readonly canOpenArtifact: boolean
+  readonly onRevealArtifact: (artifactId: string) => void
+  readonly onOpenArtifact: (artifactId: string) => void
   readonly onValidateAndSubmit: (nodeRun: NodeRunWire) => void
   readonly onReorderEdge: (edgeId: string, ordinal: number) => void
   readonly onDeleteEdge: () => void
@@ -87,6 +94,8 @@ export function NodeInspector(props: NodeInspectorProps) {
               validation={parameterValidation}
               presentation={selectedPresentation}
               readOnly={!graphEditable}
+              onPickPath={props.onPickParameterPath}
+              onPickError={props.onParameterPickerError}
               onChange={props.onParameterDraftChange}
             />
             <div className="parameter-draft-actions">
@@ -113,7 +122,7 @@ export function NodeInspector(props: NodeInspectorProps) {
               <h3>Runtime · attempt {selectedNodeRun.attempt}</h3>
               <div className={`runtime-status runtime-status--${selectedNodeRun.state}`}>{selectedNodeRun.state}{selectedNodeRun.progress !== null ? ` · ${Math.round(selectedNodeRun.progress * 100)}%` : ''}{selectedNodeRun.reused_from_result_id ? ' · reused' : ''}</div>
               {selectedNodeRun.error && <p className="runtime-error">{selectedNodeRun.error.reason}<br />{selectedNodeRun.error.message}</p>}
-              {selectedOutputs.map((artifact) => <div className="output-path" key={artifact.artifact_id}><span>{artifact.producer_port_id}</span><code>{artifact.path}</code></div>)}
+              {selectedOutputs.map((artifact) => <div className="output-path" key={artifact.artifact_id}><span>{artifact.producer_port_id}</span><code>{artifact.path}</code><div className="artifact-host-actions"><button disabled={!props.canRevealArtifact} onClick={() => props.onRevealArtifact(artifact.artifact_id)} type="button">在文件夹中显示</button><button disabled={!props.canOpenArtifact} onClick={() => props.onOpenArtifact(artifact.artifact_id)} type="button">播放</button></div></div>)}
               {selectedNodeRun.external_handoff && (
                 <div className="handoff-panel">
                   <strong>External handoff</strong>

@@ -1,8 +1,9 @@
 """提供仅监听 loopback 的 ZNIKU Studio 0.3.0 Project Service HTTP host。
 
 HTTP 层只负责严格 JSON、有限 body、CORS、固定身份路由和 query 解析；Project、Graph、Runtime 与
-readiness 语义全部委托给 ``ProjectServiceApplication``。客户端不能提供日志路径、attempt 工作根或
-handoff target，所有未知路由、字段和 query 默认失败关闭。
+readiness 语义全部委托给 ``ProjectServiceApplication``。可选 HostBridge 使用独立的精确 Origin、
+session token 与一次性动作票据，绝不复用普通 Project API 的宽松 loopback CORS。客户端不能提供日志
+路径、attempt 工作根或 handoff target，所有未知路由、字段和 query 默认失败关闭。
 """
 
 from __future__ import annotations
@@ -13,12 +14,18 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address
 from typing import Any, Final, Protocol
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import SplitResult, parse_qsl, urlsplit
 
+from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
 from .service import ProjectServiceApplication, ProjectServiceError
 
 _MAX_BODY_BYTES: Final = 4 * 1024 * 1024
+_MAX_HOST_BODY_BYTES: Final = 64 * 1024
 _DEFAULT_PORT: Final = 18_765
+_HOST_BRIDGE_PREFIX: Final = "/api/host-bridge"
+_HOST_CAPABILITIES_ROUTE: Final = f"{_HOST_BRIDGE_PREFIX}/capabilities"
+_HOST_ACTIONS_ROUTE: Final = f"{_HOST_BRIDGE_PREFIX}/user-actions"
+_HOST_INVOKE_ROUTE: Final = f"{_HOST_BRIDGE_PREFIX}/invoke"
 _RUNTIME_ID = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 _RUN_DETAIL_ROUTE = re.compile(rf"^/api/studio/runs/(?P<run_id>{_RUNTIME_ID})$")
 _NODE_LOG_ROUTE = re.compile(
@@ -136,13 +143,18 @@ def _strict_query(raw_query: str, *, allowed: frozenset[str]) -> dict[str, str]:
 
 def make_project_service_handler(
     application: ProjectServiceApplication,
+    *,
+    host_bridge: HostBridgeSession | None = None,
 ) -> type[BaseHTTPRequestHandler]:
-    """把一个 process-local Project session 绑定到 HTTP handler。"""
+    """把 Project session 与可选 launcher-local HostBridge 绑定到 HTTP handler。"""
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "ZNIKUProjectService/0.3.0"
 
         def do_OPTIONS(self) -> None:
+            if self._is_host_bridge_target():
+                self._host_options()
+                return
             if not self._origin_allowed():
                 return
             self.send_response(HTTPStatus.NO_CONTENT)
@@ -150,6 +162,9 @@ def make_project_service_handler(
             self.end_headers()
 
         def do_GET(self) -> None:
+            if self._is_host_bridge_target():
+                self._host_get()
+                return
             if not self._origin_allowed():
                 return
             try:
@@ -225,6 +240,9 @@ def make_project_service_handler(
             return None
 
         def do_POST(self) -> None:
+            if self._is_host_bridge_target():
+                self._host_post()
+                return
             if not self._origin_allowed():
                 return
             parsed = urlsplit(self.path)
@@ -282,6 +300,241 @@ def make_project_service_handler(
                 )
                 return
             self._json(HTTPStatus.OK, envelope.model_dump(mode="json"))
+
+        def _host_options(self) -> None:
+            """只为精确 launcher Origin 提供 HostBridge CORS preflight。"""
+
+            if host_bridge is None:
+                self._host_unavailable()
+                return
+            try:
+                parsed = self._host_request_target()
+                if parsed.path not in {
+                    _HOST_CAPABILITIES_ROUTE,
+                    _HOST_ACTIONS_ROUTE,
+                    _HOST_INVOKE_ROUTE,
+                }:
+                    raise HostBridgeFailure(
+                        "E_HOST_BRIDGE_ROUTE",
+                        "未知 HostBridge route",
+                        http_status=HTTPStatus.NOT_FOUND,
+                    )
+                self._authorize_host_preflight(host_bridge)
+            except HostBridgeFailure as error:
+                self._host_error(error, session=host_bridge)
+                return
+            self.send_response(HTTPStatus.NO_CONTENT)
+            methods = "GET, OPTIONS" if parsed.path == _HOST_CAPABILITIES_ROUTE else "POST, OPTIONS"
+            self._host_cors(host_bridge, methods=methods)
+            self.end_headers()
+
+        def _host_get(self) -> None:
+            """HostBridge 唯一 GET 是无副作用 capability 状态。"""
+
+            if host_bridge is None:
+                self._host_unavailable()
+                return
+            try:
+                parsed = self._host_request_target()
+                self._authorize_host(host_bridge)
+                if parsed.path != _HOST_CAPABILITIES_ROUTE:
+                    if parsed.path in {_HOST_ACTIONS_ROUTE, _HOST_INVOKE_ROUTE}:
+                        raise HostBridgeFailure(
+                            "E_HOST_BRIDGE_METHOD",
+                            "HostBridge 动作 route 只接受 POST",
+                            http_status=HTTPStatus.METHOD_NOT_ALLOWED,
+                        )
+                    raise HostBridgeFailure(
+                        "E_HOST_BRIDGE_ROUTE",
+                        "未知 HostBridge route",
+                        http_status=HTTPStatus.NOT_FOUND,
+                    )
+                envelope = host_bridge.inspect_capabilities()
+            except HostBridgeFailure as error:
+                self._host_error(error, session=host_bridge)
+                return
+            self._host_json(
+                HTTPStatus.OK,
+                envelope.model_dump(mode="json"),
+                host_bridge,
+                methods="GET, OPTIONS",
+            )
+
+        def _host_post(self) -> None:
+            """授权、读取有限 JSON，并执行两步票据 HostBridge wire。"""
+
+            if host_bridge is None:
+                self._host_unavailable()
+                return
+            try:
+                parsed = self._host_request_target()
+                self._authorize_host(host_bridge)
+                if parsed.path not in {_HOST_ACTIONS_ROUTE, _HOST_INVOKE_ROUTE}:
+                    raise HostBridgeFailure(
+                        "E_HOST_BRIDGE_ROUTE",
+                        "未知 HostBridge route",
+                        http_status=HTTPStatus.NOT_FOUND,
+                    )
+                payload = self._read_host_payload()
+                if parsed.path == _HOST_ACTIONS_ROUTE:
+                    response_payload = host_bridge.issue_user_action(payload).model_dump(
+                        mode="json"
+                    )
+                    status = HTTPStatus.CREATED
+                else:
+                    response_payload = host_bridge.invoke(payload).model_dump(mode="json")
+                    status = HTTPStatus.OK
+            except HostBridgeFailure as error:
+                self._host_error(error, session=host_bridge)
+                return
+            self._host_json(status, response_payload, host_bridge, methods="POST, OPTIONS")
+
+        def _read_host_payload(self) -> object:
+            content_types = self.headers.get_all("Content-Type", [])
+            if (
+                len(content_types) != 1
+                or content_types[0].partition(";")[0].strip().casefold() != "application/json"
+            ):
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_CONTENT_TYPE",
+                    "HostBridge POST 必须使用 application/json",
+                    http_status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                )
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                length = 0
+            if not 1 <= length <= _MAX_HOST_BODY_BYTES:
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_BODY_SIZE",
+                    "HostBridge request body 大小非法",
+                    http_status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                )
+            try:
+                return _load_json(self.rfile.read(length))
+            except _JsonPayloadError as error:
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_JSON",
+                    str(error),
+                    http_status=HTTPStatus.BAD_REQUEST,
+                ) from error
+
+        def _host_request_target(self) -> SplitResult:
+            parsed = urlsplit(self.path)
+            if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_ROUTE",
+                    "HostBridge request target 必须是无 query 的本地 origin-form",
+                    http_status=HTTPStatus.NOT_FOUND,
+                )
+            return parsed
+
+        def _is_host_bridge_target(self) -> bool:
+            """用 path 前缀隔离 HostBridge，畸形 target 也不得落入普通 CORS。"""
+
+            return self.path.startswith(_HOST_BRIDGE_PREFIX)
+
+        def _authorize_host(self, session: HostBridgeSession) -> None:
+            origins = self.headers.get_all("Origin", [])
+            tokens = self.headers.get_all(HOST_TOKEN_HEADER, [])
+            session.authorize(
+                client_host=self.client_address[0],
+                origin=origins[0] if len(origins) == 1 else None,
+                token=tokens[0] if len(tokens) == 1 else None,
+            )
+
+        def _authorize_host_preflight(self, session: HostBridgeSession) -> None:
+            origins = self.headers.get_all("Origin", [])
+            try:
+                loopback = ip_address(self.client_address[0]).is_loopback
+            except ValueError:
+                loopback = False
+            if not loopback:
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_LAN_FORBIDDEN",
+                    "HostBridge 只接受当前主机 loopback 请求",
+                    http_status=HTTPStatus.FORBIDDEN,
+                )
+            if len(origins) != 1 or origins[0] != session.studio_origin:
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_ORIGIN",
+                    "Origin 与 launcher 固定的 Studio Origin 不一致",
+                    http_status=HTTPStatus.FORBIDDEN,
+                )
+
+        def _host_json(
+            self,
+            status: HTTPStatus,
+            payload: object,
+            session: HostBridgeSession,
+            *,
+            methods: str,
+        ) -> None:
+            data = json.dumps(
+                payload,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self._host_cors(session, methods=methods)
+            self.end_headers()
+            if not _write_response_body(self.wfile, data):
+                self.close_connection = True
+
+        def _host_error(
+            self,
+            error: HostBridgeFailure,
+            *,
+            session: HostBridgeSession | None = None,
+        ) -> None:
+            if session is None:
+                self._host_unavailable(error)
+                return
+            self._host_json(
+                HTTPStatus(error.http_status),
+                {"error": {"code": error.code, "message": error.message[:4096]}},
+                session,
+                methods=(
+                    "GET, OPTIONS"
+                    if urlsplit(self.path).path == _HOST_CAPABILITIES_ROUTE
+                    else "POST, OPTIONS"
+                ),
+            )
+
+        def _host_unavailable(self, error: HostBridgeFailure | None = None) -> None:
+            """未注入 launcher session 时返回无 CORS 的显式失败且不暴露能力。"""
+
+            failure = error or HostBridgeFailure(
+                "E_HOST_BRIDGE_UNAVAILABLE",
+                "当前 Project Service 未由桌面 launcher 注入 HostBridge session",
+                http_status=HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+            data = json.dumps(
+                {"error": {"code": failure.code, "message": failure.message[:4096]}},
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            self.send_response(HTTPStatus(failure.http_status))
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            if not _write_response_body(self.wfile, data):
+                self.close_connection = True
+
+        def _host_cors(self, session: HostBridgeSession, *, methods: str) -> None:
+            origins = self.headers.get_all("Origin", [])
+            if len(origins) == 1 and origins[0] == session.studio_origin:
+                self.send_header("Access-Control-Allow-Origin", session.studio_origin)
+                self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", f"Content-Type, {HOST_TOKEN_HEADER}")
+            self.send_header("Access-Control-Allow-Methods", methods)
 
         def log_message(self, format: str, *args: object) -> None:
             # Project/Artifact 路径和 query 不进入默认 access log。
@@ -351,6 +604,7 @@ def serve_project_service(
     application: ProjectServiceApplication,
     *,
     port: int = _DEFAULT_PORT,
+    host_bridge: HostBridgeSession | None = None,
 ) -> ThreadingHTTPServer:
     """构造只绑定 ``127.0.0.1`` 的 server；调用方管理生命周期。"""
 
@@ -360,7 +614,7 @@ def serve_project_service(
         )
     return ThreadingHTTPServer(
         ("127.0.0.1", port),
-        make_project_service_handler(application),
+        make_project_service_handler(application, host_bridge=host_bridge),
     )
 
 

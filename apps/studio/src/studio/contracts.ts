@@ -286,6 +286,39 @@ export interface AvEnhanceV27ChapterPlanWire {
   readonly leaves: ReadonlyArray<AvEnhanceV27LeafPlanWire>
 }
 
+export interface CreatorAudioTrackSummaryWire {
+  readonly ordinal: number
+  readonly codec: string
+  readonly channels: number | null
+  readonly sample_rate: number | null
+  readonly language: string | null
+  readonly title: string | null
+  readonly label: string
+}
+
+export interface CreatorSourceMediaSummaryWire {
+  readonly source_ordinal: number
+  readonly chapter_label: string | null
+  readonly display_name: string
+  readonly size_bytes: number
+  readonly size_label: string
+  readonly container: string
+  readonly video_codec: string
+  readonly pixel_format: string
+  readonly resolution: string
+  readonly frame_rate: string
+  readonly duration: string
+  readonly frame_count: string
+  readonly audio_tracks: ReadonlyArray<CreatorAudioTrackSummaryWire>
+}
+
+export interface CreatorTemplateSummaryWire {
+  readonly analyzed: boolean
+  readonly sources: ReadonlyArray<CreatorSourceMediaSummaryWire>
+  readonly estimated_step_count: number
+  readonly estimated_steps: string
+}
+
 export interface AvEnhanceV27TemplatePreviewEnvelope {
   readonly contract_version: '0.3.0'
   readonly profile_version: '2.7.0'
@@ -318,6 +351,7 @@ export interface AvEnhanceV27TemplatePreviewEnvelope {
     }>
     readonly output_target_path: string | null
   }
+  readonly creator: CreatorTemplateSummaryWire
 }
 
 export type FailureReason =
@@ -551,8 +585,7 @@ export type StudioCommand =
   | {
       readonly operation: 'create_project'
       readonly path: string
-      readonly project_id: string
-      readonly name: string
+      readonly name?: string
     }
   | { readonly operation: 'open_project'; readonly path: string }
   | { readonly operation: 'save_project'; readonly project: ProjectWire }
@@ -797,6 +830,22 @@ export function parseAvEnhanceV27TemplatePreviewEnvelope(
   const compatibleStatus =
     preview.profile.status === 'preparation-compatible' ||
     preview.profile.status === 'expanded-compatible'
+  const creatorSources = preview.creator.sources
+  const creatorConsistent =
+    preview.creator.analyzed === (creatorSources.length > 0) &&
+    preview.creator.estimated_steps === `预计 ${preview.creator.estimated_step_count} 个处理步骤` &&
+    preview.creator.estimated_step_count === preview.project.graph.nodes.length &&
+    creatorSources.every((source) =>
+      source.display_name !== '.' &&
+      source.display_name !== '..' &&
+      source.display_name.trim() === source.display_name &&
+      !/[\\/:\u0000]/.test(source.display_name),
+    ) &&
+    (preview.phase === 'preparation'
+      ? !preview.creator.analyzed && creatorSources.length === 0
+      : preview.creator.analyzed &&
+        creatorSources.length === preview.plan.source_count &&
+        creatorSources.every((source, index) => source.source_ordinal === index))
   if (
     preview.profile.profile_version !== preview.profile_version ||
     preview.profile.phase !== preview.phase ||
@@ -807,12 +856,13 @@ export function parseAvEnhanceV27TemplatePreviewEnvelope(
       preview.profile.phase !== 'preparation') ||
     ((preview.profile.status === 'expanded-compatible' ||
       preview.profile.status === 'replan_required') &&
-      preview.profile.phase !== 'expanded')
+      preview.profile.phase !== 'expanded') ||
+    !creatorConsistent
   ) {
     // 这里只镜像 Python DTO 无法投影为 JSON Schema 的跨字段 model_validator；
     // 不检查 Graph shape，也不在浏览器执行 template profile preflight。
     throw new StudioContractError(
-      'AVEnhanceFlow v2.7 template preview response 的 phase/status/compatible/diagnostics 不一致',
+      'AVEnhanceFlow v2.7 template preview response 的 phase/status/compatible/diagnostics 不一致；creator 跨字段语义不一致',
     )
   }
   return preview

@@ -17,7 +17,7 @@ import {
   type NodeMouseHandler,
   type OnSelectionChangeParams,
 } from '@xyflow/react'
-import { AvEnhanceV27Wizard } from './AvEnhanceV27Wizard'
+import { AvEnhanceV27Wizard, type AvEnhanceV27WizardMode } from './AvEnhanceV27Wizard'
 import type {
   WorkflowEdge,
   WorkflowNode,
@@ -61,6 +61,14 @@ import {
   selectionChangeBlocked,
 } from './graph'
 import { createStudioGateway, StudioGatewayError, type StudioGateway } from './gateway'
+import {
+  createHostBridge,
+  type HostBridge,
+  type HostCapabilitiesEnvelope,
+  type HostDialogCapability,
+} from './host-bridge'
+import { readRecentProjects, rememberRecentProject } from './recent-projects'
+import type { ParameterPickerRequest } from './SchemaParameterForm'
 import { groupStudioDefinitions } from './catalog'
 import { asParameterSchema, getPointer, validateParameterDraft } from './parameter-draft'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
@@ -68,6 +76,7 @@ import { GraphCanvas } from './components/GraphCanvas'
 import { HandoffCenter, elapsedLabel, handoffResourceKey, readinessLabel } from './components/HandoffCenter'
 import { NodeInspector } from './components/NodeInspector'
 import { NodePalette } from './components/NodePalette'
+import { ProjectHome } from './components/ProjectHome'
 import { ProjectShell } from './components/ProjectShell'
 import { RunCanvasOverlays, RunCenter, targetLabel } from './components/RunCenter'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
@@ -139,11 +148,41 @@ function aggregateResourceHealth(
 
 export interface StudioWorkspaceProps {
   readonly gateway?: StudioGateway
+  readonly hostBridge?: HostBridge
   readonly nodeIdFactory?: () => string
+  readonly projectIdFactory?: () => string
 }
 
 function defaultNodeId(): string {
   return `node.${globalThis.crypto.randomUUID()}`
+}
+
+function pathLeaf(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? '已选择'
+}
+
+function safeVisibleServiceError(message: string, fallback: string): string {
+  return /(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/])/.test(message) ? fallback : message
+}
+
+function cardSummaryValue(
+  value: unknown,
+  presentation: NodePresentationWire['parameters'][number] | undefined,
+): string {
+  if (
+    presentation?.control_hint === 'file_path' ||
+    presentation?.control_hint === 'save_file' ||
+    presentation?.control_hint === 'directory_path'
+  ) {
+    return typeof value === 'string' ? pathLeaf(value) : '已选择'
+  }
+  if (presentation?.control_hint === 'file_paths') {
+    if (!Array.isArray(value)) return '已选择文件'
+    const names = value.flatMap((item) => typeof item === 'string' ? [pathLeaf(item)] : [])
+    if (names.length === 0) return '尚未选择'
+    return names.length <= 2 ? names.join('、') : `${names.slice(0, 2).join('、')} 等 ${names.length} 个文件`
+  }
+  return typeof value === 'string' ? value : JSON.stringify(value) ?? '—'
 }
 
 function replaceGraph(snapshot: ProjectSnapshotWire, graph: GraphWire): ProjectSnapshotWire {
@@ -359,8 +398,14 @@ function monotonicDetail(
   }
 }
 
-export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: StudioWorkspaceProps) {
+export function StudioWorkspace({
+  gateway,
+  hostBridge,
+  nodeIdFactory = defaultNodeId,
+  projectIdFactory,
+}: StudioWorkspaceProps) {
   const effectiveGateway = useMemo(() => gateway ?? createStudioGateway(), [gateway])
+  const effectiveHostBridge = useMemo(() => hostBridge ?? createHostBridge(), [hostBridge])
   const { fitView } = useReactFlow()
   const [status, setStatus] = useState<StatusEnvelope | null>(null)
   const [historySummaries, setHistorySummaries] = useState<ReadonlyArray<RunSummaryWire>>([])
@@ -384,7 +429,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const [boundaryError, setBoundaryError] = useState<string | null>(null)
   const [clientHint, setClientHint] = useState<string | null>(null)
   const [projectPath, setProjectPath] = useState('')
-  const [projectId, setProjectId] = useState('project.local')
+  const [projectId, setProjectId] = useState('')
   const [projectName, setProjectName] = useState('ZNIKU Project')
   const [query, setQuery] = useState('')
   const [selectedNodeIds, setSelectedNodeIds] = useState<ReadonlySet<string>>(new Set())
@@ -398,6 +443,13 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const [pollEpoch, setPollEpoch] = useState(0)
   const [detailPollEpoch, setDetailPollEpoch] = useState(0)
   const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateMode, setTemplateMode] = useState<AvEnhanceV27WizardMode>('create')
+  const [homeOpen, setHomeOpen] = useState(true)
+  const [homeActionBusy, setHomeActionBusy] = useState(false)
+  const [recentProjects, setRecentProjects] = useState(() => readRecentProjects())
+  const [hostCapabilities, setHostCapabilities] = useState<HostCapabilitiesEnvelope | null>(null)
+  const [hostError, setHostError] = useState<string | null>(null)
+  const [reconnectEpoch, setReconnectEpoch] = useState(0)
   const [templateProfile, setTemplateProfile] = useState<{
     readonly status: string
     readonly compatible: boolean
@@ -444,6 +496,9 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const statusBoundaryErrorRef = useRef<string | null>(null)
   const selectedLogResourceRef = useRef<string | null>(null)
   const busyRef = useRef(false)
+  const homeActionBusyRef = useRef(false)
+  const homeActionEpochRef = useRef(0)
+  const commandErrorRef = useRef<string | null>(null)
   const detailSummaryRevisionRef = useRef('')
   const detailRequestedSummaryRevisionRef = useRef('')
   const selectionGuardRef = useRef<{
@@ -456,10 +511,30 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     readonly requestJson: string
     readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
   } | null>(null)
+
+  useEffect(() => () => {
+    homeActionEpochRef.current += 1
+    homeActionBusyRef.current = false
+  }, [])
   const presentationDefinitionRevision = (draft?.definitions ?? [])
     .map((definition) => `${definition.type_id}@${definition.version}`)
     .sort()
     .join('\u0000')
+
+  useEffect(() => {
+    let active = true
+    setHostCapabilities(null)
+    setHostError(null)
+    if (!effectiveHostBridge.configured) return () => { active = false }
+    void effectiveHostBridge.inspectCapabilities().then((envelope) => {
+      if (!active) return
+      setHostCapabilities(envelope)
+    }).catch(() => {
+      if (!active) return
+      setHostError('桌面文件选择器暂时不可用；请重新连接。')
+    })
+    return () => { active = false }
+  }, [effectiveHostBridge, reconnectEpoch])
 
   useEffect(() => {
     let active = true
@@ -672,7 +747,10 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
               retryAt: Date.now() + delay,
             })
             markResourceHealth('detail', resourceKey, true)
-            const message = error instanceof Error ? error.message : 'Run detail 读取失败'
+            const message = safeVisibleServiceError(
+              error instanceof Error ? error.message : 'Run detail 读取失败',
+              'Run detail 读取失败；本机路径未显示。',
+            )
             detailBoundaryErrorRef.current = message
             setBoundaryError(message)
           }
@@ -845,7 +923,10 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       .catch((error: unknown) => {
         if (active && generation === generationRef.current) {
           markStatusHealth(true)
-          const message = error instanceof Error ? error.message : 'Project Service inspect 失败'
+          const message = safeVisibleServiceError(
+            error instanceof Error ? error.message : 'Project Service inspect 失败',
+            '本机工程服务暂时不可用。',
+          )
           statusBoundaryErrorRef.current = message
           setBoundaryError(message)
         }
@@ -857,7 +938,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       active = false
       if (generation === generationRef.current) generationRef.current += 1
     }
-  }, [acceptStatus, effectiveGateway, loadDetail, loadReadiness, markStatusHealth, setTrustedViewRunId])
+  }, [acceptStatus, effectiveGateway, loadDetail, loadReadiness, markStatusHealth, reconnectEpoch, setTrustedViewRunId])
 
   useEffect(() => {
     if (loading) return
@@ -905,7 +986,10 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         }
         if (!nextStatus && generation === generationRef.current) {
           markStatusHealth(true)
-          const message = error instanceof Error ? error.message : 'Project Service status 读取失败'
+          const message = safeVisibleServiceError(
+            error instanceof Error ? error.message : 'Project Service status 读取失败',
+            '本机工程服务暂时不可用。',
+          )
           statusBoundaryErrorRef.current = message
           setBoundaryError(message)
         }
@@ -1134,8 +1218,11 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           summaries: (presentation?.card_summary_paths ?? []).flatMap((pointer) => {
             const value = getPointer(node.parameters, pointer)
             if (value === undefined) return []
-            const label = presentation?.parameters.find((item) => item.parameter_pointer === pointer)?.label ?? pointer
-            const text = typeof value === 'string' ? value : JSON.stringify(value)
+            const parameterPresentation = presentation?.parameters.find(
+              (item) => item.parameter_pointer === pointer,
+            )
+            const label = parameterPresentation?.label ?? pointer
+            const text = cardSummaryValue(value, parameterPresentation)
             return [`${label}：${text}`]
           }),
           typeId: node.type_id,
@@ -1584,6 +1671,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       setBusy(true)
       setBoundaryError(null)
       setClientHint(null)
+      commandErrorRef.current = null
       const previousPath = statusRef.current?.project_path ?? null
       const previousViewRunId = viewRunIdRef.current
       // 任意命令都会切换请求 generation，因此先取消旧历史分页在 UI 上的互斥占位。
@@ -1613,6 +1701,20 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         if (!next) return null
 
         const last = commands.at(-1)
+        if (
+          next.project_path &&
+          next.snapshot &&
+          (last?.operation === 'open_project' ||
+            last?.operation === 'create_project' ||
+            last?.operation === 'save_project' ||
+            last?.operation === 'create_av_enhance_v27' ||
+            last?.operation === 'expand_av_enhance_v27')
+        ) {
+          setRecentProjects(rememberRecentProject({
+            path: next.project_path,
+            name: next.snapshot.project.name,
+          }))
+        }
         if (last?.operation === 'save_project') return next
         if (last?.operation === 'open_project' || last?.operation === 'create_project') {
           latestTemplatePreviewRef.current = null
@@ -1654,15 +1756,20 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           error.code === 'E_PROJECT_SERVICE_RUN_CONFLICT'
         ) {
           const existing = error.relatedRunIds[0] ?? null
-          setClientHint(`${error.code}：已有非终态 Run，请先继续或放弃它。`)
+          const message = '已有未完成的工作，请先继续或放弃后再试。'
+          commandErrorRef.current = message
+          setClientHint(message)
           if (existing) {
             setTrustedViewRunId(existing)
             setShowRunSnapshot(true)
           }
         } else if (error instanceof StudioGatewayError && error.code) {
-          setClientHint(`${error.code}: ${error.message}`)
+          commandErrorRef.current = error.message
+          setClientHint(`${error.code}: 本次操作未完成，工程和媒体没有被修改。`)
         } else {
-          setBoundaryError(error instanceof Error ? error.message : 'Project Service command 失败')
+          const message = error instanceof Error ? error.message : '本机工程服务操作失败'
+          commandErrorRef.current = message
+          setBoundaryError('本机工程服务操作失败；工程和媒体没有被修改。')
         }
         return null
       } finally {
@@ -1775,6 +1882,43 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     [applyAvEnhanceV27Mutation],
   )
 
+  const hostCapabilityAvailable = useCallback(
+    (capability: HostDialogCapability | 'reveal_in_file_manager' | 'open_with_system_player') =>
+      hostCapabilities?.capabilities.some(
+        (item) => item.capability === capability && item.available,
+      ) ?? false,
+    [hostCapabilities],
+  )
+
+  const pickHostPaths = useCallback(
+    async (
+      capability: HostDialogCapability,
+      options: { readonly title?: string; readonly extensions?: ReadonlyArray<string>; readonly suggested_name?: string } = {},
+    ): Promise<ReadonlyArray<string> | null> => {
+      if (!hostCapabilityAvailable(capability)) {
+        throw new Error('桌面文件选择器当前不可用；请重新连接或使用开发浏览器高级入口。')
+      }
+      const selected = await effectiveHostBridge.pick(capability, options)
+      return selected?.map((item) => item.path) ?? null
+    },
+    [effectiveHostBridge, hostCapabilityAvailable],
+  )
+
+  const pickParameterPath = useCallback(
+    async (request: ParameterPickerRequest): Promise<ReadonlyArray<string> | null> =>
+      pickHostPaths(request.kind, {
+        title: request.label,
+        ...(request.extensions.length > 0 ? { extensions: request.extensions } : {}),
+      }),
+    [pickHostPaths],
+  )
+
+  const startPreparationRun = useCallback(async (): Promise<string | null> => {
+    const next = await executeCommands([{ operation: 'run_all' }], { preferCreatedRun: true })
+    // 只绑定本次 command response 明确返回的 active_run_id；不得从历史、时间或节点形状猜测。
+    return next?.active_run_id ?? null
+  }, [executeCommands])
+
   useEffect(() => {
     if (fitViewEpoch === 0) return
     const timer = window.setTimeout(() => {
@@ -1874,8 +2018,8 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     ? runLatestAttempts.has(singleSelectedNodeId)
     : false
   const serviceBusy = busy || operationActive
-  const runBlocked = serviceBusy || health.status.stale || !draft || diagnostics.length > 0 || parameterDraftDirty
-  const detailMutationBlocked = serviceBusy || health.status.stale || health.detail.stale
+  const runBlocked = serviceBusy || homeActionBusy || health.status.stale || !draft || diagnostics.length > 0 || parameterDraftDirty
+  const detailMutationBlocked = serviceBusy || homeActionBusy || health.status.stale || health.detail.stale
   const firstWaiting = waitingNodeRuns[0] ?? null
   const firstFailed = [...runLatestAttempts.values()].find(
     (nodeRun) => nodeRun.state === 'failed',
@@ -1897,6 +2041,29 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       ? { status: 'v2.7 nodes · profile check required', compatible: false, modified: false }
       : null)
 
+  const beginHomeAction = (): number | null => {
+    if (homeActionBusyRef.current || busyRef.current) return null
+    homeActionBusyRef.current = true
+    setHomeActionBusy(true)
+    homeActionEpochRef.current += 1
+    return homeActionEpochRef.current
+  }
+
+  const homeActionIsCurrent = (epoch: number): boolean =>
+    homeActionBusyRef.current && homeActionEpochRef.current === epoch
+
+  const finishHomeAction = (epoch: number) => {
+    if (homeActionEpochRef.current !== epoch) return
+    homeActionBusyRef.current = false
+    setHomeActionBusy(false)
+  }
+
+  const invalidateHomeAction = () => {
+    homeActionEpochRef.current += 1
+    homeActionBusyRef.current = false
+    setHomeActionBusy(false)
+  }
+
   const locateTemplateNode = (nodeId: string) => {
     if (!draft?.project.graph.nodes.some((node) => node.node_id === nodeId)) {
       setClientHint(`Template preview diagnostic 指向 ${nodeId}；该节点尚未写入当前 Project。`)
@@ -1907,22 +2074,140 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     setShowRunSnapshot(false)
   }
 
+  const openExistingProject = async (): Promise<void> => {
+    const epoch = beginHomeAction()
+    if (epoch === null) return
+    setHostError(null)
+    try {
+      const paths = await pickHostPaths('open_file', {
+        title: '打开 ZNIKU 工程',
+        extensions: ['.zniku'],
+      })
+      if (!paths?.[0] || !homeActionIsCurrent(epoch)) return
+      const next = await executeCommands([{ operation: 'open_project', path: paths[0] }])
+      if (!homeActionIsCurrent(epoch)) return
+      if (next) setHomeOpen(false)
+      else setHostError('无法打开所选工程；请确认文件仍然存在且未被其他程序占用。')
+    } catch {
+      if (!homeActionIsCurrent(epoch)) return
+      setHostError('无法打开工程选择器；工程和媒体都没有被修改。')
+      setHomeOpen(true)
+    } finally {
+      finishHomeAction(epoch)
+    }
+  }
+
+  const createBlankProject = async (name: string): Promise<void> => {
+    const epoch = beginHomeAction()
+    if (epoch === null) return
+    setHostError(null)
+    try {
+      const paths = await pickHostPaths('save_file', {
+        title: '保存空白 ZNIKU 工程',
+        suggested_name: `${name.replace(/[<>:"/\\|?*]+/g, '-').replace(/[. ]+$/g, '') || '未命名视频工程'}.zniku`,
+        extensions: ['.zniku'],
+      })
+      if (!paths?.[0] || !homeActionIsCurrent(epoch)) return
+      const next = await executeCommands([{ operation: 'create_project', path: paths[0], name }])
+      if (!homeActionIsCurrent(epoch)) return
+      if (next) setHomeOpen(false)
+      else setHostError('无法创建空白工程；已有文件不会被覆盖，请选择其他位置。')
+    } catch {
+      if (homeActionIsCurrent(epoch)) {
+        setHostError('无法创建空白工程；已有文件和媒体都没有被修改。')
+      }
+    } finally {
+      finishHomeAction(epoch)
+    }
+  }
+
+  const openRecentProject = async (path: string): Promise<void> => {
+    const epoch = beginHomeAction()
+    if (epoch === null) return
+    setHostError(null)
+    try {
+      const next = await executeCommands([{ operation: 'open_project', path }])
+      if (!homeActionIsCurrent(epoch)) return
+      if (next) setHomeOpen(false)
+      else setHostError('这个最近工程当前无法打开；请重新选择文件，最近列表不会代替正式工程。')
+    } finally {
+      finishHomeAction(epoch)
+    }
+  }
+
+  const launchArtifact = async (
+    capability: 'reveal_in_file_manager' | 'open_with_system_player',
+    artifactId: string,
+  ): Promise<void> => {
+    if (!currentRun) return
+    try {
+      await effectiveHostBridge.launch(capability, {
+        kind: 'artifact',
+        run_id: currentRun.run_id,
+        artifact_id: artifactId,
+      })
+      setHostError(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '本机文件操作失败。'
+      setHostError(message)
+      setClientHint(message)
+    }
+  }
+
   return (
     <main className={`app-shell studio-workspace ${bottomOpen ? 'has-bottom-drawer' : ''}`}>
+      <ProjectHome
+        busy={serviceBusy || homeActionBusy}
+        hasOpenProject={draft !== null}
+        hostBridgeAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file')}
+        loading={loading}
+        onClose={() => {
+          invalidateHomeAction()
+          setHomeOpen(false)
+        }}
+        onCreateBlank={createBlankProject}
+        onCreateGuided={() => {
+          invalidateHomeAction()
+          setTemplateMode('create')
+          setHomeOpen(false)
+          setTemplateOpen(true)
+        }}
+        onOpenExisting={openExistingProject}
+        onOpenRecent={openRecentProject}
+        onRetryService={() => setReconnectEpoch((value) => value + 1)}
+        open={homeOpen}
+        recentProjects={recentProjects}
+        serviceMessage={statusHealth.stale ? '无法连接本机工程服务；工程和媒体都没有被修改。' : hostError}
+        serviceUnavailable={!loading && statusHealth.stale}
+      />
       <AvEnhanceV27Wizard
-        busy={serviceBusy || health.status.stale}
+        busy={serviceBusy || homeActionBusy || health.status.stale}
         currentProjectId={projectId}
         currentProjectName={projectName}
         currentProjectPath={projectPath}
         currentSnapshot={draft}
+        mode={templateMode}
         onClose={() => setTemplateOpen(false)}
         onCreate={createAvEnhanceV27}
         onExpand={expandAvEnhanceV27}
         onLocateNode={locateTemplateNode}
+        onPickOutputDirectory={async () => (await pickHostPaths('select_directory', { title: '选择成片文件夹' }))?.[0] ?? null}
+        onPickProjectPath={async (suggestedName) => (await pickHostPaths('save_file', {
+          title: '保存 ZNIKU 视频工程',
+          suggested_name: suggestedName,
+          extensions: ['.zniku'],
+        }))?.[0] ?? null}
+        onPickSources={async (multiple) => await pickHostPaths(
+          multiple ? 'open_files' : 'open_file',
+          { title: multiple ? '选择全部章节视频' : '选择视频素材' },
+        )}
         onPreview={previewAvEnhanceV27}
+        onStartPreparationRun={startPreparationRun}
         open={templateOpen}
+        pickerAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file') && hostCapabilityAvailable('select_directory')}
+        projectIdFactory={projectIdFactory}
         runSummaries={allSummaries}
-        serviceError={clientHint ?? boundaryError}
+        serviceError={boundaryError ? '本机工程服务暂时不可用；当前工程和媒体没有被修改。' : null}
       />
       <ProjectShell
         projectName={draft?.project.name ?? null}
@@ -1933,18 +2218,28 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         projectPath={projectPath}
         projectIdDraft={projectId}
         projectNameDraft={projectName}
-        serviceBusy={serviceBusy}
+        serviceBusy={serviceBusy || homeActionBusy}
         statusStale={health.status.stale}
-        canSave={!serviceBusy && !health.status.stale && !!draft && diagnostics.length === 0 && dirty && !parameterDraftDirty}
+        canSave={!serviceBusy && !homeActionBusy && !health.status.stale && !!draft && diagnostics.length === 0 && dirty && !parameterDraftDirty}
+        hostBridgeAvailable={hostCapabilityAvailable('open_file')}
+        canResumeGuided={hasAvEnhanceV27Nodes}
         onProjectPathChange={setProjectPath}
         onOpenTemplates={() => {
-          if (changeSelection(new Set(), new Set())) setTemplateOpen(true)
+          if (changeSelection(new Set(), new Set())) {
+            setTemplateMode('resume')
+            setTemplateOpen(true)
+          }
         }}
+        onHome={() => {
+          invalidateHomeAction()
+          setHomeOpen(true)
+        }}
+        onOpenWithPicker={() => void openExistingProject()}
         onOpenProject={() => {
           if (changeSelection(new Set(), new Set())) void executeCommands([{ operation: 'open_project', path: projectPath.trim() }])
         }}
         onCreateProject={() => {
-          if (changeSelection(new Set(), new Set())) void executeCommands([{ operation: 'create_project', path: projectPath.trim(), project_id: projectId.trim(), name: projectName.trim() }])
+          if (changeSelection(new Set(), new Set())) void executeCommands([{ operation: 'create_project', path: projectPath.trim(), name: projectName.trim() }])
         }}
         onSaveProject={() => void saveProject()}
         runCenter={(
@@ -1971,10 +2266,9 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         query={query}
         groups={catalogGroups}
         canEditGraph={!!draft && graphEditable}
-        busy={serviceBusy}
+        busy={serviceBusy || homeActionBusy}
         selectedNodeCount={selectedNodeIds.size}
         selectedEdgeCount={selectedEdgeIds.size}
-        onProjectIdChange={setProjectId}
         onProjectNameChange={setProjectName}
         onQueryChange={setQuery}
         onAddDefinition={addDefinition}
@@ -1986,7 +2280,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         nodes={flowNodes}
         edges={flowEdges}
         editable={graphEditable}
-        busy={serviceBusy}
+        busy={serviceBusy || homeActionBusy}
         modeLabel={showRunSnapshot && currentRun ? 'Run snapshot' : 'Current Graph'}
         contextLabel={viewedSummary ? `${viewedSummary.run_id} · ${targetLabel(viewedSummary)} · ${viewedSummary.state}` : '编辑与运行使用同一 Project authority'}
         snapshotChanged={snapshotChanged}
@@ -2032,7 +2326,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         parameterRawError={parameterRawError}
         parameterValidation={parameterValidation}
         graphEditable={graphEditable}
-        busy={serviceBusy}
+        busy={serviceBusy || homeActionBusy}
         selectedNodeRun={selectedNodeRun}
         selectedProgress={selectedProgress}
         selectedLog={selectedLog}
@@ -2063,10 +2357,20 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         clientHint={clientHint ?? presentationError}
         boundaryError={draft ? boundaryError : null}
         onParameterDraftChange={changeParameterDraft}
+        onPickParameterPath={pickParameterPath}
+        onParameterPickerError={(error) => {
+          const message = error instanceof Error ? error.message : '桌面文件选择器暂时不可用。'
+          setHostError(message)
+          setClientHint(message)
+        }}
         onParameterTextChange={changeParameterText}
         onApplyParameters={applyParameters}
         onDiscardParameters={discardParameters}
         onCopyPath={(path) => void copyPath(path)}
+        canRevealArtifact={hostCapabilityAvailable('reveal_in_file_manager')}
+        canOpenArtifact={hostCapabilityAvailable('open_with_system_player')}
+        onRevealArtifact={(artifactId) => void launchArtifact('reveal_in_file_manager', artifactId)}
+        onOpenArtifact={(artifactId) => void launchArtifact('open_with_system_player', artifactId)}
         onValidateAndSubmit={(nodeRun) => void validateAndSubmit(nodeRun)}
         onReorderEdge={(id, ordinal) => updateGraph((current) => reorderEdge(current, id, ordinal))}
         onDeleteEdge={deleteSelected}

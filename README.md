@@ -12,12 +12,13 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - 已交付基线：`ZNIKU Studio 0.2.0` Phase 0–5，Core 已完成 legacy 清理与最小自动化验收
 - 已验收增量：`v0.2.1` Phase 0–5 已完成，真实 MR-off GUI 闭环与操作者验收通过；external MR 仍是未验证范围
 - 当前开发分支：`v0.3.0`
-- 当前增量阶段：**v0.3.0 Phase 0–1 已完成；Phase 2–6 尚未实施**
+- 当前增量阶段：**v0.3.0 Phase 0–2 已完成；Phase 3–6 尚未实施**
 - Graph／Runtime 上位架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
 - Studio UX 下位设计：[创作者体验基线](docs/architecture/studio-ux-baseline.md)
 - 分阶段计划：[v0.3.0 创作者体验重构执行方案](docs/v0.3.0-execution-plan.md)
 - Phase 0 证据：[v0.3.0 Phase 0 验收记录](docs/v0.3.0-phase0-acceptance.md)
 - Phase 1 证据：[v0.3.0 Phase 1 验收记录](docs/v0.3.0-phase1-acceptance.md)
+- Phase 2 证据：[v0.3.0 Phase 2 验收记录](docs/v0.3.0-phase2-acceptance.md)
 - 当前实现版本：`0.2.0`；package/product 版本按计划保持不变，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
   `zniku.project_service`、`zniku.presentation`、`zniku.media` 与 `zniku.avenhance_v27`
 - 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
@@ -40,6 +41,12 @@ v0.3.0 保留上述 Graph Core、Runtime 与真实媒体执行能力，重点把
 v0.3.0 Phase 1 已加入 Python `PresentationCatalog`、Project Service `0.3.0` 只读展示接口和通用 Draft
 2020-12 参数表单。表单与“高级 → 原始参数”编辑同一份 session `ParameterDraft`，只有显式“应用设置”才
 写回当前 Graph；缺失或损坏的第三方 Presentation 会隔离并回退通用 Schema 表单，不改变 Runtime 结论。
+
+v0.3.0 Phase 2 已加入工程首页、默认隐藏的工程身份、有界 HostBridge，以及“选择素材 → 处理方案 → 设置 →
+分析 → 确认工作流”的 AVEnhanceFlow v2.7.0 创作者流程。原生 picker、最近工程、人类可读媒体摘要和
+基础/高级设置都只服务于同一 Project 与 Graph；分析继续绑定 exact preparation Run，取消、迟到响应、已有
+工程和素材变化均失败关闭。Phase 2 验证已启动 Studio 的建项闭环；可分发双击 launcher、单实例和真实原生
+窗口 E2E 仍属于 Phase 5。
 
 ## 产品核心
 
@@ -131,6 +138,7 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | [`docs/v0.3.0-execution-plan.md`](docs/v0.3.0-execution-plan.md) | v0.3.0 阶段、门禁与验收顺序；不覆盖 Core |
 | [`docs/v0.3.0-phase0-acceptance.md`](docs/v0.3.0-phase0-acceptance.md) | v0.3.0 Phase 0 实施结果、自动门禁与未证明范围 |
 | [`docs/v0.3.0-phase1-acceptance.md`](docs/v0.3.0-phase1-acceptance.md) | v0.3.0 Phase 1 Presentation、Schema 表单与组件边界验收 |
+| [`docs/v0.3.0-phase2-acceptance.md`](docs/v0.3.0-phase2-acceptance.md) | v0.3.0 Phase 2 创作者建项、HostBridge 与模板引导验收 |
 | [`docs/v0.2.1-acceptance.md`](docs/v0.2.1-acceptance.md) | v0.2.1 Phase 5 已完成验收及未验证范围 |
 | [`docs/phase5-acceptance.md`](docs/phase5-acceptance.md) | Phase 5 可重复门禁及其证明边界 |
 | [`docs/brand-baseline.md`](docs/brand-baseline.md) | 品牌、产品名与代码标识 |
@@ -211,6 +219,7 @@ ZNiku/
 │   ├── v0.3.0-execution-plan.md  # v0.3.0 分阶段执行方案
 │   ├── v0.3.0-phase0-acceptance.md # v0.3.0 Phase 0 自动门禁与证明边界
 │   ├── v0.3.0-phase1-acceptance.md # v0.3.0 Phase 1 展示合同与参数表单证据
+│   ├── v0.3.0-phase2-acceptance.md # v0.3.0 Phase 2 建项、HostBridge 与模板引导证据
 │   └── brand-baseline.md
 ├── AGENTS.md
 └── VERSION                      # 0.2.0 产品实现版本

@@ -9,6 +9,16 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from zniku.avenhance_v27.template import TemplatePreviewRequest
+from zniku.project_service.host_bridge import (
+    HOST_PATH_REFERENCE_ADAPTER,
+    HostCapabilitiesEnvelope,
+    HostDialogArguments,
+    HostInvokeEnvelope,
+    HostInvokeRequest,
+    HostSystemArguments,
+    HostUserActionEnvelope,
+    HostUserActionRequest,
+)
 from zniku.project_service.models import (
     ExternalHandoffReadiness,
     NodeLogEnvelope,
@@ -101,6 +111,9 @@ def render_schema() -> str:
         ExternalHandoffReadiness,
         PresentationCatalogEnvelope,
         TemplatePreviewEnvelope,
+        HostCapabilitiesEnvelope,
+        HostUserActionEnvelope,
+        HostInvokeEnvelope,
     )
     envelope_schema: dict[str, object] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -135,6 +148,31 @@ def render_schema() -> str:
             raise RuntimeError(f"Project Service Schema definition 冲突：{name}")
         envelope_definitions[name] = definition
     envelope_definitions["TemplatePreviewRequest"] = preview_schema
+
+    host_request_models = (
+        HostUserActionRequest,
+        HostInvokeRequest,
+        HostDialogArguments,
+        HostSystemArguments,
+    )
+    for host_model in host_request_models:
+        host_schema = host_model.model_json_schema()
+        nested = namespace_definitions(
+            host_schema,
+            namespace=f"Host_{host_model.__name__}",
+        )
+        for name, definition in nested.items():
+            if name in envelope_definitions:
+                raise RuntimeError(f"Project Service HostBridge Schema definition 冲突：{name}")
+            envelope_definitions[name] = definition
+        envelope_definitions[host_model.__name__] = host_schema
+    reference_schema = HOST_PATH_REFERENCE_ADAPTER.json_schema()
+    reference_definitions = namespace_definitions(reference_schema, namespace="Host_Reference")
+    for name, definition in reference_definitions.items():
+        if name in envelope_definitions:
+            raise RuntimeError(f"Project Service HostBridge Schema definition 冲突：{name}")
+        envelope_definitions[name] = definition
+    envelope_definitions["HostPathReference"] = reference_schema
 
     command_schema = TypeAdapter(ProjectServiceCommand).json_schema()
     command_definitions = namespace_definitions(command_schema, namespace="Command")

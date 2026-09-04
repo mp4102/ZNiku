@@ -321,6 +321,75 @@ class NodeLogEnvelope(ProjectServiceModel):
     log: NodeLogProjection
 
 
+class CreatorAudioTrackSummary(ProjectServiceModel):
+    """提供不含 extradata hash 或 Artifact identity 的人类音轨说明。"""
+
+    ordinal: Annotated[int, Field(ge=0)]
+    codec: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    channels: Annotated[int, Field(gt=0)] | None = None
+    sample_rate: Annotated[int, Field(gt=0)] | None = None
+    language: Annotated[str, StringConstraints(min_length=1, max_length=80)] | None = None
+    title: Annotated[str, StringConstraints(min_length=1, max_length=120)] | None = None
+    label: Annotated[str, StringConstraints(min_length=1, max_length=320)]
+
+
+class CreatorSourceMediaSummary(ProjectServiceModel):
+    """提供分析 Run 已验收媒体事实的创作者安全展示文本。"""
+
+    source_ordinal: Annotated[int, Field(ge=0)]
+    chapter_label: Annotated[str, StringConstraints(min_length=1, max_length=200)] | None = None
+    display_name: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=255, pattern=r"^[^/\\:]+$"),
+    ]
+    size_bytes: Annotated[int, Field(gt=0)]
+    size_label: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    container: Annotated[str, StringConstraints(min_length=1, max_length=160)]
+    video_codec: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    pixel_format: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    resolution: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    frame_rate: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    duration: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    frame_count: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    audio_tracks: tuple[CreatorAudioTrackSummary, ...] = ()
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: str) -> str:
+        """只允许 basename，避免普通创作者投影泄露目录、drive 或 ADS。"""
+
+        if value.strip() != value or value in {".", ".."} or "\x00" in value:
+            raise ValueError("E_CREATOR_MEDIA_NAME: display_name 必须是安全 basename")
+        return value
+
+    @field_validator("audio_tracks", mode="before")
+    @classmethod
+    def normalize_audio_tracks(cls, value: Any) -> Any:
+        return tuple(value) if isinstance(value, list) else value
+
+
+class CreatorTemplateSummary(ProjectServiceModel):
+    """汇总模板 preview 中普通用户需要的媒体与预计步骤信息。"""
+
+    analyzed: bool
+    sources: tuple[CreatorSourceMediaSummary, ...] = ()
+    estimated_step_count: Annotated[int, Field(ge=0)]
+    estimated_steps: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+
+    @field_validator("sources", mode="before")
+    @classmethod
+    def normalize_sources(cls, value: Any) -> Any:
+        return tuple(value) if isinstance(value, list) else value
+
+    @model_validator(mode="after")
+    def validate_analyzed_sources(self) -> CreatorTemplateSummary:
+        if self.analyzed != bool(self.sources):
+            raise ValueError("E_CREATOR_MEDIA_ANALYZED: analyzed 与 sources 不一致")
+        if self.estimated_steps != f"预计 {self.estimated_step_count} 个处理步骤":
+            raise ValueError("E_CREATOR_STEP_LABEL: estimated_steps 与数量不一致")
+        return self
+
+
 class TemplatePreviewEnvelope(ProjectServiceModel):
     """返回 Python builder 的完整普通 Graph、定义、计划投影与 profile 诊断。"""
 
@@ -331,6 +400,7 @@ class TemplatePreviewEnvelope(ProjectServiceModel):
     definitions: tuple[NodeDefinition, ...]
     profile: Av27ProfilePreflightResult
     plan: TemplatePlanSummary
+    creator: CreatorTemplateSummary
 
     @model_validator(mode="after")
     def validate_phase(self) -> TemplatePreviewEnvelope:
@@ -340,6 +410,18 @@ class TemplatePreviewEnvelope(ProjectServiceModel):
             raise ValueError("E_AV27_TEMPLATE_PROFILE_VERSION: profile version 不一致")
         if self.profile.phase != self.phase:
             raise ValueError("E_AV27_TEMPLATE_PROFILE_PHASE: profile phase 不一致")
+        if self.creator.estimated_step_count != len(self.project.graph.nodes):
+            raise ValueError("E_CREATOR_STEP_COUNT: 预计步骤必须等于 preview Graph 节点数")
+        if self.phase == "preparation":
+            if self.creator.analyzed or self.creator.sources:
+                raise ValueError("E_CREATOR_MEDIA_PHASE: preparation preview 尚无分析事实")
+        elif (
+            not self.creator.analyzed
+            or len(self.creator.sources) != self.plan.source_count
+            or tuple(item.source_ordinal for item in self.creator.sources)
+            != tuple(range(self.plan.source_count))
+        ):
+            raise ValueError("E_CREATOR_MEDIA_PHASE: expanded preview 缺少完整有序媒体事实")
         return self
 
 
@@ -351,12 +433,19 @@ class OpenProjectCommand(ProjectServiceModel):
 
 
 class CreateProjectCommand(ProjectServiceModel):
-    """创建不覆盖既有文件的空 Project；NodeDefinition 由启动 catalog 注入。"""
+    """创建不覆盖既有文件的空 Project；身份由服务端生成，名称可由路径派生。"""
 
     operation: Literal["create_project"]
     path: LocalPath
-    project_id: str
-    name: str
+    name: Annotated[str, StringConstraints(min_length=1, max_length=200)] | None = None
+
+    @model_validator(mode="after")
+    def reject_explicit_null_name(self) -> CreateProjectCommand:
+        """省略 name 表示使用文件名；显式 null 不作为另一种宽松输入。"""
+
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("E_PROJECT_SERVICE_PROJECT_NAME: name 不接受 null")
+        return self
 
 
 class CreateAvEnhanceV27Command(ProjectServiceModel):
@@ -453,6 +542,9 @@ __all__ = [
     "ActiveProjectOperation",
     "CreateAvEnhanceV27Command",
     "CreateProjectCommand",
+    "CreatorAudioTrackSummary",
+    "CreatorSourceMediaSummary",
+    "CreatorTemplateSummary",
     "ExpandAvEnhanceV27Command",
     "ExternalHandoffContractProjection",
     "ExternalHandoffReadiness",

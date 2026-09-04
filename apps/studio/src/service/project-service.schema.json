@@ -463,11 +463,21 @@
     },
     "Command_CreateProjectCommand": {
       "additionalProperties": false,
-      "description": "创建不覆盖既有文件的空 Project；NodeDefinition 由启动 catalog 注入。",
+      "description": "创建不覆盖既有文件的空 Project；身份由服务端生成，名称可由路径派生。",
       "properties": {
         "name": {
-          "title": "Name",
-          "type": "string"
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
         },
         "operation": {
           "const": "create_project",
@@ -479,17 +489,11 @@
           "minLength": 1,
           "title": "Path",
           "type": "string"
-        },
-        "project_id": {
-          "title": "Project Id",
-          "type": "string"
         }
       },
       "required": [
         "operation",
-        "path",
-        "project_id",
-        "name"
+        "path"
       ],
       "title": "CreateProjectCommand",
       "type": "object"
@@ -1234,6 +1238,241 @@
       "title": "ControlHint",
       "type": "string"
     },
+    "CreatorAudioTrackSummary": {
+      "additionalProperties": false,
+      "description": "提供不含 extradata hash 或 Artifact identity 的人类音轨说明。",
+      "properties": {
+        "channels": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channels"
+        },
+        "codec": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Codec",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 320,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "ordinal": {
+          "minimum": 0,
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "sample_rate": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "ordinal",
+        "codec",
+        "channels",
+        "sample_rate",
+        "language",
+        "title",
+        "label"
+      ],
+      "title": "CreatorAudioTrackSummary",
+      "type": "object"
+    },
+    "CreatorSourceMediaSummary": {
+      "additionalProperties": false,
+      "description": "提供分析 Run 已验收媒体事实的创作者安全展示文本。",
+      "properties": {
+        "audio_tracks": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CreatorAudioTrackSummary"
+          },
+          "title": "Audio Tracks",
+          "type": "array"
+        },
+        "chapter_label": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chapter Label"
+        },
+        "container": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Container",
+          "type": "string"
+        },
+        "display_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[^/\\\\:]+$",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "duration": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Duration",
+          "type": "string"
+        },
+        "frame_count": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Frame Count",
+          "type": "string"
+        },
+        "frame_rate": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Frame Rate",
+          "type": "string"
+        },
+        "pixel_format": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Pixel Format",
+          "type": "string"
+        },
+        "resolution": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Resolution",
+          "type": "string"
+        },
+        "size_bytes": {
+          "exclusiveMinimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "size_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Size Label",
+          "type": "string"
+        },
+        "source_ordinal": {
+          "minimum": 0,
+          "title": "Source Ordinal",
+          "type": "integer"
+        },
+        "video_codec": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Video Codec",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_ordinal",
+        "chapter_label",
+        "display_name",
+        "size_bytes",
+        "size_label",
+        "container",
+        "video_codec",
+        "pixel_format",
+        "resolution",
+        "frame_rate",
+        "duration",
+        "frame_count",
+        "audio_tracks"
+      ],
+      "title": "CreatorSourceMediaSummary",
+      "type": "object"
+    },
+    "CreatorTemplateSummary": {
+      "additionalProperties": false,
+      "description": "汇总模板 preview 中普通用户需要的媒体与预计步骤信息。",
+      "properties": {
+        "analyzed": {
+          "title": "Analyzed",
+          "type": "boolean"
+        },
+        "estimated_step_count": {
+          "minimum": 0,
+          "title": "Estimated Step Count",
+          "type": "integer"
+        },
+        "estimated_steps": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Estimated Steps",
+          "type": "string"
+        },
+        "sources": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CreatorSourceMediaSummary"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "analyzed",
+        "sources",
+        "estimated_step_count",
+        "estimated_steps"
+      ],
+      "title": "CreatorTemplateSummary",
+      "type": "object"
+    },
     "Edge": {
       "additionalProperties": false,
       "description": "连接一个已声明 output 与一个已声明 input。",
@@ -1748,6 +1987,740 @@
         "value"
       ],
       "title": "HandoffContractField",
+      "type": "object"
+    },
+    "HostCapabilitiesEnvelope": {
+      "additionalProperties": false,
+      "description": "返回固定顺序的完整 capability 闭集。",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/HostCapabilityState"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "capabilities"
+      ],
+      "title": "HostCapabilitiesEnvelope",
+      "type": "object"
+    },
+    "HostCapability": {
+      "enum": [
+        "open_file",
+        "open_files",
+        "select_directory",
+        "save_file",
+        "reveal_in_file_manager",
+        "open_with_system_player"
+      ],
+      "type": "string"
+    },
+    "HostCapabilityState": {
+      "additionalProperties": false,
+      "description": "声明一个闭集 capability 在当前 launcher session 是否可用。",
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "capability": {
+          "$ref": "#/$defs/HostCapability"
+        },
+        "unavailable_reason": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unavailable Reason"
+        }
+      },
+      "required": [
+        "capability",
+        "available",
+        "unavailable_reason"
+      ],
+      "title": "HostCapabilityState",
+      "type": "object"
+    },
+    "HostDialogArguments": {
+      "additionalProperties": false,
+      "description": "四类 picker 共享的有限纯文本提示。",
+      "properties": {
+        "extensions": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extensions"
+        },
+        "suggested_name": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Suggested Name"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 240,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "title": "HostDialogArguments",
+      "type": "object"
+    },
+    "HostInvokeEnvelope": {
+      "additionalProperties": false,
+      "description": "返回 picker 取消、选择或固定系统动作启动结果。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "selections": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/HostSelection"
+          },
+          "title": "Selections",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "selected",
+            "cancelled",
+            "launched"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "selections"
+      ],
+      "title": "HostInvokeEnvelope",
+      "type": "object"
+    },
+    "HostInvokeRequest": {
+      "additionalProperties": false,
+      "description": "描述一次票据消费；arguments 在消费票据后按 capability 严格解析。",
+      "properties": {
+        "arguments": {
+          "title": "Arguments"
+        },
+        "capability": {
+          "$ref": "#/$defs/Host_HostInvokeRequest_HostCapability"
+        },
+        "user_action_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "User Action Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_action_id",
+        "capability",
+        "arguments"
+      ],
+      "title": "HostInvokeRequest",
+      "type": "object"
+    },
+    "HostPathReference": {
+      "discriminator": {
+        "mapping": {
+          "artifact": "#/$defs/Host_Reference_ArtifactPathReference",
+          "handoff": "#/$defs/Host_Reference_HandoffPathReference",
+          "picker_selection": "#/$defs/Host_Reference_PickerSelectionReference"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_Reference_PickerSelectionReference"
+        },
+        {
+          "$ref": "#/$defs/Host_Reference_ArtifactPathReference"
+        },
+        {
+          "$ref": "#/$defs/Host_Reference_HandoffPathReference"
+        }
+      ]
+    },
+    "HostSelection": {
+      "additionalProperties": false,
+      "description": "返回用户明确选择的绝对路径及其 session-local authority handle。",
+      "properties": {
+        "path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "selection_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Selection Handle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "selection_handle",
+        "path"
+      ],
+      "title": "HostSelection",
+      "type": "object"
+    },
+    "HostSystemArguments": {
+      "additionalProperties": false,
+      "description": "系统动作只接受 authority reference，不接受 raw path。",
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/Host_HostSystemArguments_HostPathReference"
+        }
+      },
+      "required": [
+        "reference"
+      ],
+      "title": "HostSystemArguments",
+      "type": "object"
+    },
+    "HostUserActionEnvelope": {
+      "additionalProperties": false,
+      "description": "返回不含路径或 token 的一次性用户动作票据。",
+      "properties": {
+        "capability": {
+          "$ref": "#/$defs/HostCapability"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expires_in_seconds": {
+          "const": 5,
+          "default": 5,
+          "title": "Expires In Seconds",
+          "type": "integer"
+        },
+        "user_action_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "User Action Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "user_action_id",
+        "capability",
+        "expires_in_seconds"
+      ],
+      "title": "HostUserActionEnvelope",
+      "type": "object"
+    },
+    "HostUserActionRequest": {
+      "additionalProperties": false,
+      "description": "请求为一次显式点击签发绑定 capability 的短时票据。",
+      "properties": {
+        "capability": {
+          "$ref": "#/$defs/Host_HostUserActionRequest_HostCapability"
+        }
+      },
+      "required": [
+        "capability"
+      ],
+      "title": "HostUserActionRequest",
+      "type": "object"
+    },
+    "Host_HostInvokeRequest_HostCapability": {
+      "enum": [
+        "open_file",
+        "open_files",
+        "select_directory",
+        "save_file",
+        "reveal_in_file_manager",
+        "open_with_system_player"
+      ],
+      "type": "string"
+    },
+    "Host_HostSystemArguments_ArtifactPathReference": {
+      "additionalProperties": false,
+      "description": "引用 Project Service 已投影到明确 Run 闭包中的 Artifact。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "artifact",
+          "title": "Kind",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "artifact_id"
+      ],
+      "title": "ArtifactPathReference",
+      "type": "object"
+    },
+    "Host_HostSystemArguments_HandoffInputArtifactSelector": {
+      "additionalProperties": false,
+      "description": "选择 handoff 明确绑定的一个输入 Artifact。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "input_artifact",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "artifact_id"
+      ],
+      "title": "HandoffInputArtifactSelector",
+      "type": "object"
+    },
+    "Host_HostSystemArguments_HandoffOutputTargetSelector": {
+      "additionalProperties": false,
+      "description": "选择 handoff server-declared 的一个输出目标。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "output_target",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "port_id"
+      ],
+      "title": "HandoffOutputTargetSelector",
+      "type": "object"
+    },
+    "Host_HostSystemArguments_HandoffPathReference": {
+      "additionalProperties": false,
+      "description": "引用最新 waiting NodeRun 的精确 handoff identity 与路径角色。",
+      "properties": {
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "handoff",
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/$defs/Host_HostSystemArguments_HandoffPathSelector"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "selector"
+      ],
+      "title": "HandoffPathReference",
+      "type": "object"
+    },
+    "Host_HostSystemArguments_HandoffPathSelector": {
+      "discriminator": {
+        "mapping": {
+          "input_artifact": "#/$defs/Host_HostSystemArguments_HandoffInputArtifactSelector",
+          "output_target": "#/$defs/Host_HostSystemArguments_HandoffOutputTargetSelector",
+          "work_directory": "#/$defs/Host_HostSystemArguments_HandoffWorkDirectorySelector"
+        },
+        "propertyName": "role"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_HostSystemArguments_HandoffWorkDirectorySelector"
+        },
+        {
+          "$ref": "#/$defs/Host_HostSystemArguments_HandoffInputArtifactSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_HostSystemArguments_HandoffOutputTargetSelector"
+        }
+      ]
+    },
+    "Host_HostSystemArguments_HandoffWorkDirectorySelector": {
+      "additionalProperties": false,
+      "description": "选择 waiting attempt 的受控工作目录。",
+      "properties": {
+        "role": {
+          "const": "work_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "HandoffWorkDirectorySelector",
+      "type": "object"
+    },
+    "Host_HostSystemArguments_HostPathReference": {
+      "discriminator": {
+        "mapping": {
+          "artifact": "#/$defs/Host_HostSystemArguments_ArtifactPathReference",
+          "handoff": "#/$defs/Host_HostSystemArguments_HandoffPathReference",
+          "picker_selection": "#/$defs/Host_HostSystemArguments_PickerSelectionReference"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_HostSystemArguments_PickerSelectionReference"
+        },
+        {
+          "$ref": "#/$defs/Host_HostSystemArguments_ArtifactPathReference"
+        },
+        {
+          "$ref": "#/$defs/Host_HostSystemArguments_HandoffPathReference"
+        }
+      ]
+    },
+    "Host_HostSystemArguments_PickerSelectionReference": {
+      "additionalProperties": false,
+      "description": "引用当前 launcher session 中一次 picker 明确返回的路径。",
+      "properties": {
+        "kind": {
+          "const": "picker_selection",
+          "title": "Kind",
+          "type": "string"
+        },
+        "selection_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Selection Handle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "selection_handle"
+      ],
+      "title": "PickerSelectionReference",
+      "type": "object"
+    },
+    "Host_HostUserActionRequest_HostCapability": {
+      "enum": [
+        "open_file",
+        "open_files",
+        "select_directory",
+        "save_file",
+        "reveal_in_file_manager",
+        "open_with_system_player"
+      ],
+      "type": "string"
+    },
+    "Host_Reference_ArtifactPathReference": {
+      "additionalProperties": false,
+      "description": "引用 Project Service 已投影到明确 Run 闭包中的 Artifact。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "artifact",
+          "title": "Kind",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "artifact_id"
+      ],
+      "title": "ArtifactPathReference",
+      "type": "object"
+    },
+    "Host_Reference_HandoffInputArtifactSelector": {
+      "additionalProperties": false,
+      "description": "选择 handoff 明确绑定的一个输入 Artifact。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "input_artifact",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "artifact_id"
+      ],
+      "title": "HandoffInputArtifactSelector",
+      "type": "object"
+    },
+    "Host_Reference_HandoffOutputTargetSelector": {
+      "additionalProperties": false,
+      "description": "选择 handoff server-declared 的一个输出目标。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "output_target",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "port_id"
+      ],
+      "title": "HandoffOutputTargetSelector",
+      "type": "object"
+    },
+    "Host_Reference_HandoffPathReference": {
+      "additionalProperties": false,
+      "description": "引用最新 waiting NodeRun 的精确 handoff identity 与路径角色。",
+      "properties": {
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "handoff",
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/$defs/Host_Reference_HandoffPathSelector"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "selector"
+      ],
+      "title": "HandoffPathReference",
+      "type": "object"
+    },
+    "Host_Reference_HandoffPathSelector": {
+      "discriminator": {
+        "mapping": {
+          "input_artifact": "#/$defs/Host_Reference_HandoffInputArtifactSelector",
+          "output_target": "#/$defs/Host_Reference_HandoffOutputTargetSelector",
+          "work_directory": "#/$defs/Host_Reference_HandoffWorkDirectorySelector"
+        },
+        "propertyName": "role"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_Reference_HandoffWorkDirectorySelector"
+        },
+        {
+          "$ref": "#/$defs/Host_Reference_HandoffInputArtifactSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_Reference_HandoffOutputTargetSelector"
+        }
+      ]
+    },
+    "Host_Reference_HandoffWorkDirectorySelector": {
+      "additionalProperties": false,
+      "description": "选择 waiting attempt 的受控工作目录。",
+      "properties": {
+        "role": {
+          "const": "work_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "HandoffWorkDirectorySelector",
+      "type": "object"
+    },
+    "Host_Reference_PickerSelectionReference": {
+      "additionalProperties": false,
+      "description": "引用当前 launcher session 中一次 picker 明确返回的路径。",
+      "properties": {
+        "kind": {
+          "const": "picker_selection",
+          "title": "Kind",
+          "type": "string"
+        },
+        "selection_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Selection Handle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "selection_handle"
+      ],
+      "title": "PickerSelectionReference",
       "type": "object"
     },
     "IconToken": {
@@ -4222,6 +5195,9 @@
           "title": "Contract Version",
           "type": "string"
         },
+        "creator": {
+          "$ref": "#/$defs/CreatorTemplateSummary"
+        },
         "definitions": {
           "items": {
             "$ref": "#/$defs/NodeDefinition"
@@ -4255,7 +5231,8 @@
         "project",
         "definitions",
         "profile",
-        "plan"
+        "plan",
+        "creator"
       ],
       "title": "TemplatePreviewEnvelope",
       "type": "object"

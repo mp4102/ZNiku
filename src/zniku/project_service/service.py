@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import stat
 import threading
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
+from fractions import Fraction
 from pathlib import Path
 from time import monotonic
 from typing import Final, cast
+from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -32,9 +35,11 @@ from zniku.avenhance_v27.preflight import (
 )
 from zniku.avenhance_v27.probe import (
     Av27MediaError,
+    audio_signatures_from_metadata,
     canonical_fraction,
     metadata_frame_count,
     metadata_rate,
+    namespace_from_media_info,
 )
 from zniku.avenhance_v27.template import (
     Av27TemplateError,
@@ -82,6 +87,9 @@ from .models import (
     ActiveProjectOperation,
     CreateAvEnhanceV27Command,
     CreateProjectCommand,
+    CreatorAudioTrackSummary,
+    CreatorSourceMediaSummary,
+    CreatorTemplateSummary,
     ExpandAvEnhanceV27Command,
     ExternalHandoffReadiness,
     ExternalOutputReadiness,
@@ -292,6 +300,7 @@ class ProjectServiceApplication:
                 build = build_expanded(current, request.request, binding)
                 return self._template_envelope(
                     build,
+                    binding=binding,
                     binding_facts=self._binding_facts(binding),
                     publication_facts=self._publication_facts(
                         build.project,
@@ -625,8 +634,8 @@ class ProjectServiceApplication:
         try:
             project = Project.model_validate(
                 {
-                    "project_id": command.project_id,
-                    "name": command.name,
+                    "project_id": str(uuid4()),
+                    "name": command.name or path.stem,
                     "graph": {"nodes": [], "edges": []},
                 },
                 strict=True,
@@ -670,6 +679,7 @@ class ProjectServiceApplication:
         build = build_expanded(current, command.request, binding)
         envelope = self._template_envelope(
             build,
+            binding=binding,
             binding_facts=facts,
             publication_facts=self._publication_facts(
                 build.project,
@@ -688,6 +698,7 @@ class ProjectServiceApplication:
     def _template_envelope(
         build: TemplateBuild,
         *,
+        binding: PreparationBinding | None = None,
         binding_facts: Av27BindingFacts | None = None,
         publication_facts: Av27PublicationFacts | None = None,
     ) -> TemplatePreviewEnvelope:
@@ -705,7 +716,240 @@ class ProjectServiceApplication:
             definitions=build.definitions,
             profile=profile,
             plan=build.plan,
+            creator=ProjectServiceApplication._creator_template_summary(build, binding),
         )
+
+    @staticmethod
+    def _creator_template_summary(
+        build: TemplateBuild,
+        binding: PreparationBinding | None,
+    ) -> CreatorTemplateSummary:
+        """只从 current preparation Artifact metadata 生成创作者安全展示文本。
+
+        preparation preview 尚未执行 Admission，因此不猜测分辨率、FPS、时长或音轨；expanded
+        preview 的 binding 已由 Repository 和 Runtime current/stale 规则完整复核。这里不返回
+        Artifact identity、extradata hash 或源路径，也不产生新的媒体 authority。
+        """
+
+        step_count = len(build.project.graph.nodes)
+        if binding is None:
+            return CreatorTemplateSummary(
+                analyzed=False,
+                estimated_step_count=step_count,
+                estimated_steps=f"预计 {step_count} 个处理步骤",
+            )
+        sources = tuple(
+            ProjectServiceApplication._creator_source_media(item) for item in binding.sources
+        )
+        return CreatorTemplateSummary(
+            analyzed=True,
+            sources=sources,
+            estimated_step_count=step_count,
+            estimated_steps=f"预计 {step_count} 个处理步骤",
+        )
+
+    @staticmethod
+    def _creator_source_media(source: PreparationSourceBinding) -> CreatorSourceMediaSummary:
+        """把一个已验收 Source Artifact 缩减为无身份、无哈希的人类可读摘要。"""
+
+        metadata = source.source_media_artifact.media_info
+        namespace = namespace_from_media_info(metadata)
+        frame_count = metadata_frame_count(metadata)
+        frame_rate = metadata_rate(metadata)
+        display_name = Path(source.source_media_artifact.path).name
+        size_bytes = source.source_media_artifact.size
+        if not display_name or size_bytes is None or size_bytes <= 0:
+            raise Av27MediaError(
+                "E_AV27_CREATOR_MEDIA_IDENTITY",
+                "Source display name 或已登记文件大小无效",
+            )
+        geometry = namespace.get("geometry")
+        if not isinstance(geometry, Mapping) or set(geometry) != {"width", "height"}:
+            raise Av27MediaError("E_AV27_METADATA_GEOMETRY", "Source geometry metadata 无效")
+        width = geometry.get("width")
+        height = geometry.get("height")
+        if (
+            isinstance(width, bool)
+            or not isinstance(width, int)
+            or width <= 0
+            or isinstance(height, bool)
+            or not isinstance(height, int)
+            or height <= 0
+        ):
+            raise Av27MediaError("E_AV27_METADATA_GEOMETRY", "Source geometry metadata 无效")
+
+        duration_raw = namespace.get("duration_seconds")
+        if (
+            isinstance(duration_raw, bool)
+            or not isinstance(duration_raw, int | float)
+            or not math.isfinite(float(duration_raw))
+            or float(duration_raw) <= 0
+        ):
+            duration = Fraction(frame_count, 1) / frame_rate
+        else:
+            duration = Fraction(str(duration_raw))
+
+        container = ProjectServiceApplication._creator_nested_text(
+            namespace,
+            object_name="container",
+            field_name="format_name",
+            limit=160,
+        )
+        video_codec = ProjectServiceApplication._creator_nested_text(
+            namespace,
+            object_name="video",
+            field_name="codec",
+            limit=80,
+        )
+        pixel_format = ProjectServiceApplication._creator_nested_text(
+            namespace,
+            object_name="video",
+            field_name="pixel_format",
+            limit=80,
+        )
+
+        audio_tracks = tuple(
+            ProjectServiceApplication._creator_audio_track(index, signature)
+            for index, signature in enumerate(audio_signatures_from_metadata(metadata))
+        )
+        rational = canonical_fraction(frame_rate)
+        decimal = f"{float(frame_rate):.3f}".rstrip("0").rstrip(".")
+        rate_label = (
+            f"{decimal} fps" if frame_rate.denominator == 1 else f"{decimal} fps ({rational})"
+        )
+        return CreatorSourceMediaSummary(
+            source_ordinal=source.source_ordinal,
+            chapter_label=source.chapter_label,
+            display_name=display_name,
+            size_bytes=size_bytes,
+            size_label=ProjectServiceApplication._format_size(size_bytes),
+            container=container,
+            video_codec=video_codec,
+            pixel_format=pixel_format,
+            resolution=f"{width} x {height}",
+            frame_rate=rate_label,
+            duration=ProjectServiceApplication._format_duration(duration),
+            frame_count=f"{frame_count:,} 帧",
+            audio_tracks=audio_tracks,
+        )
+
+    @staticmethod
+    def _creator_audio_track(
+        ordinal: int,
+        signature: Mapping[str, object],
+    ) -> CreatorAudioTrackSummary:
+        """生成音轨短标签，并明确丢弃执行校验使用的 extradata hash。"""
+
+        codec_raw = signature.get("codec")
+        if not isinstance(codec_raw, str) or not codec_raw.strip():
+            raise Av27MediaError("E_AV27_AUDIO_METADATA", "audio codec metadata 无效")
+        codec = codec_raw.strip()[:80]
+        parts = [f"音轨 {ordinal + 1}", codec.upper()]
+        channels_raw = signature.get("channels")
+        channels: int | None = None
+        if channels_raw is not None:
+            if (
+                isinstance(channels_raw, bool)
+                or not isinstance(channels_raw, int)
+                or channels_raw <= 0
+            ):
+                raise Av27MediaError("E_AV27_AUDIO_METADATA", "audio channels metadata 无效")
+            channels = channels_raw
+            parts.append(f"{channels} 声道")
+        sample_rate_raw = signature.get("sample_rate")
+        sample_rate: int | None = None
+        if sample_rate_raw is not None:
+            if (
+                isinstance(sample_rate_raw, bool)
+                or not isinstance(sample_rate_raw, int)
+                or sample_rate_raw <= 0
+            ):
+                raise Av27MediaError("E_AV27_AUDIO_METADATA", "audio sample_rate metadata 无效")
+            sample_rate = sample_rate_raw
+            parts.append(f"{sample_rate / 1000:g} kHz")
+        language = ProjectServiceApplication._creator_optional_audio_text(signature, "language", 80)
+        title = ProjectServiceApplication._creator_optional_audio_text(signature, "title", 120)
+        parts.extend(value for value in (language, title) if value is not None)
+        return CreatorAudioTrackSummary(
+            ordinal=ordinal,
+            codec=codec,
+            channels=channels,
+            sample_rate=sample_rate,
+            language=language,
+            title=title,
+            label=" · ".join(parts)[:320],
+        )
+
+    @staticmethod
+    def _creator_optional_audio_text(
+        signature: Mapping[str, object],
+        field: str,
+        limit: int,
+    ) -> str | None:
+        value = signature.get(field)
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise Av27MediaError("E_AV27_AUDIO_METADATA", f"audio {field} metadata 无效")
+        return value.strip()[:limit]
+
+    @staticmethod
+    def _creator_nested_text(
+        namespace: Mapping[str, object],
+        *,
+        object_name: str,
+        field_name: str,
+        limit: int,
+    ) -> str:
+        """读取可选 header 展示字段；旧合成 metadata 缺失时如实标注未记录。"""
+
+        parent = namespace.get(object_name)
+        if parent is None:
+            return "未记录"
+        if not isinstance(parent, Mapping):
+            raise Av27MediaError(
+                "E_AV27_CREATOR_MEDIA_METADATA",
+                f"{object_name} metadata 必须是 object",
+            )
+        value = parent.get(field_name)
+        if value is None:
+            return "未记录"
+        if not isinstance(value, str) or not value.strip():
+            raise Av27MediaError(
+                "E_AV27_CREATOR_MEDIA_METADATA",
+                f"{object_name}.{field_name} metadata 无效",
+            )
+        return value.strip()[:limit]
+
+    @staticmethod
+    def _format_duration(value: Fraction) -> str:
+        """把正有理秒投影为毫秒级展示文本；该文本不参与计划或验证。"""
+
+        if value <= 0:
+            raise Av27MediaError("E_AV27_METADATA_DURATION", "Source duration metadata 无效")
+        total_milliseconds = round(value * 1000)
+        hours, remainder = divmod(total_milliseconds, 3_600_000)
+        minutes, remainder = divmod(remainder, 60_000)
+        seconds, milliseconds = divmod(remainder, 1000)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+
+    @staticmethod
+    def _format_size(value: int) -> str:
+        """把已登记正文件大小投影为 IEC 人类文本，不参与 Artifact identity。"""
+
+        if value <= 0:
+            raise Av27MediaError("E_AV27_CREATOR_MEDIA_SIZE", "Source size 必须为正整数")
+        units = ("B", "KiB", "MiB", "GiB", "TiB")
+        amount = float(value)
+        unit = units[0]
+        for candidate in units[1:]:
+            if amount < 1024:
+                break
+            amount /= 1024
+            unit = candidate
+        if unit == "B":
+            return f"{value} B"
+        return f"{amount:.2f} {unit}"
 
     @staticmethod
     def _binding_facts(binding: PreparationBinding) -> Av27BindingFacts:

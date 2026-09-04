@@ -1,6 +1,6 @@
 /** 验证通用 Schema 表单只投影正式 Schema，并保持 ParameterDraft 类型与分支语义。 */
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { JsonObject, NodePresentationWire } from './contracts'
 import { validateParameterDraft, type ParameterSchema } from './parameter-draft'
@@ -219,5 +219,106 @@ describe('SchemaParameterForm', () => {
     rerender(<SchemaParameterForm schema={defaultSchema} draft={{ count: 0 }} validation={validateParameterDraft(defaultSchema, { count: 0 })} presentation={null} onChange={second} />)
     fireEvent.click(screen.getByRole('button', { name: '为 enabled 使用 Schema 默认值：false' }))
     expect(second).toHaveBeenLastCalledWith({ count: 0, enabled: false })
+  })
+
+  it('picker 只更新 ParameterDraft；取消与错误不改变字段', async () => {
+    const pathSchema: ParameterSchema = {
+      type: 'object', additionalProperties: false,
+      properties: { source_path: { type: 'string' } }, required: ['source_path'],
+    }
+    const pathPresentation: NodePresentationWire = {
+      ...presentation,
+      parameters: [{
+        parameter_pointer: '/source_path', label: '素材文件', description: null,
+        group_id: 'quality', order: 1, importance: 'primary', control_hint: 'file_path',
+        unit: null, placeholder: null, enum_labels: [], picker: { extensions: ['.mkv'] },
+      }],
+    }
+    const onChange = vi.fn()
+    const onPickError = vi.fn()
+    const onPickPath = vi.fn()
+      .mockResolvedValueOnce(['D:\\Media\\source.mkv'])
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('picker offline'))
+    render(
+      <SchemaParameterForm
+        schema={pathSchema}
+        draft={{ source_path: '' }}
+        validation={validateParameterDraft(pathSchema, { source_path: '' })}
+        presentation={pathPresentation}
+        onPickPath={onPickPath}
+        onPickError={onPickError}
+        onChange={onChange}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '选择文件' }))
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ source_path: 'D:\\Media\\source.mkv' }))
+    onChange.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: '选择文件' }))
+    await waitFor(() => expect(onPickPath).toHaveBeenCalledTimes(2))
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '选择文件' }))
+    await waitFor(() => expect(onPickError).toHaveBeenCalledWith(expect.objectContaining({ message: 'picker offline' })))
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('picker 迟到时不覆盖期间已经变化的 ParameterDraft', async () => {
+    const pathSchema: ParameterSchema = {
+      type: 'object', additionalProperties: false,
+      properties: { source_path: { type: 'string' } }, required: ['source_path'],
+    }
+    const pathPresentation: NodePresentationWire = {
+      ...presentation,
+      parameters: [{
+        parameter_pointer: '/source_path', label: '素材文件', description: null,
+        group_id: 'quality', order: 1, importance: 'primary', control_hint: 'file_path',
+        unit: null, placeholder: null, enum_labels: [], picker: { extensions: ['.mkv'] },
+      }],
+    }
+    let resolvePicker: ((paths: ReadonlyArray<string> | null) => void) | null = null
+    const onPickPath = vi.fn(() => new Promise<ReadonlyArray<string> | null>((resolve) => { resolvePicker = resolve }))
+    const oldChange = vi.fn()
+    const oldDraft: JsonObject = { source_path: 'old.mkv' }
+    const { rerender } = render(<SchemaParameterForm schema={pathSchema} draft={oldDraft} validation={validateParameterDraft(pathSchema, oldDraft)} presentation={pathPresentation} onPickPath={onPickPath} onChange={oldChange} />)
+    fireEvent.click(screen.getByRole('button', { name: '选择文件' }))
+
+    const newChange = vi.fn()
+    const newDraft: JsonObject = { source_path: 'newer.mkv' }
+    rerender(<SchemaParameterForm schema={pathSchema} draft={newDraft} validation={validateParameterDraft(pathSchema, newDraft)} presentation={pathPresentation} onPickPath={onPickPath} onChange={newChange} />)
+    await act(async () => { resolvePicker?.(['D:\\Media\\late.mkv']); await Promise.resolve() })
+    expect(oldChange).not.toHaveBeenCalled()
+    expect(newChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: '素材文件（必填）' })).toHaveValue('newer.mkv')
+  })
+
+  it('同一 Draft 并发打开选择器时只接纳最后一次请求', async () => {
+    const pathSchema: ParameterSchema = {
+      type: 'object', additionalProperties: false,
+      properties: { source_path: { type: 'string' } }, required: ['source_path'],
+    }
+    const pathPresentation: NodePresentationWire = {
+      ...presentation,
+      parameters: [{
+        parameter_pointer: '/source_path', label: '素材文件', description: null,
+        group_id: 'quality', order: 1, importance: 'primary', control_hint: 'file_path',
+        unit: null, placeholder: null, enum_labels: [], picker: { extensions: ['.mkv'] },
+      }],
+    }
+    const resolvers: Array<(paths: ReadonlyArray<string> | null) => void> = []
+    const onPickPath = vi.fn(() => new Promise<ReadonlyArray<string> | null>((resolve) => {
+      resolvers.push(resolve)
+    }))
+    const onChange = vi.fn()
+    const draft: JsonObject = { source_path: '' }
+    render(<SchemaParameterForm schema={pathSchema} draft={draft} validation={validateParameterDraft(pathSchema, draft)} presentation={pathPresentation} onPickPath={onPickPath} onChange={onChange} />)
+    const picker = screen.getByRole('button', { name: '选择文件' })
+    fireEvent.click(picker)
+    fireEvent.click(picker)
+
+    await act(async () => { resolvers[1]?.(['D:\\Media\\second.mkv']); await Promise.resolve() })
+    await act(async () => { resolvers[0]?.(['D:\\Media\\first.mkv']); await Promise.resolve() })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith({ source_path: 'D:\\Media\\second.mkv' })
   })
 })

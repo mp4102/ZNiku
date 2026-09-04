@@ -7,13 +7,14 @@ expanded Graph divergence 拒绝与关闭重开后的普通 Project 持久化。
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
 import pytest
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from zniku.avenhance_v27 import (
     SOURCE_ADMISSION_TYPE_ID,
@@ -21,7 +22,11 @@ from zniku.avenhance_v27 import (
 )
 from zniku.graph import Graph, NodeInstance
 from zniku.project import Project, ProjectStore
-from zniku.project_service import ProjectServiceApplication, ProjectServiceError
+from zniku.project_service import (
+    CreatorSourceMediaSummary,
+    ProjectServiceApplication,
+    ProjectServiceError,
+)
 from zniku.runtime import (
     Artifact,
     NodeResult,
@@ -36,6 +41,38 @@ from zniku.runtime import (
 
 def _id() -> str:
     return str(uuid4())
+
+
+@pytest.mark.parametrize(
+    "display_name",
+    [
+        r"D:\secret\source.mkv",
+        "/secret/source.mkv",
+        "folder/source.mkv",
+        "C:source.mkv",
+        "source.mkv:payload.exe",
+        ".",
+        "..",
+        " source.mkv",
+        "source.mkv ",
+        "source.mkv\x00",
+    ],
+)
+def test_creator_media_display_name_rejects_non_basename(display_name: str) -> None:
+    with pytest.raises(ValidationError):
+        CreatorSourceMediaSummary(
+            source_ordinal=0,
+            display_name=display_name,
+            size_bytes=1,
+            size_label="1 B",
+            container="matroska,webm",
+            video_codec="h264",
+            pixel_format="yuv420p",
+            resolution="1280 x 720",
+            frame_rate="30 fps",
+            duration="00:00:00.033",
+            frame_count="1 帧",
+        )
 
 
 def _prepare_payload(tmp_path: Path) -> dict[str, Any]:
@@ -90,6 +127,8 @@ def _media_info(*, frames: int = 3600) -> dict[str, JsonValue]:
             "duration_seconds": frames / 30,
             "source_ordinal": 0,
             "geometry": {"width": 1280, "height": 720},
+            "container": {"format_name": "matroska,webm", "chapter_count": 0},
+            "video": {"codec": "h264", "pixel_format": "yuv420p"},
             "sample_aspect_ratio": "1/1",
             "signal": {
                 "color_primaries": "bt709",
@@ -100,7 +139,20 @@ def _media_info(*, frames: int = 3600) -> dict[str, JsonValue]:
                 "field_order": "progressive",
                 "rotation": 0,
             },
-            "audio_tracks": [],
+            "audio_tracks": [
+                {
+                    "codec": "aac",
+                    "profile": "LC",
+                    "extradata_hash": "not-for-creator-projection",
+                    "sample_rate": 48000,
+                    "channels": 2,
+                    "channel_layout": "stereo",
+                    "language": "jpn",
+                    "title": "Main",
+                    "default": True,
+                    "forced": False,
+                }
+            ],
         }
     }
 
@@ -232,18 +284,24 @@ def test_prepare_preview_is_strict_and_has_no_project_side_effect(tmp_path: Path
     application = ProjectServiceApplication(work_root=tmp_path / "work")
     request = _prepare_payload(tmp_path)
     target = Path(cast(str, request["project_path"]))
+    source = Path(cast(str, request["sources"][0]["source_path"]))
+    source_before = (source.stat().st_size, source.stat().st_mtime_ns)
 
     preview = application.preview_av_enhance_v27({"action": "prepare", "request": request})
 
     assert preview.contract_version == "0.3.0"
     assert preview.phase == "preparation"
     assert preview.profile.status == "preparation-compatible"
+    assert preview.creator.analyzed is False
+    assert preview.creator.sources == ()
+    assert preview.creator.estimated_step_count == len(preview.project.graph.nodes)
     assert [node.node_id for node in preview.project.graph.nodes] == [
         "source.program",
         "admission",
     ]
     assert not target.exists()
     assert application.inspect().snapshot is None
+    assert (source.stat().st_size, source.stat().st_mtime_ns) == source_before
 
     invalid = {"action": "prepare", "request": {**request, "definitions": []}}
     with pytest.raises(ProjectServiceError) as captured:
@@ -292,6 +350,32 @@ def test_expand_preview_and_command_use_exact_run_artifacts_and_persist(
     assert preview.plan.chapter_count == 2
     assert preview.plan.leaf_count == 2
     assert preview.plan.effective_video_artifact_ids == (video_id,)
+    assert preview.creator.analyzed is True
+    assert preview.creator.estimated_step_count == len(preview.project.graph.nodes)
+    assert preview.creator.estimated_steps.endswith("个处理步骤")
+    assert len(preview.creator.sources) == 1
+    source_summary = preview.creator.sources[0]
+    assert source_summary.display_name == "source.mkv"
+    assert all(separator not in source_summary.display_name for separator in ("/", "\\", ":"))
+    assert source_summary.size_bytes > 0
+    assert source_summary.size_label.endswith(" B")
+    assert source_summary.resolution == "1280 x 720"
+    assert source_summary.frame_rate == "30 fps"
+    assert source_summary.duration == "00:02:00.000"
+    assert source_summary.frame_count == "3,600 帧"
+    assert source_summary.container == "matroska,webm"
+    assert source_summary.video_codec == "h264"
+    assert source_summary.pixel_format == "yuv420p"
+    assert len(source_summary.audio_tracks) == 1
+    assert source_summary.audio_tracks[0].codec == "aac"
+    assert source_summary.audio_tracks[0].channels == 2
+    assert source_summary.audio_tracks[0].sample_rate == 48000
+    assert source_summary.audio_tracks[0].label == "音轨 1 · AAC · 2 声道 · 48 kHz · jpn · Main"
+    creator_json = json.dumps(preview.creator.model_dump(mode="json"), ensure_ascii=False)
+    assert gate_id not in creator_json
+    assert video_id not in creator_json
+    assert str(Path(cast(str, prepare["sources"][0]["source_path"])).parent) not in creator_json
+    assert "extradata_hash" not in creator_json
     split = next(node for node in preview.project.graph.nodes if node.node_id == "split.atomic")
     assert split.parameters["planned_admission_artifact_id"] == gate_id
     assert split.parameters["planned_effective_video_artifact_ids"] == [video_id]

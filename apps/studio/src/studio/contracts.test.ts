@@ -113,6 +113,12 @@ describe('Studio Project Service 0.3.0 contract', () => {
         manual_stages: [],
         output_target_path: null,
       },
+      creator: {
+        analyzed: false,
+        sources: [],
+        estimated_step_count: projectSnapshot.project.graph.nodes.length,
+        estimated_steps: `预计 ${projectSnapshot.project.graph.nodes.length} 个处理步骤`,
+      },
     }
     expect(parseAvEnhanceV27TemplatePreviewEnvelope(envelope).phase).toBe('preparation')
     expect(() =>
@@ -133,6 +139,75 @@ describe('Studio Project Service 0.3.0 contract', () => {
         profile: { ...envelope.profile, compatible: false },
       }),
     ).toThrow(/phase\/status\/compatible\/diagnostics 不一致/)
+    expect(() => parseAvEnhanceV27TemplatePreviewEnvelope({
+      ...envelope,
+      creator: { ...envelope.creator, analyzed: true },
+    })).toThrow(/creator 跨字段语义不一致/)
+    expect(() => parseAvEnhanceV27TemplatePreviewEnvelope({
+      ...envelope,
+      creator: { ...envelope.creator, estimated_steps: '预计很多步骤' },
+    })).toThrow(/creator 跨字段语义不一致/)
+    expect(() => parseAvEnhanceV27TemplatePreviewEnvelope({
+      ...envelope,
+      creator: { ...envelope.creator, estimated_step_count: 999, estimated_steps: '预计 999 个处理步骤' },
+    })).toThrow(/creator 跨字段语义不一致/)
+
+    const sourceSummary = {
+      source_ordinal: 0,
+      chapter_label: null,
+      display_name: 'source.mkv',
+      size_bytes: 1024,
+      size_label: '1 KiB',
+      container: 'Matroska',
+      video_codec: 'HEVC',
+      pixel_format: 'yuv420p10le',
+      resolution: '1920 × 1080',
+      frame_rate: '30000/1001 fps（29.970）',
+      duration: '1 分 0 秒',
+      frame_count: '1,801 帧',
+      audio_tracks: [],
+    }
+    const expandedEnvelope = {
+      ...envelope,
+      phase: 'expanded' as const,
+      profile: {
+        ...envelope.profile,
+        phase: 'expanded' as const,
+        status: 'expanded-compatible' as const,
+      },
+      plan: {
+        ...envelope.plan,
+        preparation_run_id: '00000000-0000-4000-8000-000000000027',
+      },
+      creator: {
+        ...envelope.creator,
+        analyzed: true,
+        sources: [sourceSummary],
+      },
+    }
+    expect(parseAvEnhanceV27TemplatePreviewEnvelope(expandedEnvelope).creator.sources)
+      .toHaveLength(1)
+    expect(() => parseAvEnhanceV27TemplatePreviewEnvelope({
+      ...expandedEnvelope,
+      creator: {
+        ...expandedEnvelope.creator,
+        sources: [{ ...sourceSummary, source_ordinal: 1 }],
+      },
+    })).toThrow(/creator 跨字段语义不一致/)
+    expect(() => parseAvEnhanceV27TemplatePreviewEnvelope({
+      ...expandedEnvelope,
+      creator: {
+        ...expandedEnvelope.creator,
+        sources: [{ ...sourceSummary, display_name: 'D:\\secret\\source.mkv' }],
+      },
+    })).toThrow(StudioContractError)
+    expect(() => parseAvEnhanceV27TemplatePreviewEnvelope({
+      ...expandedEnvelope,
+      creator: {
+        ...expandedEnvelope.creator,
+        sources: [{ ...sourceSummary, display_name: '.' }],
+      },
+    })).toThrow(/creator 跨字段语义不一致/)
   })
 
   it.each(['missing', 'empty', 'present', 'probe_passed', 'probe_failed'] as const)(

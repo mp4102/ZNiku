@@ -13,7 +13,6 @@ export interface NodePaletteProps {
   readonly busy: boolean
   readonly selectedNodeCount: number
   readonly selectedEdgeCount: number
-  readonly onProjectIdChange: (value: string) => void
   readonly onProjectNameChange: (value: string) => void
   readonly onQueryChange: (value: string) => void
   readonly onAddDefinition: (definition: NodeDefinitionWire) => void
@@ -35,7 +34,6 @@ export function NodePalette({
   busy,
   selectedNodeCount,
   selectedEdgeCount,
-  onProjectIdChange,
   onProjectNameChange,
   onQueryChange,
   onAddDefinition,
@@ -48,10 +46,11 @@ export function NodePalette({
         <span className="eyebrow">NODE CATALOG</span><h2>节点面板</h2>
         <span className="registry-state"><i /> {definitionCount} exact versions</span>
       </div>
-      <div className="project-fields">
-        <label>Project ID<input aria-label="Project ID" value={projectId} onChange={(event) => onProjectIdChange(event.target.value)} /></label>
-        <label>Project name<input aria-label="Project name" value={projectName} onChange={(event) => onProjectNameChange(event.target.value)} /></label>
-      </div>
+      <details className="project-fields project-fields--advanced">
+        <summary>高级工程信息</summary>
+        <label>工程名称<input aria-label="Project name" value={projectName} onChange={(event) => onProjectNameChange(event.target.value)} /></label>
+        <label>Project ID<code>{projectId || '由服务生成'}</code></label>
+      </details>
       <label className="search-box">
         <span>⌕</span>
         <input aria-label="搜索节点" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="名称、用途或端口" />
