@@ -63,6 +63,7 @@ _EXTERNAL_COUNT_ALLOWLIST: Final = frozenset(
     }
 )
 _FI_RATE_TOLERANCE: Final = Fraction(1, 500_000)
+_FINAL_MATROSKA_PERIOD_TOLERANCE: Final = Fraction(1, 1_000_000_000)
 _CANONICAL_SIGNAL_KEYS: Final = (
     "color_range",
     "color_space",
@@ -745,11 +746,10 @@ def _validate_final_mux(context: NodeValidatorContext) -> _Validation:
         require_explicit=True,
     )
     _compare_signal(signal, program_contract.signal, role="Final")
-    _require_header_contract(
+    _require_final_header_contract(
         video,
-        rate=program_contract.frame_rate,
+        canonical_rate=program_contract.frame_rate,
         geometry=program_contract.geometry,
-        role="Final",
     )
     _optional_header_count_matches(video, expected, role="Final")
     _validate_final_duration(media, program_contract)
@@ -1168,6 +1168,36 @@ def _require_header_contract(
         raise Av27MediaError("E_AV27_FPS_CHANGED", f"{role} FPS 不匹配")
     if (video.width, video.height) != geometry:
         raise Av27MediaError("E_AV27_GEOMETRY_CHANGED", f"{role} geometry 不匹配")
+
+
+def _require_final_header_contract(
+    video: Av27VideoHeader,
+    *,
+    canonical_rate: Fraction,
+    geometry: tuple[int, int],
+) -> None:
+    """仅容纳 Final Matroska 整数 ns 与 FFprobe rational reduction 的表示量化。
+
+    DefaultDuration 使用整数纳秒；例如 exact 60000/1001 经 header 表示后可读为
+    19001/317。三个 observed rate 的帧周期都必须与 Program canonical 周期相差不超过
+    1 ns；不能只检查 FFprobe 首选值而忽略 avg/r 冲突。此界不复用 FI 的相对容差，
+    不修改 payload、Program 精确时间轴或其他节点规则，canonical metadata 仍由 Program 决定。
+    """
+
+    canonical_period = 1 / canonical_rate
+    observed_rates = (
+        ("frame_rate", video.frame_rate),
+        ("avg_frame_rate", video.avg_frame_rate),
+        ("r_frame_rate", video.r_frame_rate),
+    )
+    for field, observed in observed_rates:
+        if observed <= 0 or abs(1 / observed - canonical_period) > _FINAL_MATROSKA_PERIOD_TOLERANCE:
+            raise Av27MediaError(
+                "E_AV27_FPS_CHANGED",
+                f"Final {field} 帧周期与 Program canonical FPS 相差超过 1 ns",
+            )
+    if (video.width, video.height) != geometry:
+        raise Av27MediaError("E_AV27_GEOMETRY_CHANGED", "Final geometry 不匹配")
 
 
 def _optional_header_count_matches(

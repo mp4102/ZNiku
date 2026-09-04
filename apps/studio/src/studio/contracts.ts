@@ -383,6 +383,15 @@ export interface RunDetailEnvelope {
   readonly run: RunWire
   readonly artifacts: ReadonlyArray<ArtifactWire>
   readonly progress_samples: ReadonlyArray<NodeProgressProjectionWire>
+  readonly handoff_contracts: ReadonlyArray<ExternalHandoffContractProjectionWire>
+}
+
+export interface ExternalHandoffContractProjectionWire {
+  readonly node_run_id: string
+  readonly handoff_id: string
+  readonly input_artifact_id: string | null
+  readonly title: string
+  readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string }>
 }
 
 export interface NodeLogWire {
@@ -531,7 +540,32 @@ export function parseRunSummaryPageEnvelope(value: unknown): RunSummaryPageEnvel
 export function parseRunDetailEnvelope(value: unknown): RunDetailEnvelope {
   const detail = parseWith<RunDetailEnvelope>(value, validateRunDetail, 'Studio Run detail')
   validateProgressSamples(detail)
+  validateHandoffContractBindings(detail)
   return detail
+}
+
+function validateHandoffContractBindings(detail: RunDetailEnvelope): void {
+  // 只验证投影 identity；媒体数值和说明始终由 Python 生成，浏览器不实现 AV27 规划。
+  const seen = new Set<string>()
+  for (const contract of detail.handoff_contracts) {
+    const nodeRun = detail.run.node_runs.find((item) => item.node_run_id === contract.node_run_id)
+    if (
+      seen.has(contract.node_run_id) ||
+      !nodeRun ||
+      nodeRun.state !== 'waiting_external' ||
+      nodeRun.external_handoff?.node_run_id !== nodeRun.node_run_id ||
+      nodeRun.external_handoff?.handoff_id !== contract.handoff_id ||
+      detail.run.node_runs.filter((item) => item.node_id === nodeRun.node_id && item.attempt >= nodeRun.attempt).length !== 1 ||
+      (contract.input_artifact_id !== null && (
+        !nodeRun.input_artifact_ids.includes(contract.input_artifact_id) ||
+        !nodeRun.external_handoff.input_artifact_ids.includes(contract.input_artifact_id) ||
+        !detail.artifacts.some((item) => item.artifact_id === contract.input_artifact_id)
+      ))
+    ) {
+      throw new StudioContractError('Studio handoff_contracts 不属于唯一最新 waiting handoff 的 input binding')
+    }
+    seen.add(contract.node_run_id)
+  }
 }
 
 function progressContractError(message: string): never {

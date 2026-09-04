@@ -299,6 +299,29 @@ describe('Studio Project Service 0.2.1 contract', () => {
     expect(() => parseRunDetailEnvelope(oldAttempt)).toThrow(/不是节点的唯一最新 attempt/)
   })
 
+  it('handoff display projection 拒绝错 Run/attempt/input、重复项与未知字段', () => {
+    const base = handoffDetailEnvelope()
+    const projection = {
+      node_run_id: handoffFixtureIds.transformNodeRun,
+      handoff_id: handoffFixtureIds.handoff,
+      input_artifact_id: base.artifacts[0]!.artifact_id,
+      title: 'Synthetic 输出合同',
+      fields: [{ label: '输入 exact N', value: '100' }],
+    }
+    const valid = { ...base, handoff_contracts: [projection] }
+    expect(parseRunDetailEnvelope(valid).handoff_contracts[0]?.fields[0]?.value).toBe('100')
+    for (const patch of [
+      { node_run_id: handoffFixtureIds.sourceNodeRun },
+      { handoff_id: 'wrong' },
+      { input_artifact_id: 'unknown' },
+      { unexpected: true },
+      { fields: [{ label: 'N', value: 100 }] },
+    ]) {
+      expect(() => parseRunDetailEnvelope({ ...base, handoff_contracts: [{ ...projection, ...patch }] })).toThrow(StudioContractError)
+    }
+    expect(() => parseRunDetailEnvelope({ ...base, handoff_contracts: [projection, projection] })).toThrow(StudioContractError)
+  })
+
   it('active_operation 与 command 均覆盖 abandon_run 和精确 Submit identity', () => {
     expect(parseStatusEnvelope({ ...handoffEnvelope(), active_operation: 'abandon_run' }))
       .toMatchObject({ active_operation: 'abandon_run' })

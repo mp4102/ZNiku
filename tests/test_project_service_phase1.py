@@ -381,7 +381,13 @@ def test_status_summary_and_detail_are_separate_bounded_read_models(tmp_path: Pa
 
     detail = application.inspect_run_detail(waiting_id)
     assert detail.contract_version == "0.2.1"
-    assert set(_dump(detail)) == {"contract_version", "run", "artifacts", "progress_samples"}
+    assert set(_dump(detail)) == {
+        "contract_version",
+        "run",
+        "artifacts",
+        "progress_samples",
+        "handoff_contracts",
+    }
     assert detail.run == waiting_run
     referenced_ids = {
         artifact_id
@@ -390,6 +396,7 @@ def test_status_summary_and_detail_are_separate_bounded_read_models(tmp_path: Pa
     }
     assert {item.artifact_id for item in detail.artifacts} == referenced_ids
     assert detail.progress_samples == ()
+    assert detail.handoff_contracts == ()
 
     with pytest.raises(ProjectServiceError) as missing:
         application.inspect(view_run_id="00000000-0000-4000-8000-ffffffffffff")

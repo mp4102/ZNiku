@@ -1890,6 +1890,49 @@ button {
   gap: 3px;
 }
 
+.handoff-contract,
+.artifact-media-summary {
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.handoff-contract h4,
+.artifact-media-summary h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.handoff-contract small,
+.handoff-contract dt,
+.artifact-media-summary dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.handoff-contract dl,
+.artifact-media-summary dl {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.handoff-contract dd,
+.artifact-media-summary dd {
+  margin: 3px 0 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.artifact-media-summary pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1150px) {
   .template-wizard-backdrop {
     padding: 12px;

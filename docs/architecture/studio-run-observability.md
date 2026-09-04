@@ -185,7 +185,8 @@ RunDetailEnvelope
 ├─ contract_version: "0.2.1"
 ├─ run: Run
 ├─ artifacts: Artifact[]
-└─ progress_samples: NodeProgressProjection[]
+├─ progress_samples: NodeProgressProjection[]
+└─ handoff_contracts: ExternalHandoffContractProjection[]
 ```
 
 `run` 是已有领域模型的完整只读序列化；`artifacts` 是该 Run 所有 NodeRun 的 input/output Artifact ID 的
@@ -194,6 +195,15 @@ RunDetailEnvelope
 `progress_samples` 只包含当前进程仍可提供细粒度观测的 automatic Python NodeRun；command 与
 manual_external 不进入该投影。Python attempt 不存在 sample 时，Studio 从 `NodeRun.progress` 显示最后持久
 fraction；command 保持 indeterminate。该字段不改变 `Run` 或 `NodeRun` 模型。
+
+Phase 5 可用性补丁增加只读 `handoff_contracts`，不增加 Runtime 或持久化字段。每项严格包含
+`node_run_id / handoff_id / input_artifact_id（可空） / title / fields[{label,value}]`，只绑定该 Run
+唯一最新 `waiting_external` attempt。Python 从原 Run snapshot 与已登记 input Artifact metadata
+生成有限纯文本行；AV27 显示模型声明、N/FPS、geometry/signal、帧关系和容器/codec/stream 要求。
+缺失 metadata 显示“不可用”，不重新 probe、推测数值或改变状态。Studio 只展示这些行，不能把它们
+提交成参数、验收通过标志或第二套运行权威。generic/历史 handoff 没有该投影时返回空数组。
+Inspector 同时提供已登记 Artifact 的直观 N/FPS/geometry、observed header duration、signal/audio
+摘要与折叠的完整 `media_info`；header duration 不冒充 exact timeline duration。
 
 ### 4.6 定向日志
 
@@ -437,6 +447,13 @@ readiness 只能检查 NodeRun 已持久化 handoff 中的 server-declared targe
 环境轮询使用 `probe=false`，只做低成本存在性、regular-file 与 size 检查。用户点击
 “Validate and submit”时先使用 `probe=true`；只有返回 `ready_for_submit=true`，Studio 才发送正式
 `submit_external` command。
+
+Studio 必须显示 target 的服务端 `message`，不能把 codec、帧数等具体失败原因缩成 `probe_failed`。
+页面独立保留精确 `run_id/node_run_id/handoff_id` 的“上次完整预检失败”及检查时间，普通 status 或
+`probe=false` 刷新不得清掉诊断。它明确标为历史检查结果，不冒充当前 readiness，也不参与 Submit
+资格判断；下一次显式完整检查开始、该 handoff 终止/被取代或 Project 切换时清除，不持久化到工程。
+等待时长从 NodeRun `started_at` 计算；`created_at` 只是缺失时 fallback，不能把排队或上游执行时间
+冒充人工等待时间。
 
 ### 8.3 无副作用保证
 

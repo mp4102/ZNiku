@@ -675,6 +675,8 @@ def test_program_two_chapters_use_one_formal_ffmpeg_and_exact_frame_contract(
     codec: str,
     required_tokens: tuple[str, ...],
 ) -> None:
+    """单次编码前逐章显式 square SAR，避免合法外部 FI 缺标签污染 Program。"""
+
     inputs = (
         _input(tmp_path, "chapters", "fi-0", ordinal=0, media_info=_namespace(3)),
         _input(tmp_path, "chapters", "fi-1", ordinal=1, media_info=_namespace(5)),
@@ -738,6 +740,11 @@ def test_program_two_chapters_use_one_formal_ffmpeg_and_exact_frame_contract(
     filter_script = (context.work_dir / "program-filter.txt").read_text(encoding="utf-8")
     assert filter_script.count("tpad=stop_mode=clone:stop=1") == 2
     assert "concat=n=2:v=1:a=0" in filter_script
+    branches = filter_script.split(";\n")[:2]
+    for index, branch in enumerate(branches):
+        assert branch.startswith(f"[{index}:v:0]")
+        assert branch.endswith(f"[chapter_{index}]")
+        assert "setsar=1/1" in branch
     assert result.producer_metadata == {"video": {"output_frames": 10}}
     assert result.validation_summary == {"single_program_producer": True}
 

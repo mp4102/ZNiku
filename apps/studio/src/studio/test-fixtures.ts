@@ -353,6 +353,7 @@ export function handoffDetailEnvelope(): RunDetailEnvelope {
     run: handoffRun(),
     artifacts: [inputArtifact],
     progress_samples: [],
+    handoff_contracts: [],
   }
 }
 
@@ -433,6 +434,7 @@ function completedLocalDetail(runId: string, timestamp: string): RunDetailEnvelo
     contract_version: '0.2.1',
     artifacts: [artifact],
     progress_samples: [],
+    handoff_contracts: [],
     run: {
       ...handoffRun(),
       run_id: runId,
@@ -509,6 +511,7 @@ export function runningProgressDetail(progress: number): RunDetailEnvelope {
     contract_version: '0.2.1',
     artifacts: [],
     progress_samples: [],
+    handoff_contracts: [],
     run: {
       ...run,
       node_runs: [

@@ -709,6 +709,13 @@ diagnostic MR mode；不接受用户 argv 或输出文件名。
   不匹配直接失败，validator 将该值写入 Final Artifact 的统一 namespaced `frame_count`，
   不扫描 Final 补救；
 - Final video header duration 与 Program header duration 误差最多一帧；
+- Phase 5 容器表示修正：Final 的 canonical exact FPS 仍只继承 Program，不从 Matroska header 重新定率。
+  Matroska `DefaultDuration` 是整数纳秒，FFprobe 还可能把其倒数近似为有限有理数；因此仅 Final 的
+  `frame_rate/avg_frame_rate/r_frame_rate` header 比较允许与 Program 对应帧周期相差不超过 **1 ns**，
+  三者均须满足。观测有理数仍保存在 `video` summary，namespaced `frame_rate` 保留 Program exact 值。
+  这不授权改变帧数、变速或重新编码，也不放宽 Program 的 exact FPS/time base；FI 的独立容差不套用于
+  Final。表示差异依据 [Matroska DefaultDuration](https://www.matroska.org/technical/elements.html#DefaultDuration)
+  与 [FFmpeg Matroska demuxer](https://www.ffmpeg.org/doxygen/8.0/matroskadec_8c_source.html#l03009)。
 - FinalMux 失败只重跑 staging+mux，不重做 completed ProgramEncode。
 
 ### 7.10 OutputFile 与 canonical Jellyfin naming
@@ -857,6 +864,11 @@ Source medium-confidence cadence 可以 warning 放行。
 
 MR/Enhancement/FI handoff 展示 Run/NodeRun/attempt、input Artifact、唯一 target、要求后缀、
 `model_name/model_version`、N/FPS/geometry contract 和 `Validate and submit`。
+
+Phase 5 通过 Run detail 的只读 `handoff_contracts` display projection 补齐该展示：Python 绑定原
+Run snapshot、最新 waiting NodeRun/handoff 与 input Artifact metadata，Studio 只渲染文本行。
+字段缺失显示不可用；不在 TS 推导 N/FPS、重建合同或新增运行 authority。readiness 的具体失败
+`message` 同时可见，避免操作者只看到 `probe_failed` 而无法定位输出问题。
 
 readiness 复用：
 

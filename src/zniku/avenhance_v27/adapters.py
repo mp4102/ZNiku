@@ -711,8 +711,9 @@ def _program_filter(
     for index, _chapter in enumerate(chapters):
         label = f"chapter_{index}"
         labels.append(f"[{label}]")
+        # FI 允许缺失 SAR 并按 square 解析；各章在 concat 前显式统一，避免继承缺失或混合标签。
         branches.append(
-            f"[{index}:v:0]tpad=stop_mode=clone:stop=1,"
+            f"[{index}:v:0]setsar=1/1,tpad=stop_mode=clone:stop=1,"
             f"settb=expr=1/{rate.numerator},setpts=N*{rate.denominator}[{label}]"
         )
     pixel_format = "yuv420p10le" if encoder == "cpu" else "p010le"

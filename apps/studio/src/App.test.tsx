@@ -382,6 +382,116 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     ]))
   })
 
+  it('Handoff 显示服务端合同/失败原因，等待时长不计入上游执行时间', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:00:12Z'))
+    const base = handoffDetailEnvelope()
+    const projected: RunDetailEnvelope = {
+      ...base,
+      run: { ...base.run, node_runs: base.run.node_runs.map((item) => item.node_id !== 'transform' ? item : {
+        ...item, started_at: '2026-08-24T00:00:10Z',
+        external_handoff: { ...item.external_handoff!, created_at: '2026-08-24T00:00:10Z' },
+      }) },
+      handoff_contracts: [{
+        node_run_id: handoffFixtureIds.transformNodeRun, handoff_id: handoffFixtureIds.handoff,
+        input_artifact_id: base.artifacts[0]!.artifact_id, title: 'Synthetic 输出合同',
+        fields: [{ label: '输出 exact N', value: '199' }, { label: '输出 canonical FPS', value: '60000/1001' }],
+      }],
+    }
+    const gateway = new RecordingGateway(handoffEnvelope(), {
+      detail: () => projected,
+      readiness: () => handoffReadinessEnvelope('probe_failed', true),
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    const queue = screen.getByLabelText('Handoff transform')
+    expect(queue).toHaveTextContent('199')
+    expect(queue).toHaveTextContent('60000/1001')
+    expect(queue).toHaveTextContent('已等待 2s')
+    expect(queue).not.toHaveTextContent('已等待 11s')
+    expect(queue).toHaveTextContent('synthetic probe failed')
+    fireEvent.click(within(queue).getByRole('button', { name: /transform/ }))
+    expect(screen.getAllByLabelText('Synthetic 输出合同')).toHaveLength(2)
+    expect(screen.getAllByText('out · synthetic probe failed')).toHaveLength(2)
+    expect(within(queue).getByRole('button', { name: 'Validate and submit' })).toBeDisabled()
+    expect(gateway.commands).toEqual([])
+  })
+
+  it('完整预检失败说明跨三轮 passive polling 保留，下一次显式检查后清除且不代替 readiness', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:00:12Z'))
+    let fullChecks = 0
+    const gateway = new RecordingGateway(handoffEnvelope(), {
+      readiness: (_runId, _nodeRunId, probe) => {
+        if (!probe) return handoffReadinessEnvelope('present', false)
+        fullChecks += 1
+        if (fullChecks > 1) return handoffReadinessEnvelope('probe_passed', true)
+        const result = handoffReadinessEnvelope('probe_failed', true)
+        return { ...result, targets: result.targets.map((target) => ({ ...target, message: 'E_AV27_FI_DOUBLE_COUNT: expected 199, observed 200' })) }
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    const queue = screen.getByLabelText('Handoff transform')
+    fireEvent.click(within(queue).getByRole('button', { name: 'Validate and submit' }))
+    await flushReact()
+    expect(within(queue).getByLabelText('上次完整预检失败')).toHaveTextContent('E_AV27_FI_DOUBLE_COUNT')
+    expect(gateway.commands).toEqual([])
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_501) })
+    expect(gateway.readinessArguments.filter(([, , probe]) => !probe).length).toBeGreaterThanOrEqual(4)
+    const previousFailure = within(queue).getByLabelText('上次完整预检失败')
+    expect(previousFailure).toHaveTextContent('E_AV27_FI_DOUBLE_COUNT')
+    expect(previousFailure).toHaveTextContent('不代表当前文件仍然失败')
+    expect(queue).toHaveTextContent('present')
+    expect(within(queue).getByRole('button', { name: 'Validate and submit' })).toBeEnabled()
+    fireEvent.click(within(queue).getByRole('button', { name: 'Validate and submit' }))
+    await flushReact()
+    expect(fullChecks).toBe(2)
+    expect(screen.queryByLabelText('上次完整预检失败')).not.toBeInTheDocument()
+    expect(gateway.commands.at(-1)?.operation).toBe('submit_external')
+  })
+
+  it('上次完整预检失败绑定 handoff identity，不能串到新 attempt 或新 Project', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:00:12Z'))
+    let selectedDetail = handoffDetailEnvelope()
+    let message = 'E_OLD_HANDOFF: previous output is invalid'
+    const gateway = new RecordingGateway(handoffEnvelope(), {
+      detail: () => selectedDetail,
+      readiness: (runId, nodeRunId, probe) => {
+        const handoff = selectedDetail.run.node_runs.find((item) => item.node_run_id === nodeRunId)!.external_handoff!
+        const result = handoffReadinessEnvelope(probe ? 'probe_failed' : 'present', probe)
+        return { ...result, run_id: runId, node_run_id: nodeRunId, handoff_id: handoff.handoff_id,
+          targets: result.targets.map((target) => ({ ...target, message: probe ? message : null })) }
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    fireEvent.click(within(screen.getByLabelText('Handoff transform')).getByRole('button', { name: 'Validate and submit' }))
+    await flushReact()
+    expect(screen.getByLabelText('上次完整预检失败')).toHaveTextContent('E_OLD_HANDOFF')
+    const prior = selectedDetail.run.node_runs.find((item) => item.node_id === 'transform')!
+    const nextNodeRunId = '00000000-0000-4000-8000-000000000081'
+    selectedDetail = { ...selectedDetail, run: { ...selectedDetail.run, node_runs: [
+      ...selectedDetail.run.node_runs,
+      { ...prior, node_run_id: nextNodeRunId, attempt: 2,
+        external_handoff: { ...prior.external_handoff!, node_run_id: nextNodeRunId, handoff_id: '00000000-0000-4000-8000-000000000082' } },
+    ] } }
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_501) })
+    expect(screen.queryByLabelText('上次完整预检失败')).not.toBeInTheDocument()
+    message = 'E_NEW_HANDOFF: current output is invalid'
+    fireEvent.click(within(screen.getByLabelText('Handoff transform')).getByRole('button', { name: 'Validate and submit' }))
+    await flushReact()
+    expect(screen.getByLabelText('上次完整预检失败')).toHaveTextContent('E_NEW_HANDOFF')
+    expect(screen.getByLabelText('上次完整预检失败')).not.toHaveTextContent('E_OLD_HANDOFF')
+    // 即使服务错误复用相同 Run/NodeRun IDs，resolved Project path 切换仍清除页面检查历史。
+    gateway.envelope = { ...gateway.envelope, project_path: 'C:\\synthetic\\other-project.zniku' }
+    fireEvent.click(screen.getByRole('button', { name: '打开' }))
+    await flushReact()
+    expect(gateway.commands.at(-1)?.operation).toBe('open_project')
+    expect(screen.queryByLabelText('上次完整预检失败')).not.toBeInTheDocument()
+  })
+
   it('External Handoff 队列展示路径、模型、日志并执行两阶段精确 Submit', async () => {
     const user = userEvent.setup()
     const gateway = new RecordingGateway(handoffEnvelope())

@@ -971,10 +971,14 @@ def test_fi_rate_tolerance_and_two_n_minus_one(
         assert result.summary["code"] == code
 
 
+@pytest.mark.parametrize("missing_signal_field", ["color_space", "sample_aspect_ratio"])
 def test_program_two_chapters_closes_main10_hvc1_and_total_frames(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    missing_signal_field: str,
 ) -> None:
+    """Program 必须显式声明完整 signal；外部 FI 可缺失的 SAR 也不能在此放宽。"""
+
     fi_stage = {
         "kind": "frame_interpolation",
         "model_name": "Aion",
@@ -1081,11 +1085,12 @@ def test_program_two_chapters_closes_main10_hvc1_and_total_frames(
     assert malformed_stage.passed is False
     assert malformed_stage.summary["code"] == "E_AV27_STAGE_METADATA"
 
-    missing_signal_header = _media(
-        output.path,
-        replace(header.video, color_space=None),
-        format_name="mp4",
-    )
+    if missing_signal_field == "color_space":
+        missing_signal_video = replace(header.video, color_space=None)
+    else:
+        assert missing_signal_field == "sample_aspect_ratio"
+        missing_signal_video = replace(header.video, sample_aspect_ratio=None)
+    missing_signal_header = _media(output.path, missing_signal_video, format_name="mp4")
     monkeypatch.setattr(validators, "probe_header", lambda _path: missing_signal_header)
     missing_signal = validators.validate_program_encode(
         _context(
@@ -1333,4 +1338,219 @@ def test_final_rejects_producer_chapter_and_duration_contracts(
         )
     )
     assert result.passed is False
+    assert result.media_info_extensions == {}
+
+
+def _final_rate_context(tmp_path: Path) -> NodeValidatorContext:
+    """建立 canonical 60000/1001 的 Final 合同，不从待测 header 反推期望。"""
+
+    program = _input(
+        tmp_path,
+        "video",
+        kind="VideoFile",
+        producer_port="video",
+        artifact_id="program-rate",
+        namespace=_namespace(frames=400, rate=_OUTPUT_RATE),
+    )
+    source = _input(
+        tmp_path,
+        "sources",
+        kind="MediaFile",
+        producer_port="source_media",
+        artifact_id="source-rate",
+        ordinal=0,
+        namespace=_namespace(frames=200, source_ordinal=0),
+    )
+    gate = _input(
+        tmp_path,
+        "gate",
+        kind="DataFile",
+        producer_port="gate",
+        artifact_id="admission-rate",
+    )
+    return _context(
+        tmp_path,
+        final_mux_definition(),
+        {
+            "source_mode": "program",
+            "sources": [{"source_ordinal": 0, "source_frames": 200, "source_fps": "30000/1001"}],
+            "expected_program_frames": 400,
+            "expected_geometry": _geometry(),
+            "expected_signal": _full_signal(),
+            "mr_mode": "off",
+        },
+        inputs=(program, source, gate),
+        outputs=(
+            _output(
+                tmp_path,
+                "media",
+                "final.mkv",
+                kind="MediaFile",
+                producer={"output_frames": 400},
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("observed", "expected_pass"),
+    [
+        (_OUTPUT_RATE, True),
+        (Fraction(19001, 317), True),
+        (Fraction(1_000_000_000, 16_683_333), True),
+        (1 / (1 / _OUTPUT_RATE + Fraction(1, 1_000_000_000)), True),
+        (1 / (1 / _OUTPUT_RATE - Fraction(1, 1_000_000_000)), True),
+        (1 / (1 / _OUTPUT_RATE + Fraction(1001, 1_000_000_000_000)), False),
+        (Fraction(2997, 50), False),
+        (Fraction(60), False),
+    ],
+)
+def test_final_accepts_only_one_ns_period_quantization_and_preserves_canonical_rate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    observed: Fraction,
+    expected_pass: bool,
+) -> None:
+    """容器表示的 <=1 ns 界不扩成 FI 容差，Artifact canonical 与 observed 分别保留。"""
+
+    context = _final_rate_context(tmp_path)
+    video = _video(
+        codec="hevc",
+        profile="Main 10",
+        pixel_format="yuv420p10le",
+        rate=observed,
+        frames=400,
+        duration=400 / float(_OUTPUT_RATE),
+    )
+    header = _media(context.outputs[0].path, video)
+    monkeypatch.setattr(validators, "probe_header", lambda _path: header)
+
+    result = validators.validate_final_mux(context)
+
+    assert result.passed is expected_pass
+    if expected_pass:
+        namespace = result.media_info_extensions["media"][AV27_NAMESPACE]
+        assert namespace["frame_rate"] == "60000/1001"
+        assert namespace["video"] == video.to_summary()
+        assert namespace["frame_count"] == 400
+    else:
+        assert result.summary["code"] == "E_AV27_FPS_CHANGED"
+        assert result.media_info_extensions == {}
+
+
+@pytest.mark.parametrize("field", ("frame_rate", "avg_frame_rate", "r_frame_rate"))
+def test_final_rejects_each_conflicting_observed_rate_independently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    """另外两个 rate 正确不能遮蔽一个独立 observed header 冲突。"""
+
+    context = _final_rate_context(tmp_path)
+    video = _video(
+        codec="hevc",
+        profile="Main 10",
+        pixel_format="yuv420p10le",
+        rate=_OUTPUT_RATE,
+        frames=400,
+    )
+    mutation: dict[str, Any] = {field: Fraction(2997, 50)}
+    header = _media(context.outputs[0].path, replace(video, **mutation))
+    monkeypatch.setattr(validators, "probe_header", lambda _path: header)
+
+    result = validators.validate_final_mux(context)
+
+    assert result.passed is False
+    assert result.summary["code"] == "E_AV27_FPS_CHANGED"
+    assert field in (result.message or "")
+    assert result.media_info_extensions == {}
+
+
+def test_final_quantized_rate_does_not_relax_geometry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _final_rate_context(tmp_path)
+    video = _video(
+        codec="hevc",
+        profile="Main 10",
+        pixel_format="yuv420p10le",
+        rate=Fraction(19001, 317),
+        width=1280,
+        height=720,
+        frames=400,
+        duration=400 / float(_OUTPUT_RATE),
+    )
+    header = _media(context.outputs[0].path, video)
+    monkeypatch.setattr(validators, "probe_header", lambda _path: header)
+
+    result = validators.validate_final_mux(context)
+
+    assert result.passed is False
+    assert result.summary["code"] == "E_AV27_GEOMETRY_CHANGED"
+    assert result.media_info_extensions == {}
+
+
+@pytest.mark.parametrize("observed", (Fraction(19001, 317), Fraction(1_000_000_000, 16_683_333)))
+def test_program_mp4_still_rejects_nonexact_header_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, observed: Fraction
+) -> None:
+    """Final 专用表示量化不允许传入 Program，MP4 的 canonical FPS 仍要求 exact。"""
+
+    fi = _input(
+        tmp_path,
+        "chapters",
+        kind="VideoFile",
+        producer_port="video",
+        artifact_id="fi-rate",
+        ordinal=0,
+        namespace=_namespace(
+            frames=399,
+            rate=_OUTPUT_RATE,
+            stage={
+                "kind": "frame_interpolation",
+                "model_name": "Aion",
+                "model_version": None,
+                "operator_declared": True,
+            },
+        ),
+    )
+    output = _output(tmp_path, "video", "program.mp4", producer={"output_frames": 400})
+    header = _media(
+        output.path,
+        _video(
+            codec="hevc",
+            profile="Main 10",
+            codec_tag="hvc1",
+            pixel_format="yuv420p10le",
+            rate=observed,
+            time_base=Fraction(1, 60000),
+            frames=400,
+            duration=400 / float(_OUTPUT_RATE),
+        ),
+        format_name="mp4",
+    )
+    monkeypatch.setattr(validators, "probe_header", lambda _path: header)
+    result = validators.validate_program_encode(
+        _context(
+            tmp_path,
+            program_encode_definition(),
+            {
+                "encoder": "cpu",
+                "source_fps": "30000/1001",
+                "chapters": [
+                    {
+                        "chapter_id": "chapter-0001",
+                        "chapter_ordinal": 0,
+                        "source_frames": 200,
+                        "expected_fi_frames": 399,
+                        "encoded_frames": 400,
+                    }
+                ],
+                "expected_geometry": _geometry(),
+                "expected_signal": _full_signal(),
+            },
+            inputs=(fi,),
+            outputs=(output,),
+        )
+    )
+    assert result.passed is False
+    assert result.summary["code"] == "E_AV27_FPS_CHANGED"
     assert result.media_info_extensions == {}

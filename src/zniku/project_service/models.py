@@ -234,6 +234,23 @@ class RunSummaryPageEnvelope(ProjectServiceModel):
     next_run_cursor: OpaqueCursor | None = None
 
 
+class HandoffContractField(ProjectServiceModel):
+    """保存服务端生成的有限纯文本展示行，不是可执行参数或运行权威。"""
+
+    label: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    value: Annotated[str, StringConstraints(min_length=1, max_length=4096)]
+
+
+class ExternalHandoffContractProjection(ProjectServiceModel):
+    """把原 Run snapshot 与已登记 input metadata 投影为只读人工交付说明。"""
+
+    node_run_id: Annotated[str, StringConstraints(min_length=1, max_length=160)]
+    handoff_id: Annotated[str, StringConstraints(min_length=1, max_length=160)]
+    input_artifact_id: Annotated[str, StringConstraints(min_length=1, max_length=160)] | None
+    title: Annotated[str, StringConstraints(min_length=1, max_length=160)]
+    fields: Annotated[tuple[HandoffContractField, ...], Field(min_length=1, max_length=32)]
+
+
 class RunDetailEnvelope(ProjectServiceModel):
     """返回一个明确 Run 的完整历史及其引用 Artifact 闭包。"""
 
@@ -241,6 +258,37 @@ class RunDetailEnvelope(ProjectServiceModel):
     run: Run
     artifacts: tuple[Artifact, ...] = ()
     progress_samples: tuple[NodeProgressProjection, ...] = ()
+    handoff_contracts: tuple[ExternalHandoffContractProjection, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_handoff_contract_bindings(self) -> RunDetailEnvelope:
+        """展示合同只能绑定本 Run 的唯一最新 waiting attempt 与其原始输入。"""
+
+        node_runs = {item.node_run_id: item for item in self.run.node_runs}
+        latest_attempts: dict[str, int] = {}
+        for item in self.run.node_runs:
+            latest_attempts[item.node_id] = max(latest_attempts.get(item.node_id, 0), item.attempt)
+        seen: set[str] = set()
+        artifact_ids = {item.artifact_id for item in self.artifacts}
+        for contract in self.handoff_contracts:
+            node_run = node_runs.get(contract.node_run_id)
+            if contract.node_run_id in seen or node_run is None:
+                raise ValueError("E_HANDOFF_CONTRACT_BINDING: NodeRun 缺失或重复")
+            seen.add(contract.node_run_id)
+            if (
+                node_run.state.value != "waiting_external"
+                or node_run.external_handoff is None
+                or node_run.external_handoff.handoff_id != contract.handoff_id
+                or latest_attempts[node_run.node_id] != node_run.attempt
+            ):
+                raise ValueError("E_HANDOFF_CONTRACT_BINDING: 不是唯一最新 waiting handoff")
+            if contract.input_artifact_id is not None and (
+                contract.input_artifact_id not in artifact_ids
+                or contract.input_artifact_id not in node_run.input_artifact_ids
+                or contract.input_artifact_id not in node_run.external_handoff.input_artifact_ids
+            ):
+                raise ValueError("E_HANDOFF_CONTRACT_BINDING: input Artifact 不属于 handoff")
+        return self
 
 
 class NodeLogEnvelope(ProjectServiceModel):
@@ -384,8 +432,10 @@ __all__ = [
     "CreateAvEnhanceV27Command",
     "CreateProjectCommand",
     "ExpandAvEnhanceV27Command",
+    "ExternalHandoffContractProjection",
     "ExternalHandoffReadiness",
     "ExternalOutputReadiness",
+    "HandoffContractField",
     "NodeLogEnvelope",
     "NodeLogProjection",
     "NodeProgressProjection",

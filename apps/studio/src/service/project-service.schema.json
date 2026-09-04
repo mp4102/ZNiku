@@ -1342,6 +1342,61 @@
       "title": "ExternalHandoff",
       "type": "object"
     },
+    "ExternalHandoffContractProjection": {
+      "additionalProperties": false,
+      "description": "把原 Run snapshot 与已登记 input metadata 投影为只读人工交付说明。",
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/HandoffContractField"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Fields",
+          "type": "array"
+        },
+        "handoff_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "input_artifact_id": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Input Artifact Id"
+        },
+        "node_run_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_run_id",
+        "handoff_id",
+        "input_artifact_id",
+        "title",
+        "fields"
+      ],
+      "title": "ExternalHandoffContractProjection",
+      "type": "object"
+    },
     "ExternalHandoffReadiness": {
       "additionalProperties": false,
       "description": "绑定一个最新 waiting attempt 的无副作用人工输出预检结果。",
@@ -1581,6 +1636,30 @@
         "edges"
       ],
       "title": "Graph",
+      "type": "object"
+    },
+    "HandoffContractField": {
+      "additionalProperties": false,
+      "description": "保存服务端生成的有限纯文本展示行，不是可执行参数或运行权威。",
+      "properties": {
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "title": "HandoffContractField",
       "type": "object"
     },
     "JsonObject": {
@@ -3034,6 +3113,14 @@
           "title": "Contract Version",
           "type": "string"
         },
+        "handoff_contracts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExternalHandoffContractProjection"
+          },
+          "title": "Handoff Contracts",
+          "type": "array"
+        },
         "progress_samples": {
           "default": [],
           "items": {
@@ -3050,7 +3137,8 @@
         "contract_version",
         "run",
         "artifacts",
-        "progress_samples"
+        "progress_samples",
+        "handoff_contracts"
       ],
       "title": "RunDetailEnvelope",
       "type": "object"

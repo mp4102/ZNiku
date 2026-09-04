@@ -24,6 +24,7 @@ import {
 } from '@xyflow/react'
 import { WorkflowNodeCard } from '../components/WorkflowNodeCard'
 import { AvEnhanceV27Wizard } from './AvEnhanceV27Wizard'
+import { ArtifactMediaSummary, HandoffContract, HandoffPrecheckFailure, ReadinessMessages } from './HandoffContract'
 import type {
   WorkflowEdge,
   WorkflowNode,
@@ -106,6 +107,10 @@ interface DetailBackoff {
 
 function nodeRunResourceKey(runId: string, nodeRunId: string): string {
   return `${runId}/${nodeRunId}`
+}
+
+function handoffResourceKey(runId: string, nodeRunId: string, handoffId: string): string {
+  return `${runId}/${nodeRunId}/${handoffId}`
 }
 
 function emptyResourceHealth(): ResourceHealth {
@@ -405,6 +410,8 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const [readiness, setReadiness] = useState<ReadonlyMap<string, ExternalHandoffReadiness>>(
     new Map(),
   )
+  // 与当前 readiness 分离的页面内历史说明。仅显式完整检查可以更新，不参与 Submit 授权。
+  const [lastFullPrecheckFailures, setLastFullPrecheckFailures] = useState<ReadonlyMap<string, ExternalHandoffReadiness>>(new Map())
   const [logs, setLogs] = useState<ReadonlyMap<string, NodeLogEnvelope>>(new Map())
   const [statusHealth, setStatusHealth] = useState<ChannelHealth>(initialHealth.status)
   const [resourceHealth, setResourceHealth] = useState<ResourceHealth>(emptyResourceHealth)
@@ -543,6 +550,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       if (pathChanged) {
         latestTemplatePreviewRef.current = null
         setTemplateProfile(null)
+        setLastFullPrecheckFailures(new Map())
       }
       if (firstAuthority || pathChanged || options.resetHistory) {
         replaceHistory(next.run_summaries, next.next_run_cursor, false)
@@ -719,6 +727,11 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         return probe ? existingFlight.promise : null
       }
       if (existingFlight) readinessProbeFlightRef.current.delete(resourceKey)
+      if (probe) {
+        setLastFullPrecheckFailures((current) => new Map([...current].filter(([, failure]) =>
+          failure.run_id !== runId || failure.node_run_id !== nodeRunId,
+        )))
+      }
 
       const request = (async (): Promise<ExternalHandoffReadiness | null> => {
         const sequence = ++sequenceRef.current.readiness
@@ -736,6 +749,11 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           }
           acceptedResourceSequenceRef.current.readiness.set(resourceKey, sequence)
           setReadiness((current) => new Map(current).set(nodeRunId, next))
+          if (probe && next.probe_requested && !next.ready_for_submit) {
+            setLastFullPrecheckFailures((current) => new Map(current).set(
+              handoffResourceKey(next.run_id, next.node_run_id, next.handoff_id), next,
+            ))
+          }
           markResourceHealth('readiness', resourceKey, false)
           return next
         } catch (error) {
@@ -1043,7 +1061,8 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     [historySummaries, status?.run_summaries],
   )
   const viewedSummary = allSummaries.find((summary) => summary.run_id === viewRunId) ?? null
-  const currentRun = detail?.run.run_id === viewRunId ? detail.run : null
+  const currentDetail = detail?.run.run_id === viewRunId ? detail : null
+  const currentRun = currentDetail?.run ?? null
   const operationActive = status?.active_operation !== null && status?.active_operation !== undefined
   const currentSnapshot = useMemo<ProjectSnapshotWire | null>(() => {
     if (!currentRun || !draft) return null
@@ -1208,6 +1227,16 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       ),
     [runLatestAttempts],
   )
+  useEffect(() => {
+    if (!currentRun) return
+    const waitingKeys = new Set(waitingNodeRuns.map((nodeRun) => handoffResourceKey(
+      currentRun.run_id, nodeRun.node_run_id, nodeRun.external_handoff!.handoff_id,
+    )))
+    setLastFullPrecheckFailures((current) => {
+      const retained = [...current].filter(([key, failure]) => failure.run_id !== currentRun.run_id || waitingKeys.has(key))
+      return retained.length === current.size ? current : new Map(retained)
+    })
+  }, [currentRun, waitingNodeRuns])
   const health = useMemo<Record<ChannelName, ChannelHealth>>(
     () => ({
       status: statusHealth,
@@ -1657,7 +1686,8 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         generationRef.current,
       )
       if (!checked?.ready_for_submit) {
-        setClientHint('外部输出尚未通过完整 probe/validator，未发送 Submit。')
+        const reasons = checked?.targets.flatMap((target) => target.message ? [`${target.port_id}: ${target.message}`] : []).join('；')
+        setClientHint(`外部输出尚未通过完整 probe/validator，未发送 Submit。${reasons ? ` ${reasons}` : ''}`)
         return
       }
       if (
@@ -1884,7 +1914,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
           </div>
         </div>
         {viewedSummary && <div className="run-summary-strip" aria-label="Run summary"><strong>{targetLabel(viewedSummary)}</strong><span>{viewedSummary.state_counts.completed}/{viewedSummary.node_count} completed</span><span>{viewedSummary.state_counts.running} running</span><span>{viewedSummary.state_counts.waiting_external} waiting external</span><span>{viewedSummary.state_counts.failed} failed</span></div>}
-        {firstWaiting && <div className="next-action-banner" role="status"><span className="eyebrow">NEXT ACTION</span><div className="next-action-copy"><strong>{firstWaiting.node_id} 等待人工外部输出</strong>{firstWaiting.external_handoff?.instructions && <small>{firstWaiting.external_handoff.instructions}</small>}<code>{firstWaitingInputPaths.join(', ')} → {firstWaiting.external_handoff?.output_targets.map((target) => target.path).join(', ')}</code></div><span>{readinessLabel(readiness.get(firstWaiting.node_run_id) ?? null)} · {elapsedLabel(firstWaiting.created_at)}</span><button type="button" onClick={() => { setSelectedNodeIds(new Set([firstWaiting.node_id])); setSelectedEdgeIds(new Set()) }}>定位等待节点</button></div>}
+        {firstWaiting && <div className="next-action-banner" role="status"><span className="eyebrow">NEXT ACTION</span><div className="next-action-copy"><strong>{firstWaiting.node_id} 等待人工外部输出</strong>{firstWaiting.external_handoff?.instructions && <small>{firstWaiting.external_handoff.instructions}</small>}<code>{firstWaitingInputPaths.join(', ')} → {firstWaiting.external_handoff?.output_targets.map((target) => target.path).join(', ')}</code></div><span>{readinessLabel(readiness.get(firstWaiting.node_run_id) ?? null)} · {elapsedLabel(firstWaiting.started_at ?? firstWaiting.created_at)}</span><button type="button" onClick={() => { setSelectedNodeIds(new Set([firstWaiting.node_id])); setSelectedEdgeIds(new Set()) }}>定位等待节点</button></div>}
         {!firstWaiting && globalActionSummary && <div className="next-action-banner" role="status"><span className="eyebrow">NEXT ACTION</span><strong>{globalActionSummary.run_id} 需要操作者处理</strong><span>{globalActionSummary.state_counts.waiting_external} waiting external · {globalActionSummary.state_counts.failed} failed</span><button type="button" onClick={() => { if (globalActionSummary.run_id === viewRunId && firstFailed) { setSelectedNodeIds(new Set([firstFailed.node_id])); setSelectedEdgeIds(new Set()) } else { selectRun(globalActionSummary.run_id) } }}>{globalActionSummary.run_id === viewRunId && firstFailed ? '定位失败节点' : '查看需处理 Run'}</button></div>}
         {loading ? (
           <div className="authority-empty" role="status"><strong>正在连接 Project Service…</strong></div>
@@ -1907,6 +1937,10 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
             <section><h3>Typed ports</h3>{(['input_ports', 'output_ports'] as const).map((direction) => <div className="port-group" key={direction}><span className="port-group-label">{direction}</span>{selectedDefinition[direction].length ? selectedDefinition[direction].map((port) => <div className="port-summary" key={port.port_id}><span>{port.port_id}</span><code>{port.data_type} · {port.cardinality}{port.required ? ' · required' : ''}</code></div>) : <div className="port-empty">none</div>}</div>)}</section>
             <section><h3>Parameters</h3><textarea aria-label="节点参数 JSON" value={parameterText} onChange={(event) => setParameterText(event.target.value)} rows={8} readOnly={!graphEditable} /><button className="button button--primary inspector-action" type="button" disabled={busy || !graphEditable} onClick={applyParameters}>应用参数到 Draft</button><details><summary>parameter_schema</summary><pre>{JSON.stringify(selectedDefinition.parameter_schema, null, 2)}</pre></details></section>
             {selectedNodeRun && <section aria-label="Runtime details"><h3>Runtime · attempt {selectedNodeRun.attempt}</h3><div className={`runtime-status runtime-status--${selectedNodeRun.state}`}>{selectedNodeRun.state}{selectedNodeRun.progress !== null ? ` · ${Math.round(selectedNodeRun.progress * 100)}%` : ''}{selectedNodeRun.reused_from_result_id ? ' · reused' : ''}</div>{selectedNodeRun.error && <p className="runtime-error">{selectedNodeRun.error.reason}<br />{selectedNodeRun.error.message}</p>}{selectedOutputs.map((artifact) => <div className="output-path" key={artifact.artifact_id}><span>{artifact.producer_port_id}</span><code>{artifact.path}</code></div>)}{selectedNodeRun.external_handoff && <div className="handoff-panel"><strong>External handoff</strong>{selectedNodeRun.external_handoff.instructions && <p>{selectedNodeRun.external_handoff.instructions}</p>}<span>Inputs</span>{handoffInputs.map((path, index) => <div className="handoff-path" key={`${selectedNodeRun.external_handoff!.input_artifact_ids[index]}-${index}`}><code>{path}</code><button type="button" onClick={() => void copyPath(path)}>Copy input path</button></div>)}<span>Targets</span>{selectedNodeRun.external_handoff.output_targets.map((target) => <div className="handoff-path" key={`${target.port_id}-${target.ordinal ?? 'one'}`}><code>{target.port_id}{target.ordinal === null ? '' : ` #${target.ordinal}`} · {target.path}</code><button type="button" onClick={() => void copyPath(target.path)}>Copy target path</button></div>)}<div className="readiness-state">Readiness · {readinessLabel(readiness.get(selectedNodeRun.node_run_id) ?? null)}</div><button className="button button--primary inspector-action" type="button" disabled={detailMutationBlocked || health.readiness.stale || selectedNodeRun.state !== 'waiting_external' || !readiness.get(selectedNodeRun.node_run_id) || readiness.get(selectedNodeRun.node_run_id)!.targets.some((target) => target.state !== 'present' && target.state !== 'probe_passed')} onClick={() => void validateAndSubmit(selectedNodeRun)}>Validate and submit</button></div>}{(selectedLog || selectedNodeRun.log_path) && <div className="node-logs">{selectedNodeRun.log_path && <code>{selectedNodeRun.log_path}</code>}<h4>stdout{selectedLog?.stdout_truncated ? '（尾部截断）' : ''}</h4><pre>{health.log.stale ? '（日志通道离线，保留最后可信内容）' : selectedLog?.stdout_available ? selectedLog.stdout || '（空）' : '（不可用）'}</pre><h4>stderr{selectedLog?.stderr_truncated ? '（尾部截断）' : ''}</h4><pre>{health.log.stale ? '（日志通道离线，保留最后可信内容）' : selectedLog?.stderr_available ? selectedLog.stderr || '（空）' : '（不可用）'}</pre></div>}</section>}
+            {selectedNodeRun && currentDetail?.handoff_contracts.filter((contract) => contract.node_run_id === selectedNodeRun.node_run_id).map((contract) => <HandoffContract key={contract.node_run_id} contract={contract} />)}
+            {selectedNodeRun?.external_handoff && <ReadinessMessages readiness={readiness.get(selectedNodeRun.node_run_id) ?? null} />}
+            {currentRun && selectedNodeRun?.external_handoff && <HandoffPrecheckFailure failure={lastFullPrecheckFailures.get(handoffResourceKey(currentRun.run_id, selectedNodeRun.node_run_id, selectedNodeRun.external_handoff.handoff_id)) ?? null} />}
+            {selectedOutputs.map((artifact) => <ArtifactMediaSummary key={artifact.artifact_id} artifact={artifact} />)}
             {selectedNodeRun && selectedProgress && (
               selectedProgress.mode === 'indeterminate' ||
               selectedProgress.measurement !== null ||
@@ -1964,9 +1998,12 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
                   >
                     <strong>{nodeRun.node_id}</strong>
                     <span>{modelName ?? 'model not declared'}{modelVersion ? ` · ${modelVersion}` : ''}</span>
-                    <em>{readinessLabel(observedReadiness)} · {elapsedLabel(nodeRun.created_at)}</em>
+                    <em>{readinessLabel(observedReadiness)} · {elapsedLabel(nodeRun.started_at ?? nodeRun.created_at)}</em>
                   </button>
                   {handoff.instructions && <p>{handoff.instructions}</p>}
+                  {currentDetail?.handoff_contracts.filter((contract) => contract.node_run_id === nodeRun.node_run_id).map((contract) => <HandoffContract key={contract.node_run_id} contract={contract} />)}
+                  <ReadinessMessages readiness={observedReadiness} />
+                  {currentRun && <HandoffPrecheckFailure failure={lastFullPrecheckFailures.get(handoffResourceKey(currentRun.run_id, nodeRun.node_run_id, handoff.handoff_id)) ?? null} />}
                   <span className="handoff-queue-label">Inputs</span>
                   {inputPaths.map((path, index) => (
                     <div className="handoff-path" key={`${handoff.input_artifact_ids[index]}-${index}`}>

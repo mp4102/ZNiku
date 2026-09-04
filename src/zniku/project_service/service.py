@@ -71,6 +71,7 @@ from zniku.runtime import (
 from zniku.runtime.progress import MonotonicClock, WallClock
 from zniku.runtime.runner import MediaProbe, NodeValidator
 
+from .av27_handoff import project_av27_handoff_contracts
 from .models import (
     AbandonRunCommand,
     ActiveProjectOperation,
@@ -339,10 +340,12 @@ class ProjectServiceApplication:
         _, runtime = self._require_session()
         try:
             run = runtime.repository.get_run(run_id)
+            artifacts = self._collect_run_artifacts(run, runtime)
             return RunDetailEnvelope(
                 run=run,
-                artifacts=self._collect_run_artifacts(run, runtime),
+                artifacts=artifacts,
                 progress_samples=self._project_progress(run, runtime),
+                handoff_contracts=project_av27_handoff_contracts(run, artifacts),
             )
         except (RuntimeRepositoryError, ValidationError) as failure:
             raise self._translate_failure(failure) from failure
