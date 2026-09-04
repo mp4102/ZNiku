@@ -1,0 +1,2668 @@
+{
+  "catalogs": [
+    {
+      "catalog_id": "generic_media",
+      "definitions": [
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "object_group",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "description",
+              "minLength",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.source.video",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "source_path": {
+                "description": "操作者明确选择的本地绝对媒体路径。",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_path"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "object_group",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "description",
+              "minLength",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.source.audio",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "source_path": {
+                "description": "操作者明确选择的本地绝对媒体路径。",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_path"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "object_group",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "description",
+              "minLength",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.source.media",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "source_path": {
+                "description": "操作者明确选择的本地绝对媒体路径。",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_path"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "all_of_rules",
+              "boolean_schema",
+              "conditional_branch",
+              "constant_value",
+              "declared_default",
+              "enum_choice",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input"
+            ],
+            "json_types": [
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "allOf",
+              "const",
+              "default",
+              "enum",
+              "if",
+              "maximum",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "then",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.video_transform.automatic",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "operation": {
+                      "const": "scale"
+                    }
+                  },
+                  "required": [
+                    "operation"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "width",
+                    "height"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "operation": {
+                      "const": "frame_rate"
+                    }
+                  },
+                  "required": [
+                    "operation"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "frame_rate"
+                  ]
+                }
+              }
+            ],
+            "properties": {
+              "frame_rate": {
+                "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                "type": "string"
+              },
+              "height": {
+                "maximum": 16384,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "operation": {
+                "default": "identity",
+                "enum": [
+                  "identity",
+                  "scale",
+                  "frame_rate"
+                ],
+                "type": "string"
+              },
+              "width": {
+                "maximum": 16384,
+                "minimum": 2,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "declared_default",
+              "enum_choice",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "default",
+              "enum",
+              "maxLength",
+              "maximum",
+              "minLength",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.video_transform.mr.external",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "expected_frame_rate": {
+                "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                "type": "string"
+              },
+              "expected_height": {
+                "maximum": 16384,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "expected_width": {
+                "maximum": 16384,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "frame_relation": {
+                "default": "any",
+                "enum": [
+                  "any",
+                  "equal",
+                  "double"
+                ],
+                "type": "string"
+              },
+              "model": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tool": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tool_version": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "model",
+              "tool_version"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "declared_default",
+              "enum_choice",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "default",
+              "enum",
+              "maxLength",
+              "maximum",
+              "minLength",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.video_transform.enhancement.external",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "expected_frame_rate": {
+                "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                "type": "string"
+              },
+              "expected_height": {
+                "maximum": 16384,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "expected_width": {
+                "maximum": 16384,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "frame_relation": {
+                "default": "any",
+                "enum": [
+                  "any",
+                  "equal",
+                  "double"
+                ],
+                "type": "string"
+              },
+              "model": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tool": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tool_version": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "model",
+              "tool_version"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "declared_default",
+              "enum_choice",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "default",
+              "enum",
+              "maxLength",
+              "maximum",
+              "minLength",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.video_transform.fi.external",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "expected_frame_rate": {
+                "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                "type": "string"
+              },
+              "expected_height": {
+                "maximum": 16384,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "expected_width": {
+                "maximum": 16384,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "frame_relation": {
+                "default": "double",
+                "enum": [
+                  "any",
+                  "equal",
+                  "double"
+                ],
+                "type": "string"
+              },
+              "model": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tool": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tool_version": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "tool",
+              "model",
+              "tool_version"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "array_editor",
+              "boolean_schema",
+              "constant_value",
+              "fixed_tuple_array",
+              "homogeneous_array",
+              "integer_input",
+              "numeric_bounds",
+              "object_group"
+            ],
+            "json_types": [
+              "array",
+              "integer",
+              "object"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "const",
+              "items",
+              "maxItems",
+              "minItems",
+              "minimum",
+              "prefixItems",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.split_video.2",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "segments": {
+                "items": false,
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "end_frame": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "port_id": {
+                        "const": "A"
+                      },
+                      "start_frame": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "port_id",
+                      "start_frame",
+                      "end_frame"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "end_frame": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "port_id": {
+                        "const": "B"
+                      },
+                      "start_frame": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "port_id",
+                      "start_frame",
+                      "end_frame"
+                    ],
+                    "type": "object"
+                  }
+                ],
+                "type": "array"
+              }
+            },
+            "required": [
+              "segments"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "object_group"
+            ],
+            "json_types": [
+              "object"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "properties",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.merge_video",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "boolean_toggle",
+              "declared_default",
+              "enum_choice",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "string_input"
+            ],
+            "json_types": [
+              "boolean",
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "default",
+              "enum",
+              "maximum",
+              "minimum",
+              "properties",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.encode_video",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "codec": {
+                "default": "libx264",
+                "enum": [
+                  "libx264",
+                  "libx265",
+                  "ffv1"
+                ],
+                "type": "string"
+              },
+              "crf": {
+                "default": 18,
+                "maximum": 51,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pixel_format": {
+                "default": "yuv420p",
+                "enum": [
+                  "yuv420p",
+                  "yuv420p10le",
+                  "yuv422p10le"
+                ],
+                "type": "string"
+              },
+              "preset": {
+                "default": "medium",
+                "enum": [
+                  "ultrafast",
+                  "superfast",
+                  "veryfast",
+                  "faster",
+                  "fast",
+                  "medium",
+                  "slow"
+                ],
+                "type": "string"
+              },
+              "require_frame_count_equal": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "object_group"
+            ],
+            "json_types": [
+              "object"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "properties",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.mux_media",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "all_of_rules",
+              "boolean_schema",
+              "boolean_toggle",
+              "conditional_branch",
+              "constant_value",
+              "declared_default",
+              "enum_choice",
+              "object_group",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "boolean",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "allOf",
+              "const",
+              "default",
+              "description",
+              "enum",
+              "if",
+              "minLength",
+              "properties",
+              "required",
+              "then",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.output_file.video",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "copy"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "target_path"
+                  ]
+                }
+              }
+            ],
+            "properties": {
+              "mode": {
+                "default": "copy",
+                "description": "copy 发布到 target_path；reference 保留上游路径。",
+                "enum": [
+                  "copy",
+                  "reference"
+                ],
+                "type": "string"
+              },
+              "overwrite": {
+                "default": false,
+                "description": "必须显式为 true 才允许覆盖已有文件。",
+                "type": "boolean"
+              },
+              "target_path": {
+                "description": "copy 模式明确选择的本地绝对输出路径。",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "overwrite"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "all_of_rules",
+              "boolean_schema",
+              "boolean_toggle",
+              "conditional_branch",
+              "constant_value",
+              "declared_default",
+              "enum_choice",
+              "object_group",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "boolean",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "allOf",
+              "const",
+              "default",
+              "description",
+              "enum",
+              "if",
+              "minLength",
+              "properties",
+              "required",
+              "then",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.output_file.audio",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "copy"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "target_path"
+                  ]
+                }
+              }
+            ],
+            "properties": {
+              "mode": {
+                "default": "copy",
+                "description": "copy 发布到 target_path；reference 保留上游路径。",
+                "enum": [
+                  "copy",
+                  "reference"
+                ],
+                "type": "string"
+              },
+              "overwrite": {
+                "default": false,
+                "description": "必须显式为 true 才允许覆盖已有文件。",
+                "type": "boolean"
+              },
+              "target_path": {
+                "description": "copy 模式明确选择的本地绝对输出路径。",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "overwrite"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "all_of_rules",
+              "boolean_schema",
+              "boolean_toggle",
+              "conditional_branch",
+              "constant_value",
+              "declared_default",
+              "enum_choice",
+              "object_group",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "boolean",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "allOf",
+              "const",
+              "default",
+              "description",
+              "enum",
+              "if",
+              "minLength",
+              "properties",
+              "required",
+              "then",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.media.output_file.media",
+            "version": "0.2.0"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "copy"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "target_path"
+                  ]
+                }
+              }
+            ],
+            "properties": {
+              "mode": {
+                "default": "copy",
+                "description": "copy 发布到 target_path；reference 保留上游路径。",
+                "enum": [
+                  "copy",
+                  "reference"
+                ],
+                "type": "string"
+              },
+              "overwrite": {
+                "default": false,
+                "description": "必须显式为 true 才允许覆盖已有文件。",
+                "type": "boolean"
+              },
+              "target_path": {
+                "description": "copy 模式明确选择的本地绝对输出路径。",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "overwrite"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "factory": "zniku.media:built_in_media_definitions",
+      "factory_arguments": {}
+    },
+    {
+      "catalog_id": "avenhance_v27",
+      "definitions": [
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "maxLength",
+              "minLength",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.avenhance.v27.source_program",
+            "version": "0.2.1"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "source_ordinal": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "source_path": {
+                "maxLength": 32767,
+                "minLength": 1,
+                "pattern": "^(?:[A-Za-z]:[\\\\/]|\\\\\\\\|/)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_path",
+              "source_ordinal"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "array_editor",
+              "boolean_schema",
+              "enum_choice",
+              "homogeneous_array",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds",
+              "unique_array"
+            ],
+            "json_types": [
+              "array",
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "enum",
+              "items",
+              "maxLength",
+              "minItems",
+              "minLength",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type",
+              "uniqueItems"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.avenhance.v27.source_admission",
+            "version": "0.2.1"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "source_mode": {
+                "enum": [
+                  "program",
+                  "pre_chaptered"
+                ],
+                "type": "string"
+              },
+              "sources": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source_node_id": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                      "type": "string"
+                    },
+                    "source_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "source_ordinal",
+                    "source_node_id"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "source_mode",
+              "sources"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "object_group",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "maxLength",
+              "minLength",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.avenhance.v27.mosaic_restoration.external",
+            "version": "0.2.1"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "model_name": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "model_version": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "model_name",
+              "model_version"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "all_of_rules",
+              "array_editor",
+              "boolean_schema",
+              "conditional_branch",
+              "constant_value",
+              "enum_choice",
+              "fixed_tuple_array",
+              "homogeneous_array",
+              "integer_input",
+              "negative_rule",
+              "numeric_bounds",
+              "object_group",
+              "one_of_choice",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds",
+              "unique_array"
+            ],
+            "json_types": [
+              "array",
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "allOf",
+              "const",
+              "else",
+              "enum",
+              "if",
+              "items",
+              "maxItems",
+              "maxLength",
+              "minItems",
+              "minLength",
+              "minimum",
+              "not",
+              "oneOf",
+              "pattern",
+              "prefixItems",
+              "properties",
+              "required",
+              "then",
+              "type",
+              "uniqueItems"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.avenhance.v27.atomic_split.leaves.1",
+            "version": "0.2.1"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "else": {
+                  "not": {
+                    "required": [
+                      "chapter_selector"
+                    ]
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "source_mode": {
+                      "const": "program"
+                    }
+                  },
+                  "required": [
+                    "source_mode"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "chapter_selector"
+                  ]
+                }
+              }
+            ],
+            "properties": {
+              "chapter_selector": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "mode": {
+                        "const": "single"
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "frames": {
+                        "items": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "minItems": 1,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "mode": {
+                        "const": "exact_frames"
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "frames"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "mode": {
+                        "const": "exact_times"
+                      },
+                      "times": {
+                        "items": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "minItems": 1,
+                        "type": "array",
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "times"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "chapters": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chapter_id": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                      "type": "string"
+                    },
+                    "chapter_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "end_frame": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "label": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "pattern": "^\\S(?:.*\\S)?$",
+                      "type": "string"
+                    },
+                    "source_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "start_frame": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "chapter_id",
+                    "chapter_ordinal",
+                    "label",
+                    "source_ordinal",
+                    "start_frame",
+                    "end_frame"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "leaf_duration_minutes": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "planned_admission_artifact_id": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              "planned_effective_video_artifact_ids": {
+                "items": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "segments": {
+                "items": false,
+                "maxItems": 1,
+                "minItems": 1,
+                "prefixItems": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "chapter_id": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                        "type": "string"
+                      },
+                      "chapter_ordinal": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "end_frame": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "leaf_id": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                        "type": "string"
+                      },
+                      "leaf_ordinal": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "planned_effective_video_artifact_id": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                        "type": "string"
+                      },
+                      "port_id": {
+                        "const": "leaf-0001"
+                      },
+                      "source_ordinal": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "start_frame": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "port_id",
+                      "source_ordinal",
+                      "planned_effective_video_artifact_id",
+                      "chapter_id",
+                      "chapter_ordinal",
+                      "leaf_id",
+                      "leaf_ordinal",
+                      "start_frame",
+                      "end_frame"
+                    ],
+                    "type": "object"
+                  }
+                ],
+                "type": "array"
+              },
+              "source_mode": {
+                "enum": [
+                  "program",
+                  "pre_chaptered"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_mode",
+              "leaf_duration_minutes",
+              "planned_admission_artifact_id",
+              "planned_effective_video_artifact_ids",
+              "chapters",
+              "segments"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "maxLength",
+              "maximum",
+              "minLength",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.avenhance.v27.enhancement.external",
+            "version": "0.2.1"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "actual_scale_factor": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "chapter_id": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              "chapter_ordinal": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "expected_fps": {
+                "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                "type": "string"
+              },
+              "expected_frames": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expected_input_geometry": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  },
+                  "sample_aspect_ratio": {
+                    "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "width": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "width",
+                  "height",
+                  "sample_aspect_ratio"
+                ],
+                "type": "object"
+              },
+              "expected_output_geometry": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  },
+                  "sample_aspect_ratio": {
+                    "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "width": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "width",
+                  "height",
+                  "sample_aspect_ratio"
+                ],
+                "type": "object"
+              },
+              "leaf_id": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              "leaf_ordinal": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "model_name": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "model_version": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "model_name",
+              "expected_input_geometry",
+              "expected_output_geometry",
+              "expected_frames",
+              "expected_fps",
+              "chapter_id",
+              "chapter_ordinal",
+              "leaf_id",
+              "leaf_ordinal"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "maxLength",
+              "maximum",
+              "minLength",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.avenhance.v27.merge_video",
+            "version": "0.2.1"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "actual_scale_factor": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "chapter_id": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              "chapter_ordinal": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "expected_fps": {
+                "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                "type": "string"
+              },
+              "expected_frames": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expected_geometry": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  },
+                  "sample_aspect_ratio": {
+                    "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "width": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "width",
+                  "height",
+                  "sample_aspect_ratio"
+                ],
+                "type": "object"
+              },
+              "model_name": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "model_version": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "model_name",
+              "chapter_id",
+              "chapter_ordinal",
+              "expected_frames",
+              "expected_fps",
+              "expected_geometry",
+              "actual_scale_factor"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "boolean_schema",
+              "constant_value",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "const",
+              "maxLength",
+              "maximum",
+              "minLength",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.avenhance.v27.frame_interpolation.external",
+            "version": "0.2.1"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "chapter_id": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              "chapter_ordinal": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "expected_geometry": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  },
+                  "sample_aspect_ratio": {
+                    "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "width": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "width",
+                  "height",
+                  "sample_aspect_ratio"
+                ],
+                "type": "object"
+              },
+              "expected_input_frames": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expected_output_frames": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expected_signal": {
+                "additionalProperties": false,
+                "properties": {
+                  "chroma_location": {
+                    "const": "left"
+                  },
+                  "color_primaries": {
+                    "const": "bt709"
+                  },
+                  "color_range": {
+                    "const": "tv"
+                  },
+                  "color_space": {
+                    "const": "bt709"
+                  },
+                  "color_transfer": {
+                    "const": "bt709"
+                  },
+                  "field_order": {
+                    "const": "progressive"
+                  },
+                  "rotation": {
+                    "const": 0
+                  }
+                },
+                "required": [
+                  "color_primaries",
+                  "color_transfer",
+                  "color_space",
+                  "color_range",
+                  "chroma_location",
+                  "field_order",
+                  "rotation"
+                ],
+                "type": "object"
+              },
+              "model_name": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "model_version": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "source_fps": {
+                "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "model_name",
+              "chapter_id",
+              "chapter_ordinal",
+              "expected_input_frames",
+              "expected_output_frames",
+              "source_fps",
+              "expected_geometry",
+              "expected_signal"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "array_editor",
+              "boolean_schema",
+              "constant_value",
+              "enum_choice",
+              "homogeneous_array",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input",
+              "text_length_bounds"
+            ],
+            "json_types": [
+              "array",
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "const",
+              "enum",
+              "items",
+              "maxLength",
+              "maximum",
+              "minItems",
+              "minLength",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.avenhance.v27.program_encode",
+            "version": "0.2.1"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "chapters": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chapter_id": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                      "type": "string"
+                    },
+                    "chapter_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "encoded_frames": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "expected_fi_frames": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "source_frames": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "chapter_id",
+                    "chapter_ordinal",
+                    "source_frames",
+                    "expected_fi_frames",
+                    "encoded_frames"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "encoder": {
+                "enum": [
+                  "gpu",
+                  "cpu"
+                ],
+                "type": "string"
+              },
+              "expected_geometry": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  },
+                  "sample_aspect_ratio": {
+                    "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "width": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "width",
+                  "height",
+                  "sample_aspect_ratio"
+                ],
+                "type": "object"
+              },
+              "expected_signal": {
+                "additionalProperties": false,
+                "properties": {
+                  "chroma_location": {
+                    "const": "left"
+                  },
+                  "color_primaries": {
+                    "const": "bt709"
+                  },
+                  "color_range": {
+                    "const": "tv"
+                  },
+                  "color_space": {
+                    "const": "bt709"
+                  },
+                  "color_transfer": {
+                    "const": "bt709"
+                  },
+                  "field_order": {
+                    "const": "progressive"
+                  },
+                  "rotation": {
+                    "const": 0
+                  }
+                },
+                "required": [
+                  "color_primaries",
+                  "color_transfer",
+                  "color_space",
+                  "color_range",
+                  "chroma_location",
+                  "field_order",
+                  "rotation"
+                ],
+                "type": "object"
+              },
+              "source_fps": {
+                "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "encoder",
+              "source_fps",
+              "chapters",
+              "expected_geometry",
+              "expected_signal"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "features": {
+            "control_shapes": [
+              "array_editor",
+              "boolean_schema",
+              "constant_value",
+              "enum_choice",
+              "homogeneous_array",
+              "integer_input",
+              "numeric_bounds",
+              "object_group",
+              "pattern_constraint",
+              "string_input"
+            ],
+            "json_types": [
+              "array",
+              "integer",
+              "object",
+              "string"
+            ],
+            "schema_keywords": [
+              "$schema",
+              "additionalProperties",
+              "const",
+              "enum",
+              "items",
+              "maximum",
+              "minItems",
+              "minimum",
+              "pattern",
+              "properties",
+              "required",
+              "type"
+            ]
+          },
+          "identity": {
+            "type_id": "zniku.avenhance.v27.final_mux",
+            "version": "0.2.1"
+          },
+          "parameter_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "expected_geometry": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  },
+                  "sample_aspect_ratio": {
+                    "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "width": {
+                    "maximum": 16384,
+                    "minimum": 2,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "width",
+                  "height",
+                  "sample_aspect_ratio"
+                ],
+                "type": "object"
+              },
+              "expected_program_frames": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expected_signal": {
+                "additionalProperties": false,
+                "properties": {
+                  "chroma_location": {
+                    "const": "left"
+                  },
+                  "color_primaries": {
+                    "const": "bt709"
+                  },
+                  "color_range": {
+                    "const": "tv"
+                  },
+                  "color_space": {
+                    "const": "bt709"
+                  },
+                  "color_transfer": {
+                    "const": "bt709"
+                  },
+                  "field_order": {
+                    "const": "progressive"
+                  },
+                  "rotation": {
+                    "const": 0
+                  }
+                },
+                "required": [
+                  "color_primaries",
+                  "color_transfer",
+                  "color_space",
+                  "color_range",
+                  "chroma_location",
+                  "field_order",
+                  "rotation"
+                ],
+                "type": "object"
+              },
+              "mr_mode": {
+                "enum": [
+                  "off",
+                  "external"
+                ],
+                "type": "string"
+              },
+              "source_mode": {
+                "enum": [
+                  "program",
+                  "pre_chaptered"
+                ],
+                "type": "string"
+              },
+              "sources": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source_fps": {
+                      "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+                      "type": "string"
+                    },
+                    "source_frames": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "source_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "source_ordinal",
+                    "source_frames",
+                    "source_fps"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "source_mode",
+              "sources",
+              "expected_program_frames",
+              "expected_geometry",
+              "expected_signal",
+              "mr_mode"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "factory": "zniku.avenhance_v27:built_in_av27_definitions",
+      "factory_arguments": {
+        "leaf_count": 1
+      }
+    }
+  ],
+  "contract_kind": "studio_schema_authoring_corpus",
+  "contract_version": "0.3.0",
+  "description": "固化当前 Python 内建 NodeDefinition 的参数 Schema 现实边界；供 Studio authoring renderer 开发与漂移门禁使用，不是第二份参数权威。",
+  "dynamic_variants": [
+    {
+      "catalog_id": "avenhance_v27",
+      "definition": {
+        "features": {
+          "control_shapes": [
+            "all_of_rules",
+            "array_editor",
+            "boolean_schema",
+            "conditional_branch",
+            "constant_value",
+            "enum_choice",
+            "fixed_tuple_array",
+            "homogeneous_array",
+            "integer_input",
+            "negative_rule",
+            "numeric_bounds",
+            "object_group",
+            "one_of_choice",
+            "pattern_constraint",
+            "string_input",
+            "text_length_bounds",
+            "unique_array"
+          ],
+          "json_types": [
+            "array",
+            "integer",
+            "object",
+            "string"
+          ],
+          "schema_keywords": [
+            "$schema",
+            "additionalProperties",
+            "allOf",
+            "const",
+            "else",
+            "enum",
+            "if",
+            "items",
+            "maxItems",
+            "maxLength",
+            "minItems",
+            "minLength",
+            "minimum",
+            "not",
+            "oneOf",
+            "pattern",
+            "prefixItems",
+            "properties",
+            "required",
+            "then",
+            "type",
+            "uniqueItems"
+          ]
+        },
+        "identity": {
+          "type_id": "zniku.avenhance.v27.atomic_split.leaves.2",
+          "version": "0.2.1"
+        },
+        "parameter_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "else": {
+                "not": {
+                  "required": [
+                    "chapter_selector"
+                  ]
+                }
+              },
+              "if": {
+                "properties": {
+                  "source_mode": {
+                    "const": "program"
+                  }
+                },
+                "required": [
+                  "source_mode"
+                ]
+              },
+              "then": {
+                "required": [
+                  "chapter_selector"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "chapter_selector": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "mode": {
+                      "const": "single"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "frames": {
+                      "items": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "minItems": 1,
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "mode": {
+                      "const": "exact_frames"
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "frames"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "mode": {
+                      "const": "exact_times"
+                    },
+                    "times": {
+                      "items": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": "array",
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "times"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "chapters": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "chapter_id": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                    "type": "string"
+                  },
+                  "chapter_ordinal": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "end_frame": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "label": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^\\S(?:.*\\S)?$",
+                    "type": "string"
+                  },
+                  "source_ordinal": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "start_frame": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "chapter_id",
+                  "chapter_ordinal",
+                  "label",
+                  "source_ordinal",
+                  "start_frame",
+                  "end_frame"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "leaf_duration_minutes": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "planned_admission_artifact_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            "planned_effective_video_artifact_ids": {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "segments": {
+              "items": false,
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chapter_id": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                      "type": "string"
+                    },
+                    "chapter_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "end_frame": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "leaf_id": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                      "type": "string"
+                    },
+                    "leaf_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "planned_effective_video_artifact_id": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                      "type": "string"
+                    },
+                    "port_id": {
+                      "const": "leaf-0001"
+                    },
+                    "source_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "start_frame": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "port_id",
+                    "source_ordinal",
+                    "planned_effective_video_artifact_id",
+                    "chapter_id",
+                    "chapter_ordinal",
+                    "leaf_id",
+                    "leaf_ordinal",
+                    "start_frame",
+                    "end_frame"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chapter_id": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                      "type": "string"
+                    },
+                    "chapter_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "end_frame": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "leaf_id": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                      "type": "string"
+                    },
+                    "leaf_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "planned_effective_video_artifact_id": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+                      "type": "string"
+                    },
+                    "port_id": {
+                      "const": "leaf-0002"
+                    },
+                    "source_ordinal": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "start_frame": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "port_id",
+                    "source_ordinal",
+                    "planned_effective_video_artifact_id",
+                    "chapter_id",
+                    "chapter_ordinal",
+                    "leaf_id",
+                    "leaf_ordinal",
+                    "start_frame",
+                    "end_frame"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "type": "array"
+            },
+            "source_mode": {
+              "enum": [
+                "program",
+                "pre_chaptered"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_mode",
+            "leaf_duration_minutes",
+            "planned_admission_artifact_id",
+            "planned_effective_video_artifact_ids",
+            "chapters",
+            "segments"
+          ],
+          "type": "object"
+        }
+      },
+      "factory_arguments": {
+        "leaf_count": 2
+      },
+      "replaces_identity": {
+        "type_id": "zniku.avenhance.v27.atomic_split.leaves.1",
+        "version": "0.2.1"
+      },
+      "variant_id": "avenhance_v27_leaf_count_2"
+    }
+  ],
+  "feature_inventory": {
+    "control_shapes": [
+      "all_of_rules",
+      "array_editor",
+      "boolean_schema",
+      "boolean_toggle",
+      "conditional_branch",
+      "constant_value",
+      "declared_default",
+      "enum_choice",
+      "fixed_tuple_array",
+      "homogeneous_array",
+      "integer_input",
+      "negative_rule",
+      "numeric_bounds",
+      "object_group",
+      "one_of_choice",
+      "pattern_constraint",
+      "string_input",
+      "text_length_bounds",
+      "unique_array"
+    ],
+    "json_types": [
+      "array",
+      "boolean",
+      "integer",
+      "object",
+      "string"
+    ],
+    "schema_keywords": [
+      "$schema",
+      "additionalProperties",
+      "allOf",
+      "const",
+      "default",
+      "description",
+      "else",
+      "enum",
+      "if",
+      "items",
+      "maxItems",
+      "maxLength",
+      "maximum",
+      "minItems",
+      "minLength",
+      "minimum",
+      "not",
+      "oneOf",
+      "pattern",
+      "prefixItems",
+      "properties",
+      "required",
+      "then",
+      "type",
+      "uniqueItems"
+    ]
+  },
+  "schema_dialect": "https://json-schema.org/draft/2020-12/schema"
+}

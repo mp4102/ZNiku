@@ -6,13 +6,17 @@
 
 ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用已完成结果的 GUI Studio。
 
-## 0.2.0 Core 与 v0.2.1 开发状态
+## 0.2.0 Core、v0.2.1 验收与 v0.3.0 开发状态
 
-- 目标版本：`ZNIKU Studio 0.2.0`（按 v0.2.1 计划在 Phase 6 前保持 package/product 版本不变）
+- 目标版本：`ZNIKU Studio v0.3.0`（package/product 当前仍为 `0.2.0`，只在 v0.3.0 Phase 6 验收候选时收敛）
 - 已交付基线：`ZNIKU Studio 0.2.0` Phase 0–5，Core 已完成 legacy 清理与最小自动化验收
-- 当前开发分支：`v0.2.1`
-- 当前增量阶段：**v0.2.1 Phase 0–3 已完成；Phase 4 待实施**
-- 唯一目标架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
+- 已验收增量：`v0.2.1` Phase 0–5 已完成，真实 MR-off GUI 闭环与操作者验收通过；external MR 仍是未验证范围
+- 当前开发分支：`v0.3.0`
+- 当前增量阶段：**v0.3.0 Phase 0 已完成；Phase 1–6 尚未实施**
+- Graph／Runtime 上位架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
+- Studio UX 下位设计：[创作者体验基线](docs/architecture/studio-ux-baseline.md)
+- 分阶段计划：[v0.3.0 创作者体验重构执行方案](docs/v0.3.0-execution-plan.md)
+- Phase 0 证据：[v0.3.0 Phase 0 验收记录](docs/v0.3.0-phase0-acceptance.md)
 - 当前实现版本：`0.2.0`；package/product 版本按计划保持不变，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
   `zniku.project_service`、`zniku.media` 与 `zniku.avenhance_v27`
 - 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
@@ -24,8 +28,13 @@ pipeline、Real Acceptance 和旧生成投影的实现、测试与工具；CI �
 
 v0.2.1 Phase 1 已补齐 Run 选择、轮询和人工交接闭环；Phase 2 已接通 automatic Python/FFmpeg 的可信
 进度、限频持久化、Project Service 实时投影与 Studio determinate/indeterminate 展示。Phase 3 已实现
-AVEnhanceFlow v2.7.0 专用节点包及不带业务分支的通用 Runner metadata/output-path plumbing；Phase 4 的
-两段模板 builder 与 Studio 向导尚未实现。
+AVEnhanceFlow v2.7.0 专用节点包及不带业务分支的通用 Runner metadata/output-path plumbing；Phase 4 已实现
+两阶段 Python template builder、preview／expand 与 Studio 向导；Phase 5 已完成自动门禁、真实 MR-off 短片
+GUI 闭环和操作者验收，证据边界见 [v0.2.1 Phase 5 验收记录](docs/v0.2.1-acceptance.md)。原 v0.2.1 Phase 6
+版本收敛已暂停，其必要工作并入 v0.3.0 最终验收阶段。
+
+v0.3.0 保留上述 Graph Core、Runtime 与真实媒体执行能力，重点把 Studio 从工程控制台重构为面向视频编辑者
+的创作者工具。创作者模式、高级节点图和高级诊断始终操作同一张 Graph；展示元数据不进入执行语义。
 
 ## 产品核心
 
@@ -80,9 +89,11 @@ Graph Core 只校验 node／port／edge 存在、typed output→input、required
 - `zniku.avenhance_v27`：提供 `zniku.avenhance.v27.*@0.2.1` 九类专用 definition、automatic
   adapters、manual validators 与严格媒体 probe；固定流程仍只是下一阶段由 Python builder 生成的普通
   DAG，不进入 Scheduler。详细合同见
-  [AVEnhanceFlow v2.7 模板与节点合同](docs/architecture/av-enhance-flow-v2.7-template-contract.md)。
-- Project 保存前与读取后都会执行同一 Graph Validator；非法图、未知工程 schema、损坏数据和缺失的精确
-  NodeDefinition 默认 fail closed。
+  [AVEnhanceFlow v2.7.0 模板与节点合同](docs/architecture/av-enhance-flow-v2.7-template-contract.md)。
+- Project 保存和读取都使用同一套 Python 模型、精确 definitions 与 Graph Validator。v0.3.0 允许同一个
+  `Project.graph` 保存仅缺少 required input 或 Schema `required` 参数的可诊断 authoring draft；创建 Run
+  前仍执行完整验证。未知字段／definition／executor、悬空引用、类型或 ordinal 错误、cycle、未知工程 schema
+  和损坏数据继续 fail closed；不建立第二张 Graph 或隐形编译结果。
 - `.zniku` 可能包含本地路径和节点配置，默认由 Git 忽略；测试只在临时目录创建纯合成工程。
 - 新 Project 由正式 launcher 注入 Python 内建媒体目录；Studio Palette 只投影 Project 保存的 exact
   definitions，不复制媒体合同。`demo.text_*` 仍只用于不依赖 FFmpeg 的 Project Service／Runtime 合成回归。
@@ -104,8 +115,14 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 
 | 文件 | 权威范围 |
 | --- | --- |
-| [`docs/architecture/graph-core-baseline.md`](docs/architecture/graph-core-baseline.md) | 0.2.0 唯一目标架构权威 |
+| [`docs/architecture/graph-core-baseline.md`](docs/architecture/graph-core-baseline.md) | Graph、Project、Runtime 与执行安全边界的唯一上位架构权威 |
+| [`docs/architecture/studio-ux-baseline.md`](docs/architecture/studio-ux-baseline.md) | v0.3.0 展示、交互、桌面入口与易用性的正式下位设计 |
+| [`docs/architecture/studio-schema-corpus.json`](docs/architecture/studio-schema-corpus.json) | 内建参数 Schema 机器可读盘点；不是独立语义权威 |
+| [`docs/architecture/host-bridge-prototype.md`](docs/architecture/host-bridge-prototype.md) | Phase 0 HostBridge 有界 prototype 证据；不定义 Graph／Runtime 语义 |
 | [`docs/architecture/media-node-contract.md`](docs/architecture/media-node-contract.md) | Phase 4 首批媒体节点的从属实现合同 |
+| [`docs/v0.3.0-execution-plan.md`](docs/v0.3.0-execution-plan.md) | v0.3.0 阶段、门禁与验收顺序；不覆盖 Core |
+| [`docs/v0.3.0-phase0-acceptance.md`](docs/v0.3.0-phase0-acceptance.md) | v0.3.0 Phase 0 实施结果、自动门禁与未证明范围 |
+| [`docs/v0.2.1-acceptance.md`](docs/v0.2.1-acceptance.md) | v0.2.1 Phase 5 已完成验收及未验证范围 |
 | [`docs/phase5-acceptance.md`](docs/phase5-acceptance.md) | Phase 5 可重复门禁及其证明边界 |
 | [`docs/brand-baseline.md`](docs/brand-baseline.md) | 品牌、产品名与代码标识 |
 | [`docs/archive/0.1.0/`](docs/archive/0.1.0/) | 0.1.0 历史实现说明；对 0.2.0 无规范权威 |
@@ -175,9 +192,15 @@ ZNiku/
 ├── docs/
 │   ├── architecture/
 │   │   ├── graph-core-baseline.md
-│   │   └── media-node-contract.md
+│   │   ├── host-bridge-prototype.md
+│   │   ├── media-node-contract.md
+│   │   ├── studio-schema-corpus.json
+│   │   └── studio-ux-baseline.md
 │   ├── archive/0.1.0/           # 旧架构历史归档
 │   ├── phase5-acceptance.md      # 可重复最小验收与证明边界
+│   ├── v0.2.1-acceptance.md      # v0.2.1 Phase 5 真实 GUI 操作者验收
+│   ├── v0.3.0-execution-plan.md  # v0.3.0 分阶段执行方案
+│   ├── v0.3.0-phase0-acceptance.md # v0.3.0 Phase 0 自动门禁与证明边界
 │   └── brand-baseline.md
 ├── AGENTS.md
 └── VERSION                      # 0.2.0 产品实现版本

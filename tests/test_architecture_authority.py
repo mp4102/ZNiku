@@ -41,7 +41,7 @@ LEGACY_PYTHON_PACKAGES = (
 )
 
 
-def test_graph_core_is_the_only_authority_and_media_contract_is_subordinate() -> None:
+def test_graph_core_is_the_upper_authority_and_designs_are_subordinate() -> None:
     active_files = {
         path.relative_to(ACTIVE_ARCHITECTURE)
         for path in ACTIVE_ARCHITECTURE.rglob("*")
@@ -51,22 +51,37 @@ def test_graph_core_is_the_only_authority_and_media_contract_is_subordinate() ->
     assert active_files == {
         Path("av-enhance-flow-v2.7-template-contract.md"),
         Path("graph-core-baseline.md"),
+        Path("host-bridge-prototype.md"),
         Path("media-node-contract.md"),
+        Path("studio-schema-corpus.json"),
         Path("studio-run-observability.md"),
+        Path("studio-ux-baseline.md"),
     }
     baseline = (ACTIVE_ARCHITECTURE / "graph-core-baseline.md").read_text("utf-8")
+    host_bridge_prototype = (ACTIVE_ARCHITECTURE / "host-bridge-prototype.md").read_text("utf-8")
     media_contract = (ACTIVE_ARCHITECTURE / "media-node-contract.md").read_text("utf-8")
     observability = (ACTIVE_ARCHITECTURE / "studio-run-observability.md").read_text("utf-8")
+    studio_ux = (ACTIVE_ARCHITECTURE / "studio-ux-baseline.md").read_text("utf-8")
     av27_contract = (ACTIVE_ARCHITECTURE / "av-enhance-flow-v2.7-template-contract.md").read_text(
         "utf-8"
     )
-    assert "已批准的唯一 0.2.0 目标架构基线" in baseline
-    assert "Phase 0\u20135 已实施" in baseline
+    assert "已批准的 Graph\uff0fRuntime 上位架构权威" in baseline
+    assert "0.2.0 Phase 0\u20135 已实施" in baseline
+    assert "v0.3.0 Phase 0 窄幅修订" in baseline
     assert "Phase 5 尚未实施" not in baseline
+    assert "studio-ux-baseline.md" in baseline
+    assert "无条件以本文为准" in baseline
+    assert "同一个 `Project.graph`" in baseline
+    assert "`E_REQUIRED_INPUT_MISSING`" in baseline
+    assert "每次创建 Run 前" in baseline
+    assert "第二张 Graph" in baseline
+    assert "非架构权威" in host_bridge_prototype
+    assert "studio-ux-baseline.md" in host_bridge_prototype
+    assert "graph-core-baseline.md" in host_bridge_prototype
     assert "graph-core-baseline.md" in media_contract
     assert "本文从属于" in media_contract
     assert "发生冲突时以上位基线为准" in media_contract
-    for subordinate_design in (observability, av27_contract):
+    for subordinate_design in (observability, av27_contract, studio_ux):
         assert "graph-core-baseline.md" in subordinate_design
         assert "下位设计" in subordinate_design
         assert "上位架构权威" in subordinate_design
@@ -84,17 +99,22 @@ def test_all_legacy_architecture_documents_are_archived() -> None:
             assert "0.1.0 历史归档" in archived_markdown.read_text("utf-8")
 
 
-def test_active_guidance_points_only_to_the_graph_core_authority() -> None:
+def test_active_guidance_preserves_core_authority_and_ux_subordination() -> None:
     agents = (ROOT / "AGENTS.md").read_text("utf-8")
     readme = (ROOT / "README.md").read_text("utf-8")
     studio_readme = (ROOT / "apps" / "studio" / "README.md").read_text("utf-8")
     package_doc = (ROOT / "src" / "zniku" / "__init__.py").read_text("utf-8")
 
     assert "docs/architecture/graph-core-baseline.md" in agents
-    assert "唯一目标架构权威" in agents
+    assert "唯一上位架构" in agents
+    assert "docs/architecture/studio-ux-baseline.md" in agents
+    assert "正式下位设计" in agents
     assert "多个 Source、多个 Output、零 Output" in agents
-    assert "目标版本：`ZNIKU Studio 0.2.0`" in readme
+    assert "目标版本：`ZNIKU Studio v0.3.0`" in readme
     assert "当前实现版本：`0.2.0`" in readme
+    assert "`v0.2.1` Phase 0\u20135 已完成" in readme
+    assert "docs/architecture/studio-ux-baseline.md" in readme
+    assert "docs/v0.3.0-execution-plan.md" in readme
     assert all(
         public_module in readme
         for public_module in (

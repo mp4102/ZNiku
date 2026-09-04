@@ -1,8 +1,10 @@
-# ZNIKU 0.2.0 自由媒体图核心设计基线
+# ZNIKU 0.2.0 自由媒体图核心设计基线（v0.3.0 Phase 0 修订）
 
-- 状态：**已批准的唯一 0.2.0 目标架构基线；严格不兼容 0.1.0；Phase 0–5 已实施**
+- 状态：**已批准的 Graph／Runtime 上位架构权威；严格不兼容 0.1.0；0.2.0 Phase 0–5 已实施；已纳入
+  v0.3.0 Phase 0 窄幅修订**
 - 日期：2026-08-23
-- 目标产品：`ZNIKU Studio 0.2.0`
+- 修订日期：2026-09-04
+- 适用产品：`ZNIKU Studio 0.2.0` Core 及其 `v0.3.0` 创作者体验重构
 - 重构起点：`main@198d802`
 - 实现范围：`src/zniku/`、`apps/studio/`
 
@@ -11,7 +13,12 @@
 本文重新定义 ZNIKU 的产品核心。ZNIKU 不再围绕 AVEnhanceFlow 的固定流程、`full verification`、
 Evidence chain 和恢复协议建设，而是成为面向本地工作站与可信局域网的自由媒体节点 Studio。
 
-本文是 0.2.0 的唯一目标架构基线。现有 0.1.0 架构文档只描述已实现现状，不再约束 0.2.0：
+本文是 Graph、Project、Runtime 与执行安全边界的唯一上位架构权威。v0.3.0 新增的
+[`studio-ux-baseline.md`](studio-ux-baseline.md) 是展示、交互、桌面入口和易用性的下位设计；两者发生冲突时
+无条件以本文为准。`studio-schema-corpus.json` 只是内建参数 Schema 的机器可读盘点，不是新的合同权威；
+`docs/v0.3.0-execution-plan.md` 只规定实施顺序和验收门槛，也不覆盖本文。
+
+现有 0.1.0 架构文档只描述已实现现状，不再约束 0.2.0 或 v0.3.0：
 
 - `product-framework.md`
 - `engine-contract.md`
@@ -139,6 +146,11 @@ Studio 不直接实现媒体算法。Runtime 也不理解 MR、Enhancement 或 F
 首选使用单个 SQLite-backed `.zniku` 工程文件；媒体文件和大日志保持外置。工程允许导出普通 JSON graph，
 但 JSON 不成为第二套运行 authority。
 
+同一个 `Project.graph` 既是 Studio 正在编辑的 Graph，也是下一次 Run 的唯一候选来源。为支持逐步编排、
+自动保存和崩溃恢复，它可以保存仅带有第 7.1 节闭合集合 authoring diagnostics 的暂不可运行状态；不得另存
+一张隐藏的“最后可运行 Graph”，也不得生成 Compiler、Freeze、ExecutionPlan 或领域级 Revision authority。
+是否可运行由当前 Graph 和当前精确 NodeDefinition catalog 即时验证得出，不持久化第二个真值。
+
 ### 6.2 Graph
 
 ```text
@@ -147,8 +159,9 @@ Graph
 └─ edges[]
 ```
 
-Graph 是用户当前编辑的流程。启动 Run 时只复制一份普通 graph snapshot；不计算 canonical digest，
-不生成 Freeze 或 ExecutionPlan。运行期间继续编辑 Graph 只影响下一次 Run。
+Graph 是用户当前编辑的流程。只有完整运行校验通过后才可创建 Run；创建时只复制当前 Graph 的一份普通
+snapshot，不计算 canonical digest，不生成 Freeze 或 ExecutionPlan。运行期间继续编辑 Graph 只影响下一次
+Run，不能改变已创建 Run 的 snapshot。
 
 ### 6.3 NodeDefinition
 
@@ -222,9 +235,43 @@ NodeResult
 
 `NodeResult` 是普通运行结果，不叫 Evidence，不递归引用祖先，也不承担防篡改证明。
 
-## 7. 图与端口规则
+## 7. Graph 保存准入与运行校验
 
-### 7.1 Core 只校验
+### 7.1 同一 Graph 的 authoring draft 边界
+
+Graph 的 Pydantic 模型、精确 NodeDefinition catalog 和 `GraphValidator` 仍是唯一 Python 语义来源。v0.3.0
+只把“允许保存”和“允许创建 Run”区分为两个判定时点，不引入第二个 validator、第二张 Graph 或前端
+authority：
+
+- **保存准入**先完成严格模型解析、引用安全检查和完整 `GraphValidator.inspect`，只允许下面闭合集合中的
+  可恢复 authoring diagnostics 随当前 `Project.graph` 落盘；
+- **运行准入**在每次创建 Run 前对同一 Graph、同一精确 definitions 调用完整 `GraphValidator.validate`；存在
+  任何 violation 都不得创建 Run、graph snapshot、NodeRun、attempt、handoff 或 Artifact；
+- Studio 可以把通过保存准入但未通过运行准入的工程显示为“已保存，但还不能运行”，并展示 Python 返回的
+  修复清单；不得自行降级、吞掉或改写 blocking 结论。
+
+v0.3.0 首个实现只允许以下两类可持久化 authoring diagnostics：
+
+1. `E_REQUIRED_INPUT_MISSING`：已知节点的 required input 尚未连接；
+2. `E_PARAMETERS_INVALID` 中由 JSON Schema `required` 关键字产生的“已知必填参数尚未提供”。
+
+保存准入必须依据机器可读的 validator keyword／稳定子码识别第二类原因，不得解析本地化 message；这只是对
+同一次 Python 校验结果的分类，不得另写一套参数校验逻辑。
+
+这是闭合 allowlist。以下输入即使能够组成 JSON，也不属于可保存草稿，必须失败关闭并保持原工程不变：
+
+- Graph、NodeInstance、Edge 或 NodeDefinition 出现未知字段、错误字段类型、非法 ID／精确版本或非有限数值；
+- definition catalog 重复、缺失 exact definition、未知／非法 executor、execution mode 不匹配或 definition
+  自身不合法；
+- node ID 重复，edge 引用不存在或不唯一的 node／port，或者端口方向、data type 不兼容；
+- 单值 input 多入边，`ordinal` 不允许、缺失、重复或不连续；
+- Graph 存在 cycle；
+- 参数包含 Schema 不允许的未知字段，或除“缺少 required 属性”之外的任何 Schema violation。
+
+保存准入不得修复、删除、补默认值或猜测上述输入。未来如需扩大 allowlist，必须先修订本文并为新增原因建立
+稳定 diagnostic 与回归测试，不能把任意 `E_PARAMETERS_INVALID` 整体视为可保存。
+
+### 7.2 完整运行校验
 
 - node、port 和 edge 存在；
 - output → input 类型兼容；
@@ -233,7 +280,10 @@ NodeResult
 - 有序多输入的 ordinal 唯一连续；
 - 图不存在 cycle。
 
-### 7.2 Core 明确允许
+这些条件是创建 Run 的完整最低门槛。Project 读取仍须严格解析并执行保存准入；已保存 authoring draft 可以
+带有第 7.1 节允许的 diagnostics，但不能因此绕过本节任何规则。
+
+### 7.3 Core 明确允许
 
 - 多个 Source；
 - 多个 Output 或没有 Output 的局部试验图；
@@ -242,7 +292,7 @@ NodeResult
 - 运行整张图、指定 Output、选中节点或选中分支；
 - 同一上游结果被多个下游节点复用。
 
-### 7.3 首批端口类型
+### 7.4 首批端口类型
 
 - `MediaFile`
 - `VideoFile`
@@ -529,6 +579,14 @@ ZNIKU 的差异化不再是“比其他工具保存更多 Evidence”，而是�
 10. 默认 Transform 不产生 SHA、full decode、packet Evidence 或巨型 receipt；
 11. Studio 直接显示运行状态、日志和输出，不依赖第二套投影权威；
 12. 自动化只要求单元测试、Studio 门禁和短真实媒体 smoke test。
+
+v0.3.0 实现第 7.1 节修订时还必须证明：
+
+1. 仅缺 required input 或 Schema `required` 参数的同一 Graph 可以保存、关闭并重开，diagnostics 不丢失；
+2. 上述 Graph 创建 Run 失败，且没有新增 snapshot、NodeRun、attempt、handoff 或 Artifact；
+3. 第 7.1 节列出的不可保存输入全部失败关闭，保存失败后磁盘上的原 Project 保持不变；
+4. 完整合法 Graph 的保存、Run snapshot、reuse／stale 与现有 Runtime 行为不变；
+5. Project 中不存在第二张隐藏 Graph、编译投影或可运行副本。
 
 ## 19. 一句话基线
 

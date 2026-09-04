@@ -1,13 +1,18 @@
-# ZNIKU Studio 0.2.0
+# ZNIKU Studio（0.2.0 实现 / v0.3.0 开发）
 
 Studio 以一张自由媒体节点图同时承担编辑和 Runtime 状态展示。React 应用只维护未保存的画布 Draft；
 `.zniku` Project、Graph 校验、Run、Artifact、日志及 external handoff 的正式语义全部来自 Python Project
 Service。
 
-唯一架构权威是 [`graph-core-baseline.md`](../../docs/architecture/graph-core-baseline.md)；本应用不得恢复
+Graph 与 Runtime 的唯一上位架构权威是
+[`graph-core-baseline.md`](../../docs/architecture/graph-core-baseline.md)；v0.3.0 的展示、交互、桌面入口和
+易用性从属于 [`studio-ux-baseline.md`](../../docs/architecture/studio-ux-baseline.md)。本应用不得恢复
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-当前 Phase 1–5 已实现产品面：
+当前产品代码仍是已经验收的 0.2.0/v0.2.1 实现。v0.3.0 Phase 0 已冻结 UX 权威、Schema corpus 与
+HostBridge 技术路线，但尚未实现新的创作者界面；不得把设计基线描述为已经可用的 GUI 能力。
+
+当前 0.2.0 Phase 1–5 与 v0.2.1 Phase 1–5 已实现产品面：
 
 - 从工程精确版本 `NodeDefinition` 搜索、添加、拖动、连接、复制和多选删除节点；
 - 编辑节点 JSON 参数，显示 required input、精确 `data_type`、`one` / `ordered_many` 与 DAG diagnostics；
