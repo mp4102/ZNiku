@@ -1,0 +1,53 @@
+"""公开 ZNIKU Studio v0.3.0 的 Python Presentation 合同与绑定目录。"""
+
+from .catalog import (
+    PresentationCatalogError,
+    build_builtin_presentation_catalog,
+    resolve_presentation_catalog,
+    validate_node_presentation,
+)
+from .models import (
+    PRESENTATION_CONTRACT_VERSION,
+    PRESENTATION_LOCALE,
+    CategoryPresentation,
+    ControlHint,
+    EnumLabel,
+    IconToken,
+    NodePresentation,
+    PaletteLevel,
+    ParameterGroupPresentation,
+    ParameterImportance,
+    ParameterPresentation,
+    PickerPresentation,
+    PortPresentation,
+    PresentationCatalog,
+    PresentationCatalogResolution,
+    PresentationDiagnostic,
+    PresentationModel,
+    decode_json_pointer,
+)
+
+__all__ = [
+    "PRESENTATION_CONTRACT_VERSION",
+    "PRESENTATION_LOCALE",
+    "CategoryPresentation",
+    "ControlHint",
+    "EnumLabel",
+    "IconToken",
+    "NodePresentation",
+    "PaletteLevel",
+    "ParameterGroupPresentation",
+    "ParameterImportance",
+    "ParameterPresentation",
+    "PickerPresentation",
+    "PortPresentation",
+    "PresentationCatalog",
+    "PresentationCatalogError",
+    "PresentationCatalogResolution",
+    "PresentationDiagnostic",
+    "PresentationModel",
+    "build_builtin_presentation_catalog",
+    "decode_json_pointer",
+    "resolve_presentation_catalog",
+    "validate_node_presentation",
+]

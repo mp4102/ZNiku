@@ -1,4 +1,4 @@
-"""启动仅监听 loopback 的 ZNIKU Studio 0.2.0 Project Service 开发 host。"""
+"""启动仅监听 loopback 的 ZNIKU Studio 0.3.0 Project Service 开发 host。"""
 
 from __future__ import annotations
 

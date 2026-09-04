@@ -124,6 +124,7 @@ def test_active_guidance_preserves_core_authority_and_ux_subordination() -> None
             "`zniku.project_service`",
             "`zniku.media`",
             "`zniku.avenhance_v27`",
+            "`zniku.presentation`",
         )
     )
     assert "0.1.0 contracts" in package_doc
@@ -167,5 +168,6 @@ def test_legacy_python_implementation_is_not_shipped_as_product_code() -> None:
         "media",
         "project",
         "project_service",
+        "presentation",
         "runtime",
     }

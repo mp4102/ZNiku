@@ -1,4 +1,4 @@
-/** 定义 ReactFlow 的显示模型；字段全部由 0.2.1 Project Service wire 数据投影而来。 */
+/** 定义 ReactFlow 的显示模型；字段全部由 0.3.0 Project Service wire 数据投影而来。 */
 
 import type { Edge, Node } from '@xyflow/react'
 import type {
@@ -17,6 +17,8 @@ export interface WorkflowProgressData {
 
 export interface WorkflowNodeData extends Record<string, unknown> {
   readonly label: string
+  readonly instanceId: string
+  readonly summaries: ReadonlyArray<string>
   readonly typeId: string
   readonly definitionVersion: string
   readonly executorKind: 'python' | 'command' | 'manual_external'

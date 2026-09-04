@@ -1,4 +1,4 @@
-"""验证 v0.2.1 Project Service 的 Run 可见性与人工交接合同。
+"""验证 Project Service 的 Run 可见性与人工交接合同。
 
 本模块只创建临时 ``.zniku``、纯合成 DataFile 和受控 attempt 目录。测试把 status、Run detail、
 历史分页、定向日志和 readiness 当作既有 Project/Runtime authority 的只读投影；任何读取都不得推进
@@ -284,10 +284,10 @@ def _sqlite_dump(path: Path) -> tuple[str, ...]:
 
 
 def test_phase1_wire_version_is_exact() -> None:
-    """浏览器 wire 升为 exact 0.2.1，不能与 Project schema version 捆绑。"""
+    """浏览器 wire 升为 exact 0.3.0，不能与 Project schema version 捆绑。"""
 
     assert PROJECT_SCHEMA_VERSION == 2
-    assert project_service.PROJECT_SERVICE_CONTRACT_VERSION == "0.2.1"
+    assert project_service.PROJECT_SERVICE_CONTRACT_VERSION == "0.3.0"
 
 
 def test_phase1_commands_are_strict_and_identity_bound() -> None:
@@ -339,7 +339,7 @@ def test_status_summary_and_detail_are_separate_bounded_read_models(tmp_path: Pa
     waiting_id, waiting_run, _ = _start_waiting_run(application)
 
     status = application.inspect(view_run_id=terminal_id)
-    assert status.contract_version == "0.2.1"
+    assert status.contract_version == "0.3.0"
     assert set(_dump(status)) == {
         "contract_version",
         "project_path",
@@ -380,7 +380,7 @@ def test_status_summary_and_detail_are_separate_bounded_read_models(tmp_path: Pa
     assert terminal.requires_operator_action is False
 
     detail = application.inspect_run_detail(waiting_id)
-    assert detail.contract_version == "0.2.1"
+    assert detail.contract_version == "0.3.0"
     assert set(_dump(detail)) == {
         "contract_version",
         "run",
@@ -426,7 +426,7 @@ def test_terminal_history_uses_bounded_opaque_cursor_without_gaps(tmp_path: Path
             cursor=cursor,
             limit=7,
         )
-        assert page.contract_version == "0.2.1"
+        assert page.contract_version == "0.3.0"
         assert 1 <= len(page.run_summaries) <= 7
         collected.extend(item.run_id for item in page.run_summaries)
         cursor = page.next_run_cursor
@@ -457,7 +457,7 @@ def test_logs_are_bounded_and_bound_to_exact_run_and_attempt(tmp_path: Path) -> 
         first_id,
         first_node_run.node_run_id,
     )
-    assert envelope.contract_version == "0.2.1"
+    assert envelope.contract_version == "0.3.0"
     assert envelope.run_id == first_id
     assert envelope.log.node_run_id == first_node_run.node_run_id
     assert envelope.log.stdout_available is True
@@ -500,7 +500,7 @@ def test_readiness_five_states_are_read_only(tmp_path: Path) -> None:
         assert application.inspect_run_detail(run_id) == before_detail
         assert _sqlite_dump(store.path) == before_db
         assert _tree(attempt_root) == before_tree
-        assert readiness.contract_version == "0.2.1"
+        assert readiness.contract_version == "0.3.0"
         assert readiness.run_id == run_id
         assert readiness.node_run_id == waiting.node_run_id
         assert readiness.handoff_id == handoff.handoff_id
@@ -923,7 +923,7 @@ def test_http_routes_bind_status_detail_logs_history_and_readiness(tmp_path: Pat
         responses = [_get_json(url) for url in requests]
 
         assert all(status == 200 for status, _ in responses)
-        assert all(payload["contract_version"] == "0.2.1" for _, payload in responses)
+        assert all(payload["contract_version"] == "0.3.0" for _, payload in responses)
         assert responses[0][1]["run_summaries"][0]["run_id"] == waiting_id
         assert [item["run_id"] for item in responses[1][1]["run_summaries"]] == [terminal_id]
         assert responses[2][1]["run"]["run_id"] == waiting_id

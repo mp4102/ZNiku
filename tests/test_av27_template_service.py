@@ -235,7 +235,7 @@ def test_prepare_preview_is_strict_and_has_no_project_side_effect(tmp_path: Path
 
     preview = application.preview_av_enhance_v27({"action": "prepare", "request": request})
 
-    assert preview.contract_version == "0.2.1"
+    assert preview.contract_version == "0.3.0"
     assert preview.phase == "preparation"
     assert preview.profile.status == "preparation-compatible"
     assert [node.node_id for node in preview.project.graph.nodes] == [

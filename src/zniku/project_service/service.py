@@ -1,4 +1,4 @@
-"""实现单用户本地 Studio 的 0.2.1 Project Service application facade。
+"""实现单用户本地 Studio 的 0.3.0 Project Service application facade。
 
 Facade 在一次 Project session 内只构造一个 ``RuntimeService``。mutation 在进程内串行，运行命令由
 受控后台线程推进；status 只返回有界 Run summary，完整 Run、日志与 handoff readiness 通过精确身份
@@ -48,6 +48,11 @@ from zniku.avenhance_v27.template import (
     validate_prepare_paths,
 )
 from zniku.graph import ExecutionMode, Graph, NodeDefinition, NodeInstance, PythonExecutorSpec
+from zniku.presentation import (
+    PresentationCatalogError,
+    PresentationCatalogResolution,
+    resolve_presentation_catalog,
+)
 from zniku.project import Project, ProjectSnapshot, ProjectStore, ProjectStoreError
 from zniku.runtime import (
     Artifact,
@@ -84,6 +89,7 @@ from .models import (
     NodeLogProjection,
     NodeProgressProjection,
     OpenProjectCommand,
+    PresentationCatalogEnvelope,
     ProjectServiceFailure,
     RerunFromHereCommand,
     RunAllCommand,
@@ -143,6 +149,7 @@ class ProjectServiceApplication:
         artifact_quick_probe: ArtifactQuickProbe | None = None,
         progress_wall_clock: WallClock | None = None,
         progress_monotonic_clock: MonotonicClock | None = None,
+        third_party_presentation_catalogs: Iterable[object] = (),
     ) -> None:
         root = Path(work_root)
         try:
@@ -172,7 +179,22 @@ class ProjectServiceApplication:
                 http_status=500,
             )
 
+        third_party_presentations = tuple(third_party_presentation_catalogs)
+        try:
+            presentation_resolution = resolve_presentation_catalog(
+                catalog,
+                third_party_catalogs=third_party_presentations,
+            )
+        except PresentationCatalogError as error:
+            raise ProjectServiceError(
+                "E_PROJECT_SERVICE_PRESENTATION_CATALOG",
+                error.message,
+                http_status=500,
+            ) from error
+
         self._definition_catalog = catalog
+        self._third_party_presentation_catalogs = third_party_presentations
+        self._presentation_resolution = presentation_resolution
         self._python_adapters = dict(python_adapters or {})
         self._validators = dict(validators or {})
         self._media_probe = media_probe
@@ -192,6 +214,61 @@ class ProjectServiceApplication:
         """返回进程启动时固定的 attempt 根；command 不能替换它。"""
 
         return self._work_root
+
+    def inspect_presentations(self) -> PresentationCatalogEnvelope:
+        """返回与启动目录及当前 Project definitions 精确绑定的独立展示目录。
+
+        Project 展开动态 AtomicSplit 后必须按实际 ``NodeDefinition`` 重新投影端口，不能从 type_id
+        猜测 leaf 数量。读取和绑定过程不写 Project，也不接触 Runtime reuse/stale 状态。
+        """
+
+        with self._state:
+            store = self._store
+            if store is None:
+                resolution = self._presentation_resolution
+            else:
+                try:
+                    snapshot = store.load()
+                    definitions = list(self._definition_catalog)
+                    known = {
+                        (definition.type_id, definition.version): definition
+                        for definition in definitions
+                    }
+                    for definition in snapshot.definitions:
+                        key = (definition.type_id, definition.version)
+                        existing = known.get(key)
+                        if existing is not None and existing != definition:
+                            raise PresentationCatalogError(
+                                "E_PRESENTATION_DEFINITION_CONFLICT",
+                                "当前 Project definition 与启动 catalog 的 exact identity 结构冲突",
+                            )
+                        if existing is None:
+                            definitions.append(definition)
+                            known[key] = definition
+                    resolution = resolve_presentation_catalog(
+                        definitions,
+                        third_party_catalogs=self._third_party_presentation_catalogs,
+                    )
+                except PresentationCatalogError as error:
+                    raise ProjectServiceError(
+                        "E_PROJECT_SERVICE_PRESENTATION_CATALOG",
+                        error.message,
+                        http_status=500,
+                    ) from error
+                except (ProjectStoreError, ValidationError) as error:
+                    raise self._translate_failure(error) from error
+        return self._presentation_envelope(resolution)
+
+    @staticmethod
+    def _presentation_envelope(
+        resolution: PresentationCatalogResolution,
+    ) -> PresentationCatalogEnvelope:
+        """把内部绑定结果包装为 exact v0.3.0 只读 wire envelope。"""
+
+        return PresentationCatalogEnvelope(
+            catalog=resolution.catalog,
+            diagnostics=resolution.diagnostics,
+        )
 
     def preview_av_enhance_v27(self, payload: object) -> TemplatePreviewEnvelope:
         """无副作用地重算 AVEnhanceFlow v2.7 Graph、计划与 profile preflight。"""

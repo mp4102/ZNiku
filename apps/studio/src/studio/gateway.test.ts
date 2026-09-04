@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   StudioContractError,
   type AvEnhanceV27TemplatePreviewEnvelope,
+  type PresentationCatalogEnvelopeWire,
   type AvEnhanceV27TemplatePreviewRequestWire,
   type StudioCommand,
 } from './contracts'
@@ -25,7 +26,7 @@ function response(value: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => value } as unknown as Response
 }
 
-describe('FetchStudioGateway 0.2.1', () => {
+describe('FetchStudioGateway 0.3.0', () => {
   it('只向固定 endpoint 发送严格 v2.7 preview request 并解析 Python response', async () => {
     const payload: AvEnhanceV27TemplatePreviewRequestWire = {
       action: 'prepare',
@@ -42,7 +43,7 @@ describe('FetchStudioGateway 0.2.1', () => {
       },
     }
     const envelope: AvEnhanceV27TemplatePreviewEnvelope = {
-      contract_version: '0.2.1',
+      contract_version: '0.3.0',
       profile_version: '2.7.0',
       phase: 'preparation',
       project: projectSnapshot.project,
@@ -180,7 +181,7 @@ describe('FetchStudioGateway 0.2.1', () => {
       .fn()
       .mockResolvedValueOnce(response(handoffEnvelope()))
       .mockResolvedValueOnce(response({
-        contract_version: '0.2.1',
+        contract_version: '0.3.0',
         run_summaries: [handoffSummary()],
         next_run_cursor: null,
       }))
@@ -207,6 +208,34 @@ describe('FetchStudioGateway 0.2.1', () => {
       `http://loopback.test/api/studio/runs/${handoffFixtureIds.run}/node-runs/${handoffFixtureIds.transformNodeRun}/logs`,
       `http://loopback.test/api/studio/runs/${handoffFixtureIds.run}/node-runs/${handoffFixtureIds.transformNodeRun}/handoff-readiness?probe=false`,
     ])
+  })
+
+  it('从独立只读 endpoint 获取严格 Presentation catalog', async () => {
+    const envelope: PresentationCatalogEnvelopeWire = {
+      contract_version: '0.3.0',
+      catalog: {
+        contract_version: '0.3.0',
+        locale: 'zh-CN',
+        categories: [{ category_id: 'media', title: '媒体', description: null, order: 1 }],
+        nodes: [{
+          type_id: 'test.source', definition_version: '1.0.0', title: '媒体输入',
+          description: '选择待处理媒体。', category_id: 'media', icon_token: 'source',
+          palette_level: 'primary', keywords: [], parameter_groups: [], parameters: [],
+          ports: [], card_summary_paths: [],
+        }],
+      },
+      diagnostics: [],
+    }
+    const fetchMock = vi.fn().mockResolvedValue(response(envelope))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await new FetchStudioGateway('http://loopback.test').inspectPresentations()
+
+    expect(result.catalog.nodes[0]?.title).toBe('媒体输入')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://loopback.test/api/studio/presentations',
+      expect.objectContaining({ method: 'GET' }),
+    )
   })
 
   it('即使 payload 通过 Schema，也拒绝与请求不一致的资源 identity', async () => {

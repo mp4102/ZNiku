@@ -1,5 +1,5 @@
 /**
- * 实现 ZNIKU 0.2.1 的单一正式 Studio 工作区与 Run 可观察性。
+ * 编排 ZNIKU 0.3.0 单一正式 Studio 工作区的 authority 状态与组件边界。
  *
  * Designer 编辑 Project 当前 Graph；运行视图默认展示操作者显式选择的 Run snapshot。status、Run
  * detail、readiness 与日志分别从 Python authority 读取，并通过 generation/sequence 丢弃迟到响应。
@@ -8,12 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Background,
-  BackgroundVariant,
-  Controls,
   MarkerType,
-  MiniMap,
-  ReactFlow,
   useReactFlow,
   type Connection,
   type EdgeChange,
@@ -22,9 +17,7 @@ import {
   type NodeMouseHandler,
   type OnSelectionChangeParams,
 } from '@xyflow/react'
-import { WorkflowNodeCard } from '../components/WorkflowNodeCard'
 import { AvEnhanceV27Wizard } from './AvEnhanceV27Wizard'
-import { ArtifactMediaSummary, HandoffContract, HandoffPrecheckFailure, ReadinessMessages } from './HandoffContract'
 import type {
   WorkflowEdge,
   WorkflowNode,
@@ -45,6 +38,8 @@ import type {
   NodeInstanceWire,
   NodeLogEnvelope,
   NodeProgressProjectionWire,
+  NodePresentationWire,
+  PresentationCatalogEnvelopeWire,
   NodeRunWire,
   ProjectSnapshotWire,
   RunDetailEnvelope,
@@ -63,11 +58,18 @@ import {
   isStudioConnectionValid,
   nodeExecutionSignatureMatches,
   reorderEdge,
+  selectionChangeBlocked,
 } from './graph'
 import { createStudioGateway, StudioGatewayError, type StudioGateway } from './gateway'
 import { groupStudioDefinitions } from './catalog'
-
-const nodeTypes = { workflow: WorkflowNodeCard }
+import { asParameterSchema, getPointer, validateParameterDraft } from './parameter-draft'
+import { DiagnosticsPanel } from './components/DiagnosticsPanel'
+import { GraphCanvas } from './components/GraphCanvas'
+import { HandoffCenter, elapsedLabel, handoffResourceKey, readinessLabel } from './components/HandoffCenter'
+import { NodeInspector } from './components/NodeInspector'
+import { NodePalette } from './components/NodePalette'
+import { ProjectShell } from './components/ProjectShell'
+import { RunCanvasOverlays, RunCenter, targetLabel } from './components/RunCenter'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
 
 type ChannelName = 'status' | 'detail' | 'readiness' | 'log'
@@ -107,10 +109,6 @@ interface DetailBackoff {
 
 function nodeRunResourceKey(runId: string, nodeRunId: string): string {
   return `${runId}/${nodeRunId}`
-}
-
-function handoffResourceKey(runId: string, nodeRunId: string, handoffId: string): string {
-  return `${runId}/${nodeRunId}/${handoffId}`
 }
 
 function emptyResourceHealth(): ResourceHealth {
@@ -221,36 +219,6 @@ function detailPollDelay(summary: RunSummaryWire | undefined): number | null {
   return summary.state_counts.running > 0 ? 750 : 1_500
 }
 
-function targetLabel(summary: RunSummaryWire): string {
-  return summary.target_mode === 'all'
-    ? 'Run all'
-    : `Run to ${summary.selected_targets.join(', ')}`
-}
-
-function summaryOptionLabel(summary: RunSummaryWire): string {
-  const counts = summary.state_counts
-  return `${summary.created_at} · ${targetLabel(summary)} · ${summary.state} · ${counts.completed}/${summary.node_count} completed · ${counts.running} running · ${counts.waiting_external} waiting external · ${counts.failed} failed`
-}
-
-function readinessLabel(value: ExternalHandoffReadiness | null): string {
-  if (!value) return 'checking'
-  if (value.ready_for_submit) return 'probe passed'
-  const states = [...new Set(value.targets.map((target) => target.state))]
-  return states.join(', ') || 'no targets'
-}
-
-function elapsedLabel(createdAt: string): string {
-  const created = Date.parse(createdAt)
-  if (!Number.isFinite(created)) return '等待时长未知'
-  const seconds = Math.max(0, Math.floor((Date.now() - created) / 1_000))
-  if (seconds < 60) return `已等待 ${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `已等待 ${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 48) return `已等待 ${hours}h ${minutes % 60}m`
-  return `已等待 ${Math.floor(hours / 24)}d ${hours % 24}h`
-}
-
 function runtimeElapsedLabel(nodeRun: NodeRunWire): string | null {
   if (!nodeRun.started_at) return null
   const started = Date.parse(nodeRun.started_at)
@@ -324,14 +292,6 @@ function parameterObject(value: string): JsonObject | null {
   } catch {
     return null
   }
-}
-
-function parameterTextValue(parameters: JsonObject, ...keys: string[]): string | null {
-  for (const key of keys) {
-    const value = parameters[key]
-    if (typeof value === 'string' && value.trim()) return value
-  }
-  return null
 }
 
 function monotonicDetail(
@@ -429,7 +389,11 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const [query, setQuery] = useState('')
   const [selectedNodeIds, setSelectedNodeIds] = useState<ReadonlySet<string>>(new Set())
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<ReadonlySet<string>>(new Set())
+  const [presentationEnvelope, setPresentationEnvelope] = useState<PresentationCatalogEnvelopeWire | null>(null)
+  const [presentationError, setPresentationError] = useState<string | null>(null)
+  const [parameterDraft, setParameterDraft] = useState<JsonObject>({})
   const [parameterText, setParameterText] = useState('{}')
+  const [parameterRawError, setParameterRawError] = useState<string | null>(null)
   const [bottomOpen, setBottomOpen] = useState(true)
   const [pollEpoch, setPollEpoch] = useState(0)
   const [detailPollEpoch, setDetailPollEpoch] = useState(0)
@@ -482,10 +446,41 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const busyRef = useRef(false)
   const detailSummaryRevisionRef = useRef('')
   const detailRequestedSummaryRevisionRef = useRef('')
+  const selectionGuardRef = useRef<{
+    readonly nodeIds: ReadonlySet<string>
+    readonly edgeIds: ReadonlySet<string>
+    readonly selectedNodeId: string | null
+    readonly parameterDraftDirty: boolean
+  }>({ nodeIds: new Set(), edgeIds: new Set(), selectedNodeId: null, parameterDraftDirty: false })
   const latestTemplatePreviewRef = useRef<{
     readonly requestJson: string
     readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
   } | null>(null)
+  const presentationDefinitionRevision = (draft?.definitions ?? [])
+    .map((definition) => `${definition.type_id}@${definition.version}`)
+    .sort()
+    .join('\u0000')
+
+  useEffect(() => {
+    let active = true
+    if (!effectiveGateway.inspectPresentations) return () => { active = false }
+    void effectiveGateway.inspectPresentations().then((envelope) => {
+      if (!active) return
+      setPresentationEnvelope(envelope)
+      setPresentationError(
+        envelope.diagnostics.length > 0
+          ? `Presentation 已隔离 ${envelope.diagnostics.length} 个无效第三方条目。`
+          : null,
+      )
+    }).catch((error: unknown) => {
+      if (!active) return
+      setPresentationEnvelope(null)
+      setPresentationError(
+        `Presentation 不可用，已使用通用 Schema 表单：${error instanceof Error ? error.message : '未知错误'}`,
+      )
+    })
+    return () => { active = false }
+  }, [effectiveGateway, presentationDefinitionRevision])
 
   const markStatusHealth = useCallback((stale: boolean) => {
     setStatusHealth((current) => ({
@@ -1116,15 +1111,33 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     () => new Map(definitions.map((definition) => [`${definition.type_id}@${definition.version}`, definition])),
     [definitions],
   )
+  const presentationsByKey = useMemo(
+    () => new Map(
+      (presentationEnvelope?.catalog.nodes ?? []).map((presentation) => [
+        `${presentation.type_id}@${presentation.definition_version}`,
+        presentation,
+      ]),
+    ),
+    [presentationEnvelope],
+  )
 
   const flowNodes = useMemo<WorkflowNode[]>(
     () =>
       graph.nodes.flatMap((node, index) => {
         const definition = definitionsByKey.get(`${node.type_id}@${node.definition_version}`)
         if (!definition) return []
+        const presentation = presentationsByKey.get(`${node.type_id}@${node.definition_version}`) ?? null
         const nodeRun = activeNodeRuns.get(node.node_id) ?? null
         const data: WorkflowNodeData = {
-          label: node.node_id,
+          label: presentation?.title ?? node.node_id,
+          instanceId: node.node_id,
+          summaries: (presentation?.card_summary_paths ?? []).flatMap((pointer) => {
+            const value = getPointer(node.parameters, pointer)
+            if (value === undefined) return []
+            const label = presentation?.parameters.find((item) => item.parameter_pointer === pointer)?.label ?? pointer
+            const text = typeof value === 'string' ? value : JSON.stringify(value)
+            return [`${label}：${text}`]
+          }),
           typeId: node.type_id,
           definitionVersion: node.definition_version,
           executorKind: definition.executor.kind,
@@ -1158,6 +1171,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       graph.nodes,
       latestResults,
       progressSamplesByNodeRun,
+      presentationsByKey,
       selectedNodeIds,
     ],
   )
@@ -1181,6 +1195,13 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
 
   const selectedNode = graph.nodes.find((node) => selectedNodeIds.has(node.node_id)) ?? null
   const selectedDefinition = selectedNode ? definitionForNode(selectedNode, definitions) : null
+  const selectedPresentation = selectedNode
+    ? presentationEnvelope?.catalog.nodes.find(
+        (item) =>
+          item.type_id === selectedNode.type_id &&
+          item.definition_version === selectedNode.definition_version,
+      ) ?? null
+    : null
   const selectedEdge = graph.edges.find((edge) => selectedEdgeIds.has(edgeId(edge))) ?? null
   const selectedNodeRunAuthority = selectedNode
     ? activeNodeRuns.get(selectedNode.node_id) ?? null
@@ -1258,9 +1279,28 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     [resourceHealth, selectedLogResourceKey, statusHealth, viewRunId, waitingNodeRuns],
   )
 
+  const selectedParameterSignature = JSON.stringify(selectedNode?.parameters ?? {})
   useEffect(() => {
-    setParameterText(JSON.stringify(selectedNode?.parameters ?? {}, null, 2))
-  }, [selectedNode])
+    const next = parameterObject(selectedParameterSignature) ?? {}
+    setParameterDraft(next)
+    setParameterText(JSON.stringify(next, null, 2))
+    setParameterRawError(null)
+  }, [selectedNode?.node_id, selectedParameterSignature])
+  const parameterValidation = useMemo(
+    () => selectedDefinition
+      ? validateParameterDraft(asParameterSchema(selectedDefinition.parameter_schema), parameterDraft)
+      : null,
+    [parameterDraft, selectedDefinition],
+  )
+  const parameterDraftDirty = !!selectedNode && (
+    parameterRawError !== null || JSON.stringify(parameterDraft) !== selectedParameterSignature
+  )
+  selectionGuardRef.current = {
+    nodeIds: selectedNodeIds,
+    edgeIds: selectedEdgeIds,
+    selectedNodeId: selectedNode?.node_id ?? null,
+    parameterDraftDirty,
+  }
 
   useEffect(() => {
     selectedLogResourceRef.current = selectedLogResourceKey
@@ -1268,8 +1308,33 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     void loadLog(viewRunId, selectedNodeRun.node_run_id, generationRef.current)
   }, [loadLog, selectedLogResourceKey, selectedNodeRun?.log_path, selectedNodeRun?.node_run_id, viewRunId])
 
+  const changeSelection = useCallback((
+    nodeIds: ReadonlySet<string>,
+    edgeIds: ReadonlySet<string>,
+  ): boolean => {
+    const sameSet = (left: ReadonlySet<string>, right: ReadonlySet<string>) =>
+      left.size === right.size && [...left].every((item) => right.has(item))
+    const current = selectionGuardRef.current
+    if (selectionChangeBlocked(current.selectedNodeId, current.parameterDraftDirty, nodeIds, edgeIds)) {
+      setClientHint('当前节点有未应用设置；请先“应用设置”或“放弃未应用更改”。')
+      return false
+    }
+    // React Flow 会在受控 selected 投影后再次发出 selection 事件；相同集合不得重复 setState。
+    if (sameSet(current.nodeIds, nodeIds) && sameSet(current.edgeIds, edgeIds)) return true
+    selectionGuardRef.current = {
+      ...current,
+      nodeIds,
+      edgeIds,
+      selectedNodeId: nodeIds.size === 1 ? [...nodeIds][0]! : null,
+    }
+    setSelectedNodeIds(nodeIds)
+    setSelectedEdgeIds(edgeIds)
+    return true
+  }, [])
+
   const selectRun = useCallback(
     (runId: string) => {
+      if (!changeSelection(new Set(), new Set())) return
       // Run 选择会切换请求 generation；同步释放旧分页 owner，旧请求的 finally 不得回写新视图。
       setHistoryBusy(false)
       readinessProbeFlightRef.current.clear()
@@ -1281,7 +1346,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       setPollEpoch((value) => value + 1)
       void loadDetail(runId, generation)
     },
-    [loadDetail, setTrustedViewRunId],
+    [changeSelection, loadDetail, setTrustedViewRunId],
   )
 
   const updateGraph = useCallback((updater: (graph: GraphWire) => GraphWire) => {
@@ -1296,37 +1361,33 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   }, [])
 
   const handleSelection = useCallback((selection: OnSelectionChangeParams) => {
-    setSelectedNodeIds(new Set(selection.nodes.map((node) => node.id)))
-    setSelectedEdgeIds(new Set(selection.edges.map((edge) => edge.id)))
-  }, [])
+    changeSelection(
+      new Set(selection.nodes.map((node) => node.id)),
+      new Set(selection.edges.map((edge) => edge.id)),
+    )
+  }, [changeSelection])
 
   const handleNodeClick: NodeMouseHandler<WorkflowNode> = useCallback((event, node) => {
     if (event.ctrlKey || event.metaKey) {
-      setSelectedNodeIds((current) => {
-        const next = new Set(current)
-        if (next.has(node.id)) next.delete(node.id)
-        else next.add(node.id)
-        return next
-      })
+      const next = new Set(selectedNodeIds)
+      if (next.has(node.id)) next.delete(node.id)
+      else next.add(node.id)
+      changeSelection(next, selectedEdgeIds)
     } else {
-      setSelectedNodeIds(new Set([node.id]))
-      setSelectedEdgeIds(new Set())
+      changeSelection(new Set([node.id]), new Set())
     }
-  }, [])
+  }, [changeSelection, selectedEdgeIds, selectedNodeIds])
 
   const handleEdgeClick: EdgeMouseHandler<WorkflowEdge> = useCallback((event, edge) => {
     if (event.ctrlKey || event.metaKey) {
-      setSelectedEdgeIds((current) => {
-        const next = new Set(current)
-        if (next.has(edge.id)) next.delete(edge.id)
-        else next.add(edge.id)
-        return next
-      })
+      const next = new Set(selectedEdgeIds)
+      if (next.has(edge.id)) next.delete(edge.id)
+      else next.add(edge.id)
+      changeSelection(selectedNodeIds, next)
     } else {
-      setSelectedEdgeIds(new Set([edge.id]))
-      setSelectedNodeIds(new Set())
+      changeSelection(new Set(), new Set([edge.id]))
     }
-  }, [])
+  }, [changeSelection, selectedEdgeIds, selectedNodeIds])
 
   const graphEditable = !showRunSnapshot || currentRun === null
 
@@ -1341,6 +1402,10 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       const removed = new Set(
         changes.flatMap((change) => (change.type === 'remove' ? [change.id] : [])),
       )
+      if (removed.size > 0 && parameterDraftDirty) {
+        setClientHint('当前节点有未应用设置；请先应用或放弃，再删除。')
+        return
+      }
       if (positions.size > 0) {
         updateGraph((current) => ({
           ...current,
@@ -1353,7 +1418,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       }
       if (removed.size > 0) updateGraph((current) => deleteSelection(current, removed, new Set()))
     },
-    [graphEditable, updateGraph],
+    [graphEditable, parameterDraftDirty, updateGraph],
   )
 
   const handleEdgesChange = useCallback(
@@ -1400,6 +1465,10 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const addDefinition = useCallback(
     (definition: NodeDefinitionWire) => {
       if (!draft || !graphEditable) return
+      if (parameterDraftDirty) {
+        setClientHint('当前节点有未应用设置；请先应用或放弃，再添加节点。')
+        return
+      }
       const existing = new Set(draft.project.graph.nodes.map((node) => node.node_id))
       let nodeId = nodeIdFactory()
       while (existing.has(nodeId)) nodeId = nodeIdFactory()
@@ -1417,23 +1486,31 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       setSelectedNodeIds(new Set([nodeId]))
       setSelectedEdgeIds(new Set())
     },
-    [draft, graphEditable, nodeIdFactory, updateGraph],
+    [draft, graphEditable, nodeIdFactory, parameterDraftDirty, updateGraph],
   )
 
   const copySelected = useCallback(() => {
     if (!draft || !graphEditable || selectedNodeIds.size === 0) return
+    if (parameterDraftDirty) {
+      setClientHint('当前节点有未应用设置；请先应用或放弃，再复制节点。')
+      return
+    }
     const copied = copySelection(draft.project.graph, selectedNodeIds, nodeIdFactory)
     updateGraph(() => copied.graph)
     setSelectedNodeIds(copied.copied_node_ids)
     setSelectedEdgeIds(new Set())
-  }, [draft, graphEditable, nodeIdFactory, selectedNodeIds, updateGraph])
+  }, [draft, graphEditable, nodeIdFactory, parameterDraftDirty, selectedNodeIds, updateGraph])
 
   const deleteSelected = useCallback(() => {
     if (!graphEditable || (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0)) return
+    if (parameterDraftDirty) {
+      setClientHint('当前节点有未应用设置；请先应用或放弃，再删除。')
+      return
+    }
     updateGraph((current) => deleteSelection(current, selectedNodeIds, selectedEdgeIds))
     setSelectedNodeIds(new Set())
     setSelectedEdgeIds(new Set())
-  }, [graphEditable, selectedEdgeIds, selectedNodeIds, updateGraph])
+  }, [graphEditable, parameterDraftDirty, selectedEdgeIds, selectedNodeIds, updateGraph])
 
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
@@ -1459,18 +1536,43 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
 
   const applyParameters = useCallback(() => {
     if (!selectedNode || !graphEditable) return
-    const parameters = parameterObject(parameterText)
-    if (!parameters) {
-      setClientHint('参数必须是合法 JSON object；未修改 Project Draft。')
+    if (parameterRawError || !parameterValidation?.valid) {
+      setClientHint('设置仍有 Schema 或 JSON 问题；未修改 Project Graph。')
       return
     }
     updateGraph((current) => ({
       ...current,
       nodes: current.nodes.map((node) =>
-        node.node_id === selectedNode.node_id ? { ...node, parameters } : node,
+        node.node_id === selectedNode.node_id ? { ...node, parameters: parameterDraft } : node,
       ),
     }))
-  }, [graphEditable, parameterText, selectedNode, updateGraph])
+  }, [graphEditable, parameterDraft, parameterRawError, parameterValidation?.valid, selectedNode, updateGraph])
+
+  const changeParameterDraft = useCallback((next: JsonObject) => {
+    setParameterDraft(next)
+    setParameterText(JSON.stringify(next, null, 2))
+    setParameterRawError(null)
+    setClientHint(null)
+  }, [])
+
+  const changeParameterText = useCallback((text: string) => {
+    setParameterText(text)
+    const parsed = parameterObject(text)
+    if (!parsed) {
+      setParameterRawError('原始参数必须是合法 JSON object；当前文本尚未进入结构化 draft。')
+      return
+    }
+    setParameterDraft(parsed)
+    setParameterRawError(null)
+  }, [])
+
+  const discardParameters = useCallback(() => {
+    const next = parameterObject(selectedParameterSignature) ?? {}
+    setParameterDraft(next)
+    setParameterText(JSON.stringify(next, null, 2))
+    setParameterRawError(null)
+    setClientHint('已放弃当前节点未应用的设置。')
+  }, [selectedParameterSignature])
 
   const executeCommands = useCallback(
     async (
@@ -1582,12 +1684,16 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
   const saveThenRun = useCallback(
     async (command: StudioCommand) => {
       if (!draft) return
+      if (parameterDraftDirty) {
+        setClientHint('当前节点有未应用设置；请先“应用设置”或“放弃未应用更改”再运行。')
+        return
+      }
       await executeCommands(
         [{ operation: 'save_project', project: draft.project }, command],
         { preferCreatedRun: true },
       )
     },
-    [draft, executeCommands],
+    [draft, executeCommands, parameterDraftDirty],
   )
 
   const previewAvEnhanceV27 = useCallback(
@@ -1614,6 +1720,10 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         | { readonly operation: 'expand_av_enhance_v27'; readonly request: AvEnhanceV27ExpandRequestWire },
       expectedPhase: 'preparation' | 'expanded',
     ): Promise<boolean> => {
+      if (parameterDraftDirty) {
+        setClientHint('当前节点有未应用设置；请先应用或放弃，再替换模板 Graph。')
+        return false
+      }
       const authority = latestTemplatePreviewRef.current
       const expectedAction = expectedPhase === 'preparation' ? 'prepare' : 'expand'
       const requestJson = JSON.stringify({ action: expectedAction, request: command.request })
@@ -1644,7 +1754,7 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       setFitViewEpoch((value) => value + 1)
       return true
     },
-    [executeCommands],
+    [executeCommands, parameterDraftDirty],
   )
 
   const createAvEnhanceV27 = useCallback(
@@ -1753,14 +1863,18 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
     }
   }, [effectiveGateway, historyBusy])
 
-  const catalogGroups = groupStudioDefinitions(draft?.definitions ?? [], query)
+  const catalogGroups = groupStudioDefinitions(
+    draft?.definitions ?? [],
+    query,
+    presentationEnvelope?.catalog ?? null,
+  )
   const singleSelectedNodeId = selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null
   const rerunId = currentRun?.run_id ?? null
   const rerunNodeIncluded = singleSelectedNodeId
     ? runLatestAttempts.has(singleSelectedNodeId)
     : false
   const serviceBusy = busy || operationActive
-  const runBlocked = serviceBusy || health.status.stale || !draft || diagnostics.length > 0
+  const runBlocked = serviceBusy || health.status.stale || !draft || diagnostics.length > 0 || parameterDraftDirty
   const detailMutationBlocked = serviceBusy || health.status.stale || health.detail.stale
   const firstWaiting = waitingNodeRuns[0] ?? null
   const firstFailed = [...runLatestAttempts.values()].find(
@@ -1788,10 +1902,9 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
       setClientHint(`Template preview diagnostic 指向 ${nodeId}；该节点尚未写入当前 Project。`)
       return
     }
+    if (!changeSelection(new Set([nodeId]), new Set())) return
     setTemplateOpen(false)
     setShowRunSnapshot(false)
-    setSelectedNodeIds(new Set([nodeId]))
-    setSelectedEdgeIds(new Set())
   }
 
   return (
@@ -1811,235 +1924,166 @@ export function StudioWorkspace({ gateway, nodeIdFactory = defaultNodeId }: Stud
         runSummaries={allSummaries}
         serviceError={clientHint ?? boundaryError}
       />
-      <header className="topbar">
-        <div className="brand-lockup">
-          <div className="brand-mark">ZN</div>
-          <div><span className="brand-name">ZNIKU</span><span className="brand-subtitle">Studio</span></div>
-        </div>
-
-        <div className="workflow-identity">
-          <span className="eyebrow">PROJECT GRAPH</span>
-          <strong>{draft?.project.name ?? '打开或新建 .zniku 工程'}</strong>
-          <span className="identity-meta">
-            {draft
-              ? `${draft.project.project_id} · ${draft.project.graph.nodes.length} nodes · ${dirty ? '未保存' : '已保存'}`
-              : '0.2.1 Project Service wire authority'}
-          </span>
-          {visibleTemplateProfile && (
-            <span
-              className={`workflow-profile-state ${visibleTemplateProfile.compatible ? 'is-compatible' : 'is-unverified'}`}
-              role="status"
-            >
-              AVEnhanceFlow 2.7 · {visibleTemplateProfile.status}
-              {visibleTemplateProfile.modified ? ' · 自由编辑后已降级' : ''}
-            </span>
-          )}
-        </div>
-
-        <div className="project-location">
-          <button
-            className="button button--template"
-            disabled={serviceBusy || health.status.stale}
-            onClick={() => setTemplateOpen(true)}
-            type="button"
-          >
-            Templates
-          </button>
-          <input aria-label="工程路径" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder="D:\\Projects\\example.zniku" />
-          <button className="button button--ghost" type="button" disabled={serviceBusy || health.status.stale || !projectPath.trim()} onClick={() => void executeCommands([{ operation: 'open_project', path: projectPath.trim() }])}>打开</button>
-          <button className="button button--ghost" type="button" disabled={serviceBusy || health.status.stale || !projectPath.trim() || !projectId.trim() || !projectName.trim()} onClick={() => void executeCommands([{ operation: 'create_project', path: projectPath.trim(), project_id: projectId.trim(), name: projectName.trim() }])}>新建</button>
-          <button className="button button--ghost" type="button" disabled={serviceBusy || health.status.stale || !draft || diagnostics.length > 0 || !dirty} onClick={() => void saveProject()}>保存</button>
-        </div>
-
-        <div className="top-actions">
-          <span className={`authority-badge ${boundaryError || health.status.stale ? 'is-unavailable' : ''}`}>
-            {health.status.stale ? 'STATUS STALE' : status?.active_operation ? `HOST · ${status.active_operation.toUpperCase()}` : 'PROJECT SERVICE'}
-          </span>
-          <div className="channel-health" aria-label="Resource channel health">
-            {(Object.entries(health) as Array<[ChannelName, ChannelHealth]>).map(
-              ([channel, value]) => (
-                <span className={value.stale ? 'is-stale' : ''} key={channel}>
-                  {channel.toUpperCase()} {value.stale ? 'STALE' : 'OK'} · {value.lastSuccess ?? 'never'}
-                </span>
-              ),
-            )}
-          </div>
-          <label className="run-selector">
-            <span>查看 Run</span>
-            <select aria-label="查看 Run" value={viewRunId ?? ''} onChange={(event) => event.target.value && selectRun(event.target.value)} disabled={allSummaries.length === 0}>
-              {allSummaries.length === 0 && <option value="">No Runs</option>}
-              {allSummaries.map((summary) => <option key={summary.run_id} value={summary.run_id}>{summaryOptionLabel(summary)}</option>)}
-            </select>
-          </label>
-          <button className="button button--primary" type="button" disabled={runBlocked} onClick={() => void saveThenRun({ operation: 'run_all' })}>Run all</button>
-          <button className="button button--ghost" type="button" disabled={runBlocked || !singleSelectedNodeId || showRunSnapshot} onClick={() => singleSelectedNodeId && void saveThenRun({ operation: 'run_to', node_id: singleSelectedNodeId })}>Run to here</button>
-          <button className="button button--ghost" type="button" disabled={detailMutationBlocked || !singleSelectedNodeId || !rerunId || !rerunNodeIncluded} onClick={() => singleSelectedNodeId && rerunId && void executeCommands([{ operation: 'rerun_from_here', run_id: rerunId, node_id: singleSelectedNodeId }], { preferCreatedRun: true })}>Rerun from here</button>
-        </div>
-      </header>
-
-      <aside className="palette-panel">
-        <div className="panel-heading"><span className="eyebrow">NODE DEFINITIONS</span><h2>节点面板</h2><span className="registry-state"><i /> {draft?.definitions.length ?? 0} exact versions</span></div>
-        <div className="project-fields">
-          <label>Project ID<input aria-label="Project ID" value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
-          <label>Project name<input aria-label="Project name" value={projectName} onChange={(event) => setProjectName(event.target.value)} /></label>
-        </div>
-        <label className="search-box"><span>⌕</span><input aria-label="搜索节点" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="type、port、mode 或 executor" /></label>
-        <div className="palette-list" aria-label="节点定义列表">
-          {catalogGroups.map((group) => (
-            <section className="palette-group" aria-label={group.label} key={group.id}>
-              <header><span><strong>{group.label}</strong><small>{group.description}</small></span><em>{group.entries.length}</em></header>
-              {group.entries.map(({ definition, role }) => (
-                <button className={`palette-item palette-item--${definition.executor.kind}`} type="button" key={`${definition.type_id}@${definition.version}`} disabled={!draft || busy || !graphEditable} onClick={() => addDefinition(definition)}>
-                  <span className="palette-icon">{definition.executor.kind === 'manual_external' ? 'ME' : definition.executor.kind === 'command' ? 'CM' : 'PY'}</span>
-                  <span><strong>{definition.type_id}</strong><small>{role} · {definition.execution_mode} · {definition.input_ports.length} in / {definition.output_ports.length} out</small></span><em>{definition.version}</em>
-                </button>
-              ))}
-            </section>
-          ))}
-          {catalogGroups.length === 0 && <p className="palette-empty">没有匹配的 exact definition。</p>}
-        </div>
-        <div className="selection-actions">
-          <button className="button button--ghost" type="button" disabled={selectedNodeIds.size === 0 || busy || !graphEditable} onClick={copySelected}>复制所选</button>
-          <button className="button button--danger" type="button" disabled={(selectedNodeIds.size === 0 && selectedEdgeIds.size === 0) || busy || !graphEditable} onClick={deleteSelected}>删除所选</button>
-        </div>
-        <div className="palette-note"><span>自由 DAG</span><p>节点与 presets 来自当前 .zniku 的 Python catalog。Run snapshot 只读；切回当前 Graph 后才能编辑。</p></div>
-      </aside>
-
-      <section className="canvas-panel" aria-label="Studio Designer 画布">
-        <div className="canvas-context">
-          <div><span className="context-mode">{showRunSnapshot && currentRun ? 'Run snapshot' : 'Current Graph'}</span><strong>{viewedSummary ? `${viewedSummary.run_id} · ${targetLabel(viewedSummary)} · ${viewedSummary.state}` : '编辑与运行使用同一 Project authority'}</strong></div>
-          <div className="canvas-context-actions">
-            {currentRun && <button type="button" onClick={() => { setShowRunSnapshot((value) => !value); setSelectedNodeIds(new Set()); setSelectedEdgeIds(new Set()) }}>{showRunSnapshot ? '查看当前 Graph' : '查看 Run snapshot'}</button>}
-            {snapshotChanged && <span>Run snapshot / 当前 Graph 已变化</span>}
-          </div>
-        </div>
-        {viewedSummary && <div className="run-summary-strip" aria-label="Run summary"><strong>{targetLabel(viewedSummary)}</strong><span>{viewedSummary.state_counts.completed}/{viewedSummary.node_count} completed</span><span>{viewedSummary.state_counts.running} running</span><span>{viewedSummary.state_counts.waiting_external} waiting external</span><span>{viewedSummary.state_counts.failed} failed</span></div>}
-        {firstWaiting && <div className="next-action-banner" role="status"><span className="eyebrow">NEXT ACTION</span><div className="next-action-copy"><strong>{firstWaiting.node_id} 等待人工外部输出</strong>{firstWaiting.external_handoff?.instructions && <small>{firstWaiting.external_handoff.instructions}</small>}<code>{firstWaitingInputPaths.join(', ')} → {firstWaiting.external_handoff?.output_targets.map((target) => target.path).join(', ')}</code></div><span>{readinessLabel(readiness.get(firstWaiting.node_run_id) ?? null)} · {elapsedLabel(firstWaiting.started_at ?? firstWaiting.created_at)}</span><button type="button" onClick={() => { setSelectedNodeIds(new Set([firstWaiting.node_id])); setSelectedEdgeIds(new Set()) }}>定位等待节点</button></div>}
-        {!firstWaiting && globalActionSummary && <div className="next-action-banner" role="status"><span className="eyebrow">NEXT ACTION</span><strong>{globalActionSummary.run_id} 需要操作者处理</strong><span>{globalActionSummary.state_counts.waiting_external} waiting external · {globalActionSummary.state_counts.failed} failed</span><button type="button" onClick={() => { if (globalActionSummary.run_id === viewRunId && firstFailed) { setSelectedNodeIds(new Set([firstFailed.node_id])); setSelectedEdgeIds(new Set()) } else { selectRun(globalActionSummary.run_id) } }}>{globalActionSummary.run_id === viewRunId && firstFailed ? '定位失败节点' : '查看需处理 Run'}</button></div>}
-        {loading ? (
-          <div className="authority-empty" role="status"><strong>正在连接 Project Service…</strong></div>
-        ) : boundaryError && !draft ? (
-          <div className="authority-empty" role="alert"><strong>Project Service 不可用</strong><p>{boundaryError}</p><p>Studio 不会回退浏览器内存数据。</p></div>
-        ) : !draft ? (
-          <div className="authority-empty"><strong>尚未打开工程</strong><p>输入本地 .zniku 路径后选择“打开”或“新建”。</p></div>
-        ) : (
-          <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} onNodesChange={handleNodesChange} onEdgesChange={handleEdgesChange} onSelectionChange={handleSelection} onNodeClick={handleNodeClick} onEdgeClick={handleEdgeClick} onConnect={handleConnect} isValidConnection={connectionIsValid} nodesDraggable={!busy && graphEditable} nodesConnectable={!busy && graphEditable} edgesReconnectable={false} deleteKeyCode={null} selectionOnDrag multiSelectionKeyCode={['Control', 'Meta']} fitView minZoom={0.2} maxZoom={1.8} colorMode="dark" proOptions={{ hideAttribution: true }}>
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} color="#263344" /><Controls position="bottom-left" showInteractive={false} /><MiniMap position="bottom-right" pannable zoomable nodeColor="#d89b45" />
-          </ReactFlow>
+      <ProjectShell
+        projectName={draft?.project.name ?? null}
+        projectId={draft?.project.project_id ?? null}
+        nodeCount={draft?.project.graph.nodes.length ?? 0}
+        dirty={dirty}
+        profile={visibleTemplateProfile}
+        projectPath={projectPath}
+        projectIdDraft={projectId}
+        projectNameDraft={projectName}
+        serviceBusy={serviceBusy}
+        statusStale={health.status.stale}
+        canSave={!serviceBusy && !health.status.stale && !!draft && diagnostics.length === 0 && dirty && !parameterDraftDirty}
+        onProjectPathChange={setProjectPath}
+        onOpenTemplates={() => {
+          if (changeSelection(new Set(), new Set())) setTemplateOpen(true)
+        }}
+        onOpenProject={() => {
+          if (changeSelection(new Set(), new Set())) void executeCommands([{ operation: 'open_project', path: projectPath.trim() }])
+        }}
+        onCreateProject={() => {
+          if (changeSelection(new Set(), new Set())) void executeCommands([{ operation: 'create_project', path: projectPath.trim(), project_id: projectId.trim(), name: projectName.trim() }])
+        }}
+        onSaveProject={() => void saveProject()}
+        runCenter={(
+          <RunCenter
+            health={health}
+            status={status}
+            summaries={allSummaries}
+            viewRunId={viewRunId}
+            runBlocked={runBlocked}
+            runToBlocked={runBlocked || !singleSelectedNodeId || showRunSnapshot}
+            rerunBlocked={detailMutationBlocked || parameterDraftDirty || !singleSelectedNodeId || !rerunId || !rerunNodeIncluded}
+            onSelectRun={selectRun}
+            onRunAll={() => void saveThenRun({ operation: 'run_all' })}
+            onRunTo={() => singleSelectedNodeId && void saveThenRun({ operation: 'run_to', node_id: singleSelectedNodeId })}
+            onRerun={() => singleSelectedNodeId && rerunId && void executeCommands([{ operation: 'rerun_from_here', run_id: rerunId, node_id: singleSelectedNodeId }], { preferCreatedRun: true })}
+          />
         )}
-      </section>
+      />
 
-      <aside className="inspector-panel">
-        <div className="panel-heading inspector-heading"><span className="eyebrow">INSPECTOR</span><h2>{selectedNode?.node_id ?? (selectedEdge ? 'Data edge' : '未选择实体')}</h2>{(selectedNode || selectedEdge) && <code>{selectedNode ? `${selectedNode.type_id}@${selectedNode.definition_version}` : edgeId(selectedEdge!)}</code>}</div>
-        {selectedNode && selectedDefinition ? (
-          <div className="inspector-content">
-            <section><h3>Node binding</h3><dl className="property-list"><div><dt>type_id</dt><dd>{selectedNode.type_id}</dd></div><div><dt>version</dt><dd>{selectedNode.definition_version}</dd></div><div><dt>executor</dt><dd>{selectedDefinition.executor.kind}</dd></div></dl></section>
-            <section><h3>Typed ports</h3>{(['input_ports', 'output_ports'] as const).map((direction) => <div className="port-group" key={direction}><span className="port-group-label">{direction}</span>{selectedDefinition[direction].length ? selectedDefinition[direction].map((port) => <div className="port-summary" key={port.port_id}><span>{port.port_id}</span><code>{port.data_type} · {port.cardinality}{port.required ? ' · required' : ''}</code></div>) : <div className="port-empty">none</div>}</div>)}</section>
-            <section><h3>Parameters</h3><textarea aria-label="节点参数 JSON" value={parameterText} onChange={(event) => setParameterText(event.target.value)} rows={8} readOnly={!graphEditable} /><button className="button button--primary inspector-action" type="button" disabled={busy || !graphEditable} onClick={applyParameters}>应用参数到 Draft</button><details><summary>parameter_schema</summary><pre>{JSON.stringify(selectedDefinition.parameter_schema, null, 2)}</pre></details></section>
-            {selectedNodeRun && <section aria-label="Runtime details"><h3>Runtime · attempt {selectedNodeRun.attempt}</h3><div className={`runtime-status runtime-status--${selectedNodeRun.state}`}>{selectedNodeRun.state}{selectedNodeRun.progress !== null ? ` · ${Math.round(selectedNodeRun.progress * 100)}%` : ''}{selectedNodeRun.reused_from_result_id ? ' · reused' : ''}</div>{selectedNodeRun.error && <p className="runtime-error">{selectedNodeRun.error.reason}<br />{selectedNodeRun.error.message}</p>}{selectedOutputs.map((artifact) => <div className="output-path" key={artifact.artifact_id}><span>{artifact.producer_port_id}</span><code>{artifact.path}</code></div>)}{selectedNodeRun.external_handoff && <div className="handoff-panel"><strong>External handoff</strong>{selectedNodeRun.external_handoff.instructions && <p>{selectedNodeRun.external_handoff.instructions}</p>}<span>Inputs</span>{handoffInputs.map((path, index) => <div className="handoff-path" key={`${selectedNodeRun.external_handoff!.input_artifact_ids[index]}-${index}`}><code>{path}</code><button type="button" onClick={() => void copyPath(path)}>Copy input path</button></div>)}<span>Targets</span>{selectedNodeRun.external_handoff.output_targets.map((target) => <div className="handoff-path" key={`${target.port_id}-${target.ordinal ?? 'one'}`}><code>{target.port_id}{target.ordinal === null ? '' : ` #${target.ordinal}`} · {target.path}</code><button type="button" onClick={() => void copyPath(target.path)}>Copy target path</button></div>)}<div className="readiness-state">Readiness · {readinessLabel(readiness.get(selectedNodeRun.node_run_id) ?? null)}</div><button className="button button--primary inspector-action" type="button" disabled={detailMutationBlocked || health.readiness.stale || selectedNodeRun.state !== 'waiting_external' || !readiness.get(selectedNodeRun.node_run_id) || readiness.get(selectedNodeRun.node_run_id)!.targets.some((target) => target.state !== 'present' && target.state !== 'probe_passed')} onClick={() => void validateAndSubmit(selectedNodeRun)}>Validate and submit</button></div>}{(selectedLog || selectedNodeRun.log_path) && <div className="node-logs">{selectedNodeRun.log_path && <code>{selectedNodeRun.log_path}</code>}<h4>stdout{selectedLog?.stdout_truncated ? '（尾部截断）' : ''}</h4><pre>{health.log.stale ? '（日志通道离线，保留最后可信内容）' : selectedLog?.stdout_available ? selectedLog.stdout || '（空）' : '（不可用）'}</pre><h4>stderr{selectedLog?.stderr_truncated ? '（尾部截断）' : ''}</h4><pre>{health.log.stale ? '（日志通道离线，保留最后可信内容）' : selectedLog?.stderr_available ? selectedLog.stderr || '（空）' : '（不可用）'}</pre></div>}</section>}
-            {selectedNodeRun && currentDetail?.handoff_contracts.filter((contract) => contract.node_run_id === selectedNodeRun.node_run_id).map((contract) => <HandoffContract key={contract.node_run_id} contract={contract} />)}
-            {selectedNodeRun?.external_handoff && <ReadinessMessages readiness={readiness.get(selectedNodeRun.node_run_id) ?? null} />}
-            {currentRun && selectedNodeRun?.external_handoff && <HandoffPrecheckFailure failure={lastFullPrecheckFailures.get(handoffResourceKey(currentRun.run_id, selectedNodeRun.node_run_id, selectedNodeRun.external_handoff.handoff_id)) ?? null} />}
-            {selectedOutputs.map((artifact) => <ArtifactMediaSummary key={artifact.artifact_id} artifact={artifact} />)}
-            {selectedNodeRun && selectedProgress && (
-              selectedProgress.mode === 'indeterminate' ||
-              selectedProgress.measurement !== null ||
-              selectedProgress.elapsed !== null
-            ) && (
-              <div className="runtime-progress-detail" aria-label="Runtime progress details">
-                {selectedProgress.mode === 'indeterminate' && <span>indeterminate</span>}
-                {selectedProgress.measurement && (
-                  <span>
-                    {selectedProgress.measurement.current} / {selectedProgress.measurement.total}{' '}
-                    {selectedProgress.measurement.unit}
-                  </span>
-                )}
-                {selectedProgress.elapsed && <span>{selectedProgress.elapsed}</span>}
-              </div>
-            )}
-          </div>
-        ) : selectedEdge ? (
-          <div className="inspector-content"><section><h3>Edge</h3><p>{selectedEdge.source_node_id}.{selectedEdge.source_port_id} → {selectedEdge.target_node_id}.{selectedEdge.target_port_id}</p>{selectedEdge.ordinal !== null && <label className="ordinal-editor">Ordinal<input aria-label="Edge ordinal" type="number" min={0} value={selectedEdge.ordinal} disabled={!graphEditable} onChange={(event) => updateGraph((current) => reorderEdge(current, edgeId(selectedEdge), Number(event.target.value)))} /></label>}<button className="button button--danger inspector-action" type="button" disabled={!graphEditable} onClick={deleteSelected}>删除所选连接</button></section></div>
-        ) : <div className="empty-inspector">选择节点或连接查看配置、运行状态、日志和输出。</div>}
-        {waitingNodeRuns.length > 0 && (
-          <section className="handoff-queue" aria-label="External Handoff 队列">
-            <h3>External Handoff Queue</h3>
-            {waitingNodeRuns.map((nodeRun) => {
-              const node = currentRun?.graph_snapshot.nodes.find(
-                (item) => item.node_id === nodeRun.node_id,
-              )
-              const modelName = node
-                ? parameterTextValue(node.parameters, 'actual_model_name', 'model_name')
-                : null
-              const modelVersion = node
-                ? parameterTextValue(node.parameters, 'actual_model_version', 'model_version')
-                : null
-              const handoff = nodeRun.external_handoff!
-              const observedReadiness = readiness.get(nodeRun.node_run_id) ?? null
-              const inputPaths = handoff.input_artifact_ids.map(
-                (artifactId) => artifactsById.get(artifactId)?.path ?? `未解析 Artifact：${artifactId}`,
-              )
-              const canValidate =
-                !detailMutationBlocked &&
-                !health.readiness.stale &&
-                observedReadiness !== null &&
-                observedReadiness.targets.every(
-                  (target) => target.state === 'present' || target.state === 'probe_passed',
-                )
-              return (
-                <article aria-label={`Handoff ${nodeRun.node_id}`} key={nodeRun.node_run_id}>
-                  <button
-                    className="handoff-queue-select"
-                    type="button"
-                    onClick={() => {
-                      setSelectedNodeIds(new Set([nodeRun.node_id]))
-                      setSelectedEdgeIds(new Set())
-                    }}
-                  >
-                    <strong>{nodeRun.node_id}</strong>
-                    <span>{modelName ?? 'model not declared'}{modelVersion ? ` · ${modelVersion}` : ''}</span>
-                    <em>{readinessLabel(observedReadiness)} · {elapsedLabel(nodeRun.started_at ?? nodeRun.created_at)}</em>
-                  </button>
-                  {handoff.instructions && <p>{handoff.instructions}</p>}
-                  {currentDetail?.handoff_contracts.filter((contract) => contract.node_run_id === nodeRun.node_run_id).map((contract) => <HandoffContract key={contract.node_run_id} contract={contract} />)}
-                  <ReadinessMessages readiness={observedReadiness} />
-                  {currentRun && <HandoffPrecheckFailure failure={lastFullPrecheckFailures.get(handoffResourceKey(currentRun.run_id, nodeRun.node_run_id, handoff.handoff_id)) ?? null} />}
-                  <span className="handoff-queue-label">Inputs</span>
-                  {inputPaths.map((path, index) => (
-                    <div className="handoff-path" key={`${handoff.input_artifact_ids[index]}-${index}`}>
-                      <code>{path}</code>
-                      <button type="button" onClick={() => void copyPath(path)}>Copy input path</button>
-                    </div>
-                  ))}
-                  <span className="handoff-queue-label">Targets</span>
-                  {handoff.output_targets.map((target) => (
-                    <div className="handoff-path" key={`${target.port_id}-${target.ordinal ?? 'one'}`}>
-                      <code>{target.port_id}{target.ordinal === null ? '' : ` #${target.ordinal}`} · {target.path}</code>
-                      <button type="button" onClick={() => void copyPath(target.path)}>Copy target path</button>
-                    </div>
-                  ))}
-                  <button
-                    className="button button--primary handoff-queue-submit"
-                    type="button"
-                    disabled={!canValidate}
-                    onClick={() => void validateAndSubmit(nodeRun)}
-                  >
-                    Validate and submit
-                  </button>
-                </article>
-              )
-            })}
-          </section>
+      <NodePalette
+        definitionCount={draft?.definitions.length ?? 0}
+        projectId={projectId}
+        projectName={projectName}
+        query={query}
+        groups={catalogGroups}
+        canEditGraph={!!draft && graphEditable}
+        busy={serviceBusy}
+        selectedNodeCount={selectedNodeIds.size}
+        selectedEdgeCount={selectedEdgeIds.size}
+        onProjectIdChange={setProjectId}
+        onProjectNameChange={setProjectName}
+        onQueryChange={setQuery}
+        onAddDefinition={addDefinition}
+        onCopySelection={copySelected}
+        onDeleteSelection={deleteSelected}
+      />
+
+      <GraphCanvas
+        nodes={flowNodes}
+        edges={flowEdges}
+        editable={graphEditable}
+        busy={serviceBusy}
+        modeLabel={showRunSnapshot && currentRun ? 'Run snapshot' : 'Current Graph'}
+        contextLabel={viewedSummary ? `${viewedSummary.run_id} · ${targetLabel(viewedSummary)} · ${viewedSummary.state}` : '编辑与运行使用同一 Project authority'}
+        snapshotChanged={snapshotChanged}
+        canToggleSnapshot={currentRun !== null}
+        loading={loading}
+        boundaryError={boundaryError}
+        hasProject={draft !== null}
+        onToggleSnapshot={() => {
+          if (!changeSelection(new Set(), new Set())) return
+          setShowRunSnapshot((value) => !value)
+        }}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={handleEdgesChange}
+        onSelectionChange={handleSelection}
+        onNodeClick={handleNodeClick}
+        onEdgeClick={handleEdgeClick}
+        onConnect={handleConnect}
+        isValidConnection={connectionIsValid}
+        overlays={(
+          <RunCanvasOverlays
+            viewedSummary={viewedSummary}
+            firstWaiting={firstWaiting}
+            firstWaitingInputPaths={firstWaitingInputPaths}
+            firstWaitingReadinessLabel={firstWaiting ? readinessLabel(readiness.get(firstWaiting.node_run_id) ?? null) : ''}
+            firstWaitingElapsedLabel={firstWaiting ? elapsedLabel(firstWaiting.started_at ?? firstWaiting.created_at) : ''}
+            globalActionSummary={globalActionSummary}
+            firstFailed={firstFailed}
+            sameRun={globalActionSummary?.run_id === viewRunId}
+            onLocateNode={(nodeId) => changeSelection(new Set([nodeId]), new Set())}
+            onSelectRun={selectRun}
+          />
         )}
-        {viewedSummary?.actionable && <button className="button button--danger abandon-run" type="button" disabled={detailMutationBlocked || viewedSummary.state_counts.running > 0} onClick={() => viewRunId && void executeCommands([{ operation: 'abandon_run', run_id: viewRunId }])}>Abandon Run</button>}
-        {clientHint && <p className="client-hint" role="status">{clientHint}</p>}
-        {boundaryError && draft && <p className="client-hint client-hint--error" role="alert">{boundaryError}</p>}
-      </aside>
+      />
 
-      <section className={`bottom-drawer ${bottomOpen ? 'is-open' : ''}`}>
-        <button className="drawer-toggle" type="button" onClick={() => setBottomOpen((open) => !open)}><span>Graph diagnostics</span><strong>{diagnostics.length + (status?.error ? 1 : 0)}</strong><i>{bottomOpen ? '收起' : '展开'}</i></button>
-        {bottomOpen && <div className="diagnostic-list">{diagnostics.length === 0 && !status?.error ? <div className="diagnostic-empty">graph_valid · 可保存和运行</div> : diagnostics.map((diagnostic) => <article className="diagnostic diagnostic--error" key={`${diagnostic.code}-${diagnostic.node_id ?? diagnostic.edge_id ?? 'graph'}`}><span className="diagnostic-icon">×</span><div><span className="diagnostic-code">{diagnostic.code}</span><strong>Graph Core</strong><p>{diagnostic.message}</p></div><button type="button" onClick={() => { if (diagnostic.node_id) setSelectedNodeIds(new Set([diagnostic.node_id])); if (diagnostic.edge_id) setSelectedEdgeIds(new Set([diagnostic.edge_id])) }}>定位</button></article>)}{status?.error && <article className="diagnostic diagnostic--error"><span className="diagnostic-icon">×</span><div><span className="diagnostic-code">{status.error.code}</span><strong>Project Service</strong><p>{status.error.message}</p></div></article>}{historyCursor && <button className="button button--ghost" type="button" disabled={historyBusy} onClick={() => void loadOlderRuns()}>{historyBusy ? '读取历史…' : '加载更早 Run'}</button>}</div>}
-      </section>
+      <NodeInspector
+        selectedNode={selectedNode}
+        selectedDefinition={selectedDefinition}
+        selectedPresentation={selectedPresentation}
+        selectedEdge={selectedEdge}
+        parameterDraft={parameterDraft}
+        parameterText={parameterText}
+        parameterDirty={parameterDraftDirty}
+        parameterRawError={parameterRawError}
+        parameterValidation={parameterValidation}
+        graphEditable={graphEditable}
+        busy={serviceBusy}
+        selectedNodeRun={selectedNodeRun}
+        selectedProgress={selectedProgress}
+        selectedLog={selectedLog}
+        logStale={health.log.stale}
+        readinessStale={health.readiness.stale}
+        mutationBlocked={detailMutationBlocked}
+        selectedOutputs={selectedOutputs}
+        handoffInputs={handoffInputs}
+        readiness={selectedNodeRun ? readiness.get(selectedNodeRun.node_run_id) ?? null : null}
+        detail={currentDetail}
+        lastFullPrecheckFailure={currentRun && selectedNodeRun?.external_handoff ? lastFullPrecheckFailures.get(handoffResourceKey(currentRun.run_id, selectedNodeRun.node_run_id, selectedNodeRun.external_handoff.handoff_id)) ?? null : null}
+        handoffCenter={(
+          <HandoffCenter
+            waitingNodeRuns={waitingNodeRuns}
+            detail={currentDetail}
+            artifactsById={artifactsById}
+            readiness={readiness}
+            lastFullPrecheckFailures={lastFullPrecheckFailures}
+            mutationBlocked={detailMutationBlocked}
+            readinessStale={health.readiness.stale}
+            onSelectNode={(nodeId) => changeSelection(new Set([nodeId]), new Set())}
+            onCopyPath={(path) => void copyPath(path)}
+            onValidateAndSubmit={(nodeRun) => void validateAndSubmit(nodeRun)}
+          />
+        )}
+        actionableRun={viewedSummary?.actionable ?? false}
+        actionableRunIsRunning={(viewedSummary?.state_counts.running ?? 0) > 0}
+        clientHint={clientHint ?? presentationError}
+        boundaryError={draft ? boundaryError : null}
+        onParameterDraftChange={changeParameterDraft}
+        onParameterTextChange={changeParameterText}
+        onApplyParameters={applyParameters}
+        onDiscardParameters={discardParameters}
+        onCopyPath={(path) => void copyPath(path)}
+        onValidateAndSubmit={(nodeRun) => void validateAndSubmit(nodeRun)}
+        onReorderEdge={(id, ordinal) => updateGraph((current) => reorderEdge(current, id, ordinal))}
+        onDeleteEdge={deleteSelected}
+        onAbandonRun={() => viewRunId && void executeCommands([{ operation: 'abandon_run', run_id: viewRunId }])}
+      />
+
+      <DiagnosticsPanel
+        open={bottomOpen}
+        diagnostics={diagnostics}
+        serviceError={status?.error ?? null}
+        hasOlderRuns={historyCursor !== null}
+        historyBusy={historyBusy}
+        onToggle={() => setBottomOpen((open) => !open)}
+        onLocateNode={(nodeId) => changeSelection(new Set([nodeId]), new Set())}
+        onLocateEdge={(id) => changeSelection(new Set(), new Set([id]))}
+        onLoadOlderRuns={() => void loadOlderRuns()}
+      />
     </main>
   )
 }

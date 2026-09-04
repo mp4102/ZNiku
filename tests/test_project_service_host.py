@@ -21,11 +21,13 @@ from typing import Any, cast
 
 import pytest
 
+from zniku.avenhance_v27 import atomic_split_definition
 from zniku.graph import (
     ExecutionMode,
     Graph,
     NodeDefinition,
     NodeInstance,
+    PortSpec,
     PythonExecutorSpec,
 )
 from zniku.project import Project, ProjectStore
@@ -158,10 +160,58 @@ def test_http_routes_cors_and_strict_json_fail_closed(tmp_path: Path) -> None:
             origin="http://127.0.0.1:4173",
         )
         assert status == 200
-        assert envelope["contract_version"] == "0.2.1"
+        assert envelope["contract_version"] == "0.3.0"
         assert envelope["project_path"] is None
         assert headers.get("Access-Control-Allow-Origin") == "http://127.0.0.1:4173"
         assert headers.get("Cache-Control") == "no-store"
+
+        status, presentations, _ = _request(base_url, "/api/studio/presentations")
+        assert status == 200
+        assert presentations == {
+            "contract_version": "0.3.0",
+            "catalog": {
+                "contract_version": "0.3.0",
+                "locale": "zh-CN",
+                "categories": [
+                    {
+                        "category_id": "input",
+                        "title": "导入素材",
+                        "description": "选择只读源媒体并建立工作流入口。",
+                        "order": 10,
+                    },
+                    {
+                        "category_id": "transform",
+                        "title": "画面处理",
+                        "description": "转换、增强和补帧等视频处理步骤。",
+                        "order": 20,
+                    },
+                    {
+                        "category_id": "structure",
+                        "title": "拆分与合并",
+                        "description": "按顺序拆分或汇合视频分支。",
+                        "order": 30,
+                    },
+                    {
+                        "category_id": "delivery",
+                        "title": "编码与输出",
+                        "description": "编码、封装并发布最终文件。",
+                        "order": 40,
+                    },
+                    {
+                        "category_id": "av27",
+                        "title": "AVEnhanceFlow v2.7.0",
+                        "description": "由模板生成的精确 AVEnhanceFlow v2.7.0 节点。",
+                        "order": 50,
+                    },
+                ],
+                "nodes": [],
+            },
+            "diagnostics": [],
+        }
+
+        status, failure, _ = _request(base_url, "/api/studio/presentations?unknown=1")
+        assert status == 400
+        assert failure["error"]["code"] == "E_PROJECT_SERVICE_QUERY_INVALID"
 
         status, failure, headers = _request(
             base_url,
@@ -235,6 +285,125 @@ def test_http_routes_cors_and_strict_json_fail_closed(tmp_path: Path) -> None:
             assert oversized["error"]["code"] == "E_PROJECT_SERVICE_BODY_SIZE"
         finally:
             connection.close()
+
+
+@pytest.mark.parametrize("leaf_count", (1, 2, 3))
+def test_presentation_route_mirrors_current_dynamic_split_without_side_effects(
+    tmp_path: Path,
+    leaf_count: int,
+) -> None:
+    """只读 endpoint 必须从当前 exact definition 读取动态端口且不触碰 Project/Runtime。"""
+
+    definition = atomic_split_definition(leaf_count)
+    project_path = tmp_path / f"dynamic-{leaf_count}.zniku"
+    ProjectStore.create(
+        project_path,
+        Project(
+            project_id=f"dynamic.split.{leaf_count}",
+            name=f"动态分段 {leaf_count}",
+            graph=Graph(),
+        ),
+        (definition,),
+    )
+    application = ProjectServiceApplication(work_root=tmp_path / "work")
+    application.command({"operation": "open_project", "path": str(project_path)})
+    before_status = application.inspect()
+    before_database = project_path.read_bytes()
+
+    with _serve(application) as (base_url, _):
+        status, envelope, _ = _request(base_url, "/api/studio/presentations")
+
+    assert status == 200
+    node = next(
+        item for item in envelope["catalog"]["nodes"] if item["type_id"] == definition.type_id
+    )
+    assert [item["port_id"] for item in node["ports"] if item["direction"] == "output"] == [
+        port.port_id for port in definition.output_ports
+    ]
+    assert application.inspect() == before_status
+    assert project_path.read_bytes() == before_database
+
+
+def test_presentation_route_isolates_bad_third_party_entries_and_stays_available(
+    tmp_path: Path,
+) -> None:
+    """第三方坏展示只能形成 warning，不能污染 status、Graph 或 Run。"""
+
+    definitions = tuple(
+        NodeDefinition(
+            type_id=f"third.party.{suffix}",
+            version="1.0.0",
+            output_ports=(PortSpec(port_id="video", data_type="VideoFile"),),
+            parameter_schema={
+                "type": "object",
+                "properties": {"mode": {"type": "string"}},
+                "additionalProperties": False,
+            },
+            execution_mode=ExecutionMode.AUTOMATIC,
+            executor=PythonExecutorSpec(adapter=f"tests.third_party:{suffix}"),
+        )
+        for suffix in ("callback", "version", "pointer", "port")
+    )
+
+    def node_payload(definition: NodeDefinition) -> dict[str, object]:
+        return {
+            "type_id": definition.type_id,
+            "definition_version": definition.version,
+            "title": "第三方节点",
+            "description": "合成 Presentation endpoint 隔离测试。",
+            "category_id": "plugin",
+            "icon_token": "transform",
+            "palette_level": "advanced",
+            "keywords": [],
+            "parameter_groups": [{"group_id": "basic", "title": "基础设置", "order": 1}],
+            "parameters": [
+                {
+                    "parameter_pointer": "/mode",
+                    "label": "模式",
+                    "group_id": "basic",
+                    "order": 1,
+                    "control_hint": "text",
+                }
+            ],
+            "ports": [{"direction": "output", "port_id": "video", "label": "输出视频"}],
+            "card_summary_paths": ["/mode"],
+        }
+
+    callback = {**node_payload(definitions[0]), "callback": "alert(1)"}
+    wrong_version = {**node_payload(definitions[1]), "definition_version": "1.0.1"}
+    bad_pointer = node_payload(definitions[2])
+    cast(list[dict[str, object]], bad_pointer["parameters"])[0]["parameter_pointer"] = "/missing"
+    bad_port = node_payload(definitions[3])
+    cast(list[dict[str, object]], bad_port["ports"])[0]["port_id"] = "missing"
+    third_party = {
+        "contract_version": "0.3.0",
+        "locale": "zh-CN",
+        "categories": [{"category_id": "plugin", "title": "第三方", "order": 100}],
+        "nodes": [callback, wrong_version, bad_pointer, bad_port],
+    }
+    application = ProjectServiceApplication(
+        work_root=tmp_path / "work",
+        definition_catalog=definitions,
+        third_party_presentation_catalogs=(third_party,),
+    )
+    before = application.inspect()
+
+    with _serve(application) as (base_url, _):
+        status, envelope, _ = _request(base_url, "/api/studio/presentations")
+
+    codes = {item["code"] for item in envelope["diagnostics"]}
+    assert status == 200
+    assert envelope["catalog"]["nodes"] == []
+    assert {
+        "W_PRESENTATION_NODE_INVALID",
+        "W_PRESENTATION_DEFINITION_MISSING",
+        "W_PRESENTATION_PARAMETER_POINTER",
+        "W_PRESENTATION_PORT_BINDING",
+        "W_PRESENTATION_MISSING",
+    } <= codes
+    assert application.inspect() == before
+    assert before.snapshot is None
+    assert before.run_summaries == ()
 
 
 def test_cross_origin_and_non_json_posts_have_no_project_side_effect(tmp_path: Path) -> None:
@@ -345,7 +514,7 @@ def test_av27_template_preview_http_route_is_read_only_and_strict(tmp_path: Path
             origin="http://127.0.0.1:4173",
         )
         assert status == 200
-        assert preview["contract_version"] == "0.2.1"
+        assert preview["contract_version"] == "0.3.0"
         assert preview["phase"] == "preparation"
         assert preview["profile"]["status"] == "preparation-compatible"
         assert headers.get("Cache-Control") == "no-store"
@@ -468,7 +637,7 @@ def test_http_log_projection_does_not_follow_tampered_paths_outside_work_root(
             f"/api/studio/runs/{run_id}/node-runs/{node_run.node_run_id}/logs",
         )
         assert status == 200
-        assert envelope["contract_version"] == "0.2.1"
+        assert envelope["contract_version"] == "0.3.0"
         assert envelope["run_id"] == run_id
         log = envelope["log"]
         assert log["node_run_id"] == node_run.node_run_id

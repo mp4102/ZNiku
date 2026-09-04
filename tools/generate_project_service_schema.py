@@ -12,6 +12,7 @@ from zniku.avenhance_v27.template import TemplatePreviewRequest
 from zniku.project_service.models import (
     ExternalHandoffReadiness,
     NodeLogEnvelope,
+    PresentationCatalogEnvelope,
     ProjectServiceCommand,
     RunDetailEnvelope,
     RunSummaryPageEnvelope,
@@ -98,6 +99,7 @@ def render_schema() -> str:
         RunDetailEnvelope,
         NodeLogEnvelope,
         ExternalHandoffReadiness,
+        PresentationCatalogEnvelope,
         TemplatePreviewEnvelope,
     )
     envelope_schema: dict[str, object] = {

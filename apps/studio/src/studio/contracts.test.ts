@@ -4,6 +4,7 @@ import {
   parseAvEnhanceV27TemplatePreviewRequest,
   parseExternalHandoffReadiness,
   parseNodeLogEnvelope,
+  parsePresentationCatalogEnvelope,
   parseRunDetailEnvelope,
   parseRunSummaryPageEnvelope,
   parseStatusEnvelope,
@@ -23,19 +24,19 @@ import {
   studioEnvelope,
 } from './test-fixtures'
 
-describe('Studio Project Service 0.2.1 contract', () => {
+describe('Studio Project Service 0.3.0 contract', () => {
   it('分别解析轻量 status、Run detail、日志、readiness 与历史页', () => {
     const status = parseStatusEnvelope(handoffEnvelope())
     const detail = parseRunDetailEnvelope(handoffDetailEnvelope())
     const log = parseNodeLogEnvelope(handoffLogEnvelope())
     const readiness = parseExternalHandoffReadiness(handoffReadinessEnvelope('present'))
     const page = parseRunSummaryPageEnvelope({
-      contract_version: '0.2.1',
+      contract_version: '0.3.0',
       run_summaries: [handoffSummary()],
       next_run_cursor: 'cursor.synthetic',
     })
 
-    expect(status.contract_version).toBe('0.2.1')
+    expect(status.contract_version).toBe('0.3.0')
     expect(Object.keys(status).sort()).toEqual([
       'active_operation',
       'active_run_id',
@@ -89,7 +90,7 @@ describe('Studio Project Service 0.2.1 contract', () => {
     ).toThrow(StudioContractError)
 
     const envelope = {
-      contract_version: '0.2.1' as const,
+      contract_version: '0.3.0' as const,
       profile_version: '2.7.0' as const,
       phase: 'preparation' as const,
       project: projectSnapshot.project,
@@ -135,7 +136,7 @@ describe('Studio Project Service 0.2.1 contract', () => {
   })
 
   it.each(['missing', 'empty', 'present', 'probe_passed', 'probe_failed'] as const)(
-    '接受 readiness 状态 %s，且仍要求 exact 0.2.1 envelope',
+    '接受 readiness 状态 %s，且仍要求 exact 0.3.0 envelope',
     (state) => {
       const parsed = parseExternalHandoffReadiness(
         handoffReadinessEnvelope(state, state === 'probe_passed' || state === 'probe_failed'),
@@ -149,8 +150,8 @@ describe('Studio Project Service 0.2.1 contract', () => {
     expect(() => parseStatusEnvelope({ ...studioEnvelope(), unexpected: true })).toThrow(
       StudioContractError,
     )
-    expect(() => parseStatusEnvelope({ ...studioEnvelope(), contract_version: '0.2.0' })).toThrow(
-      /Python 0\.2\.1 Schema/,
+    expect(() => parseStatusEnvelope({ ...studioEnvelope(), contract_version: '0.2.1' })).toThrow(
+      /Python 0\.3\.0 Schema/,
     )
     expect(() => parseStatusEnvelope({ ...studioEnvelope(), active_operation: 'save_project' }))
       .toThrow(StudioContractError)
@@ -179,6 +180,38 @@ describe('Studio Project Service 0.2.1 contract', () => {
         targets: [{ ...handoffReadinessEnvelope().targets[0], state: 'unknown' }],
       }),
     ).toThrow(StudioContractError)
+  })
+
+  it('严格解析独立 Presentation catalog，并拒绝未知字段与非法 icon token', () => {
+    const envelope = {
+      contract_version: '0.3.0' as const,
+      catalog: {
+        contract_version: '0.3.0' as const,
+        locale: 'zh-CN' as const,
+        categories: [{ category_id: 'media', title: '媒体', description: null, order: 1 }],
+        nodes: [{
+          type_id: 'test.source',
+          definition_version: '1.0.0',
+          title: '媒体输入',
+          description: '选择待处理媒体。',
+          category_id: 'media',
+          icon_token: 'source' as const,
+          palette_level: 'primary' as const,
+          keywords: ['输入'],
+          parameter_groups: [],
+          parameters: [],
+          ports: [{ direction: 'output' as const, port_id: 'media', label: '媒体', description: null }],
+          card_summary_paths: [],
+        }],
+      },
+      diagnostics: [],
+    }
+    expect(parsePresentationCatalogEnvelope(envelope).catalog.nodes[0]?.title).toBe('媒体输入')
+    expect(() => parsePresentationCatalogEnvelope({ ...envelope, unexpected: true })).toThrow(StudioContractError)
+    expect(() => parsePresentationCatalogEnvelope({
+      ...envelope,
+      catalog: { ...envelope.catalog, nodes: [{ ...envelope.catalog.nodes[0]!, icon_token: 'script' }] },
+    })).toThrow(StudioContractError)
   })
 
   it('严格校验 progress sample 测量组合、Run binding 与 automatic latest attempt', () => {

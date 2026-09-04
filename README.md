@@ -12,13 +12,14 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - 已交付基线：`ZNIKU Studio 0.2.0` Phase 0–5，Core 已完成 legacy 清理与最小自动化验收
 - 已验收增量：`v0.2.1` Phase 0–5 已完成，真实 MR-off GUI 闭环与操作者验收通过；external MR 仍是未验证范围
 - 当前开发分支：`v0.3.0`
-- 当前增量阶段：**v0.3.0 Phase 0 已完成；Phase 1–6 尚未实施**
+- 当前增量阶段：**v0.3.0 Phase 0–1 已完成；Phase 2–6 尚未实施**
 - Graph／Runtime 上位架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
 - Studio UX 下位设计：[创作者体验基线](docs/architecture/studio-ux-baseline.md)
 - 分阶段计划：[v0.3.0 创作者体验重构执行方案](docs/v0.3.0-execution-plan.md)
 - Phase 0 证据：[v0.3.0 Phase 0 验收记录](docs/v0.3.0-phase0-acceptance.md)
+- Phase 1 证据：[v0.3.0 Phase 1 验收记录](docs/v0.3.0-phase1-acceptance.md)
 - 当前实现版本：`0.2.0`；package/product 版本按计划保持不变，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
-  `zniku.project_service`、`zniku.media` 与 `zniku.avenhance_v27`
+  `zniku.project_service`、`zniku.presentation`、`zniku.media` 与 `zniku.avenhance_v27`
 - 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
 
 Phase 1 已建立 Graph Core 与 `.zniku` Store，Phase 2 已用新的最小 Run、NodeRun、Artifact 与 NodeResult
@@ -35,6 +36,10 @@ GUI 闭环和操作者验收，证据边界见 [v0.2.1 Phase 5 验收记录](doc
 
 v0.3.0 保留上述 Graph Core、Runtime 与真实媒体执行能力，重点把 Studio 从工程控制台重构为面向视频编辑者
 的创作者工具。创作者模式、高级节点图和高级诊断始终操作同一张 Graph；展示元数据不进入执行语义。
+
+v0.3.0 Phase 1 已加入 Python `PresentationCatalog`、Project Service `0.3.0` 只读展示接口和通用 Draft
+2020-12 参数表单。表单与“高级 → 原始参数”编辑同一份 session `ParameterDraft`，只有显式“应用设置”才
+写回当前 Graph；缺失或损坏的第三方 Presentation 会隔离并回退通用 Schema 表单，不改变 Runtime 结论。
 
 ## 产品核心
 
@@ -78,10 +83,13 @@ Graph Core 只校验 node／port／edge 存在、typed output→input、required
 - `zniku.runtime`：公开最小 Runtime 模型、`Scheduler`、completed reuse／downstream stale 分析、支持
   三类 executor 的 `NodeRunner` 与运行编排服务。持久状态只有 `pending`、`running`、
   `waiting_external`、`completed` 和 `failed`；`ready`／`blocked` 只即时计算。
-- `zniku.project_service`：提供严格 0.2.0 DTO 与只监听 loopback 的本地 HTTP host；Studio 可创建、打开、
+- `zniku.project_service`：提供严格 0.3.0 DTO 与只监听 loopback 的本地 HTTP host；Studio 可创建、打开、
   保存 `.zniku`，启动全图或目标祖先闭包 Run，从节点重新运行，轮询 attempt、日志与输出，并提交
   `manual_external` 声明目标。响应由 Python Schema 校验，浏览器不能替换 NodeDefinition executor、
   work root 或 handoff 路径。
+- `zniku.presentation`：提供 `zh-CN` 节点、参数、端口和 Palette 展示目录，通过 exact
+  `type_id + definition_version` 绑定 NodeDefinition；它不携带参数约束、executor、validator 或命令，也不
+  进入 Project、Graph、Run snapshot、reuse 或 stale。
 - `zniku.media`：提供 SourceMedia、VideoTransform、SplitVideo、MergeVideo、EncodeVideo、MuxMedia 与
   OutputFile 的 exact definitions、Python adapters 和轻量 validators；MR、Enhancement、FI 是普通
   `manual_external` VideoTransform presets。详细合同见
@@ -122,6 +130,7 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | [`docs/architecture/media-node-contract.md`](docs/architecture/media-node-contract.md) | Phase 4 首批媒体节点的从属实现合同 |
 | [`docs/v0.3.0-execution-plan.md`](docs/v0.3.0-execution-plan.md) | v0.3.0 阶段、门禁与验收顺序；不覆盖 Core |
 | [`docs/v0.3.0-phase0-acceptance.md`](docs/v0.3.0-phase0-acceptance.md) | v0.3.0 Phase 0 实施结果、自动门禁与未证明范围 |
+| [`docs/v0.3.0-phase1-acceptance.md`](docs/v0.3.0-phase1-acceptance.md) | v0.3.0 Phase 1 Presentation、Schema 表单与组件边界验收 |
 | [`docs/v0.2.1-acceptance.md`](docs/v0.2.1-acceptance.md) | v0.2.1 Phase 5 已完成验收及未验证范围 |
 | [`docs/phase5-acceptance.md`](docs/phase5-acceptance.md) | Phase 5 可重复门禁及其证明边界 |
 | [`docs/brand-baseline.md`](docs/brand-baseline.md) | 品牌、产品名与代码标识 |
@@ -201,6 +210,7 @@ ZNiku/
 │   ├── v0.2.1-acceptance.md      # v0.2.1 Phase 5 真实 GUI 操作者验收
 │   ├── v0.3.0-execution-plan.md  # v0.3.0 分阶段执行方案
 │   ├── v0.3.0-phase0-acceptance.md # v0.3.0 Phase 0 自动门禁与证明边界
+│   ├── v0.3.0-phase1-acceptance.md # v0.3.0 Phase 1 展示合同与参数表单证据
 │   └── brand-baseline.md
 ├── AGENTS.md
 └── VERSION                      # 0.2.0 产品实现版本
@@ -209,7 +219,8 @@ ZNiku/
 ## 本地运行与验证
 
 Python 需要 3.12 或更高版本及 `uv`；媒体节点还要求 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。以下门禁
-验证 0.2.0 Graph Core、Project Store、Runtime、Project Service，以及 v0.2.1 当前已实现的增量媒体节点：
+验证 0.2.0 Graph Core、Project Store、Runtime 和媒体节点，以及 v0.3.0 Project Service wire 与
+Presentation 增量：
 
 ```powershell
 uv lock --check

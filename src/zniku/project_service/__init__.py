@@ -1,4 +1,4 @@
-"""公开 ZNIKU Studio 0.2.1 wire 的本地 Project Service。"""
+"""公开 ZNIKU Studio 0.3.0 wire 的本地 Project Service。"""
 
 from .host import make_project_service_handler, serve_project_service
 from .models import (
@@ -12,6 +12,7 @@ from .models import (
     NodeLogEnvelope,
     NodeLogProjection,
     NodeProgressProjection,
+    PresentationCatalogEnvelope,
     ProjectServiceEnvelope,
     ProjectServiceFailure,
     RunDetailEnvelope,
@@ -36,6 +37,7 @@ __all__ = [
     "NodeLogEnvelope",
     "NodeLogProjection",
     "NodeProgressProjection",
+    "PresentationCatalogEnvelope",
     "ProjectServiceApplication",
     "ProjectServiceEnvelope",
     "ProjectServiceError",

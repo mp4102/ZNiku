@@ -9,19 +9,22 @@ Graph 与 Runtime 的唯一上位架构权威是
 易用性从属于 [`studio-ux-baseline.md`](../../docs/architecture/studio-ux-baseline.md)。本应用不得恢复
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-当前产品代码仍是已经验收的 0.2.0/v0.2.1 实现。v0.3.0 Phase 0 已冻结 UX 权威、Schema corpus 与
-HostBridge 技术路线，但尚未实现新的创作者界面；不得把设计基线描述为已经可用的 GUI 能力。
+当前产品代码仍保持 `0.2.0` package 版本。v0.3.0 Phase 0–1 已冻结 UX 权威并实现独立 Presentation、
+Schema 参数表单与工作区组件边界；创作者建项、原生路径选择、Undo/Redo 和首次用户验收仍属于 Phase 2–6。
 
 当前 0.2.0 Phase 1–5 与 v0.2.1 Phase 1–5 已实现产品面：
 
 - 从工程精确版本 `NodeDefinition` 搜索、添加、拖动、连接、复制和多选删除节点；
-- 编辑节点 JSON 参数，显示 required input、精确 `data_type`、`one` / `ordered_many` 与 DAG diagnostics；
+- 使用 Python Schema 驱动的中文表单编辑参数，显示字段级错误、primary/advanced 分组，并在高级区保留同一
+  `ParameterDraft` 的 raw JSON；
 - 新建、打开、保存 SQLite-backed `.zniku`；
 - Run all、Run to here、Rerun from here；
 - 在同一节点卡片和 Inspector 显示 progress、completed、failed、stale、错误原因、Artifact 输出路径；
 - 显示有界 stdout/stderr 与 external handoff 输入、目标路径，并提交外部输出。
 - 按 Project 中的 Python exact definitions 分组展示 Source、Transform、Split、Merge、Encode、
   Mux、Output 与 MR／Enhancement／FI external presets，不复制第二份媒体合同。
+- 通过独立 `GET /api/studio/presentations` 消费 exact `0.3.0` Presentation；缺失或损坏的第三方条目只产生
+  diagnostic，并回退通用 Schema 表单。
 
 Studio 不实现 Compiler、Freeze、ExecutionPlan、scope、唯一 Final、固定 AVEnhanceFlow 拓扑或浏览器 mock
 Runtime。Project Service 不可用或响应不符合 Python 生成 Schema 时失败关闭。

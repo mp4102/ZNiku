@@ -50,6 +50,20 @@ export function edgeId(edge: EdgeWire): string {
   return `${part(edge.source_node_id)}:${part(edge.source_port_id)}>${part(edge.target_node_id)}:${part(edge.target_port_id)}#${edge.ordinal ?? 'one'}`
 }
 
+/** 未应用节点 draft 存在时，任何离开该唯一节点的选择变化都必须被统一阻断。 */
+export function selectionChangeBlocked(
+  currentNodeId: string | null,
+  parameterDraftDirty: boolean,
+  nextNodeIds: ReadonlySet<string>,
+  nextEdgeIds: ReadonlySet<string>,
+): boolean {
+  return Boolean(
+    parameterDraftDirty &&
+    currentNodeId &&
+    (nextNodeIds.size !== 1 || !nextNodeIds.has(currentNodeId) || nextEdgeIds.size > 0),
+  )
+}
+
 export function definitionForNode(
   node: NodeInstanceWire,
   definitions: ReadonlyArray<NodeDefinitionWire>,

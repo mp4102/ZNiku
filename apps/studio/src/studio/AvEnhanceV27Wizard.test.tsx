@@ -63,7 +63,7 @@ function preview(
   compatible = true,
 ): AvEnhanceV27TemplatePreviewEnvelope {
   return {
-    contract_version: '0.2.1',
+    contract_version: '0.3.0',
     profile_version: '2.7.0',
     phase,
     project: {

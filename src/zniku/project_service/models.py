@@ -1,4 +1,4 @@
-"""定义 ZNIKU Studio 与本地 Project Service 之间的 0.2.1 wire 合同。
+"""定义 ZNIKU Studio 与本地 Project Service 之间的 0.3.0 wire 合同。
 
 Project 文件格式仍是 schema 2；本模块只升级浏览器与 Project Service 的成对 wire。Run summary、
 定向日志和 handoff readiness 都是已有 SQLite authority 的只读投影，不引入第二套运行状态。所有
@@ -9,7 +9,15 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 
 from zniku.avenhance_v27.preflight import Av27ProfilePreflightResult
 from zniku.avenhance_v27.template import (
@@ -21,11 +29,12 @@ from zniku.avenhance_v27.template import (
     TemplatePreviewRequest,
 )
 from zniku.graph import NodeDefinition
+from zniku.presentation import PresentationCatalog, PresentationDiagnostic
 from zniku.project import Project, ProjectSnapshot
 from zniku.runtime import Artifact, LatestNodeResult, Run, RuntimeFailure
 from zniku.runtime.models import UtcTimestamp
 
-PROJECT_SERVICE_CONTRACT_VERSION: Literal["0.2.1"] = "0.2.1"
+PROJECT_SERVICE_CONTRACT_VERSION: Literal["0.3.0"] = "0.3.0"
 type ActiveProjectOperation = Literal[
     "run_all",
     "run_to",
@@ -179,7 +188,7 @@ class ExternalOutputReadiness(ProjectServiceModel):
 class ExternalHandoffReadiness(ProjectServiceModel):
     """绑定一个最新 waiting attempt 的无副作用人工输出预检结果。"""
 
-    contract_version: Literal["0.2.1"] = PROJECT_SERVICE_CONTRACT_VERSION
+    contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
     run_id: str
     node_run_id: str
     handoff_id: str
@@ -203,7 +212,7 @@ class ExternalHandoffReadiness(ProjectServiceModel):
 class StatusEnvelope(ProjectServiceModel):
     """Studio 高频刷新得到的有界 Project/Run summary 读模型。"""
 
-    contract_version: Literal["0.2.1"] = PROJECT_SERVICE_CONTRACT_VERSION
+    contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
     project_path: LocalPath | None = None
     snapshot: ProjectSnapshot | None = None
     run_summaries: tuple[RunSummary, ...] = ()
@@ -222,14 +231,27 @@ class StatusEnvelope(ProjectServiceModel):
         return self
 
 
-# 只兼容 Python import 名称；序列化 root 和字段仍只有 0.2.1 StatusEnvelope。
+# 只兼容 Python import 名称；序列化 root 和字段仍只有 0.3.0 StatusEnvelope。
 ProjectServiceEnvelope = StatusEnvelope
+
+
+class PresentationCatalogEnvelope(ProjectServiceModel):
+    """独立返回纯展示 catalog 与被隔离的非阻塞第三方 diagnostic。"""
+
+    contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
+    catalog: PresentationCatalog
+    diagnostics: tuple[PresentationDiagnostic, ...] = ()
+
+    @field_validator("diagnostics", mode="before")
+    @classmethod
+    def normalize_diagnostics(cls, value: Any) -> Any:
+        return tuple(value) if isinstance(value, list) else value
 
 
 class RunSummaryPageEnvelope(ProjectServiceModel):
     """按 opaque cursor 返回 terminal Run 历史的一页 summary。"""
 
-    contract_version: Literal["0.2.1"] = PROJECT_SERVICE_CONTRACT_VERSION
+    contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
     run_summaries: tuple[RunSummary, ...] = ()
     next_run_cursor: OpaqueCursor | None = None
 
@@ -254,7 +276,7 @@ class ExternalHandoffContractProjection(ProjectServiceModel):
 class RunDetailEnvelope(ProjectServiceModel):
     """返回一个明确 Run 的完整历史及其引用 Artifact 闭包。"""
 
-    contract_version: Literal["0.2.1"] = PROJECT_SERVICE_CONTRACT_VERSION
+    contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
     run: Run
     artifacts: tuple[Artifact, ...] = ()
     progress_samples: tuple[NodeProgressProjection, ...] = ()
@@ -294,7 +316,7 @@ class RunDetailEnvelope(ProjectServiceModel):
 class NodeLogEnvelope(ProjectServiceModel):
     """将日志 tail 精确绑定到请求的 Run 与 NodeRun。"""
 
-    contract_version: Literal["0.2.1"] = PROJECT_SERVICE_CONTRACT_VERSION
+    contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
     run_id: str
     log: NodeLogProjection
 
@@ -302,7 +324,7 @@ class NodeLogEnvelope(ProjectServiceModel):
 class TemplatePreviewEnvelope(ProjectServiceModel):
     """返回 Python builder 的完整普通 Graph、定义、计划投影与 profile 诊断。"""
 
-    contract_version: Literal["0.2.1"] = PROJECT_SERVICE_CONTRACT_VERSION
+    contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
     profile_version: Literal["2.7.0"] = AV27_PROFILE_VERSION
     phase: TemplatePhase
     project: Project
@@ -440,6 +462,7 @@ __all__ = [
     "NodeLogProjection",
     "NodeProgressProjection",
     "OpenProjectCommand",
+    "PresentationCatalogEnvelope",
     "ProjectServiceCommand",
     "ProjectServiceEnvelope",
     "ProjectServiceFailure",

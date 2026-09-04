@@ -273,7 +273,7 @@ class RuntimeService:
         """验收一个仍为最新 attempt 的 manual_external handoff 并继续 Run。
 
         被上游 rerun 取代的旧 handoff 会失败关闭；它的历史 NodeRun 不被改写，也不能晚到覆盖新 head。
-        Project Service 0.2.1 必须同时传入 ``run_id`` 与 ``handoff_id``；可选值只保留 Runtime 内部
+        Project Service 必须同时传入 ``run_id`` 与 ``handoff_id``；可选值只保留 Runtime 内部
         既有调用兼容，最终仍从持久 authority 解析并验证精确绑定。
         """
 

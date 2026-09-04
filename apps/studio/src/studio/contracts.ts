@@ -1,5 +1,5 @@
 /**
- * 定义 ZNIKU Studio 使用的 0.2.1 Project Service wire 类型。
+ * 定义 ZNIKU Studio 使用的 0.3.0 Project Service wire 类型。
  *
  * Python 生成的 ``project-service.schema.json`` 是唯一运行时 Schema。这里的 TypeScript interface
  * 只为 React 提供静态约束；每个 endpoint 都使用自己的 Python Schema definition 失败关闭，不能把
@@ -55,6 +55,106 @@ export interface NodeDefinitionWire {
   readonly execution_mode: ExecutionMode
   readonly executor: ExecutorSpecWire
   readonly validator: { readonly adapter: string } | null
+}
+
+export type PaletteLevel = 'primary' | 'secondary' | 'advanced'
+export type PresentationIconToken =
+  | 'source'
+  | 'media'
+  | 'video'
+  | 'audio'
+  | 'transform'
+  | 'split'
+  | 'merge'
+  | 'encode'
+  | 'mux'
+  | 'output'
+  | 'check'
+export type ParameterImportance = 'primary' | 'advanced'
+export type ParameterControlHint =
+  | 'auto'
+  | 'text'
+  | 'textarea'
+  | 'integer'
+  | 'number'
+  | 'slider'
+  | 'switch'
+  | 'select'
+  | 'radio'
+  | 'file_path'
+  | 'file_paths'
+  | 'directory_path'
+  | 'save_file'
+
+export interface PresentationCategoryWire {
+  readonly category_id: string
+  readonly title: string
+  readonly description: string | null
+  readonly order: number
+}
+
+export interface ParameterGroupPresentationWire {
+  readonly group_id: string
+  readonly title: string
+  readonly description: string | null
+  readonly order: number
+}
+
+export interface ParameterPresentationWire {
+  readonly parameter_pointer: string
+  readonly label: string
+  readonly description: string | null
+  readonly group_id: string
+  readonly order: number
+  readonly importance: ParameterImportance
+  readonly control_hint: ParameterControlHint
+  readonly unit: string | null
+  readonly placeholder: string | null
+  readonly enum_labels: ReadonlyArray<{ readonly value: JsonValue; readonly label: string }>
+  readonly picker: { readonly extensions: ReadonlyArray<string> } | null
+}
+
+export interface PortPresentationWire {
+  readonly direction: 'input' | 'output'
+  readonly port_id: string
+  readonly label: string
+  readonly description: string | null
+}
+
+export interface NodePresentationWire {
+  readonly type_id: string
+  readonly definition_version: string
+  readonly title: string
+  readonly description: string
+  readonly category_id: string
+  readonly icon_token: PresentationIconToken
+  readonly palette_level: PaletteLevel
+  readonly keywords: ReadonlyArray<string>
+  readonly parameter_groups: ReadonlyArray<ParameterGroupPresentationWire>
+  readonly parameters: ReadonlyArray<ParameterPresentationWire>
+  readonly ports: ReadonlyArray<PortPresentationWire>
+  readonly card_summary_paths: ReadonlyArray<string>
+}
+
+export interface PresentationCatalogWire {
+  readonly contract_version: '0.3.0'
+  readonly locale: 'zh-CN'
+  readonly categories: ReadonlyArray<PresentationCategoryWire>
+  readonly nodes: ReadonlyArray<NodePresentationWire>
+}
+
+export interface PresentationDiagnosticWire {
+  readonly code: string
+  readonly message: string
+  readonly type_id: string | null
+  readonly definition_version: string | null
+  readonly reference: string | null
+}
+
+export interface PresentationCatalogEnvelopeWire {
+  readonly contract_version: '0.3.0'
+  readonly catalog: PresentationCatalogWire
+  readonly diagnostics: ReadonlyArray<PresentationDiagnosticWire>
 }
 
 export interface NodeInstanceWire {
@@ -187,7 +287,7 @@ export interface AvEnhanceV27ChapterPlanWire {
 }
 
 export interface AvEnhanceV27TemplatePreviewEnvelope {
-  readonly contract_version: '0.2.1'
+  readonly contract_version: '0.3.0'
   readonly profile_version: '2.7.0'
   readonly phase: 'preparation' | 'expanded'
   readonly project: ProjectWire
@@ -361,7 +461,7 @@ export type ActiveStudioOperation =
   | 'abandon_run'
 
 export interface StatusEnvelope {
-  readonly contract_version: '0.2.1'
+  readonly contract_version: '0.3.0'
   readonly project_path: string | null
   readonly snapshot: ProjectSnapshotWire | null
   readonly run_summaries: ReadonlyArray<RunSummaryWire>
@@ -373,13 +473,13 @@ export interface StatusEnvelope {
 }
 
 export interface RunSummaryPageEnvelope {
-  readonly contract_version: '0.2.1'
+  readonly contract_version: '0.3.0'
   readonly run_summaries: ReadonlyArray<RunSummaryWire>
   readonly next_run_cursor: string | null
 }
 
 export interface RunDetailEnvelope {
-  readonly contract_version: '0.2.1'
+  readonly contract_version: '0.3.0'
   readonly run: RunWire
   readonly artifacts: ReadonlyArray<ArtifactWire>
   readonly progress_samples: ReadonlyArray<NodeProgressProjectionWire>
@@ -405,7 +505,7 @@ export interface NodeLogWire {
 }
 
 export interface NodeLogEnvelope {
-  readonly contract_version: '0.2.1'
+  readonly contract_version: '0.3.0'
   readonly run_id: string
   readonly log: NodeLogWire
 }
@@ -428,7 +528,7 @@ export interface ExternalOutputReadinessWire {
 }
 
 export interface ExternalHandoffReadiness {
-  readonly contract_version: '0.2.1'
+  readonly contract_version: '0.3.0'
   readonly run_id: string
   readonly node_run_id: string
   readonly handoff_id: string
@@ -505,6 +605,7 @@ const validateExternalReadiness = compileDefinition('ExternalHandoffReadiness')
 const validateTemplatePreviewRequest = compileDefinition('TemplatePreviewRequest')
 const validateTemplatePreviewEnvelope = compileDefinition('TemplatePreviewEnvelope')
 const validateCommand = compileDefinition('ProjectServiceCommand')
+const validatePresentationCatalog = compileDefinition('PresentationCatalogEnvelope')
 
 export class StudioContractError extends Error {
   constructor(message: string) {
@@ -523,7 +624,7 @@ function validationMessage(errors: ErrorObject[] | null | undefined): string {
 function parseWith<T>(value: unknown, validator: ValidateFunction, label: string): T {
   if (!validator(value)) {
     throw new StudioContractError(
-      `${label} 不符合 Python 0.2.1 Schema：${validationMessage(validator.errors)}`,
+      `${label} 不符合 Python 0.3.0 Schema：${validationMessage(validator.errors)}`,
     )
   }
   return value as T
@@ -531,6 +632,12 @@ function parseWith<T>(value: unknown, validator: ValidateFunction, label: string
 
 export function parseStatusEnvelope(value: unknown): StatusEnvelope {
   return parseWith(value, validateStatus, 'Studio status payload')
+}
+
+export function parsePresentationCatalogEnvelope(
+  value: unknown,
+): PresentationCatalogEnvelopeWire {
+  return parseWith(value, validatePresentationCatalog, 'Studio Presentation catalog')
 }
 
 export function parseRunSummaryPageEnvelope(value: unknown): RunSummaryPageEnvelope {
@@ -569,7 +676,7 @@ function validateHandoffContractBindings(detail: RunDetailEnvelope): void {
 }
 
 function progressContractError(message: string): never {
-  throw new StudioContractError(`Studio Run detail progress_samples 不符合 0.2.1 合同：${message}`)
+  throw new StudioContractError(`Studio Run detail progress_samples 不符合 0.3.0 合同：${message}`)
 }
 
 function validateProgressSamples(detail: RunDetailEnvelope): void {
@@ -715,6 +822,6 @@ export function parseStudioCommand(value: unknown): StudioCommand {
   return parseWith(value, validateCommand, 'Studio command')
 }
 
-// 只为迁移现有调用者保留名称；它仍严格解析新的 0.2.1 StatusEnvelope。
+// 只为迁移现有调用者保留名称；它仍严格解析新的 0.3.0 StatusEnvelope。
 export type StudioEnvelope = StatusEnvelope
 export const parseStudioEnvelope = parseStatusEnvelope

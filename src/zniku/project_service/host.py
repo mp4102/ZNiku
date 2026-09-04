@@ -1,4 +1,4 @@
-"""提供仅监听 loopback 的 ZNIKU Studio 0.2.1 Project Service HTTP host。
+"""提供仅监听 loopback 的 ZNIKU Studio 0.3.0 Project Service HTTP host。
 
 HTTP 层只负责严格 JSON、有限 body、CORS、固定身份路由和 query 解析；Project、Graph、Runtime 与
 readiness 语义全部委托给 ``ProjectServiceApplication``。客户端不能提供日志路径、attempt 工作根或
@@ -140,7 +140,7 @@ def make_project_service_handler(
     """把一个 process-local Project session 绑定到 HTTP handler。"""
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "ZNIKUProjectService/0.2.1"
+        server_version = "ZNIKUProjectService/0.3.0"
 
         def do_OPTIONS(self) -> None:
             if not self._origin_allowed():
@@ -181,6 +181,9 @@ def make_project_service_handler(
             if path == "/api/studio/status":
                 query = _strict_query(raw_query, allowed=frozenset({"view_run_id"}))
                 return application.inspect(query.get("view_run_id")).model_dump(mode="json")
+            if path == "/api/studio/presentations":
+                _strict_query(raw_query, allowed=frozenset())
+                return application.inspect_presentations().model_dump(mode="json")
             if path == "/api/studio/runs":
                 query = _strict_query(raw_query, allowed=frozenset({"cursor", "limit"}))
                 raw_limit = query.get("limit")

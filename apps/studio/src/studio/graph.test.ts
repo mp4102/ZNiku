@@ -9,6 +9,7 @@ import {
   inspectGraph,
   isStudioConnectionValid,
   nodeExecutionSignatureMatches,
+  selectionChangeBlocked,
 } from './graph'
 import {
   dataSourceDefinition,
@@ -26,7 +27,14 @@ const connection = (
   targetHandle = 'in',
 ): Connection => ({ source, target, sourceHandle, targetHandle })
 
-describe('Studio 0.2.1 Graph interactions', () => {
+describe('Studio 0.3.0 Graph interactions', () => {
+  it('dirty ParameterDraft 统一阻断 Node A→B、edge 与取消选择，但允许停留在 A', () => {
+    expect(selectionChangeBlocked('node.a', true, new Set(['node.a']), new Set())).toBe(false)
+    expect(selectionChangeBlocked('node.a', true, new Set(['node.b']), new Set())).toBe(true)
+    expect(selectionChangeBlocked('node.a', true, new Set(), new Set(['edge.a-b']))).toBe(true)
+    expect(selectionChangeBlocked('node.a', true, new Set(), new Set())).toBe(true)
+    expect(selectionChangeBlocked('node.a', false, new Set(), new Set(['edge.a-b']))).toBe(false)
+  })
   it('按精确 data_type、one 占用和 DAG cycle 拒绝连接', () => {
     expect(
       isStudioConnectionValid(

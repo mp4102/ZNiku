@@ -21,7 +21,7 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
       className={`workflow-node workflow-node--${data.executorKind} ${selected ? 'is-selected' : ''} ${
         state ? `status-${state}` : ''
       } ${stale ? 'status-stale' : ''}`}
-      aria-label={`${data.label} 节点`}
+      aria-label={`${data.instanceId} 节点`}
     >
       {data.inputs.map((port, index) => (
         <Handle
@@ -44,6 +44,7 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
       </div>
       <strong>{data.label}</strong>
       <span className="node-subtitle">{data.typeId}</span>
+      {data.summaries.length > 0 && <div className="node-parameter-summary">{data.summaries.map((summary) => <span key={summary}>{summary}</span>)}</div>}
       {(data.inputs.length > 1 || data.outputs.length > 1) && (
         <div className="multi-port-summary">
           {data.inputs.length > 1 && <span>IN · {data.inputs.map((port) => port.port_id).join(' + ')}</span>}

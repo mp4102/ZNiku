@@ -241,6 +241,53 @@
       "title": "Cardinality",
       "type": "string"
     },
+    "CategoryPresentation": {
+      "additionalProperties": false,
+      "description": "声明 Palette 中一个纯展示分类。",
+      "properties": {
+        "category_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Category Id",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "order": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "category_id",
+        "title",
+        "description",
+        "order"
+      ],
+      "title": "CategoryPresentation",
+      "type": "object"
+    },
     "ChapterPlanProjection": {
       "additionalProperties": false,
       "description": "向 Studio 投影一个 Chapter 及其有序 leaves。",
@@ -1167,6 +1214,26 @@
       "title": "UiPosition",
       "type": "object"
     },
+    "ControlHint": {
+      "description": "列出 Studio 内置且无执行能力的参数控件提示。",
+      "enum": [
+        "auto",
+        "text",
+        "textarea",
+        "integer",
+        "number",
+        "slider",
+        "switch",
+        "select",
+        "radio",
+        "file_path",
+        "file_paths",
+        "directory_path",
+        "save_file"
+      ],
+      "title": "ControlHint",
+      "type": "string"
+    },
     "Edge": {
       "additionalProperties": false,
       "description": "连接一个已声明 output 与一个已声明 input。",
@@ -1221,6 +1288,27 @@
         "ordinal"
       ],
       "title": "Edge",
+      "type": "object"
+    },
+    "EnumLabel": {
+      "additionalProperties": false,
+      "description": "为正式 Schema 已声明的一个 JSON enum 值提供人类标签。",
+      "properties": {
+        "label": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "value",
+        "label"
+      ],
+      "title": "EnumLabel",
       "type": "object"
     },
     "ExecutionMode": {
@@ -1407,8 +1495,8 @@
           "type": "string"
         },
         "contract_version": {
-          "const": "0.2.1",
-          "default": "0.2.1",
+          "const": "0.3.0",
+          "default": "0.3.0",
           "title": "Contract Version",
           "type": "string"
         },
@@ -1661,6 +1749,24 @@
       ],
       "title": "HandoffContractField",
       "type": "object"
+    },
+    "IconToken": {
+      "description": "Studio 内置图标 token 的闭合集合；不得注入 SVG、路径或 URL。",
+      "enum": [
+        "source",
+        "media",
+        "video",
+        "audio",
+        "transform",
+        "split",
+        "merge",
+        "encode",
+        "mux",
+        "output",
+        "check"
+      ],
+      "title": "IconToken",
+      "type": "string"
     },
     "JsonObject": {
       "additionalProperties": {
@@ -1977,8 +2083,8 @@
       "description": "将日志 tail 精确绑定到请求的 Run 与 NodeRun。",
       "properties": {
         "contract_version": {
-          "const": "0.2.1",
-          "default": "0.2.1",
+          "const": "0.3.0",
+          "default": "0.3.0",
           "title": "Contract Version",
           "type": "string"
         },
@@ -2047,6 +2153,111 @@
         "stderr_available"
       ],
       "title": "NodeLogProjection",
+      "type": "object"
+    },
+    "NodePresentation": {
+      "additionalProperties": false,
+      "description": "以 exact type/version 绑定一个 NodeDefinition 的纯展示说明。",
+      "properties": {
+        "card_summary_paths": {
+          "default": [],
+          "items": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Card Summary Paths",
+          "type": "array"
+        },
+        "category_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Category Id",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 96,
+          "minLength": 5,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "icon_token": {
+          "$ref": "#/$defs/IconToken"
+        },
+        "keywords": {
+          "default": [],
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Keywords",
+          "type": "array"
+        },
+        "palette_level": {
+          "$ref": "#/$defs/PaletteLevel"
+        },
+        "parameter_groups": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ParameterGroupPresentation"
+          },
+          "title": "Parameter Groups",
+          "type": "array"
+        },
+        "parameters": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ParameterPresentation"
+          },
+          "title": "Parameters",
+          "type": "array"
+        },
+        "ports": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PortPresentation"
+          },
+          "title": "Ports",
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "type_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9]*(?:[._:/-][A-Za-z0-9]+)*$",
+          "title": "Type Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type_id",
+        "definition_version",
+        "title",
+        "description",
+        "category_id",
+        "icon_token",
+        "palette_level",
+        "keywords",
+        "parameter_groups",
+        "parameters",
+        "ports",
+        "card_summary_paths"
+      ],
+      "title": "NodePresentation",
       "type": "object"
     },
     "NodeProgressProjection": {
@@ -2324,6 +2535,258 @@
       "title": "NodeRunState",
       "type": "string"
     },
+    "PaletteLevel": {
+      "description": "控制节点在 Palette 中的渐进披露层级。",
+      "enum": [
+        "primary",
+        "secondary",
+        "advanced"
+      ],
+      "title": "PaletteLevel",
+      "type": "string"
+    },
+    "ParameterGroupPresentation": {
+      "additionalProperties": false,
+      "description": "声明 Inspector 中一个参数分组，不改变参数对象结构。",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "group_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "order": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        },
+        "title": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id",
+        "title",
+        "description",
+        "order"
+      ],
+      "title": "ParameterGroupPresentation",
+      "type": "object"
+    },
+    "ParameterImportance": {
+      "description": "区分默认表单与高级参数区。",
+      "enum": [
+        "primary",
+        "advanced"
+      ],
+      "title": "ParameterImportance",
+      "type": "string"
+    },
+    "ParameterPresentation": {
+      "additionalProperties": false,
+      "description": "把一个正式参数 JSON Pointer 映射为内置表单展示元数据。",
+      "properties": {
+        "control_hint": {
+          "$ref": "#/$defs/ControlHint",
+          "default": "auto"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "enum_labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EnumLabel"
+          },
+          "title": "Enum Labels",
+          "type": "array"
+        },
+        "group_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "importance": {
+          "$ref": "#/$defs/ParameterImportance",
+          "default": "primary"
+        },
+        "label": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "order": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        },
+        "parameter_pointer": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Parameter Pointer",
+          "type": "string"
+        },
+        "picker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PickerPresentation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "placeholder": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Placeholder"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "required": [
+        "parameter_pointer",
+        "label",
+        "description",
+        "group_id",
+        "order",
+        "importance",
+        "control_hint",
+        "unit",
+        "placeholder",
+        "enum_labels",
+        "picker"
+      ],
+      "title": "ParameterPresentation",
+      "type": "object"
+    },
+    "PickerPresentation": {
+      "additionalProperties": false,
+      "description": "提供原生选择器的扩展名提示；它不是媒体 validator。",
+      "properties": {
+        "extensions": {
+          "default": [],
+          "items": {
+            "maxLength": 32,
+            "minLength": 2,
+            "pattern": "^\\.[A-Za-z0-9][A-Za-z0-9._+-]*$",
+            "type": "string"
+          },
+          "title": "Extensions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "extensions"
+      ],
+      "title": "PickerPresentation",
+      "type": "object"
+    },
+    "PortPresentation": {
+      "additionalProperties": false,
+      "description": "为正式 input/output port 提供文案，不重复 data type、required 或 cardinality。",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "direction": {
+          "enum": [
+            "input",
+            "output"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "port_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Port Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction",
+        "port_id",
+        "label",
+        "description"
+      ],
+      "title": "PortPresentation",
+      "type": "object"
+    },
     "PortSpec": {
       "additionalProperties": false,
       "description": "声明节点端口的本地身份、精确数据类型、基数与输入必需性。",
@@ -2359,6 +2822,149 @@
         "required"
       ],
       "title": "PortSpec",
+      "type": "object"
+    },
+    "PresentationCatalog": {
+      "additionalProperties": false,
+      "description": "汇总一个 locale 下可安全消费的节点展示条目。",
+      "properties": {
+        "categories": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CategoryPresentation"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "locale": {
+          "const": "zh-CN",
+          "default": "zh-CN",
+          "title": "Locale",
+          "type": "string"
+        },
+        "nodes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NodePresentation"
+          },
+          "title": "Nodes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "locale",
+        "categories",
+        "nodes"
+      ],
+      "title": "PresentationCatalog",
+      "type": "object"
+    },
+    "PresentationCatalogEnvelope": {
+      "additionalProperties": false,
+      "description": "独立返回纯展示 catalog 与被隔离的非阻塞第三方 diagnostic。",
+      "properties": {
+        "catalog": {
+          "$ref": "#/$defs/PresentationCatalog"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "diagnostics": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PresentationDiagnostic"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "catalog",
+        "diagnostics"
+      ],
+      "title": "PresentationCatalogEnvelope",
+      "type": "object"
+    },
+    "PresentationDiagnostic": {
+      "additionalProperties": false,
+      "description": "记录被隔离的第三方展示条目；该 warning 永不改变 Graph/Runtime 结论。",
+      "properties": {
+        "code": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "definition_version": {
+          "anyOf": [
+            {
+              "maxLength": 96,
+              "minLength": 5,
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Definition Version"
+        },
+        "message": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference"
+        },
+        "type_id": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "pattern": "^[A-Za-z][A-Za-z0-9]*(?:[._:/-][A-Za-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type Id"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "type_id",
+        "definition_version",
+        "reference"
+      ],
+      "title": "PresentationDiagnostic",
       "type": "object"
     },
     "Preview_ChapterSelector": {
@@ -3108,8 +3714,8 @@
           "type": "array"
         },
         "contract_version": {
-          "const": "0.2.1",
-          "default": "0.2.1",
+          "const": "0.3.0",
+          "default": "0.3.0",
           "title": "Contract Version",
           "type": "string"
         },
@@ -3313,8 +3919,8 @@
       "description": "按 opaque cursor 返回 terminal Run 历史的一页 summary。",
       "properties": {
         "contract_version": {
-          "const": "0.2.1",
-          "default": "0.2.1",
+          "const": "0.3.0",
+          "default": "0.3.0",
           "title": "Contract Version",
           "type": "string"
         },
@@ -3426,8 +4032,8 @@
           "title": "Active Run Id"
         },
         "contract_version": {
-          "const": "0.2.1",
-          "default": "0.2.1",
+          "const": "0.3.0",
+          "default": "0.3.0",
           "title": "Contract Version",
           "type": "string"
         },
@@ -3611,8 +4217,8 @@
       "description": "返回 Python builder 的完整普通 Graph、定义、计划投影与 profile 诊断。",
       "properties": {
         "contract_version": {
-          "const": "0.2.1",
-          "default": "0.2.1",
+          "const": "0.3.0",
+          "default": "0.3.0",
           "title": "Contract Version",
           "type": "string"
         },

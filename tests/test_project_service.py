@@ -530,7 +530,7 @@ def test_missing_handoff_target_readiness_is_read_only(tmp_path: Path) -> None:
         assert not Path(target.path).exists()
         assert attempt_tree() == before_tree
 
-    assert readiness.contract_version == "0.2.1"
+    assert readiness.contract_version == "0.3.0"
     assert readiness.run_id == waiting_run.run_id
     assert readiness.node_run_id == waiting.node_run_id
     assert readiness.handoff_id == handoff.handoff_id

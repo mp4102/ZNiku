@@ -1,5 +1,5 @@
 /**
- * 提供 Studio 到 loopback Project Service 0.2.1 的分层网关。
+ * 提供 Studio 到 loopback Project Service 0.3.0 的分层网关。
  *
  * 网关只发送结构化 JSON，并按 endpoint 调用 Python Schema 派生的解析器。status、Run detail、日志和
  * readiness 使用不同资源通道，网络或合同失败不会清空其他通道最后一次可信数据。
@@ -10,6 +10,7 @@ import {
   parseAvEnhanceV27TemplatePreviewRequest,
   parseExternalHandoffReadiness,
   parseNodeLogEnvelope,
+  parsePresentationCatalogEnvelope,
   parseRunDetailEnvelope,
   parseRunSummaryPageEnvelope,
   parseStatusEnvelope,
@@ -19,6 +20,7 @@ import {
   type AvEnhanceV27TemplatePreviewEnvelope,
   type AvEnhanceV27TemplatePreviewRequestWire,
   type NodeLogEnvelope,
+  type PresentationCatalogEnvelopeWire,
   type RunDetailEnvelope,
   type RunSummaryPageEnvelope,
   type StatusEnvelope,
@@ -27,6 +29,8 @@ import {
 } from './contracts'
 
 export interface StudioGateway {
+  /** 可选仅用于兼容测试 double；正式 Fetch gateway 始终实现独立展示目录读取。 */
+  inspectPresentations?(): Promise<PresentationCatalogEnvelopeWire>
   inspect(viewRunId?: string | null): Promise<StatusEnvelope>
   listRuns(cursor?: string | null, limit?: number): Promise<RunSummaryPageEnvelope>
   inspectRun(runId: string): Promise<RunDetailEnvelope>
@@ -119,6 +123,14 @@ export class FetchStudioGateway implements StudioGateway {
     private readonly baseUrl =
       window.__ZNIKU_STUDIO_API_BASE__ ?? 'http://127.0.0.1:18765',
   ) {}
+
+  async inspectPresentations(): Promise<PresentationCatalogEnvelopeWire> {
+    return this.request(
+      '/api/studio/presentations',
+      { method: 'GET' },
+      parsePresentationCatalogEnvelope,
+    )
+  }
 
   async inspect(viewRunId?: string | null): Promise<StatusEnvelope> {
     const query = new URLSearchParams()

@@ -1,4 +1,4 @@
-/** 纯合成 Studio 0.2.1 fixtures；不包含真实媒体、主机路径或外部副作用。 */
+/** 纯合成 Studio 0.3.0 fixtures；不包含真实媒体、主机路径或外部副作用。 */
 
 import type {
   ArtifactWire,
@@ -219,7 +219,7 @@ function summary(
 
 export function studioEnvelope(overrides: Partial<StatusEnvelope> = {}): StatusEnvelope {
   return {
-    contract_version: '0.2.1',
+    contract_version: '0.3.0',
     project_path: 'C:\\synthetic\\project.zniku',
     snapshot: projectSnapshot,
     run_summaries: [],
@@ -349,7 +349,7 @@ export function handoffEnvelope(): StatusEnvelope {
 
 export function handoffDetailEnvelope(): RunDetailEnvelope {
   return {
-    contract_version: '0.2.1',
+    contract_version: '0.3.0',
     run: handoffRun(),
     artifacts: [inputArtifact],
     progress_samples: [],
@@ -362,7 +362,7 @@ export function handoffReadinessEnvelope(
   probeRequested = false,
 ): ExternalHandoffReadiness {
   return {
-    contract_version: '0.2.1',
+    contract_version: '0.3.0',
     run_id: handoffFixtureIds.run,
     node_run_id: handoffFixtureIds.transformNodeRun,
     handoff_id: handoffFixtureIds.handoff,
@@ -385,7 +385,7 @@ export function handoffReadinessEnvelope(
 
 export function handoffLogEnvelope(): NodeLogEnvelope {
   return {
-    contract_version: '0.2.1',
+    contract_version: '0.3.0',
     run_id: handoffFixtureIds.run,
     log: {
       node_run_id: handoffFixtureIds.transformNodeRun,
@@ -431,7 +431,7 @@ function completedLocalDetail(runId: string, timestamp: string): RunDetailEnvelo
   }
   const source = handoffRun().node_runs[0]!
   return {
-    contract_version: '0.2.1',
+    contract_version: '0.3.0',
     artifacts: [artifact],
     progress_samples: [],
     handoff_contracts: [],
@@ -508,7 +508,7 @@ export function runningProgressDetail(progress: number): RunDetailEnvelope {
   const transform = run.node_runs[1]!
   const sink = run.node_runs[2]!
   return {
-    contract_version: '0.2.1',
+    contract_version: '0.3.0',
     artifacts: [],
     progress_samples: [],
     handoff_contracts: [],

@@ -7,6 +7,7 @@ import type {
   AvEnhanceV27TemplatePreviewRequestWire,
   ExternalHandoffReadiness,
   NodeLogEnvelope,
+  PresentationCatalogEnvelopeWire,
   RunDetailEnvelope,
   RunSummaryPageEnvelope,
   StatusEnvelope,
@@ -68,6 +69,9 @@ interface GatewayOptions {
   ) => Promise<ExternalHandoffReadiness> | ExternalHandoffReadiness
   readonly log?: (runId: string, nodeRunId: string) => Promise<NodeLogEnvelope> | NodeLogEnvelope
   readonly command?: (command: StudioCommand) => Promise<StatusEnvelope> | StatusEnvelope
+  readonly presentations?: (
+    count: number,
+  ) => Promise<PresentationCatalogEnvelopeWire> | PresentationCatalogEnvelopeWire
 }
 
 class RecordingGateway implements StudioGateway {
@@ -79,11 +83,20 @@ class RecordingGateway implements StudioGateway {
   readonly templatePreviewArguments: AvEnhanceV27TemplatePreviewRequestWire[] = []
   inspectCount = 0
   inspectRunCount = 0
+  inspectPresentationCount = 0
+  readonly inspectPresentations?: () => Promise<PresentationCatalogEnvelopeWire>
 
   constructor(
     public envelope: StatusEnvelope = studioEnvelope(),
     private readonly options: GatewayOptions = {},
-  ) {}
+  ) {
+    if (options.presentations) {
+      this.inspectPresentations = async () => {
+        this.inspectPresentationCount += 1
+        return options.presentations!(this.inspectPresentationCount)
+      }
+    }
+  }
 
   async inspect(viewRunId: string | null = null): Promise<StatusEnvelope> {
     this.inspectCount += 1
@@ -94,7 +107,7 @@ class RecordingGateway implements StudioGateway {
   async listRuns(cursor: string | null = null, limit = 20): Promise<RunSummaryPageEnvelope> {
     this.historyArguments.push([cursor, limit])
     if (this.options.listRuns) return this.options.listRuns(cursor, limit)
-    return { contract_version: '0.2.1', run_summaries: [], next_run_cursor: null }
+    return { contract_version: '0.3.0', run_summaries: [], next_run_cursor: null }
   }
 
   async inspectRun(runId: string): Promise<RunDetailEnvelope> {
@@ -139,6 +152,43 @@ class RecordingGateway implements StudioGateway {
   }
 }
 
+function presentationEnvelope(
+  nodes: PresentationCatalogEnvelopeWire['catalog']['nodes'],
+  categories: PresentationCatalogEnvelopeWire['catalog']['categories'],
+): PresentationCatalogEnvelopeWire {
+  return {
+    contract_version: '0.3.0',
+    catalog: { contract_version: '0.3.0', locale: 'zh-CN', categories, nodes },
+    diagnostics: [],
+  }
+}
+
+function nodePresentation(
+  definition: typeof sourceDefinition,
+  title: string,
+  options: {
+    readonly categoryId?: string
+    readonly iconToken?: 'source' | 'transform' | 'output'
+    readonly parameters?: PresentationCatalogEnvelopeWire['catalog']['nodes'][number]['parameters']
+    readonly cardSummaryPaths?: ReadonlyArray<string>
+  } = {},
+): PresentationCatalogEnvelopeWire['catalog']['nodes'][number] {
+  return {
+    type_id: definition.type_id,
+    definition_version: definition.version,
+    title,
+    description: `${title}说明。`,
+    category_id: options.categoryId ?? 'test',
+    icon_token: options.iconToken ?? 'transform',
+    palette_level: 'primary',
+    keywords: [],
+    parameter_groups: [],
+    parameters: options.parameters ?? [],
+    ports: [],
+    card_summary_paths: options.cardSummaryPaths ?? [],
+  }
+}
+
 function unavailableGateway(message: string): StudioGateway {
   const reject = () => Promise.reject(new Error(message))
   return {
@@ -159,7 +209,7 @@ async function flushReact(): Promise<void> {
   })
 }
 
-describe('ZNIKU Studio 0.2.1 Project workspace', () => {
+describe('ZNIKU Studio 0.3.0 Project workspace', () => {
   it('Project Service 缺失时失败关闭，不回退旧正式投影或浏览器 mock', async () => {
     render(<App gateway={unavailableGateway('loopback offline')} />)
 
@@ -177,6 +227,16 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
       ...sourceDefinition,
       type_id: 'zniku.avenhance.v27.source_program',
       version: '0.2.1',
+      parameter_schema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object' as const,
+        properties: {
+          source_path: { type: 'string' as const },
+          source_ordinal: { type: 'integer' as const, minimum: 0 },
+        },
+        required: ['source_path', 'source_ordinal'],
+        additionalProperties: false,
+      },
     }
     const templateProject = {
       project_id: 'project.local',
@@ -198,7 +258,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
       },
     }
     const templatePreview: AvEnhanceV27TemplatePreviewEnvelope = {
-      contract_version: '0.2.1',
+      contract_version: '0.3.0',
       profile_version: '2.7.0',
       phase: 'preparation',
       project: templateProject,
@@ -272,7 +332,10 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     expect(gateway.templatePreviewArguments[0]).not.toHaveProperty('definitions')
 
     fireEvent.click(screen.getByLabelText('source.program 节点'))
-    await user.click(screen.getByRole('button', { name: '应用参数到 Draft' }))
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'source_ordinal（必填）' }), {
+      target: { value: '1' },
+    })
+    await user.click(screen.getByRole('button', { name: '应用设置' }))
     expect(screen.getByText(/自由编辑后已降级/)).toBeVisible()
   })
 
@@ -312,6 +375,26 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     let currentEnvelope = studioEnvelope({ project_path: null, snapshot: null })
     let gateway: RecordingGateway
     gateway = new RecordingGateway(currentEnvelope, {
+      presentations: () => presentationEnvelope(
+        [
+          {
+            type_id: mediaSource.type_id, definition_version: mediaSource.version,
+            title: '导入视频', description: '选择视频输入。', category_id: 'media',
+            icon_token: 'source', palette_level: 'primary', keywords: [],
+            parameter_groups: [], parameters: [], ports: [], card_summary_paths: [],
+          },
+          {
+            type_id: mrPreset.type_id, definition_version: mrPreset.version,
+            title: '马赛克修复', description: '外部视频处理。', category_id: 'transform',
+            icon_token: 'transform', palette_level: 'primary', keywords: [],
+            parameter_groups: [], parameters: [], ports: [], card_summary_paths: [],
+          },
+        ],
+        [
+          { category_id: 'media', title: '基础媒体节点', description: null, order: 1 },
+          { category_id: 'transform', title: 'VideoTransform presets', description: null, order: 2 },
+        ],
+      ),
       command: (command) => {
         if (command.operation === 'create_project') currentEnvelope = createdEnvelope
         gateway.envelope = currentEnvelope
@@ -364,7 +447,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     fireEvent.change(await screen.findByLabelText('节点参数 JSON'), {
       target: { value: '{"strength":7,"model_name":"Synthetic Model"}' },
     })
-    await user.click(screen.getByRole('button', { name: '应用参数到 Draft' }))
+    await user.click(screen.getByRole('button', { name: '应用设置' }))
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => {
       const command = gateway.commands.at(-1)
@@ -673,7 +756,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     )
 
     await act(async () => oldPage.resolve({
-      contract_version: '0.2.1',
+      contract_version: '0.3.0',
       run_summaries: [initial.run_summaries[1]!],
       next_run_cursor: 'cursor.stale',
     }))
@@ -1438,12 +1521,12 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
         listRuns: (cursor) =>
           cursor === 'cursor.page.1'
             ? {
-                contract_version: '0.2.1',
+                contract_version: '0.3.0',
                 run_summaries: [second],
                 next_run_cursor: 'cursor.page.2',
               }
             : {
-                contract_version: '0.2.1',
+                contract_version: '0.3.0',
                 run_summaries: [third],
                 next_run_cursor: null,
               },
@@ -1507,7 +1590,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     expect(newPageButton).toBeDisabled()
 
     await act(async () => newPage.resolve({
-      contract_version: '0.2.1',
+      contract_version: '0.3.0',
       run_summaries: [],
       next_run_cursor: null,
     }))
@@ -1520,7 +1603,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     const slowA = new Deferred<NodeLogEnvelope>()
     let sourceCalls = 0
     const makeLog = (nodeRunId: string, stdout: string): NodeLogEnvelope => ({
-      contract_version: '0.2.1',
+      contract_version: '0.3.0',
       run_id: handoffFixtureIds.run,
       log: {
         ...handoffLogEnvelope().log,
@@ -1562,7 +1645,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     const slowFailure = new Deferred<NodeLogEnvelope>()
     let sourceCalls = 0
     const makeLog = (nodeRunId: string, stdout: string): NodeLogEnvelope => ({
-      contract_version: '0.2.1',
+      contract_version: '0.3.0',
       run_id: handoffFixtureIds.run,
       log: { ...handoffLogEnvelope().log, node_run_id: nodeRunId, stdout },
     })
@@ -1793,6 +1876,95 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     for (const button of submitButtons) expect(button).toBeDisabled()
   })
 
+  it('Presentation 文本按纯文本渲染，并用 exact title 与声明路径生成节点摘要', async () => {
+    const hostileTitle = '<img src=x onerror=alert(1)>'
+    const gateway = new RecordingGateway(studioEnvelope(), {
+      presentations: () => presentationEnvelope(
+        [nodePresentation(transformDefinition, hostileTitle, {
+          parameters: [{
+            parameter_pointer: '/strength', label: '强度', description: null,
+            group_id: 'generic', order: 1, importance: 'primary', control_hint: 'integer',
+            unit: null, placeholder: null, enum_labels: [], picker: null,
+          }],
+          cardSummaryPaths: ['/strength'],
+        })],
+        [{ category_id: 'test', title: '测试节点', description: null, order: 1 }],
+      ),
+    })
+    render(<App gateway={gateway} />)
+
+    expect((await screen.findAllByText(hostileTitle)).length).toBeGreaterThan(0)
+    expect(screen.getByText('强度：3')).toBeInTheDocument()
+    expect(document.querySelector('img')).toBeNull()
+    fireEvent.click(screen.getByLabelText('transform 节点'))
+    expect(screen.getByRole('heading', { name: hostileTitle })).toBeVisible()
+  })
+
+  it('definitions exact identity 变化后刷新 Presentation，接纳动态节点而不保留旧 generic 投影', async () => {
+    const initialSnapshot = {
+      project: {
+        ...projectSnapshot.project,
+        graph: { nodes: [projectSnapshot.project.graph.nodes[0]!], edges: [] },
+      },
+      definitions: [sourceDefinition],
+    }
+    const expandedSnapshot = { ...initialSnapshot, definitions: [sourceDefinition, transformDefinition] }
+    let expanded = false
+    let gateway: RecordingGateway
+    gateway = new RecordingGateway(studioEnvelope({ snapshot: initialSnapshot }), {
+      presentations: () => presentationEnvelope(
+        expanded
+          ? [nodePresentation(sourceDefinition, '媒体输入', { iconToken: 'source' }), nodePresentation(transformDefinition, '动态增强')]
+          : [nodePresentation(sourceDefinition, '媒体输入', { iconToken: 'source' })],
+        [{ category_id: 'test', title: '创作者节点', description: null, order: 1 }],
+      ),
+      command: (command) => {
+        if (command.operation === 'open_project') {
+          expanded = true
+          gateway.envelope = studioEnvelope({ snapshot: expandedSnapshot })
+        }
+        return gateway.envelope
+      },
+    })
+    render(<App gateway={gateway} />)
+
+    expect(await screen.findByRole('button', { name: /媒体输入 · test\.source@0\.2\.0/ })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: '打开' }))
+    expect(await screen.findByRole('button', { name: /动态增强 · test\.transform@0\.2\.0/ })).toBeVisible()
+    expect(gateway.inspectPresentationCount).toBeGreaterThanOrEqual(3)
+  })
+
+  it('未应用 ParameterDraft 阻断运行与离开节点，form/raw 双向同步后可显式放弃', async () => {
+    const gateway = new RecordingGateway()
+    render(<App gateway={gateway} />)
+    await screen.findByText('Synthetic Studio Project')
+    fireEvent.click(screen.getByLabelText('transform 节点'))
+
+    const strength = screen.getByRole('spinbutton', { name: 'strength' })
+    fireEvent.change(strength, { target: { value: '4' } })
+    expect((screen.getByLabelText('节点参数 JSON') as HTMLTextAreaElement).value).toContain('"strength": 4')
+    fireEvent.change(screen.getByLabelText('节点参数 JSON'), {
+      target: { value: '{"strength":5,"model_name":"Synthetic Model"}' },
+    })
+    expect(screen.getByRole('spinbutton', { name: 'strength' })).toHaveValue(5)
+    expect(screen.getByRole('button', { name: 'Run all' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Run to here' })).toBeDisabled()
+
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    expect(screen.getByRole('heading', { name: 'transform' })).toBeVisible()
+    expect(screen.getByText(/当前节点有未应用设置/)).toBeVisible()
+
+    const pane = document.querySelector('.react-flow__pane')
+    expect(pane).not.toBeNull()
+    fireEvent.click(pane!)
+    expect(screen.getByRole('heading', { name: 'transform' })).toBeVisible()
+    expect(gateway.commands.some((command) => command.operation === 'run_all')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: '放弃未应用更改' }))
+    fireEvent.click(screen.getByLabelText('source 节点'))
+    expect(screen.getByRole('heading', { name: 'source' })).toBeVisible()
+  })
+
   it('same-project reopen 与 save 保留历史 terminal 选择，真实换 path 才清理', async () => {
     const user = userEvent.setup()
     const fixture = threeRunEnvelope()
@@ -1806,7 +1978,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     let gateway: RecordingGateway
     gateway = new RecordingGateway(initial, {
       listRuns: () => ({
-        contract_version: '0.2.1',
+        contract_version: '0.3.0',
         run_summaries: [terminal],
         next_run_cursor: null,
       }),
@@ -1840,7 +2012,7 @@ describe('ZNIKU Studio 0.2.1 Project workspace', () => {
     fireEvent.change(screen.getByLabelText('节点参数 JSON'), {
       target: { value: '{"strength":4,"model_name":"Synthetic Model"}' },
     })
-    await user.click(screen.getByRole('button', { name: '应用参数到 Draft' }))
+    await user.click(screen.getByRole('button', { name: '应用设置' }))
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(gateway.commands.at(-1)?.operation).toBe('save_project'))
     expect(selector).toHaveValue(terminal.run_id)
