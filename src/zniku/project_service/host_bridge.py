@@ -830,6 +830,12 @@ class HostBridgeSession:
         return HostInvokeEnvelope(status="launched")
 
 
+def _running_on_windows() -> bool:
+    """保留运行时平台判断，避免类型检查器按自身宿主裁剪另一平台分支。"""
+
+    return sys.platform == "win32"
+
+
 class WindowsHostPlatform:
     """使用 Windows Tk 原生 picker 与固定系统命令的宿主后端。"""
 
@@ -839,7 +845,7 @@ class WindowsHostPlatform:
     def capability_states(self) -> Mapping[HostCapability, str | None]:
         """在不创建窗口的前提下报告 Windows/Tk 能力。"""
 
-        if sys.platform != "win32":
+        if not _running_on_windows():
             reason = "v0.3.0 HostBridge 只正式支持 Windows"
             return dict.fromkeys(HOST_CAPABILITIES, reason)
         picker_reason: str | None = None
