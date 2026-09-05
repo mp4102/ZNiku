@@ -16,6 +16,7 @@ from uuid import uuid4
 import pytest
 
 import zniku.avenhance_v27.adapters as av27_adapters
+from authoring_helpers import authoring_command
 from zniku.avenhance_v27 import (
     av27_python_adapters,
     av27_validators,
@@ -103,7 +104,8 @@ def _application(
         media_probe=runner_media_probe,
         artifact_quick_probe=media_artifact_quick_probe,
     )
-    application.command(
+    authoring_command(
+        application,
         {
             "operation": "create_av_enhance_v27",
             "request": {
@@ -119,7 +121,7 @@ def _application(
                     else {"mode": "off"}
                 ),
             },
-        }
+        },
     )
     return application, source
 
@@ -127,7 +129,7 @@ def _application(
 def _run(application: ProjectServiceApplication, command: dict[str, Any]) -> Run:
     """等待受控自动执行停止，再返回真实 persisted Run；不推进 waiting 手工节点。"""
 
-    started = application.command(command)
+    started = authoring_command(application, command)
     assert started.active_run_id is not None
     assert application.wait_until_idle(timeout=30), application.inspect()
     assert application.inspect().error is None
@@ -186,8 +188,9 @@ def _edit_parameters(
     for node in payload["graph"]["nodes"]:
         if node["node_id"] == node_id:
             node["parameters"].update(updates)
-    application.command(
-        {"operation": "save_project", "project": Project.model_validate(payload, strict=True)}
+    authoring_command(
+        application,
+        {"operation": "save_project", "project": Project.model_validate(payload, strict=True)},
     )
 
 
@@ -195,7 +198,7 @@ def _completed_split(
     application: ProjectServiceApplication, tmp_path: Path, preparation: Run
 ) -> tuple[Run, dict[str, Any]]:
     request = _expansion(tmp_path, preparation.run_id)
-    application.command({"operation": "expand_av_enhance_v27", "request": request})
+    authoring_command(application, {"operation": "expand_av_enhance_v27", "request": request})
     run = _run(application, {"operation": "run_to", "node_id": "split.atomic"})
     assert run.state is RunState.COMPLETED, run
     assert _latest(run, "split.atomic").state is NodeRunState.COMPLETED
@@ -229,7 +232,7 @@ def test_mr_parameter_edit_stales_its_split_but_preserves_admission_and_history(
     assert application.inspect_run_detail(split_run.run_id) == old_detail
     before_rejected_expand = application.inspect().snapshot
     with pytest.raises(ProjectServiceError, match="E_AV27_EXPAND_STALE"):
-        application.command({"operation": "expand_av_enhance_v27", "request": request})
+        authoring_command(application, {"operation": "expand_av_enhance_v27", "request": request})
     assert application.inspect().snapshot == before_rejected_expand
 
     retried = _run(application, {"operation": "run_to", "node_id": "mr.A"})
@@ -290,7 +293,7 @@ def test_new_source_artifacts_fail_old_plan_before_producer_and_reexpand_recover
     with pytest.raises(ProjectServiceError, match="E_AV27_EXPAND_STALE"):
         application.preview_av_enhance_v27({"action": "expand", "request": old_request})
 
-    application.command({"operation": "abandon_run", "run_id": rerun.run_id})
+    authoring_command(application, {"operation": "abandon_run", "run_id": rerun.run_id})
     admitted = _run(application, {"operation": "run_to", "node_id": "admission"})
     assert admitted.state is RunState.COMPLETED
     assert (
@@ -304,7 +307,7 @@ def test_new_source_artifacts_fail_old_plan_before_producer_and_reexpand_recover
     assert set(preview.plan.effective_video_artifact_ids).isdisjoint(
         _latest(preparation, "source.program").output_artifact_ids
     )
-    application.command({"operation": "expand_av_enhance_v27", "request": new_request})
+    authoring_command(application, {"operation": "expand_av_enhance_v27", "request": new_request})
     recovered = _run(application, {"operation": "run_to", "node_id": "split.atomic"})
     assert recovered.state is RunState.COMPLETED, recovered
     new_split = _latest(recovered, "split.atomic")

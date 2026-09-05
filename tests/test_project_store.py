@@ -135,6 +135,7 @@ def test_create_uses_sqlite_header_and_phase_2_project_runtime_tables(tmp_path: 
             )
         }
     assert tables == {
+        "studio_state",
         "project",
         "node_definitions",
         "graph_nodes",
@@ -347,7 +348,14 @@ def test_phase_1_schema_migrates_transactionally_without_changing_project(
     before = store.load()
     with sqlite3.connect(path) as connection:
         connection.execute("PRAGMA foreign_keys = OFF")
-        for table in ("latest_results", "artifacts", "node_results", "node_runs", "runs"):
+        for table in (
+            "studio_state",
+            "latest_results",
+            "artifacts",
+            "node_results",
+            "node_runs",
+            "runs",
+        ):
             connection.execute(f"DROP TABLE {table}")
         connection.execute("PRAGMA user_version = 1")
 
@@ -355,7 +363,7 @@ def test_phase_1_schema_migrates_transactionally_without_changing_project(
 
     assert migrated.load() == before
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == PROJECT_SCHEMA_VERSION
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
         runtime_tables = {
             row[0]
             for row in connection.execute(
@@ -379,7 +387,14 @@ def test_corrupt_phase_1_model_is_rejected_before_any_migration_write(
     saved_store(path)
     with sqlite3.connect(path) as connection:
         connection.execute("PRAGMA foreign_keys = OFF")
-        for table in ("latest_results", "artifacts", "node_results", "node_runs", "runs"):
+        for table in (
+            "studio_state",
+            "latest_results",
+            "artifacts",
+            "node_results",
+            "node_runs",
+            "runs",
+        ):
             connection.execute(f"DROP TABLE {table}")
         connection.execute(
             "UPDATE graph_nodes SET parameters_json = ? WHERE node_id = ?",
@@ -407,7 +422,14 @@ def test_phase_1_migration_post_check_failure_rolls_back_ddl_and_version(
     saved_store(path)
     with sqlite3.connect(path) as connection:
         connection.execute("PRAGMA foreign_keys = OFF")
-        for table in ("latest_results", "artifacts", "node_results", "node_runs", "runs"):
+        for table in (
+            "studio_state",
+            "latest_results",
+            "artifacts",
+            "node_results",
+            "node_runs",
+            "runs",
+        ):
             connection.execute(f"DROP TABLE {table}")
         connection.execute("PRAGMA user_version = 1")
 
@@ -450,7 +472,14 @@ def test_malformed_phase_1_schema_fails_without_partial_migration(tmp_path: Path
     saved_store(path)
     with sqlite3.connect(path) as connection:
         connection.execute("PRAGMA foreign_keys = OFF")
-        for table in ("latest_results", "artifacts", "node_results", "node_runs", "runs"):
+        for table in (
+            "studio_state",
+            "latest_results",
+            "artifacts",
+            "node_results",
+            "node_runs",
+            "runs",
+        ):
             connection.execute(f"DROP TABLE {table}")
         connection.execute("ALTER TABLE graph_edges RENAME TO malformed_graph_edges")
         connection.execute("PRAGMA user_version = 1")
@@ -531,7 +560,7 @@ def test_invalid_graph_is_rejected_before_existing_content_changes(tmp_path: Pat
     before_snapshot = store.load()
     invalid_graph = Graph(
         nodes=valid_project().graph.nodes,
-        edges=(valid_project().graph.edges[0],),
+        edges=(valid_project().graph.edges[0].model_copy(update={"target_node_id": "unknown"}),),
     )
     invalid_project = Project(
         project_id="project.synthetic",
@@ -539,7 +568,7 @@ def test_invalid_graph_is_rejected_before_existing_content_changes(tmp_path: Pat
         graph=invalid_graph,
     )
 
-    with pytest.raises(ProjectValidationError, match="E_REQUIRED_INPUT_MISSING"):
+    with pytest.raises(ProjectValidationError, match="E_EDGE_TARGET_NODE_UNKNOWN"):
         store.save(invalid_project, definitions())
 
     assert path.read_bytes() == before_bytes
@@ -552,10 +581,13 @@ def test_invalid_initial_project_does_not_leave_a_half_created_store(tmp_path: P
     invalid = Project(
         project_id=valid.project_id,
         name=valid.name,
-        graph=Graph(nodes=valid.graph.nodes, edges=(valid.graph.edges[0],)),
+        graph=Graph(
+            nodes=valid.graph.nodes,
+            edges=(valid.graph.edges[0].model_copy(update={"target_node_id": "unknown"}),),
+        ),
     )
 
-    with pytest.raises(ProjectValidationError, match="E_REQUIRED_INPUT_MISSING"):
+    with pytest.raises(ProjectValidationError, match="E_EDGE_TARGET_NODE_UNKNOWN"):
         ProjectStore.create(path, invalid, definitions())
 
     assert not path.exists()

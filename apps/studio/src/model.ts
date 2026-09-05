@@ -27,6 +27,18 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   readonly nodeRun: NodeRunWire | null
   readonly progress: WorkflowProgressData
   readonly latestResult: LatestResultWire | null
+  readonly advanced?: boolean
+  readonly collapsed?: boolean
+  readonly iconToken?: string
+  readonly portLabels?: {
+    readonly input: Readonly<Record<string, string>>
+    readonly output: Readonly<Record<string, string>>
+  }
+  readonly connecting?: boolean
+  readonly compatibleInputPortIds?: ReadonlyArray<string>
+  readonly compatibleOutputPortIds?: ReadonlyArray<string>
+  readonly groupLabel?: string
+  readonly groupColorToken?: string
 }
 
 export type WorkflowNode = Node<WorkflowNodeData, 'workflow'>

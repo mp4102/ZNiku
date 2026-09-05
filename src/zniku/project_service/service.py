@@ -52,13 +52,26 @@ from zniku.avenhance_v27.template import (
     build_preparation,
     validate_prepare_paths,
 )
-from zniku.graph import ExecutionMode, Graph, NodeDefinition, NodeInstance, PythonExecutorSpec
+from zniku.graph import (
+    ExecutionMode,
+    Graph,
+    GraphValidator,
+    NodeDefinition,
+    NodeInstance,
+    PythonExecutorSpec,
+)
 from zniku.presentation import (
     PresentationCatalogError,
     PresentationCatalogResolution,
     resolve_presentation_catalog,
 )
-from zniku.project import Project, ProjectSnapshot, ProjectStore, ProjectStoreError
+from zniku.project import (
+    AuthoringDiagnostic,
+    Project,
+    ProjectSnapshot,
+    ProjectStore,
+    ProjectStoreError,
+)
 from zniku.runtime import (
     Artifact,
     ArtifactQuickProbe,
@@ -85,6 +98,7 @@ from .av27_handoff import project_av27_handoff_contracts
 from .models import (
     AbandonRunCommand,
     ActiveProjectOperation,
+    AuthoringBoundCommand,
     CreateAvEnhanceV27Command,
     CreateProjectCommand,
     CreatorAudioTrackSummary,
@@ -211,6 +225,7 @@ class ProjectServiceApplication:
         self._progress_monotonic_clock = progress_monotonic_clock
         self._state = threading.Condition(threading.RLock())
         self._store: ProjectStore | None = None
+        self._project_session_id: str | None = None
         self._runtime: RuntimeService | None = None
         self._active_run_id: str | None = None
         self._active_operation: ActiveProjectOperation | None = None
@@ -317,7 +332,9 @@ class ProjectServiceApplication:
     def inspect(self, view_run_id: str | None = None) -> StatusEnvelope:
         """返回当前 Project、有限 RunSummary 与进程内后台 operation。"""
 
-        store, runtime, active_run_id, active_operation, error = self._session_view()
+        store, runtime, active_run_id, active_operation, error, project_session_id = (
+            self._session_view()
+        )
         if store is None or runtime is None:
             if view_run_id is not None:
                 raise ProjectServiceError(
@@ -325,10 +342,18 @@ class ProjectServiceApplication:
                     f"Run 不存在：{view_run_id}",
                     http_status=404,
                 )
-            return StatusEnvelope(error=error)
+            return StatusEnvelope(
+                error=error,
+                project_session_id=None,
+                storage_revision=None,
+                studio_state=None,
+                authoring_diagnostics=(),
+                studio_warnings=(),
+            )
 
         try:
-            snapshot = store.load()
+            authoring = store.load_authoring()
+            snapshot = authoring.snapshot
             runs = runtime.repository.list_runs()
             summaries = tuple(self._summarize_run(run) for run in runs)
             by_id = {summary.run_id: summary for summary in summaries}
@@ -359,6 +384,19 @@ class ProjectServiceApplication:
             return StatusEnvelope(
                 project_path=str(store.path),
                 snapshot=snapshot,
+                project_session_id=project_session_id,
+                storage_revision=authoring.storage_revision,
+                studio_state=authoring.studio_state,
+                authoring_diagnostics=tuple(
+                    AuthoringDiagnostic(
+                        code=item.code,
+                        path=item.path,
+                        message=item.message,
+                        validator_keyword=item.validator_keyword,
+                    )
+                    for item in GraphValidator(snapshot.definitions).inspect(snapshot.project.graph)
+                ),
+                studio_warnings=authoring.studio_warnings,
                 run_summaries=projected,
                 next_run_cursor=next_cursor,
                 active_run_id=active_run_id,
@@ -546,6 +584,8 @@ class ProjectServiceApplication:
             raise ProjectServiceError(code, str(error), http_status=422) from error
 
         with self._state:
+            if isinstance(command, AuthoringBoundCommand):
+                self._assert_authoring_binding(command)
             if isinstance(command, AbandonRunCommand) and self._active_operation is not None:
                 _, runtime = self._require_session()
                 try:
@@ -559,7 +599,8 @@ class ProjectServiceApplication:
                         http_status=409,
                         related_run_ids=(active_run.run_id,),
                     )
-            self._assert_idle()
+            if not isinstance(command, SaveProjectCommand):
+                self._assert_idle()
             self._last_error = None
             try:
                 if isinstance(command, OpenProjectCommand):
@@ -607,7 +648,8 @@ class ProjectServiceApplication:
                     related_run_ids=translated.related_run_ids,
                 )
                 raise translated from failure
-        return self.inspect()
+            # 回应仍持有同一会话锁，避免另一条 open/create 把命令响应换成不同工程。
+            return self.inspect()
 
     def wait_until_idle(self, *, timeout: float = 10.0) -> bool:
         """供测试与受控 launcher 等待后台 command；产品 UI 应轮询 ``inspect``。"""
@@ -627,6 +669,7 @@ class ProjectServiceApplication:
         runtime = self._runtime_for(store)
         self._store = store
         self._runtime = runtime
+        self._project_session_id = str(uuid4())
         self._active_run_id = None
 
     def _create(self, command: CreateProjectCommand) -> None:
@@ -647,6 +690,7 @@ class ProjectServiceApplication:
         store = ProjectStore.create(path, project, self._definition_catalog)
         self._store = store
         self._runtime = self._runtime_for(store)
+        self._project_session_id = str(uuid4())
         self._active_run_id = None
 
     def _create_av_enhance_v27(self, command: CreateAvEnhanceV27Command) -> None:
@@ -668,6 +712,7 @@ class ProjectServiceApplication:
         )
         self._store = store
         self._runtime = self._runtime_for(store)
+        self._project_session_id = str(uuid4())
         self._active_run_id = None
 
     def _expand_av_enhance_v27(self, command: ExpandAvEnhanceV27Command) -> None:
@@ -692,7 +737,11 @@ class ProjectServiceApplication:
                 self._profile_failure_message(envelope),
                 http_status=422,
             )
-        store.save(build.project, build.definitions)
+        store.save(
+            build.project,
+            build.definitions,
+            expected_storage_revision=command.expected_storage_revision,
+        )
 
     @staticmethod
     def _template_envelope(
@@ -1339,7 +1388,12 @@ class ProjectServiceApplication:
     def _save(self, command: SaveProjectCommand) -> None:
         store, _ = self._require_session()
         snapshot = store.load()
-        store.save(command.project, snapshot.definitions)
+        store.save(
+            command.project,
+            snapshot.definitions,
+            expected_storage_revision=command.expected_storage_revision,
+            studio_state=command.studio_state,
+        )
 
     def _start_run(self, command: RunAllCommand | RunToCommand) -> None:
         _, runtime = self._require_session()
@@ -1356,7 +1410,9 @@ class ProjectServiceApplication:
                 related_run_ids=tuple(run.run_id for run in conflicts),
             )
         selected = () if isinstance(command, RunAllCommand) else (command.node_id,)
-        run = runtime.create_run(selected_targets=selected)
+        run = runtime.create_run(
+            selected_targets=selected, expected_storage_revision=command.expected_storage_revision
+        )
         operation: ActiveProjectOperation = (
             "run_all" if isinstance(command, RunAllCommand) else "run_to"
         )
@@ -1372,8 +1428,11 @@ class ProjectServiceApplication:
                 http_status=409,
             )
         current = store.load()
+        # 位置仅影响画布；参数、连线、节点与定义仍须精确一致才能沿用原 Run。
+        omitted = {"nodes": {"__all__": {"ui_position"}}}
         snapshot_still_current = (
-            run.graph_snapshot == current.project.graph
+            run.graph_snapshot.model_dump(exclude=omitted)
+            == current.project.graph.model_dump(exclude=omitted)
             and run.definitions_snapshot == current.definitions
         )
         if run.state is RunState.RUNNING and snapshot_still_current:
@@ -1381,10 +1440,16 @@ class ProjectServiceApplication:
             self._begin_worker(
                 "rerun_from_here",
                 run_id,
-                lambda: runtime.rerun_from_start(run_id, command.node_id),
+                lambda: runtime.rerun_from_start(
+                    run_id,
+                    command.node_id,
+                    expected_storage_revision=command.expected_storage_revision,
+                ),
             )
             return
-        replacement = runtime.create_rerun_run(command.node_id)
+        replacement = runtime.create_rerun_run(
+            command.node_id, expected_storage_revision=command.expected_storage_revision
+        )
         run_id = replacement.run_id
         self._begin_worker("rerun_from_here", run_id, lambda: runtime.run_until_blocked(run_id))
 
@@ -1470,6 +1535,7 @@ class ProjectServiceApplication:
         str | None,
         ActiveProjectOperation | None,
         ProjectServiceFailure | None,
+        str | None,
     ]:
         with self._state:
             return (
@@ -1478,6 +1544,7 @@ class ProjectServiceApplication:
                 self._active_run_id,
                 self._active_operation,
                 self._last_error,
+                self._project_session_id,
             )
 
     def _require_session(self) -> tuple[ProjectStore, RuntimeService]:
@@ -1486,6 +1553,25 @@ class ProjectServiceApplication:
                 "E_PROJECT_SERVICE_NO_PROJECT", "尚未打开 .zniku Project", http_status=409
             )
         return self._store, self._runtime
+
+    def _assert_authoring_binding(self, command: AuthoringBoundCommand) -> None:
+        """在 command 锁内拒绝旧页面会话；存储 CAS 仍在 SQLite 写事务内再检查。"""
+
+        store, _ = self._require_session()
+        if command.project_session_id != self._project_session_id:
+            raise ProjectServiceError(
+                "E_PROJECT_SESSION_CONFLICT", "工程会话已切换，请重新载入当前工程", http_status=409
+            )
+        try:
+            current = store.load_authoring()
+        except (ProjectStoreError, ValidationError) as error:
+            raise self._translate_failure(error) from error
+        if command.expected_storage_revision != current.storage_revision:
+            raise ProjectServiceError(
+                "E_PROJECT_STORAGE_CONFLICT",
+                "工程已被其他编辑保存，请重新载入后再编辑",
+                http_status=409,
+            )
 
     def _assert_idle(self) -> None:
         if self._active_operation is not None:
@@ -1855,7 +1941,7 @@ class ProjectServiceApplication:
         elif isinstance(error, RuntimeConflictError | RuntimeServiceError):
             status = 409
         elif isinstance(error, ProjectStoreError):
-            status = 422
+            status = 409 if error.code == "E_PROJECT_STORAGE_CONFLICT" else 422
         else:
             status = 500
         return ProjectServiceError(code, str(error), http_status=status)

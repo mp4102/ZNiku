@@ -26,6 +26,7 @@ import type {
 } from '../model'
 import type {
   ArtifactWire,
+  AuthoringPrecondition,
   AvEnhanceV27ExpandRequestWire,
   AvEnhanceV27PrepareRequestWire,
   AvEnhanceV27TemplatePreviewEnvelope,
@@ -46,8 +47,11 @@ import type {
   RunSummaryWire,
   StatusEnvelope,
   StudioCommand,
+  StudioStateWire,
 } from './contracts'
 import {
+  addConnectedNodes,
+  autoLayoutGraph,
   connectGraph,
   copySelection,
   defaultParameters,
@@ -60,6 +64,7 @@ import {
   reorderEdge,
   selectionChangeBlocked,
 } from './graph'
+import { useAuthoringProject } from './use-authoring-project'
 import { createStudioGateway, StudioGatewayError, type StudioGateway } from './gateway'
 import {
   createHostBridge,
@@ -70,8 +75,9 @@ import {
 import { readRecentProjects, rememberRecentProject } from './recent-projects'
 import type { ParameterPickerRequest } from './SchemaParameterForm'
 import { groupStudioDefinitions } from './catalog'
-import { asParameterSchema, getPointer, validateParameterDraft } from './parameter-draft'
+import { asParameterSchema, canonicalJsonKey, getPointer, validateParameterDraft } from './parameter-draft'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
+import { AuthoringViewPanel } from './components/AuthoringViewPanel'
 import { GraphCanvas } from './components/GraphCanvas'
 import { HandoffCenter, elapsedLabel, handoffResourceKey, readinessLabel } from './components/HandoffCenter'
 import { NodeInspector } from './components/NodeInspector'
@@ -80,6 +86,22 @@ import { ProjectHome } from './components/ProjectHome'
 import { ProjectShell } from './components/ProjectShell'
 import { RunCanvasOverlays, RunCenter, targetLabel } from './components/RunCenter'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
+
+// 仅决定能否继续展示“模板已就绪”标签，不进入 Run 绑定、执行或存储版本。
+const graphPresentationComparison = (graph: GraphWire) => JSON.stringify({
+  edges: graph.edges,
+  nodes: graph.nodes.map(({ node_id, type_id, definition_version, parameters }) => ({ node_id, type_id, definition_version, parameters: canonicalJsonKey(parameters) })),
+})
+
+function sameWireData(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false
+  if (Array.isArray(left) || Array.isArray(right)) return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((value, index) => sameWireData(value, right[index]))
+  const a = left as Record<string, unknown>
+  const b = right as Record<string, unknown>
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && sameWireData(a[key], b[key]))
+}
 
 type ChannelName = 'status' | 'detail' | 'readiness' | 'log'
 type ResourceChannelName = Exclude<ChannelName, 'status'>
@@ -405,6 +427,11 @@ export function StudioWorkspace({
   projectIdFactory,
 }: StudioWorkspaceProps) {
   const effectiveGateway = useMemo(() => gateway ?? createStudioGateway(), [gateway])
+  const authoring = useAuthoringProject(effectiveGateway)
+  const { ingest: ingestAuthoring, edit: editAuthoring, begin: beginMove, end: endMove, travel, flush: flushAuthoring, retry: retrySave, precondition, block: blockAuthoring } = authoring
+  const draft = authoring.document?.snapshot ?? null
+  const studioState = authoring.document?.studioState ?? null
+  const dirty = authoring.dirty
   const effectiveHostBridge = useMemo(() => hostBridge ?? createHostBridge(), [hostBridge])
   const { fitView } = useReactFlow()
   const [status, setStatus] = useState<StatusEnvelope | null>(null)
@@ -420,9 +447,10 @@ export function StudioWorkspace({
   const [logs, setLogs] = useState<ReadonlyMap<string, NodeLogEnvelope>>(new Map())
   const [statusHealth, setStatusHealth] = useState<ChannelHealth>(initialHealth.status)
   const [resourceHealth, setResourceHealth] = useState<ResourceHealth>(emptyResourceHealth)
-  const [draft, setDraft] = useState<ProjectSnapshotWire | null>(null)
   const [showRunSnapshot, setShowRunSnapshot] = useState(true)
-  const [dirty, setDirty] = useState(false)
+  const [advanced, setAdvanced] = useState(() => {
+    try { return localStorage.getItem('zniku.studio.density') === 'advanced' } catch { return false }
+  })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [historyBusy, setHistoryBusy] = useState(false)
@@ -454,6 +482,7 @@ export function StudioWorkspace({
     readonly status: string
     readonly compatible: boolean
     readonly modified: boolean
+    readonly graphContent?: string
   } | null>(null)
   const [fitViewEpoch, setFitViewEpoch] = useState(0)
 
@@ -510,6 +539,7 @@ export function StudioWorkspace({
   const latestTemplatePreviewRef = useRef<{
     readonly requestJson: string
     readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
+    readonly precondition: AuthoringPrecondition | null
   } | null>(null)
 
   useEffect(() => () => {
@@ -597,17 +627,17 @@ export function StudioWorkspace({
         readonly replaceProject: boolean
         readonly clearGraphSelection?: boolean
         readonly resetHistory?: boolean
+        readonly macroLabel?: string
       },
     ) => {
       const previous = statusRef.current
       const pathChanged = previous !== null && previous.project_path !== next.project_path
       const firstAuthority = previous === null
+      if (!ingestAuthoring(next, options.replaceProject, options.macroLabel, selectionGuardRef.current.parameterDraftDirty)) return false
       statusRef.current = next
       setStatus(next)
       if (next.project_path !== null) setProjectPath(next.project_path)
-      if (options.replaceProject || pathChanged) {
-        setDraft(next.snapshot)
-        setDirty(false)
+      if (firstAuthority || options.replaceProject || pathChanged) {
         if (options.clearGraphSelection ?? pathChanged) {
           setSelectedNodeIds(new Set())
           setSelectedEdgeIds(new Set())
@@ -644,9 +674,11 @@ export function StudioWorkspace({
       }
       setClientHint(next.error ? `${next.error.code}: ${next.error.message}` : null)
       markStatusHealth(false)
+      return true
     },
-    [markStatusHealth, replaceHistory],
+    [ingestAuthoring, markStatusHealth, replaceHistory],
   )
+  authoring.onSaved.current = (next) => { acceptStatus(next, { replaceProject: false }) }
 
   const setTrustedViewRunId = useCallback((runId: string | null, clearResources = true) => {
     viewRunIdRef.current = runId
@@ -905,7 +937,7 @@ export function StudioWorkspace({
           return
         }
         acceptedRef.current.status = sequence
-        acceptStatus(next, { replaceProject: true })
+        if (!acceptStatus(next, { replaceProject: false })) return
         const selected = defaultRunId(next.run_summaries)
         setTrustedViewRunId(selected)
         setShowRunSnapshot(selected !== null)
@@ -1017,10 +1049,10 @@ export function StudioWorkspace({
         setHistoryBusy(false)
         setTrustedViewRunId(null)
       }
-      acceptStatus(nextStatus, {
+      if (!acceptStatus(nextStatus, {
         replaceProject: false,
         resetHistory: recoveredMissingRunId !== null,
-      })
+      })) { schedule(1_500); return }
       const merged = mergeSummaries(nextStatus.run_summaries, historySummariesRef.current)
       let selected = viewRunIdRef.current
       if (!selected || !merged.some((summary) => summary.run_id === selected)) {
@@ -1157,7 +1189,20 @@ export function StudioWorkspace({
   const displaySnapshot = showRunSnapshot && currentSnapshot ? currentSnapshot : draft
   const graph = displaySnapshot?.project.graph ?? { nodes: [], edges: [] }
   const definitions = displaySnapshot?.definitions ?? []
-  const diagnostics = useMemo(() => (draft ? inspectGraph(draft) : []), [draft])
+  const diagnostics = useMemo(() => {
+    if (!draft) return []
+    if (dirty || !status || JSON.stringify(status.snapshot?.project.graph) !== JSON.stringify(draft.project.graph)) return inspectGraph(draft)
+    // 保存后使用 Python 的完整诊断。尚未保存时仅提供即时提示，不作为保存准入 authority。
+    return status.authoring_diagnostics.map((item) => {
+      const nodeIndex = /^nodes\[(\d+)\]/.exec(item.path)?.[1]
+      const edgeIndex = /^edges\[(\d+)\]/.exec(item.path)?.[1]
+      const edge = edgeIndex === undefined ? undefined : draft.project.graph.edges[Number(edgeIndex)]
+      return { code: item.code, message: item.message,
+        node_id: nodeIndex === undefined ? null : draft.project.graph.nodes[Number(nodeIndex)]?.node_id ?? null,
+        edge_id: edge ? edgeId(edge) : null,
+      }
+    })
+  }, [dirty, draft, status])
   const runLatestAttempts = useMemo(() => latestNodeRuns(currentRun), [currentRun])
   const activeNodeRuns = useMemo(() => {
     if (!currentRun) return new Map<string, NodeRunWire>()
@@ -1213,7 +1258,14 @@ export function StudioWorkspace({
         const presentation = presentationsByKey.get(`${node.type_id}@${node.definition_version}`) ?? null
         const nodeRun = activeNodeRuns.get(node.node_id) ?? null
         const data: WorkflowNodeData = {
-          label: presentation?.title ?? node.node_id,
+          label: studioState?.node_views.find((view) => view.node_id === node.node_id)?.display_name ?? presentation?.title ?? node.type_id,
+          advanced,
+          collapsed: studioState?.node_views.find((view) => view.node_id === node.node_id)?.collapsed ?? false,
+          iconToken: presentation?.icon_token,
+          portLabels: {
+            input: Object.fromEntries((presentation?.ports ?? []).filter((port) => port.direction === 'input').map((port) => [port.port_id, port.label])),
+            output: Object.fromEntries((presentation?.ports ?? []).filter((port) => port.direction === 'output').map((port) => [port.port_id, port.label])),
+          },
           instanceId: node.node_id,
           summaries: (presentation?.card_summary_paths ?? []).flatMap((pointer) => {
             const value = getPointer(node.parameters, pointer)
@@ -1254,6 +1306,8 @@ export function StudioWorkspace({
       }),
     [
       activeNodeRuns,
+      advanced,
+      studioState,
       definitionsByKey,
       graph.nodes,
       latestResults,
@@ -1273,11 +1327,11 @@ export function StudioWorkspace({
         target: edge.target_node_id,
         targetHandle: edge.target_port_id,
         selected: selectedEdgeIds.has(edgeId(edge)),
-        label: edge.ordinal === null ? undefined : `#${edge.ordinal}`,
+        label: edge.ordinal === null ? undefined : advanced ? `#${edge.ordinal}` : `${edge.ordinal + 1}`,
         markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
         data: { ordinal: edge.ordinal },
       })),
-    [graph.edges, selectedEdgeIds],
+    [advanced, graph.edges, selectedEdgeIds],
   )
 
   const selectedNode = graph.nodes.find((node) => selectedNodeIds.has(node.node_id)) ?? null
@@ -1437,15 +1491,12 @@ export function StudioWorkspace({
   )
 
   const updateGraph = useCallback((updater: (graph: GraphWire) => GraphWire) => {
-    setDraft((current) => (current ? replaceGraph(current, updater(current.project.graph)) : current))
-    setDirty(true)
-    setTemplateProfile((current) =>
-      current
-        ? { status: 'modified · profile check required', compatible: false, modified: true }
-        : current,
-    )
+    editAuthoring('编辑节点图', (current) => {
+      const next = updater(current.snapshot.project.graph)
+      return { ...current, snapshot: replaceGraph(current.snapshot, next) }
+    })
     setClientHint(null)
-  }, [])
+  }, [editAuthoring])
 
   const handleSelection = useCallback((selection: OnSelectionChangeParams) => {
     changeSelection(
@@ -1494,6 +1545,7 @@ export function StudioWorkspace({
         return
       }
       if (positions.size > 0) {
+        if (changes.some((change) => change.type === 'position' && change.dragging === true)) beginMove()
         updateGraph((current) => ({
           ...current,
           nodes: current.nodes.map((node) =>
@@ -1502,10 +1554,11 @@ export function StudioWorkspace({
               : node,
           ),
         }))
+        if (changes.some((change) => change.type === 'position' && change.dragging === false)) endMove()
       }
       if (removed.size > 0) updateGraph((current) => deleteSelection(current, removed, new Set()))
     },
-    [graphEditable, parameterDraftDirty, updateGraph],
+    [beginMove, endMove, graphEditable, parameterDraftDirty, updateGraph],
   )
 
   const handleEdgesChange = useCallback(
@@ -1583,10 +1636,21 @@ export function StudioWorkspace({
       return
     }
     const copied = copySelection(draft.project.graph, selectedNodeIds, nodeIdFactory)
-    updateGraph(() => copied.graph)
+    const originals = draft.project.graph.nodes.filter((node) => selectedNodeIds.has(node.node_id))
+    const copies = [...copied.copied_node_ids]
+    editAuthoring('复制节点', (current) => ({
+      snapshot: replaceGraph(current.snapshot, copied.graph),
+      studioState: { ...current.studioState, node_views: [
+        ...current.studioState.node_views,
+        ...originals.flatMap((node, index) => {
+          const view = current.studioState.node_views.find((item) => item.node_id === node.node_id)
+          return view && copies[index] ? [{ ...view, node_id: copies[index]! }] : []
+        }),
+      ] },
+    }))
     setSelectedNodeIds(copied.copied_node_ids)
     setSelectedEdgeIds(new Set())
-  }, [draft, graphEditable, nodeIdFactory, parameterDraftDirty, selectedNodeIds, updateGraph])
+  }, [draft, editAuthoring, graphEditable, nodeIdFactory, parameterDraftDirty, selectedNodeIds])
 
   const deleteSelected = useCallback(() => {
     if (!graphEditable || (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0)) return
@@ -1601,7 +1665,14 @@ export function StudioWorkspace({
 
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
-      if (isEditingTarget(event.target) || !graphEditable) return
+      if (isEditingTarget(event.target) || (event.target instanceof Element && event.target.closest('[role="dialog"]')) || !graphEditable || busy || homeOpen || templateOpen) return
+      if ((event.ctrlKey || event.metaKey) && ['z', 'y', 's'].includes(event.key.toLowerCase())) {
+        event.preventDefault()
+        if (parameterDraftDirty) { setClientHint('请先应用或放弃未应用的节点设置。'); return }
+        if (event.key.toLowerCase() === 's') void flushAuthoring().catch((error: unknown) => setClientHint(error instanceof Error ? error.message : '保存失败'))
+        else travel(event.key.toLowerCase() === 'y' || event.shiftKey ? 'redo' : 'undo')
+        return
+      }
       if (
         (event.key === 'Delete' || event.key === 'Backspace') &&
         (selectedNodeIds.size || selectedEdgeIds.size)
@@ -1619,7 +1690,15 @@ export function StudioWorkspace({
     }
     window.addEventListener('keydown', handleKeyboard)
     return () => window.removeEventListener('keydown', handleKeyboard)
-  }, [copySelected, deleteSelected, graphEditable, selectedEdgeIds.size, selectedNodeIds.size])
+  }, [busy, copySelected, deleteSelected, flushAuthoring, graphEditable, homeOpen, parameterDraftDirty, selectedEdgeIds.size, selectedNodeIds.size, templateOpen, travel])
+
+  useEffect(() => {
+    const protect = (event: BeforeUnloadEvent) => {
+      if (dirty || parameterDraftDirty) { event.preventDefault(); event.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', protect)
+    return () => window.removeEventListener('beforeunload', protect)
+  }, [dirty, parameterDraftDirty])
 
   const applyParameters = useCallback(() => {
     if (!selectedNode || !graphEditable) return
@@ -1664,7 +1743,7 @@ export function StudioWorkspace({
   const executeCommands = useCallback(
     async (
       commands: ReadonlyArray<StudioCommand>,
-      options: { readonly preferCreatedRun?: boolean } = {},
+      options: { readonly preferCreatedRun?: boolean; readonly discardLocal?: boolean; readonly templatePreview?: AvEnhanceV27TemplatePreviewEnvelope } = {},
     ): Promise<StatusEnvelope | null> => {
       if (busyRef.current) return null
       busyRef.current = true
@@ -1682,8 +1761,26 @@ export function StudioWorkspace({
       let next: StatusEnvelope | null = null
       try {
         for (const command of commands) {
+          if (['open_project', 'create_project', 'create_av_enhance_v27'].includes(command.operation)) {
+            if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置，再切换工程。')
+            if (statusRef.current?.snapshot && !options.discardLocal) await flushAuthoring()
+            if (selectionGuardRef.current.parameterDraftDirty) throw new Error('保存等待期间节点设置已变化；请先应用或放弃，再切换工程。')
+          }
           next = await effectiveGateway.command(command)
           if (generation !== generationRef.current) return null
+          if (options.templatePreview && (command.operation === 'create_av_enhance_v27' || command.operation === 'expand_av_enhance_v27')) {
+            const preview = options.templatePreview
+            const identityMatches = command.operation !== 'expand_av_enhance_v27' ||
+              (next.project_session_id === command.project_session_id && next.project_path === previousPath && next.storage_revision === command.expected_storage_revision + 1)
+            const contentMatches = next.snapshot && sameWireData(next.snapshot.project, preview.project) &&
+              preview.definitions.every((definition) => next!.snapshot!.definitions.some((candidate) => sameWireData(candidate, definition)))
+            if (!identityMatches || !contentMatches) {
+              const message = '模板写入后的工程与确认预览不一致；可能有另一窗口更新。请重新载入磁盘版本。'
+              blockAuthoring(message)
+              setTemplateProfile(null)
+              throw new Error(message)
+            }
+          }
           acceptStatus(next, {
             replaceProject:
               command.operation === 'open_project' ||
@@ -1691,6 +1788,7 @@ export function StudioWorkspace({
               command.operation === 'save_project' ||
               command.operation === 'create_av_enhance_v27' ||
               command.operation === 'expand_av_enhance_v27',
+            macroLabel: command.operation === 'expand_av_enhance_v27' ? '展开处理链' : undefined,
             clearGraphSelection:
               command.operation === 'open_project' ||
               command.operation === 'create_project' ||
@@ -1769,7 +1867,7 @@ export function StudioWorkspace({
         } else {
           const message = error instanceof Error ? error.message : '本机工程服务操作失败'
           commandErrorRef.current = message
-          setBoundaryError('本机工程服务操作失败；工程和媒体没有被修改。')
+          setBoundaryError('本次操作未完成；本地编辑已保留，请检查工程状态后重试。')
         }
         return null
       } finally {
@@ -1780,27 +1878,34 @@ export function StudioWorkspace({
         setPollEpoch((value) => value + 1)
       }
     },
-    [acceptStatus, effectiveGateway, loadDetail, setTrustedViewRunId],
+    [acceptStatus, blockAuthoring, effectiveGateway, flushAuthoring, loadDetail, setTrustedViewRunId],
   )
 
   const saveProject = useCallback(async (): Promise<StatusEnvelope | null> => {
     if (!draft) return null
-    return executeCommands([{ operation: 'save_project', project: draft.project }])
-  }, [draft, executeCommands])
+    if (parameterDraftDirty) { setClientHint('请先应用或放弃未应用的节点设置。'); return null }
+    try {
+      await retrySave()
+      await flushAuthoring()
+      setClientHint('工程已保存。')
+      return statusRef.current
+    } catch (error) { setClientHint(error instanceof Error ? error.message : '保存失败，本地编辑已保留。'); return null }
+  }, [draft, flushAuthoring, parameterDraftDirty, retrySave])
 
   const saveThenRun = useCallback(
-    async (command: StudioCommand) => {
+    async (command: { readonly operation: 'run_all' } | { readonly operation: 'run_to'; readonly node_id: string } | { readonly operation: 'rerun_from_here'; readonly run_id: string; readonly node_id: string }) => {
       if (!draft) return
       if (parameterDraftDirty) {
         setClientHint('当前节点有未应用设置；请先“应用设置”或“放弃未应用更改”再运行。')
         return
       }
-      await executeCommands(
-        [{ operation: 'save_project', project: draft.project }, command],
-        { preferCreatedRun: true },
-      )
+      try {
+        const binding = await flushAuthoring()
+        if (selectionGuardRef.current.parameterDraftDirty) throw new Error('保存等待期间节点设置已变化；请先应用或放弃，再运行。')
+        await executeCommands([{ ...command, ...binding }], { preferCreatedRun: true })
+      } catch (error) { setClientHint(error instanceof Error ? error.message : '保存未完成，未启动运行。') }
     },
-    [draft, executeCommands, parameterDraftDirty],
+    [draft, executeCommands, flushAuthoring, parameterDraftDirty],
   )
 
   const previewAvEnhanceV27 = useCallback(
@@ -1810,14 +1915,16 @@ export function StudioWorkspace({
       latestTemplatePreviewRef.current = null
       setClientHint(null)
       setBoundaryError(null)
+      const binding = request.action === 'expand' ? await flushAuthoring() : null
       const next = await effectiveGateway.previewAvEnhanceV27(request)
       latestTemplatePreviewRef.current = {
         requestJson: JSON.stringify(request),
         envelope: next,
+        precondition: binding,
       }
       return next
     },
-    [effectiveGateway],
+    [effectiveGateway, flushAuthoring],
   )
 
   const applyAvEnhanceV27Mutation = useCallback(
@@ -1844,7 +1951,13 @@ export function StudioWorkspace({
         setClientHint('E_STUDIO_TEMPLATE_PREVIEW_REQUIRED：请重新取得 compatible server preview。')
         return false
       }
-      const next = await executeCommands([command])
+      if (command.operation === 'expand_av_enhance_v27' &&
+          (!authority.precondition || dirty || JSON.stringify(authority.precondition) !== JSON.stringify(precondition()))) {
+        setClientHint('工程在预览后已变化，请重新预览处理链。')
+        return false
+      }
+      const next = await executeCommands([command.operation === 'expand_av_enhance_v27'
+        ? { ...command, ...authority.precondition! } : command], { templatePreview: authority.envelope })
       if (!next) {
         latestTemplatePreviewRef.current = null
         return false
@@ -1853,6 +1966,7 @@ export function StudioWorkspace({
         status: authority.envelope.profile.status,
         compatible: authority.envelope.profile.compatible,
         modified: false,
+        graphContent: next.snapshot ? graphPresentationComparison(next.snapshot.project.graph) : undefined,
       })
       latestTemplatePreviewRef.current = null
       setShowRunSnapshot(false)
@@ -1861,7 +1975,7 @@ export function StudioWorkspace({
       setFitViewEpoch((value) => value + 1)
       return true
     },
-    [executeCommands, parameterDraftDirty],
+    [dirty, executeCommands, parameterDraftDirty, precondition],
   )
 
   const createAvEnhanceV27 = useCallback(
@@ -1914,10 +2028,12 @@ export function StudioWorkspace({
   )
 
   const startPreparationRun = useCallback(async (): Promise<string | null> => {
-    const next = await executeCommands([{ operation: 'run_all' }], { preferCreatedRun: true })
+    const binding = await flushAuthoring()
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置，再运行。')
+    const next = await executeCommands([{ operation: 'run_all', ...binding }], { preferCreatedRun: true })
     // 只绑定本次 command response 明确返回的 active_run_id；不得从历史、时间或节点形状猜测。
     return next?.active_run_id ?? null
-  }, [executeCommands])
+  }, [executeCommands, flushAuthoring])
 
   useEffect(() => {
     if (fitViewEpoch === 0) return
@@ -2018,7 +2134,7 @@ export function StudioWorkspace({
     ? runLatestAttempts.has(singleSelectedNodeId)
     : false
   const serviceBusy = busy || operationActive
-  const runBlocked = serviceBusy || homeActionBusy || health.status.stale || !draft || diagnostics.length > 0 || parameterDraftDirty
+  const runBlocked = serviceBusy || homeActionBusy || health.status.stale || !draft || diagnostics.length > 0 || parameterDraftDirty || !!authoring.error
   const detailMutationBlocked = serviceBusy || homeActionBusy || health.status.stale || health.detail.stale
   const firstWaiting = waitingNodeRuns[0] ?? null
   const firstFailed = [...runLatestAttempts.values()].find(
@@ -2036,7 +2152,8 @@ export function StudioWorkspace({
     draft?.project.graph.nodes.some((node) => node.type_id.startsWith('zniku.avenhance.v27.')) ??
     false
   const visibleTemplateProfile =
-    templateProfile ??
+    (templateProfile && draft && templateProfile.graphContent !== undefined && templateProfile.graphContent !== graphPresentationComparison(draft.project.graph)
+      ? { ...templateProfile, modified: true, compatible: false } : templateProfile) ??
     (hasAvEnhanceV27Nodes
       ? { status: 'v2.7 nodes · profile check required', compatible: false, modified: false }
       : null)
@@ -2154,6 +2271,41 @@ export function StudioWorkspace({
     }
   }
 
+  const nodeLabel = (nodeId: string): string => {
+    const node = graph.nodes.find((item) => item.node_id === nodeId)
+    return studioState?.node_views.find((view) => view.node_id === nodeId)?.display_name
+      ?? (node ? presentationsByKey.get(`${node.type_id}@${node.definition_version}`)?.title ?? node.type_id : nodeId)
+  }
+  const editStudioState = (label: string, updater: (state: StudioStateWire) => StudioStateWire) => {
+    if (!graphEditable || busy || homeActionBusy || parameterDraftDirty) return
+    editAuthoring(label, (current) => ({ ...current, studioState: updater(current.studioState) }))
+  }
+  const updateNodeView = (nodeId: string, patch: Partial<StudioStateWire['node_views'][number]>) => {
+    editStudioState('编辑节点展示', (state) => {
+      const existing = state.node_views.find((view) => view.node_id === nodeId)
+        ?? { node_id: nodeId, display_name: null, collapsed: false, group_id: null }
+      return { ...state, node_views: [...state.node_views.filter((view) => view.node_id !== nodeId), { ...existing, ...patch }] }
+    })
+  }
+  const orderedTarget = selectedNode ?? graph.nodes.find((node) => node.node_id === selectedEdge?.target_node_id)
+  const orderedDefinition = orderedTarget ? definitionForNode(orderedTarget, definitions) : null
+  const orderedInputs = orderedDefinition?.input_ports.filter((port) => port.cardinality === 'ordered_many')
+    .filter((port) => !selectedEdge || port.port_id === selectedEdge.target_port_id)
+    .map((port) => ({
+      label: `${presentationsByKey.get(`${orderedDefinition.type_id}@${orderedDefinition.version}`)?.ports.find((item) => item.direction === 'input' && item.port_id === port.port_id)?.label ?? port.port_id} · 输入顺序`,
+      edges: graph.edges.filter((edge) => edge.target_node_id === orderedTarget!.node_id && edge.target_port_id === port.port_id),
+    })) ?? []
+  const authoringPanel = studioState && graphEditable ? <AuthoringViewPanel
+    key={status?.project_session_id ?? 'empty'}
+    studioState={studioState}
+    selectedNode={selectedNode}
+    selectedNodeTitle={selectedPresentation?.title}
+    selectedNodeIds={selectedNodeIds}
+    disabled={busy || homeActionBusy || parameterDraftDirty}
+    onEditStudioState={editStudioState}
+    onUpdateNodeView={updateNodeView}
+  /> : null
+
   return (
     <main className={`app-shell studio-workspace ${bottomOpen ? 'has-bottom-drawer' : ''}`}>
       <ProjectHome
@@ -2214,13 +2366,32 @@ export function StudioWorkspace({
         projectId={draft?.project.project_id ?? null}
         nodeCount={draft?.project.graph.nodes.length ?? 0}
         dirty={dirty}
+        saving={authoring.saving}
+        draftBlocked={diagnostics.length > 0}
+        saveError={authoring.error}
+        canUndo={graphEditable && !parameterDraftDirty && authoring.canUndo}
+        canRedo={graphEditable && !parameterDraftDirty && authoring.canRedo}
+        advanced={advanced}
+        onUndo={() => travel('undo')}
+        onRedo={() => travel('redo')}
+        onToggleAdvanced={() => {
+          const next = !advanced
+          setAdvanced(next)
+          try { localStorage.setItem('zniku.studio.density', next ? 'advanced' : 'creator') } catch { /* 个人偏好不可写不阻断工程编辑。 */ }
+        }}
+        onReloadProject={() => {
+          const path = statusRef.current?.project_path
+          if (!path || !window.confirm('重新载入将放弃本地未保存的编辑和撤销历史。是否继续？')) return
+          void executeCommands([{ operation: 'open_project', path }], { discardLocal: true })
+        }}
         profile={visibleTemplateProfile}
         projectPath={projectPath}
         projectIdDraft={projectId}
         projectNameDraft={projectName}
-        serviceBusy={serviceBusy || homeActionBusy}
+        serviceBusy={busy || homeActionBusy}
+        projectSwitchBlocked={serviceBusy || homeActionBusy}
         statusStale={health.status.stale}
-        canSave={!serviceBusy && !homeActionBusy && !health.status.stale && !!draft && diagnostics.length === 0 && dirty && !parameterDraftDirty}
+        canSave={!busy && !homeActionBusy && !health.status.stale && !!draft && dirty && !parameterDraftDirty}
         hostBridgeAvailable={hostCapabilityAvailable('open_file')}
         canResumeGuided={hasAvEnhanceV27Nodes}
         onProjectPathChange={setProjectPath}
@@ -2231,6 +2402,7 @@ export function StudioWorkspace({
           }
         }}
         onHome={() => {
+          if (!changeSelection(new Set(), new Set())) return
           invalidateHomeAction()
           setHomeOpen(true)
         }}
@@ -2254,7 +2426,7 @@ export function StudioWorkspace({
             onSelectRun={selectRun}
             onRunAll={() => void saveThenRun({ operation: 'run_all' })}
             onRunTo={() => singleSelectedNodeId && void saveThenRun({ operation: 'run_to', node_id: singleSelectedNodeId })}
-            onRerun={() => singleSelectedNodeId && rerunId && void executeCommands([{ operation: 'rerun_from_here', run_id: rerunId, node_id: singleSelectedNodeId }], { preferCreatedRun: true })}
+            onRerun={() => singleSelectedNodeId && rerunId && void saveThenRun({ operation: 'rerun_from_here', run_id: rerunId, node_id: singleSelectedNodeId })}
           />
         )}
       />
@@ -2266,7 +2438,7 @@ export function StudioWorkspace({
         query={query}
         groups={catalogGroups}
         canEditGraph={!!draft && graphEditable}
-        busy={serviceBusy || homeActionBusy}
+        busy={busy || homeActionBusy}
         selectedNodeCount={selectedNodeIds.size}
         selectedEdgeCount={selectedEdgeIds.size}
         onProjectNameChange={setProjectName}
@@ -2277,10 +2449,30 @@ export function StudioWorkspace({
       />
 
       <GraphCanvas
+        key={status?.project_session_id ?? 'empty'}
+        graph={graph}
+        definitions={definitions}
+        groups={(studioState?.groups ?? []).map((group) => ({ ...group, node_ids: (studioState?.node_views ?? []).filter((view) => view.group_id === group.group_id && graph.nodes.some((node) => node.node_id === view.node_id)).map((view) => view.node_id) }))}
+        viewport={studioState?.viewport ?? null}
+        onViewportChange={(viewport) => editStudioState('调整画布视口', (state) => ({ ...state, viewport }))}
+        onToggleGroup={(groupId) => editStudioState('折叠分组', (state) => ({ ...state, groups: state.groups.map((group) => group.group_id === groupId ? { ...group, collapsed: !group.collapsed } : group) }))}
+        onAutoLayout={() => { if (!parameterDraftDirty) updateGraph(autoLayoutGraph) }}
+        definitionLabel={(definition) => presentationsByKey.get(`${definition.type_id}@${definition.version}`)?.title ?? definition.type_id}
+        portLabel={(definition, direction, portId) => presentationsByKey.get(`${definition.type_id}@${definition.version}`)?.ports.find((port) => port.direction === direction && port.port_id === portId)?.label ?? portId}
+        onAddConnectedNodes={(request) => {
+          if (!draft || parameterDraftDirty) return
+          const result = addConnectedNodes(draft.project.graph, draft.definitions, request.sources, request.definition, request.targetPortId, nodeIdFactory, request.position)
+          if (!result) { setClientHint('图已变化，无法连接这些端口，请重新选择。'); return }
+          editAuthoring('添加下一步', (current) => ({ ...current, snapshot: replaceGraph(current.snapshot, result.graph) }))
+          setSelectedNodeIds(new Set(result.added_node_ids))
+          setSelectedEdgeIds(new Set())
+        }}
+        onNodeDragStart={beginMove}
+        onNodeDragStop={endMove}
         nodes={flowNodes}
         edges={flowEdges}
         editable={graphEditable}
-        busy={serviceBusy || homeActionBusy}
+        busy={busy || homeActionBusy}
         modeLabel={showRunSnapshot && currentRun ? 'Run snapshot' : 'Current Graph'}
         contextLabel={viewedSummary ? `${viewedSummary.run_id} · ${targetLabel(viewedSummary)} · ${viewedSummary.state}` : '编辑与运行使用同一 Project authority'}
         snapshotChanged={snapshotChanged}
@@ -2316,6 +2508,14 @@ export function StudioWorkspace({
       />
 
       <NodeInspector
+        advanced={advanced}
+        authoringPanel={authoringPanel}
+        orderedInputs={orderedInputs}
+        nodeLabel={nodeLabel}
+        sourcePortLabel={(nodeId, portId) => {
+          const node = graph.nodes.find((item) => item.node_id === nodeId)
+          return node ? presentationsByKey.get(`${node.type_id}@${node.definition_version}`)?.ports.find((port) => port.direction === 'output' && port.port_id === portId)?.label ?? portId : portId
+        }}
         selectedNode={selectedNode}
         selectedDefinition={selectedDefinition}
         selectedPresentation={selectedPresentation}
@@ -2326,7 +2526,7 @@ export function StudioWorkspace({
         parameterRawError={parameterRawError}
         parameterValidation={parameterValidation}
         graphEditable={graphEditable}
-        busy={serviceBusy || homeActionBusy}
+        busy={busy || homeActionBusy}
         selectedNodeRun={selectedNodeRun}
         selectedProgress={selectedProgress}
         selectedLog={selectedLog}
@@ -2354,7 +2554,7 @@ export function StudioWorkspace({
         )}
         actionableRun={viewedSummary?.actionable ?? false}
         actionableRunIsRunning={(viewedSummary?.state_counts.running ?? 0) > 0}
-        clientHint={clientHint ?? presentationError}
+        clientHint={clientHint ?? (status?.studio_warnings.map((warning) => warning.message).join('；') || presentationError)}
         boundaryError={draft ? boundaryError : null}
         onParameterDraftChange={changeParameterDraft}
         onPickParameterPath={pickParameterPath}

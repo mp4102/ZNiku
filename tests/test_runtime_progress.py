@@ -14,6 +14,7 @@ from typing import Any, cast
 
 import pytest
 
+from authoring_helpers import authoring_command
 from zniku.graph import (
     CommandExecutorSpec,
     ExecutionMode,
@@ -647,8 +648,8 @@ def test_command_automatic_stays_indeterminate_while_real_process_is_running(
         (definition,),
     )
     application = ProjectServiceApplication(work_root=tmp_path / "work")
-    application.command({"operation": "open_project", "path": str(store.path)})
-    status = application.command({"operation": "run_all"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    status = authoring_command(application, {"operation": "run_all"})
     run_id = status.active_run_id
     assert run_id is not None
 
@@ -692,8 +693,8 @@ def test_project_service_exposes_only_live_unpersisted_projection(tmp_path: Path
         progress_wall_clock=clocks.wall_clock,
         progress_monotonic_clock=clocks.monotonic_clock,
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
-    status = application.command({"operation": "run_all"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    status = authoring_command(application, {"operation": "run_all"})
     run_id = status.active_run_id
     assert run_id is not None
     assert entered.wait(timeout=10)

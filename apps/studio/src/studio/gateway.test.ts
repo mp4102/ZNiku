@@ -15,6 +15,9 @@ import {
   handoffReadinessEnvelope,
   handoffSummary,
   projectSnapshot,
+  projectSessionId,
+  defaultStudioState,
+  studioEnvelope,
 } from './test-fixtures'
 
 afterEach(() => {
@@ -141,7 +144,9 @@ describe('FetchStudioGateway 0.3.0', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(new FetchStudioGateway().command({ operation: 'run_all' })).rejects.toEqual(
+    await expect(new FetchStudioGateway().command({
+      operation: 'run_all', project_session_id: projectSessionId, expected_storage_revision: 0,
+    })).rejects.toEqual(
       expect.objectContaining<Partial<StudioGatewayError>>({
         name: 'StudioGatewayError',
         code: 'E_PROJECT_SERVICE_RUN_CONFLICT',
@@ -195,6 +200,43 @@ describe('FetchStudioGateway 0.3.0', () => {
     await expect(gateway.command(unknown)).rejects.toThrow(StudioContractError)
     await expect(gateway.command(oldSubmit)).rejects.toThrow(StudioContractError)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('保存携带完整 CAS 与 StudioState；冲突保持原码且不自动重试', async () => {
+    const command: StudioCommand = {
+      operation: 'save_project', project: projectSnapshot.project,
+      studio_state: defaultStudioState, project_session_id: projectSessionId, expected_storage_revision: 7,
+    }
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(studioEnvelope({ storage_revision: 8 })))
+      .mockResolvedValueOnce(response({ error: {
+        code: 'E_STORAGE_REVISION_CONFLICT', message: '存储版本已变化', related_run_ids: [],
+      } }, false, 409))
+    vi.stubGlobal('fetch', fetchMock)
+    const gateway = new FetchStudioGateway()
+    expect((await gateway.command(command)).storage_revision).toBe(8)
+    expect(fetchMock).toHaveBeenNthCalledWith(1, expect.any(String), expect.objectContaining({ body: JSON.stringify(command) }))
+    await expect(gateway.command(command)).rejects.toMatchObject({ code: 'E_STORAGE_REVISION_CONFLICT', httpStatus: 409 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const old = { operation: 'save_project', project: projectSnapshot.project } as unknown as StudioCommand
+    await expect(gateway.command(old)).rejects.toThrow(StudioContractError)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('从节点重跑同时绑定历史 Run 与当前工程 CAS，旧形状不发送', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(handoffEnvelope()))
+    vi.stubGlobal('fetch', fetchMock)
+    const gateway = new FetchStudioGateway()
+    const command: StudioCommand = {
+      operation: 'rerun_from_here', run_id: handoffFixtureIds.run, node_id: 'transform',
+      project_session_id: projectSessionId, expected_storage_revision: 7,
+    }
+    await gateway.command(command)
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      method: 'POST', body: JSON.stringify(command),
+    }))
+    const old = { operation: 'rerun_from_here', run_id: handoffFixtureIds.run, node_id: 'transform' } as unknown as StudioCommand
+    await expect(gateway.command(old)).rejects.toThrow(StudioContractError)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('按资源 endpoint 定向读取 summary/detail/log/readiness 并编码 query', async () => {

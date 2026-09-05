@@ -9,8 +9,9 @@ Graph 与 Runtime 的唯一上位架构权威是
 易用性从属于 [`studio-ux-baseline.md`](../../docs/architecture/studio-ux-baseline.md)。本应用不得恢复
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-当前产品代码仍保持 `0.2.0` package 版本。v0.3.0 Phase 0–1 已冻结 UX 权威并实现独立 Presentation、
-Schema 参数表单与工作区组件边界；创作者建项、原生路径选择、Undo/Redo 和首次用户验收仍属于 Phase 2–6。
+当前产品代码仍保持 `0.2.0` package 版本。v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
+创作者建项、HostBridge、Undo/Redo、兼容连接、纯展示分组与 CAS 自动保存。运行中心重构、双击交付和
+新用户真实验收仍属于 Phase 4–6，完整证据见 [Phase 3 验收记录](../../docs/v0.3.0-phase3-acceptance.md)。
 
 当前 0.2.0 Phase 1–5 与 v0.2.1 Phase 1–5 已实现产品面：
 
@@ -43,6 +44,18 @@ npm run dev
 
 可在加载 Studio 前设置 `window.__ZNIKU_STUDIO_API_BASE__` 覆盖 API 地址；默认只连接
 `http://127.0.0.1:18765`。
+
+## 画布编辑与保存
+
+- Ctrl+Z 撤销，Ctrl+Shift+Z／Ctrl+Y 重做，Ctrl+S 保存。每次拖动或批量添加只有一条历史；
+- 从输出拖到空白选择下一步，或使用“连接节点”键盘入口；选择多输出节点可一次为所有输出添加同一步骤；
+- Inspector 编辑节点别名、展示分组与有序输入列表；顺序可以拖动或通过上下移动按钮调整；
+- 参数表单必须显式“应用设置”。缺必填参数或 required input 的安全草稿可自动保存，但创建 Run 前仍由
+  Python 完整校验；其余错误不允许写入工程；
+- 冲突时保留本地编辑并停止自动保存；不要连续强制覆盖，使用“重新载入磁盘版本”明确放弃本地更改后恢复；
+- 新工程使用 schema 3；旧 schema 2 首次保存时在工程旁保留 `.zniku-schema2-backup-<UUID>.zniku` 一致
+  备份。别名、分组、折叠和 viewport 不进入 Run snapshot，普通刷新／重开保留已保存内容但清空撤销历史；
+- 前后端需要同时更新；save、expand 与三个运行入口要求 exact session 和 storage revision，旧请求失败关闭。
 
 ## 验证
 

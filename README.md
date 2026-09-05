@@ -12,13 +12,14 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - 已交付基线：`ZNIKU Studio 0.2.0` Phase 0–5，Core 已完成 legacy 清理与最小自动化验收
 - 已验收增量：`v0.2.1` Phase 0–5 已完成，真实 MR-off GUI 闭环与操作者验收通过；external MR 仍是未验证范围
 - 当前开发分支：`v0.3.0`
-- 当前增量阶段：**v0.3.0 Phase 0–2 已完成；Phase 3–6 尚未实施**
+- 当前增量阶段：**v0.3.0 Phase 0–3 已完成；Phase 4–6 尚未实施**
 - Graph／Runtime 上位架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
 - Studio UX 下位设计：[创作者体验基线](docs/architecture/studio-ux-baseline.md)
 - 分阶段计划：[v0.3.0 创作者体验重构执行方案](docs/v0.3.0-execution-plan.md)
 - Phase 0 证据：[v0.3.0 Phase 0 验收记录](docs/v0.3.0-phase0-acceptance.md)
 - Phase 1 证据：[v0.3.0 Phase 1 验收记录](docs/v0.3.0-phase1-acceptance.md)
 - Phase 2 证据：[v0.3.0 Phase 2 验收记录](docs/v0.3.0-phase2-acceptance.md)
+- Phase 3 证据：[v0.3.0 Phase 3 验收记录](docs/v0.3.0-phase3-acceptance.md)
 - 当前实现版本：`0.2.0`；package/product 版本按计划保持不变，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
   `zniku.project_service`、`zniku.presentation`、`zniku.media` 与 `zniku.avenhance_v27`
 - 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
@@ -47,6 +48,11 @@ v0.3.0 Phase 2 已加入工程首页、默认隐藏的工程身份、有界 Host
 基础/高级设置都只服务于同一 Project 与 Graph；分析继续绑定 exact preparation Run，取消、迟到响应、已有
 工程和素材变化均失败关闭。Phase 2 验证已启动 Studio 的建项闭环；可分发双击 launcher、单实例和真实原生
 窗口 E2E 仍属于 Phase 5。
+
+v0.3.0 Phase 3 已加入可撤销的自由画布、兼容端口建议与批量连接、键盘连接、有序输入拖动排序、
+别名／分组／折叠／视口，以及基于 storage revision/CAS 的自动保存。安全的不完整图能够保存但不能运行；
+Run all、Run to here 和 Rerun from here 都先保存最新编辑再校验会话及存储版本。`.zniku` 新增独立
+StudioState 表，旧 schema 2 首次保存时备份并事务迁移到 schema 3；展示不改变执行、reuse 或 stale。
 
 ## 产品核心
 
@@ -84,9 +90,10 @@ Graph Core 只校验 node／port／edge 存在、typed output→input、required
   `GraphValidator`；首批类型是 `MediaFile`、`VideoFile`、`AudioFile`、`DataFile`，插件可增加开放字符串
   类型，Phase 1 只接受大小写敏感的精确类型相等，不做隐式继承或转换。定义和实例使用精确版本，参数按
   NodeDefinition 的 JSON Schema 验证。
-- `zniku.project`：公开 `Project` 与 `ProjectStore`；`.zniku` 是带 schema version 的单文件 SQLite
-  authority，schema v2 在当前 Graph 之外保存普通 Run snapshot、attempt、Artifact、NodeResult、日志索引
-  和 latest-result head；Phase 1 schema v1 工程会在严格结构校验后事务化迁移。
+- `zniku.project`：公开 `Project`、`ProjectStore` 与独立 `StudioState`；`.zniku` 是带 schema version 的
+  单文件 SQLite authority。schema v2 保存普通 Run snapshot、attempt、Artifact、NodeResult、日志索引和
+  latest-result head；schema v3 另存纯展示状态与存储 CAS。v1 严格校验后迁移到 v2，v2 首次 authoring
+  保存前创建一致备份再事务迁移到 v3，读取或运行不提前升为 v3。
 - `zniku.runtime`：公开最小 Runtime 模型、`Scheduler`、completed reuse／downstream stale 分析、支持
   三类 executor 的 `NodeRunner` 与运行编排服务。持久状态只有 `pending`、`running`、
   `waiting_external`、`completed` 和 `failed`；`ready`／`blocked` 只即时计算。
@@ -139,6 +146,7 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | [`docs/v0.3.0-phase0-acceptance.md`](docs/v0.3.0-phase0-acceptance.md) | v0.3.0 Phase 0 实施结果、自动门禁与未证明范围 |
 | [`docs/v0.3.0-phase1-acceptance.md`](docs/v0.3.0-phase1-acceptance.md) | v0.3.0 Phase 1 Presentation、Schema 表单与组件边界验收 |
 | [`docs/v0.3.0-phase2-acceptance.md`](docs/v0.3.0-phase2-acceptance.md) | v0.3.0 Phase 2 创作者建项、HostBridge 与模板引导验收 |
+| [`docs/v0.3.0-phase3-acceptance.md`](docs/v0.3.0-phase3-acceptance.md) | v0.3.0 Phase 3 画布编辑、草稿保存、StudioState 与 CAS 验收 |
 | [`docs/v0.2.1-acceptance.md`](docs/v0.2.1-acceptance.md) | v0.2.1 Phase 5 已完成验收及未验证范围 |
 | [`docs/phase5-acceptance.md`](docs/phase5-acceptance.md) | Phase 5 可重复门禁及其证明边界 |
 | [`docs/brand-baseline.md`](docs/brand-baseline.md) | 品牌、产品名与代码标识 |
@@ -220,6 +228,7 @@ ZNiku/
 │   ├── v0.3.0-phase0-acceptance.md # v0.3.0 Phase 0 自动门禁与证明边界
 │   ├── v0.3.0-phase1-acceptance.md # v0.3.0 Phase 1 展示合同与参数表单证据
 │   ├── v0.3.0-phase2-acceptance.md # v0.3.0 Phase 2 建项、HostBridge 与模板引导证据
+│   ├── v0.3.0-phase3-acceptance.md # v0.3.0 Phase 3 可撤销画布、自动保存与迁移证据
 │   └── brand-baseline.md
 ├── AGENTS.md
 └── VERSION                      # 0.2.0 产品实现版本

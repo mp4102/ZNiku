@@ -7,11 +7,22 @@ export interface ProjectShellProps {
   readonly projectId: string | null
   readonly nodeCount: number
   readonly dirty: boolean
+  readonly saving?: boolean
+  readonly draftBlocked?: boolean
+  readonly saveError?: string | null
+  readonly canUndo?: boolean
+  readonly canRedo?: boolean
+  readonly advanced?: boolean
+  readonly onUndo?: () => void
+  readonly onRedo?: () => void
+  readonly onToggleAdvanced?: () => void
+  readonly onReloadProject?: () => void
   readonly profile: { readonly status: string; readonly compatible: boolean; readonly modified: boolean } | null
   readonly projectPath: string
   readonly projectIdDraft: string
   readonly projectNameDraft: string
   readonly serviceBusy: boolean
+  readonly projectSwitchBlocked?: boolean
   readonly statusStale: boolean
   readonly canSave: boolean
   readonly hostBridgeAvailable: boolean
@@ -30,11 +41,22 @@ export function ProjectShell({
   projectId,
   nodeCount,
   dirty,
+  saving = false,
+  draftBlocked = false,
+  saveError,
+  canUndo = false,
+  canRedo = false,
+  advanced = false,
+  onUndo,
+  onRedo,
+  onToggleAdvanced,
+  onReloadProject,
   profile,
   projectPath,
   projectIdDraft,
   projectNameDraft,
   serviceBusy,
+  projectSwitchBlocked = serviceBusy,
   statusStale,
   canSave,
   hostBridgeAvailable,
@@ -58,8 +80,9 @@ export function ProjectShell({
         <span className="eyebrow">PROJECT GRAPH</span>
         <strong>{projectName ?? '打开或新建 .zniku 工程'}</strong>
         <span className="identity-meta">
-          {projectId ? `${nodeCount} 个节点 · ${dirty ? '有未保存更改' : '已保存'}` : '选择已有工程，或创建新的工作流'}
+          {projectId ? `${nodeCount} 个节点 · ${saveError ? '保存未完成' : saving ? '正在保存…' : dirty ? '有未保存更改' : draftBlocked ? '已保存，但暂不可运行' : '已保存'}` : '选择已有工程，或创建新的工作流'}
         </span>
+        {saveError && <div className="authoring-save-error" role="alert"><span>{saveError}</span><button onClick={onReloadProject} type="button">重新载入磁盘版本</button></div>}
         {profile && (
           <span className={`workflow-profile-state ${profile.compatible ? 'is-compatible' : 'is-unverified'}`} role="status">
             {profile.modified
@@ -71,9 +94,11 @@ export function ProjectShell({
         )}
       </div>
       <div className="project-location">
+        <div className="edit-history-actions"><button aria-label="撤销" title="撤销 Ctrl+Z" type="button" disabled={serviceBusy || !canUndo} onClick={onUndo}>撤销</button><button aria-label="重做" title="重做 Ctrl+Shift+Z" type="button" disabled={serviceBusy || !canRedo} onClick={onRedo}>重做</button></div>
+        <button type="button" className="button button--ghost" aria-pressed={advanced} onClick={onToggleAdvanced}>{advanced ? '返回创作者模式' : '高级节点图'}</button>
         <button className="button button--ghost" disabled={serviceBusy} onClick={onHome} type="button">工程首页</button>
         <button className="button button--template" disabled={serviceBusy || statusStale || !projectId || !canResumeGuided} onClick={onOpenTemplates} title={projectId && !canResumeGuided ? '此工程不是可继续分析的增强视频工程' : undefined} type="button">{canResumeGuided ? '继续处理向导' : '处理向导'}</button>
-        <button className="button button--ghost" type="button" disabled={serviceBusy || statusStale || !hostBridgeAvailable} onClick={onOpenWithPicker}>打开工程</button>
+        <button className="button button--ghost" type="button" disabled={projectSwitchBlocked || statusStale || !hostBridgeAvailable} onClick={onOpenWithPicker}>打开工程</button>
         <button className="button button--ghost" type="button" disabled={serviceBusy || !canSave} onClick={onSaveProject}>保存</button>
         <details className="project-developer-entry">
           <summary>开发入口</summary>
@@ -81,8 +106,8 @@ export function ProjectShell({
           <label>工程名称<input aria-label="开发入口工程名称" value={projectNameDraft} readOnly /></label>
           <label>Project ID<input aria-label="开发入口 Project ID" value={projectIdDraft} readOnly /></label>
           <div>
-            <button aria-label="打开" className="button button--ghost" type="button" disabled={serviceBusy || statusStale || !projectPath.trim()} onClick={onOpenProject}>按路径打开</button>
-            <button aria-label="新建" className="button button--ghost" type="button" disabled={serviceBusy || statusStale || !projectPath.trim() || !projectNameDraft.trim()} onClick={onCreateProject}>按路径新建空白工程</button>
+            <button aria-label="打开" className="button button--ghost" type="button" disabled={projectSwitchBlocked || statusStale || !projectPath.trim()} onClick={onOpenProject}>按路径打开</button>
+            <button aria-label="新建" className="button button--ghost" type="button" disabled={projectSwitchBlocked || statusStale || !projectPath.trim() || !projectNameDraft.trim()} onClick={onCreateProject}>按路径新建空白工程</button>
           </div>
         </details>
       </div>

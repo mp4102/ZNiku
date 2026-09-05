@@ -1,6 +1,7 @@
 """定义 ZNIKU Studio 与本地 Project Service 之间的 0.3.0 wire 合同。
 
-Project 文件格式仍是 schema 2；本模块只升级浏览器与 Project Service 的成对 wire。Run summary、
+Project authoring 保存使用 schema 3 和 CAS；本模块定义浏览器与 Project Service 的成对 wire。
+Run summary、
 定向日志和 handoff readiness 都是已有 SQLite authority 的只读投影，不引入第二套运行状态。所有
 请求和响应拒绝未知字段、隐式类型转换及非有限数值，未知客户端默认失败关闭。
 """
@@ -30,7 +31,8 @@ from zniku.avenhance_v27.template import (
 )
 from zniku.graph import NodeDefinition
 from zniku.presentation import PresentationCatalog, PresentationDiagnostic
-from zniku.project import Project, ProjectSnapshot
+from zniku.project import AuthoringDiagnostic, Project, ProjectSnapshot, StudioState, StudioWarning
+from zniku.project.studio import StorageRevision
 from zniku.runtime import Artifact, LatestNodeResult, Run, RuntimeFailure
 from zniku.runtime.models import UtcTimestamp
 
@@ -55,6 +57,12 @@ type ProgressUnit = Literal["frames", "bytes", "microseconds", "items"]
 
 LocalPath = Annotated[str, StringConstraints(min_length=1, max_length=32767)]
 OpaqueCursor = Annotated[str, StringConstraints(min_length=1, max_length=4096)]
+ProjectSessionId = Annotated[
+    str,
+    StringConstraints(
+        pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    ),
+]
 
 
 class ProjectServiceModel(BaseModel):
@@ -215,6 +223,11 @@ class StatusEnvelope(ProjectServiceModel):
     contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
     project_path: LocalPath | None = None
     snapshot: ProjectSnapshot | None = None
+    project_session_id: ProjectSessionId | None
+    storage_revision: StorageRevision | None
+    studio_state: StudioState | None
+    authoring_diagnostics: tuple[AuthoringDiagnostic, ...]
+    studio_warnings: tuple[StudioWarning, ...]
     run_summaries: tuple[RunSummary, ...] = ()
     next_run_cursor: OpaqueCursor | None = None
     active_run_id: str | None = None
@@ -228,6 +241,16 @@ class StatusEnvelope(ProjectServiceModel):
 
         if self.active_operation is not None and self.active_run_id is None:
             raise ValueError("E_STATUS_ACTIVE_RUN_MISSING: active operation 必须绑定 Run")
+        fields = (
+            self.project_path,
+            self.project_session_id,
+            self.storage_revision,
+            self.studio_state,
+        )
+        if any((field is None) != (self.snapshot is None) for field in fields):
+            raise ValueError("E_STATUS_PROJECT_BINDING: Project 与 authoring binding 必须完整")
+        if self.snapshot is None and (self.authoring_diagnostics or self.studio_warnings):
+            raise ValueError("E_STATUS_PROJECT_BINDING: 无工程时不得携带 authoring 诊断")
         return self
 
 
@@ -455,34 +478,42 @@ class CreateAvEnhanceV27Command(ProjectServiceModel):
     request: PrepareRequest
 
 
-class ExpandAvEnhanceV27Command(ProjectServiceModel):
+class AuthoringBoundCommand(ProjectServiceModel):
+    """把 mutation 绑定到当前打开会话和客户端已观察的存储计数。"""
+
+    project_session_id: ProjectSessionId
+    expected_storage_revision: StorageRevision
+
+
+class ExpandAvEnhanceV27Command(AuthoringBoundCommand):
     """基于明确 preparation Run 原子展开 AVEnhanceFlow v2.7 Graph。"""
 
     operation: Literal["expand_av_enhance_v27"]
     request: ExpandRequest
 
 
-class SaveProjectCommand(ProjectServiceModel):
+class SaveProjectCommand(AuthoringBoundCommand):
     """保存当前 Project 的名称、Graph、参数与 Studio 布局。"""
 
     operation: Literal["save_project"]
     project: Project
+    studio_state: StudioState
 
 
-class RunAllCommand(ProjectServiceModel):
+class RunAllCommand(AuthoringBoundCommand):
     """从当前 Project 建立普通全图 Run snapshot。"""
 
     operation: Literal["run_all"]
 
 
-class RunToCommand(ProjectServiceModel):
+class RunToCommand(AuthoringBoundCommand):
     """只运行目标节点及其祖先闭包。"""
 
     operation: Literal["run_to"]
     node_id: str
 
 
-class RerunFromHereCommand(ProjectServiceModel):
+class RerunFromHereCommand(AuthoringBoundCommand):
     """从指定节点创建全新 attempt；终态 Run 会建立新的普通 Run。"""
 
     operation: Literal["rerun_from_here"]

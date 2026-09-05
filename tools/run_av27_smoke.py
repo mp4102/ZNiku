@@ -42,7 +42,7 @@ from zniku.media import (
     runner_media_probe,
 )
 from zniku.project_service import ProjectServiceApplication
-from zniku.project_service.models import RunDetailEnvelope
+from zniku.project_service.models import RunDetailEnvelope, StatusEnvelope
 from zniku.runtime import Artifact, NodeRun, NodeRunState, PythonAdapterContext, Run, RunState
 
 _SOURCE_FRAMES = 24
@@ -178,8 +178,29 @@ def _latest(run: Run) -> dict[str, NodeRun]:
     return latest
 
 
+def _authoring_command(application: ProjectServiceApplication, payload: object) -> StatusEnvelope:
+    """模拟创作者客户端读取当前绑定后提交一次 mutation，冲突不自动覆盖。"""
+
+    if isinstance(payload, dict) and payload.get("operation") in {
+        "save_project",
+        "run_all",
+        "run_to",
+        "expand_av_enhance_v27",
+        "rerun_from_here",
+    }:
+        current = application.inspect()
+        payload = {
+            "project_session_id": current.project_session_id,
+            "expected_storage_revision": current.storage_revision,
+            **payload,
+        }
+        if payload["operation"] == "save_project":
+            payload.setdefault("studio_state", current.studio_state)
+    return application.command(payload)
+
+
 def _command(application: ProjectServiceApplication, payload: object) -> RunDetailEnvelope:
-    started = application.command(payload)
+    started = _authoring_command(application, payload)
     if started.active_run_id is None:
         raise RuntimeError("E_AV27_SMOKE_RUN_ID: mutation 未返回 Run identity")
     deadline = monotonic() + _RUN_TIMEOUT_SECONDS
@@ -370,7 +391,7 @@ def _assert_config_stale(application: ProjectServiceApplication, completed: Run)
     for node in project_data["graph"]["nodes"]:
         if node["node_id"] == "program":
             node["parameters"]["encoder"] = "gpu"
-    check_application.command({"operation": "save_project", "project": project_data})
+    _authoring_command(check_application, {"operation": "save_project", "project": project_data})
     stale = sorted(
         item.node_id for item in check_application.inspect().latest_results if item.stale
     )
@@ -441,7 +462,7 @@ def run_smoke(
     assert expanded.profile.status == "expanded-compatible"
     assert expanded.plan.effective_video_artifact_ids == (mr.artifact_id,)
     assert expanded.plan.chapter_count == expanded.plan.leaf_count == 2
-    application.command({"operation": "expand_av_enhance_v27", "request": expand})
+    _authoring_command(application, {"operation": "expand_av_enhance_v27", "request": expand})
 
     # 只记录真实 producer 调用，原函数与进程、validator、登记路径都不替换。
     real_run_ffmpeg = av27_adapters._run_ffmpeg

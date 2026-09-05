@@ -20,6 +20,8 @@ import {
   handoffReadinessEnvelope,
   handoffSummary,
   projectSnapshot,
+  projectSessionId,
+  defaultStudioState,
   runningProgressDetail,
   studioEnvelope,
 } from './test-fixtures'
@@ -40,19 +42,99 @@ describe('Studio Project Service 0.3.0 contract', () => {
     expect(Object.keys(status).sort()).toEqual([
       'active_operation',
       'active_run_id',
+      'authoring_diagnostics',
       'contract_version',
       'error',
       'latest_results',
       'next_run_cursor',
       'project_path',
+      'project_session_id',
       'run_summaries',
       'snapshot',
+      'storage_revision',
+      'studio_state',
+      'studio_warnings',
     ])
     expect(detail.run.node_runs[1]?.state).toBe('waiting_external')
     expect(detail.artifacts[0]?.path).toContain('source.mkv')
     expect(log.log.stdout_available).toBe(true)
     expect(readiness.targets[0]?.state).toBe('present')
     expect(page.next_run_cursor).toBe('cursor.synthetic')
+  })
+
+  it('工程、会话、存储计数和 StudioState 必须同有同无', () => {
+    expect(parseStatusEnvelope(studioEnvelope({ snapshot: null })).snapshot).toBeNull()
+    const fields = ['snapshot', 'project_path', 'project_session_id', 'storage_revision', 'studio_state'] as const
+    for (const field of fields) {
+      expect(() => parseStatusEnvelope({ ...studioEnvelope(), [field]: null })).toThrow(/authoring binding/)
+    }
+    for (const field of ['authoring_diagnostics', 'studio_warnings'] as const) {
+      expect(() => parseStatusEnvelope({
+        ...studioEnvelope({ snapshot: null }),
+        [field]: field === 'authoring_diagnostics'
+          ? [{ code: 'E_REQUIRED_INPUT_MISSING', path: 'graph.nodes.0', message: '请连接输入', validator_keyword: null }]
+          : [{ code: 'W_STUDIO_STATE_RESET', message: '展示设置已恢复' }],
+      })).toThrow(/authoring binding/)
+    }
+    expect(() => parseStatusEnvelope(studioEnvelope({ active_operation: 'run_all' })))
+      .toThrow(/active_operation 必须绑定/)
+    for (const storage_revision of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => parseStatusEnvelope(studioEnvelope({ storage_revision }))).toThrow(StudioContractError)
+    }
+  })
+
+  it('StudioState 只引用当前 Graph，拒绝重复、悬空引用和非法显示字段', () => {
+    const state = {
+      ...defaultStudioState,
+      viewport: { x: 50, y: -100, zoom: 1.2 },
+      groups: [{ group_id: 'chapter-a', title: '章节 A', color_token: 'blue' as const, collapsed: false }],
+      node_views: [{ node_id: 'source', display_name: '素材 A', group_id: 'chapter-a', collapsed: false }],
+    }
+    expect(parseStatusEnvelope(studioEnvelope({ studio_state: state })).studio_state).toEqual(state)
+    for (const patch of [
+      { groups: [state.groups[0], state.groups[0]] },
+      { node_views: [state.node_views[0], state.node_views[0]] },
+      { node_views: [{ ...state.node_views[0], node_id: 'missing' }] },
+      { node_views: [{ ...state.node_views[0], group_id: 'missing' }] },
+      { node_views: [{ ...state.node_views[0], display_name: ' 名称' }] },
+      { node_views: [{ ...state.node_views[0], display_name: '名称\u0000' }] },
+      { groups: [{ ...state.groups[0], title: '章节 ' }] },
+      { groups: [{ ...state.groups[0], title: '\u0000章节' }] },
+    ]) {
+      const studio_state = { ...state, ...patch }
+      expect(() => parseStatusEnvelope(studioEnvelope({ studio_state }))).toThrow(/StudioState/)
+      expect(() => parseStudioCommand({
+        operation: 'save_project', project: projectSnapshot.project, studio_state,
+        project_session_id: projectSessionId, expected_storage_revision: 1,
+      })).toThrow(/StudioState/)
+    }
+    for (const patch of [
+      { contract_version: '0.4.0' }, { unexpected: true },
+      { viewport: { x: Infinity, y: 0, zoom: 1 } },
+      { viewport: { x: 0, y: 0, zoom: 0 } },
+      { groups: [{ ...state.groups[0], color_token: 'javascript' }] },
+    ]) {
+      expect(() => parseStatusEnvelope({ ...studioEnvelope(), studio_state: { ...state, ...patch } }))
+        .toThrow(StudioContractError)
+    }
+  })
+
+  it('保存 authoring diagnostics 不伪造可运行状态，执行命令必须携带当前 CAS', () => {
+    const status = studioEnvelope({ authoring_diagnostics: [{
+      code: 'E_REQUIRED_INPUT_MISSING', path: 'graph.nodes.1', message: '请连接视频输入', validator_keyword: null,
+    }] })
+    expect(parseStatusEnvelope(status).authoring_diagnostics).toEqual(status.authoring_diagnostics)
+    for (const operation of ['run_all', 'run_to', 'rerun_from_here'] as const) {
+      const command = {
+        operation, ...(operation !== 'run_all' ? { node_id: 'sink' } : {}),
+        ...(operation === 'rerun_from_here' ? { run_id: handoffFixtureIds.run } : {}),
+        project_session_id: projectSessionId, expected_storage_revision: 2,
+      }
+      expect(parseStudioCommand(command)).toEqual(command)
+      const { expected_storage_revision: _revision, ...missing } = command
+      expect(() => parseStudioCommand(missing)).toThrow(StudioContractError)
+      expect(() => parseStudioCommand({ ...command, project_session_id: 'old-page' })).toThrow(StudioContractError)
+    }
   })
 
   it('按 Python Schema 解析 v2.7 template preview，并拒绝客户端 Graph 注入', () => {

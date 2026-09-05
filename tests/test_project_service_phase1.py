@@ -22,6 +22,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 import zniku.project_service as project_service
+from authoring_helpers import authoring_command
 from zniku.graph import (
     Edge,
     ExecutionMode,
@@ -226,7 +227,7 @@ def _application(
         python_adapters=_adapters(stdout_payload=stdout_payload),
         validators={_MANUAL_VALIDATOR: validate_manual},
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
     return application
 
 
@@ -242,7 +243,7 @@ def _latest(run: Run, node_id: str) -> NodeRun:
 
 
 def _run_and_wait(application: ProjectServiceApplication, command: object) -> str:
-    started = application.command(command)
+    started = authoring_command(application, command)
     assert started.active_run_id is not None
     run_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
@@ -286,7 +287,7 @@ def _sqlite_dump(path: Path) -> tuple[str, ...]:
 def test_phase1_wire_version_is_exact() -> None:
     """浏览器 wire 升为 exact 0.3.0，不能与 Project schema version 捆绑。"""
 
-    assert PROJECT_SCHEMA_VERSION == 2
+    assert PROJECT_SCHEMA_VERSION == 3
     assert project_service.PROJECT_SERVICE_CONTRACT_VERSION == "0.3.0"
 
 
@@ -341,6 +342,11 @@ def test_status_summary_and_detail_are_separate_bounded_read_models(tmp_path: Pa
     status = application.inspect(view_run_id=terminal_id)
     assert status.contract_version == "0.3.0"
     assert set(_dump(status)) == {
+        "project_session_id",
+        "storage_revision",
+        "studio_state",
+        "authoring_diagnostics",
+        "studio_warnings",
         "contract_version",
         "project_path",
         "snapshot",
@@ -580,7 +586,7 @@ def test_readiness_fails_closed_when_handoff_changes_during_validator(
         python_adapters=_adapters(),
         validators={_MANUAL_VALIDATOR: blocking_validator},
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
     run_id, _, waiting = _start_waiting_run(application)
     assert waiting.external_handoff is not None
     Path(waiting.external_handoff.output_targets[0].path).write_text(
@@ -608,12 +614,13 @@ def test_readiness_fails_closed_when_handoff_changes_during_validator(
 
     try:
         if transition == "supersede":
-            rerun = application.command(
+            rerun = authoring_command(
+                application,
                 {
                     "operation": "rerun_from_here",
                     "run_id": run_id,
                     "node_id": "source",
-                }
+                },
             )
             assert rerun.active_run_id == run_id
             assert application.wait_until_idle(timeout=5)
@@ -621,7 +628,7 @@ def test_readiness_fails_closed_when_handoff_changes_during_validator(
             assert latest_manual.node_run_id != waiting.node_run_id
             assert latest_manual.state is NodeRunState.WAITING_EXTERNAL
         else:
-            application.command({"operation": "abandon_run", "run_id": run_id})
+            authoring_command(application, {"operation": "abandon_run", "run_id": run_id})
             latest_manual = _latest(application.inspect_run_detail(run_id).run, "manual")
             assert latest_manual.node_run_id == waiting.node_run_id
             assert latest_manual.state is NodeRunState.FAILED
@@ -663,7 +670,7 @@ def test_ordinary_run_conflict_does_not_create_second_run(
     before_tree = _tree(application.work_root)
 
     with pytest.raises(ProjectServiceError) as conflict:
-        application.command(command)
+        authoring_command(application, command)
 
     assert conflict.value.code == "E_PROJECT_SERVICE_RUN_CONFLICT"
     assert conflict.value.http_status == 409
@@ -694,8 +701,8 @@ def test_abandon_rejects_running_automatic_attempt_without_db_or_fs_change(
         work_root=tmp_path / "running-work",
         python_adapters={_SOURCE_ADAPTER: blocking_source},
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
-    started = application.command({"operation": "run_all"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    started = authoring_command(application, {"operation": "run_all"})
     assert started.active_run_id is not None
     run_id = started.active_run_id
     assert entered.wait(timeout=5)
@@ -709,7 +716,7 @@ def test_abandon_rejects_running_automatic_attempt_without_db_or_fs_change(
         before_tree = _tree(application.work_root)
 
         with pytest.raises(ProjectServiceError) as captured:
-            application.command({"operation": "abandon_run", "run_id": run_id})
+            authoring_command(application, {"operation": "abandon_run", "run_id": run_id})
 
         assert captured.value.code == "E_PROJECT_SERVICE_RUN_ACTIVE"
         assert captured.value.http_status == 409
@@ -739,7 +746,7 @@ def test_abandon_run_preserves_completed_history_and_cancels_blocked_closure(
     )
     assert not Path(sink_before.work_dir).exists()
 
-    returned = application.command({"operation": "abandon_run", "run_id": run_id})
+    returned = authoring_command(application, {"operation": "abandon_run", "run_id": run_id})
     assert returned.active_run_id == run_id
     after = application.inspect_run_detail(run_id)
     source_after = _latest(after.run, "source")
@@ -777,12 +784,13 @@ def test_abandon_after_rerun_only_cancels_latest_attempts_and_preserves_history(
     application = _application(tmp_path, store)
     run_id, _, _ = _start_waiting_run(application)
 
-    rerun = application.command(
+    rerun = authoring_command(
+        application,
         {
             "operation": "rerun_from_here",
             "run_id": run_id,
             "node_id": "source",
-        }
+        },
     )
     assert rerun.active_run_id == run_id
     assert application.wait_until_idle(timeout=5)
@@ -804,7 +812,7 @@ def test_abandon_after_rerun_only_cancels_latest_attempts_and_preserves_history(
     assert attempts_before[("manual", 2)].external_handoff is not None
     before_tree = _tree(application.work_root)
 
-    application.command({"operation": "abandon_run", "run_id": run_id})
+    authoring_command(application, {"operation": "abandon_run", "run_id": run_id})
     after = application.inspect_run_detail(run_id)
     attempts_after = {(item.node_id, item.attempt): item for item in after.run.node_runs}
 
@@ -855,7 +863,7 @@ def test_abandon_queued_pending_run_materializes_cancelled_attempts_without_io(
     assert summary.node_count == 3
     assert summary.state_counts.pending == 3
 
-    application.command({"operation": "abandon_run", "run_id": queued.run_id})
+    authoring_command(application, {"operation": "abandon_run", "run_id": queued.run_id})
     after = application.inspect_run_detail(queued.run_id)
     assert after.run.state is RunState.FAILED
     assert after.run.started_at == after.run.ended_at

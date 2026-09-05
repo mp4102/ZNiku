@@ -9,11 +9,24 @@ from zniku.project.store import (
     ProjectStoreError,
     ProjectValidationError,
 )
+from zniku.project.studio import (
+    AuthoringDiagnostic,
+    GroupViewState,
+    NodeViewState,
+    ProjectAuthoringSnapshot,
+    StudioState,
+    StudioViewport,
+    StudioWarning,
+)
 
 __all__ = [
     "PROJECT_APPLICATION_ID",
     "PROJECT_SCHEMA_VERSION",
+    "AuthoringDiagnostic",
+    "GroupViewState",
+    "NodeViewState",
     "Project",
+    "ProjectAuthoringSnapshot",
     "ProjectFormatError",
     "ProjectId",
     "ProjectName",
@@ -21,4 +34,7 @@ __all__ = [
     "ProjectStore",
     "ProjectStoreError",
     "ProjectValidationError",
+    "StudioState",
+    "StudioViewport",
+    "StudioWarning",
 ]

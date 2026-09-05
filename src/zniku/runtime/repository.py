@@ -352,7 +352,10 @@ class RuntimeRepository:
             connection.execute("PRAGMA busy_timeout = 5000")
             application_id = cast(int, connection.execute("PRAGMA application_id").fetchone()[0])
             schema_version = cast(int, connection.execute("PRAGMA user_version").fetchone()[0])
-            if application_id != PROJECT_APPLICATION_ID or schema_version != PROJECT_SCHEMA_VERSION:
+            if application_id != PROJECT_APPLICATION_ID or schema_version not in {
+                2,
+                PROJECT_SCHEMA_VERSION,
+            }:
                 raise RuntimeRepositoryError(
                     "E_RUNTIME_SCHEMA_MISMATCH",
                     f"Project schema identity 无效：{application_id}/{schema_version}",
@@ -379,6 +382,8 @@ class RuntimeRepository:
         node_runs: Sequence[NodeRun],
         *,
         started_at: datetime,
+        expected_storage_revision: int | None = None,
+        rerun_from_node_id: str | None = None,
     ) -> Run:
         """原子建立 running Run 与完整选中闭包的 attempt 1。
 
@@ -417,6 +422,9 @@ class RuntimeRepository:
         try:
             with self._connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
+                self._store._check_storage_revision(
+                    self._store._read_storage_revision(connection), expected_storage_revision
+                )
                 self._validate_new_run_snapshot(connection, run)
                 self._validate_bulk_node_runs(
                     connection,
@@ -424,6 +432,25 @@ class RuntimeRepository:
                     candidates,
                     expected_attempts=dict.fromkeys(expected_node_ids, 1),
                 )
+                if rerun_from_node_id is not None:
+                    if rerun_from_node_id not in expected_node_ids:
+                        raise RuntimeConflictError(
+                            "E_RERUN_NODE_NOT_IN_CURRENT_GRAPH", "重跑节点不属于当前 Run"
+                        )
+                    # 重跑意图属于本 Run 的创建时刻；提交虽稍晚，也不能被 reuse 当成
+                    # snapshot 之后的编辑而忽略。失效与 Run/attempt 仍在同一事务提交。
+                    self._mark_latest_stale_in_connection(
+                        connection,
+                        (rerun_from_node_id,),
+                        StaleReason.RERUN_REQUESTED,
+                        run.created_at,
+                    )
+                    self._mark_latest_stale_in_connection(
+                        connection,
+                        _downstream_node_ids(run.graph_snapshot, rerun_from_node_id),
+                        StaleReason.UPSTREAM_CHANGED,
+                        run.created_at,
+                    )
                 self._insert_run(connection, running)
                 for candidate in candidates:
                     self._insert_node_run(connection, candidate)
@@ -812,6 +839,7 @@ class RuntimeRepository:
         node_runs: Sequence[NodeRun],
         *,
         updated_at: datetime,
+        expected_storage_revision: int | None = None,
     ) -> tuple[NodeRun, ...]:
         """原子创建 source 与选中下游闭包的新 attempts，并失效 current projection。
 
@@ -824,7 +852,12 @@ class RuntimeRepository:
         try:
             with self._connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
+                self._store._check_storage_revision(
+                    self._store._read_storage_revision(connection), expected_storage_revision
+                )
                 run = self._read_run(connection, run_id)
+                if expected_storage_revision is not None:
+                    self._validate_new_run_snapshot(connection, run, ignore_ui_position=True)
                 if run.state is not RunState.RUNNING:
                     raise RuntimeConflictError(
                         "E_RERUN_RUN_NOT_RUNNING",
@@ -1833,14 +1866,20 @@ class RuntimeRepository:
         self,
         connection: sqlite3.Connection,
         run: Run,
+        *,
+        ignore_ui_position: bool = False,
     ) -> None:
         current = self._read_current_project(connection)
         if run.project_id != current.project.project_id:
             raise RuntimeConflictError("E_RUN_PROJECT_MISMATCH", "Run 没有绑定当前 Project")
-        if (
-            run.graph_snapshot != current.project.graph
-            or run.definitions_snapshot != current.definitions
-        ):
+        graph_matches = run.graph_snapshot == current.project.graph
+        if ignore_ui_position:
+            # 同一 Run 重跑不因画布位置改变分支；新 Run 默认仍精确复制整张 Graph。
+            omitted = {"nodes": {"__all__": {"ui_position"}}}
+            graph_matches = run.graph_snapshot.model_dump(
+                exclude=omitted
+            ) == current.project.graph.model_dump(exclude=omitted)
+        if not graph_matches or run.definitions_snapshot != current.definitions:
             raise RuntimeConflictError(
                 "E_RUN_SNAPSHOT_MISMATCH",
                 "Run 必须精确复制当前 Project graph/definitions",

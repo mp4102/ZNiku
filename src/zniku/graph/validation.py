@@ -22,6 +22,15 @@ class GraphViolation:
     code: str
     path: str
     message: str
+    validator_keyword: str | None = None
+
+    @property
+    def authoring_recoverable(self) -> bool:
+        """只分类同一次校验的闭合缺失集合，不解析 message 或放宽参数语义。"""
+
+        return self.code == "E_REQUIRED_INPUT_MISSING" or (
+            self.code == "E_PARAMETERS_INVALID" and self.validator_keyword == "required"
+        )
 
 
 class GraphValidationError(ValueError):
@@ -197,7 +206,9 @@ class GraphValidator:
             path = f"nodes[{index}].parameters"
             if parameter_path:
                 path = f"{path}.{parameter_path}"
-            violations.append(GraphViolation("E_PARAMETERS_INVALID", path, error.message))
+            violations.append(
+                GraphViolation("E_PARAMETERS_INVALID", path, error.message, str(error.validator))
+            )
         return tuple(violations)
 
     @staticmethod

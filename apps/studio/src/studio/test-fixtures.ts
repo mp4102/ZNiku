@@ -11,6 +11,7 @@ import type {
   RunSummaryWire,
   RunWire,
   StatusEnvelope,
+  StudioStateWire,
 } from './contracts'
 
 const emptySchema = {
@@ -217,11 +218,23 @@ function summary(
   return { ...baseline, ...overrides }
 }
 
+export const projectSessionId = '00000000-0000-4000-8000-000000000100'
+
+export const defaultStudioState: StudioStateWire = {
+  contract_version: '0.3.0', viewport: null, groups: [], node_views: [],
+}
+
 export function studioEnvelope(overrides: Partial<StatusEnvelope> = {}): StatusEnvelope {
+  const snapshot = overrides.snapshot === undefined ? projectSnapshot : overrides.snapshot
   return {
     contract_version: '0.3.0',
-    project_path: 'C:\\synthetic\\project.zniku',
-    snapshot: projectSnapshot,
+    project_path: snapshot === null ? null : 'C:\\synthetic\\project.zniku',
+    snapshot,
+    project_session_id: snapshot === null ? null : projectSessionId,
+    storage_revision: snapshot === null ? null : 0,
+    studio_state: snapshot === null ? null : defaultStudioState,
+    authoring_diagnostics: [],
+    studio_warnings: [],
     run_summaries: [],
     next_run_cursor: null,
     active_run_id: null,

@@ -21,7 +21,7 @@ from uuid import UUID
 
 from pydantic import JsonValue, ValidationError
 
-from zniku.graph import NodeDefinition, NodeInstance
+from zniku.graph import GraphValidationError, GraphValidator, NodeDefinition, NodeInstance
 from zniku.project import ProjectStore
 
 from .models import (
@@ -163,14 +163,26 @@ class RuntimeService:
                 )
             )
 
-    def create_run(self, *, selected_targets: tuple[str, ...] = ()) -> Run:
+    def create_run(
+        self,
+        *,
+        selected_targets: tuple[str, ...] = (),
+        expected_storage_revision: int | None = None,
+        rerun_from_node_id: str | None = None,
+    ) -> Run:
         """从当前 Project 建立普通 snapshot，并为选中闭包创建 attempt 1。
 
         空 ``selected_targets`` 表示整图。下游 attempt 先以空 inputs 持久化；它第一次成为 ready 时才
         一次性绑定已登记的直接输入 Artifact，避免为尚不存在的输出伪造身份。
+        authoring draft 在构造任何 Run/attempt 前接受完整 GraphValidator 校验。可选存储计数前提由
+        Repository 在插入事务内重验，不进入 Run，也不会因运行进度写入而递增。
         """
 
         snapshot = self._repository.project_store.load()
+        try:
+            GraphValidator(snapshot.definitions).validate(snapshot.project.graph)
+        except GraphValidationError as error:
+            raise RuntimeServiceError("E_SERVICE_GRAPH_INVALID", str(error)) from error
         scheduler = Scheduler(snapshot.project.graph)
         states = dict.fromkeys(scheduler.topological_order, NodeRunState.PENDING.value)
         analysis = scheduler.analyze(
@@ -200,24 +212,36 @@ class RuntimeService:
                     node_run_id=node_run_id,
                 )
             )
-        return self._repository.start_run(run, node_runs, started_at=utc_now())
+        return self._repository.start_run(
+            run,
+            node_runs,
+            started_at=utc_now(),
+            expected_storage_revision=expected_storage_revision,
+            rerun_from_node_id=rerun_from_node_id,
+        )
 
-    def create_rerun_run(self, node_id: str) -> Run:
+    def create_rerun_run(
+        self, node_id: str, *, expected_storage_revision: int | None = None
+    ) -> Run:
         """为终态历史之后的“从此处重新运行”建立新的普通全图 Run。
 
-        当前 Project 中该节点先标记 ``rerun_requested``，下游标记 ``upstream_changed``。随后启动
-        全图 Run：未受影响的 fresh 节点仍可按既有规则复用，失效闭包必须创建全新 attempt，从而不会
-        把终态 Run 改写成可 resume 的对象。
+        存储 CAS、节点 ``rerun_requested``、下游 ``upstream_changed`` 与新 Run/attempt 插入同事务
+        提交；任何冲突都不会提前污染 stale。未受影响 fresh 节点仍可复用，不改写终态 Run。
         """
 
         snapshot = self._repository.project_store.load()
+        try:
+            GraphValidator(snapshot.definitions).validate(snapshot.project.graph)
+        except GraphValidationError as error:
+            raise RuntimeServiceError("E_SERVICE_GRAPH_INVALID", str(error)) from error
         node_ids = {node.node_id for node in snapshot.project.graph.nodes}
         if node_id not in node_ids:
             raise RuntimeServiceError(
                 "E_SERVICE_RERUN_NODE_UNKNOWN", f"当前 Project 不含节点 {node_id!r}"
             )
-        self._repository.mark_rerun_stale(node_id, updated_at=utc_now())
-        return self.create_run()
+        return self.create_run(
+            expected_storage_revision=expected_storage_revision, rerun_from_node_id=node_id
+        )
 
     def run_until_blocked(self, run_id: str) -> Run:
         """顺序执行全部即时 ready 节点，直到完成或只剩 blocked/waiting/failed。
@@ -357,7 +381,9 @@ class RuntimeService:
         handoff = self._runner_handoff(run, node_run, request.inputs)
         return self._runner.inspect_manual_outputs(request, handoff)
 
-    def rerun_from_start(self, run_id: str, node_id: str) -> Run:
+    def rerun_from_start(
+        self, run_id: str, node_id: str, *, expected_storage_revision: int | None = None
+    ) -> Run:
         """为节点及选中闭包内下游创建新 attempt，并立即执行到下个阻塞点。
 
         旧 attempt (包括 pending 或 waiting_external) 保持不变；旧 handoff 因不再是最新 attempt
@@ -413,6 +439,7 @@ class RuntimeService:
             node_id,
             new_attempts,
             updated_at=utc_now(),
+            expected_storage_revision=expected_storage_revision,
         )
         return self.run_until_blocked(run_id)
 

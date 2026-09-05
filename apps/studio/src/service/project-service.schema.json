@@ -115,6 +115,44 @@
       "title": "Artifact",
       "type": "object"
     },
+    "AuthoringDiagnostic": {
+      "additionalProperties": false,
+      "description": "投影唯一 GraphValidator 的机器可读诊断。",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "validator_keyword": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validator Keyword"
+        }
+      },
+      "required": [
+        "code",
+        "path",
+        "message",
+        "validator_keyword"
+      ],
+      "title": "AuthoringDiagnostic",
+      "type": "object"
+    },
     "Av27ProfileDiagnostic": {
       "additionalProperties": false,
       "description": "描述一个稳定、可定位但不扩大 Graph Core 的 profile 诊断。",
@@ -638,9 +676,20 @@
       "additionalProperties": false,
       "description": "基于明确 preparation Run 原子展开 AVEnhanceFlow v2.7 Graph。",
       "properties": {
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
         "operation": {
           "const": "expand_av_enhance_v27",
           "title": "Operation",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
           "type": "string"
         },
         "request": {
@@ -648,6 +697,8 @@
         }
       },
       "required": [
+        "project_session_id",
+        "expected_storage_revision",
         "operation",
         "request"
       ],
@@ -750,6 +801,49 @@
         }
       },
       "title": "Graph",
+      "type": "object"
+    },
+    "Command_GroupViewState": {
+      "additionalProperties": false,
+      "description": "描述没有执行语义的画布分组。",
+      "properties": {
+        "collapsed": {
+          "default": false,
+          "title": "Collapsed",
+          "type": "boolean"
+        },
+        "color_token": {
+          "default": "neutral",
+          "enum": [
+            "neutral",
+            "blue",
+            "green",
+            "amber",
+            "purple",
+            "rose"
+          ],
+          "title": "Color Token",
+          "type": "string"
+        },
+        "group_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id",
+        "title"
+      ],
+      "title": "GroupViewState",
       "type": "object"
     },
     "Command_JsonObject": {
@@ -868,6 +962,58 @@
         "definition_version"
       ],
       "title": "NodeInstance",
+      "type": "object"
+    },
+    "Command_NodeViewState": {
+      "additionalProperties": false,
+      "description": "保存实例别名、折叠和 UI 分组；node_id 始终保持稳定身份。",
+      "properties": {
+        "collapsed": {
+          "default": false,
+          "title": "Collapsed",
+          "type": "boolean"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "group_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id"
+      ],
+      "title": "NodeViewState",
       "type": "object"
     },
     "Command_OpenProjectCommand": {
@@ -1035,6 +1181,12 @@
       "additionalProperties": false,
       "description": "从指定节点创建全新 attempt；终态 Run 会建立新的普通 Run。",
       "properties": {
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
         "node_id": {
           "title": "Node Id",
           "type": "string"
@@ -1044,12 +1196,19 @@
           "title": "Operation",
           "type": "string"
         },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
         "run_id": {
           "title": "Run Id",
           "type": "string"
         }
       },
       "required": [
+        "project_session_id",
+        "expected_storage_revision",
         "operation",
         "run_id",
         "node_id"
@@ -1061,13 +1220,26 @@
       "additionalProperties": false,
       "description": "从当前 Project 建立普通全图 Run snapshot。",
       "properties": {
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
         "operation": {
           "const": "run_all",
           "title": "Operation",
           "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
         }
       },
       "required": [
+        "project_session_id",
+        "expected_storage_revision",
         "operation"
       ],
       "title": "RunAllCommand",
@@ -1077,6 +1249,12 @@
       "additionalProperties": false,
       "description": "只运行目标节点及其祖先闭包。",
       "properties": {
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
         "node_id": {
           "title": "Node Id",
           "type": "string"
@@ -1085,9 +1263,16 @@
           "const": "run_to",
           "title": "Operation",
           "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
         }
       },
       "required": [
+        "project_session_id",
+        "expected_storage_revision",
         "operation",
         "node_id"
       ],
@@ -1098,6 +1283,12 @@
       "additionalProperties": false,
       "description": "保存当前 Project 的名称、Graph、参数与 Studio 布局。",
       "properties": {
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
         "operation": {
           "const": "save_project",
           "title": "Operation",
@@ -1105,11 +1296,22 @@
         },
         "project": {
           "$ref": "#/$defs/Command_Project"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "studio_state": {
+          "$ref": "#/$defs/Command_StudioState"
         }
       },
       "required": [
+        "project_session_id",
+        "expected_storage_revision",
         "operation",
-        "project"
+        "project",
+        "studio_state"
       ],
       "title": "SaveProjectCommand",
       "type": "object"
@@ -1165,6 +1367,74 @@
         "source_ordinal"
       ],
       "title": "SourceSpec",
+      "type": "object"
+    },
+    "Command_StudioState": {
+      "additionalProperties": false,
+      "description": "保存唯一 Graph 对应的纯展示数据，绝不进入 ProjectSnapshot 或 Run。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "groups": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Command_GroupViewState"
+          },
+          "title": "Groups",
+          "type": "array"
+        },
+        "node_views": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Command_NodeViewState"
+          },
+          "title": "Node Views",
+          "type": "array"
+        },
+        "viewport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Command_StudioViewport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "StudioState",
+      "type": "object"
+    },
+    "Command_StudioViewport": {
+      "additionalProperties": false,
+      "description": "保存有限画布坐标和正缩放比例。",
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "zoom": {
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "title": "Zoom",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "zoom"
+      ],
+      "title": "StudioViewport",
       "type": "object"
     },
     "Command_SubmitExternalCommand": {
@@ -1963,6 +2233,51 @@
         "edges"
       ],
       "title": "Graph",
+      "type": "object"
+    },
+    "GroupViewState": {
+      "additionalProperties": false,
+      "description": "描述没有执行语义的画布分组。",
+      "properties": {
+        "collapsed": {
+          "default": false,
+          "title": "Collapsed",
+          "type": "boolean"
+        },
+        "color_token": {
+          "default": "neutral",
+          "enum": [
+            "neutral",
+            "blue",
+            "green",
+            "amber",
+            "purple",
+            "rose"
+          ],
+          "title": "Color Token",
+          "type": "string"
+        },
+        "group_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id",
+        "title",
+        "color_token",
+        "collapsed"
+      ],
+      "title": "GroupViewState",
       "type": "object"
     },
     "HandoffContractField": {
@@ -3508,6 +3823,61 @@
       "title": "NodeRunState",
       "type": "string"
     },
+    "NodeViewState": {
+      "additionalProperties": false,
+      "description": "保存实例别名、折叠和 UI 分组；node_id 始终保持稳定身份。",
+      "properties": {
+        "collapsed": {
+          "default": false,
+          "title": "Collapsed",
+          "type": "boolean"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "group_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group Id"
+        },
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "display_name",
+        "collapsed",
+        "group_id"
+      ],
+      "title": "NodeViewState",
+      "type": "object"
+    },
     "PaletteLevel": {
       "description": "控制节点在 Palette 中的渐进披露层级。",
       "enum": [
@@ -5004,6 +5374,13 @@
           "default": null,
           "title": "Active Run Id"
         },
+        "authoring_diagnostics": {
+          "items": {
+            "$ref": "#/$defs/AuthoringDiagnostic"
+          },
+          "title": "Authoring Diagnostics",
+          "type": "array"
+        },
         "contract_version": {
           "const": "0.3.0",
           "default": "0.3.0",
@@ -5057,6 +5434,18 @@
           "default": null,
           "title": "Project Path"
         },
+        "project_session_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Project Session Id"
+        },
         "run_summaries": {
           "default": [],
           "items": {
@@ -5075,12 +5464,47 @@
             }
           ],
           "default": null
+        },
+        "storage_revision": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Storage Revision"
+        },
+        "studio_state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StudioState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "studio_warnings": {
+          "items": {
+            "$ref": "#/$defs/StudioWarning"
+          },
+          "title": "Studio Warnings",
+          "type": "array"
         }
       },
       "required": [
         "contract_version",
         "project_path",
         "snapshot",
+        "project_session_id",
+        "storage_revision",
+        "studio_state",
+        "authoring_diagnostics",
+        "studio_warnings",
         "run_summaries",
         "next_run_cursor",
         "active_run_id",
@@ -5089,6 +5513,100 @@
         "error"
       ],
       "title": "StatusEnvelope",
+      "type": "object"
+    },
+    "StudioState": {
+      "additionalProperties": false,
+      "description": "保存唯一 Graph 对应的纯展示数据，绝不进入 ProjectSnapshot 或 Run。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "groups": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GroupViewState"
+          },
+          "title": "Groups",
+          "type": "array"
+        },
+        "node_views": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NodeViewState"
+          },
+          "title": "Node Views",
+          "type": "array"
+        },
+        "viewport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StudioViewport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "contract_version",
+        "viewport",
+        "groups",
+        "node_views"
+      ],
+      "title": "StudioState",
+      "type": "object"
+    },
+    "StudioViewport": {
+      "additionalProperties": false,
+      "description": "保存有限画布坐标和正缩放比例。",
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "zoom": {
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "title": "Zoom",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "zoom"
+      ],
+      "title": "StudioViewport",
+      "type": "object"
+    },
+    "StudioWarning": {
+      "additionalProperties": false,
+      "description": "报告展示状态降级，不改变领域验证结论。",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StudioWarning",
       "type": "object"
     },
     "TemplatePhase": {

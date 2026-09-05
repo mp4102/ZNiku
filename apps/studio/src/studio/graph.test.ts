@@ -10,6 +10,10 @@ import {
   isStudioConnectionValid,
   nodeExecutionSignatureMatches,
   selectionChangeBlocked,
+  addConnectedNodes,
+  autoLayoutGraph,
+  compatibleNodeSuggestions,
+  reorderEdge,
 } from './graph'
 import {
   dataSourceDefinition,
@@ -28,6 +32,54 @@ const connection = (
 ): Connection => ({ source, target, sourceHandle, targetHandle })
 
 describe('Studio 0.3.0 Graph interactions', () => {
+  it('连接建议只接受所有来源共有的精确类型，批量宏原子生成普通节点与边', () => {
+    const graph: GraphWire = { nodes: [
+      projectSnapshot.project.graph.nodes[0]!,
+      { ...projectSnapshot.project.graph.nodes[0]!, node_id: 'source.second' },
+    ], edges: [] }
+    const sources = [
+      { sourceNodeId: 'source', sourcePortId: 'out' },
+      { sourceNodeId: 'source.second', sourcePortId: 'out' },
+    ]
+    const suggestions = compatibleNodeSuggestions(graph, projectSnapshot.definitions, sources)
+    expect(suggestions.map((item) => item.definition.type_id)).toContain(transformDefinition.type_id)
+    expect(suggestions.map((item) => item.definition.type_id)).not.toContain(dataSourceDefinition.type_id)
+    const ids = ['added.a', 'added.b']
+    const result = addConnectedNodes(graph, projectSnapshot.definitions, sources, transformDefinition, 'in', () => ids.shift()!, { x: 200, y: 100 })!
+    expect(result.added_node_ids).toEqual(new Set(['added.a', 'added.b']))
+    expect(result.graph.nodes).toHaveLength(4)
+    expect(result.graph.edges.map((edge) => [edge.source_node_id, edge.target_node_id])).toEqual([['source', 'added.a'], ['source.second', 'added.b']])
+    expect(result.graph.nodes[2]?.parameters).toEqual({ strength: 3, model_name: 'Synthetic Model' })
+    expect(graph.nodes).toHaveLength(2)
+    expect(graph.edges).toEqual([])
+    expect(addConnectedNodes(graph, projectSnapshot.definitions, sources, transformDefinition, 'unknown', () => 'added', { x: 0, y: 0 })).toBeNull()
+    expect(addConnectedNodes(graph, projectSnapshot.definitions, sources, transformDefinition, 'in', () => 'source', { x: 0, y: 0 })).toBeNull()
+    expect(compatibleNodeSuggestions(graph, projectSnapshot.definitions, [{ sourceNodeId: 'missing', sourcePortId: 'out' }])).toEqual([])
+  })
+
+  it('自动布局保持 execution 内容不变，对多 Source、分支汇合确定性分层', () => {
+    const graph = projectSnapshot.project.graph
+    const arranged = autoLayoutGraph(graph)
+    expect(arranged.edges).toBe(graph.edges)
+    expect(arranged.nodes.map((node) => node.parameters)).toEqual(graph.nodes.map((node) => node.parameters))
+    expect(arranged.nodes[0]!.ui_position!.x).toBeLessThan(arranged.nodes[1]!.ui_position!.x)
+    expect(arranged.nodes[1]!.ui_position!.x).toBeLessThan(arranged.nodes[2]!.ui_position!.x)
+    expect(autoLayoutGraph(arranged)).toEqual(arranged)
+    for (const node of graph.nodes) expect(nodeExecutionSignatureMatches(arranged, graph, node.node_id)).toBe(true)
+    const cycle = { ...graph, edges: [...graph.edges, { source_node_id: 'sink', source_port_id: 'out', target_node_id: 'source', target_port_id: 'in', ordinal: null }] }
+    expect(autoLayoutGraph(cycle)).toBe(cycle)
+  })
+
+  it('有序重排只更改同一目标输入的连续顺序，重复来源仍保留为不同条目', () => {
+    const first = { source_node_id: 'source', source_port_id: 'out', target_node_id: 'merge', target_port_id: 'items', ordinal: 0 }
+    const second = { ...first, source_node_id: 'source.second', ordinal: 1 }
+    const repeated = { ...first, ordinal: 2 }
+    const graph = { ...projectSnapshot.project.graph, edges: [first, second, repeated] }
+    const result = reorderEdge(graph, edgeId(repeated), 0)
+    expect(result.edges.map((edge) => edge.ordinal)).toEqual([1, 2, 0])
+    expect(graph.edges.map((edge) => edge.ordinal)).toEqual([0, 1, 2])
+    expect(reorderEdge(graph, edgeId(first), Number.NaN)).toBe(graph)
+  })
   it('dirty ParameterDraft 统一阻断 Node A→B、edge 与取消选择，但允许停留在 A', () => {
     expect(selectionChangeBlocked('node.a', true, new Set(['node.a']), new Set())).toBe(false)
     expect(selectionChangeBlocked('node.a', true, new Set(['node.b']), new Set())).toBe(true)

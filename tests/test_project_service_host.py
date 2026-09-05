@@ -125,6 +125,21 @@ def _request(
 
 
 def _post_command(base_url: str, payload: object) -> tuple[int, dict[str, Any], Any]:
+    if isinstance(payload, dict) and payload.get("operation") in {
+        "save_project",
+        "run_all",
+        "run_to",
+        "expand_av_enhance_v27",
+        "rerun_from_here",
+    }:
+        _, current, _ = _request(base_url, "/api/studio/status")
+        payload = {
+            "project_session_id": current["project_session_id"],
+            "expected_storage_revision": current["storage_revision"],
+            **payload,
+        }
+        if payload["operation"] == "save_project":
+            payload.setdefault("studio_state", current["studio_state"])
     return _request(base_url, "/api/studio/command", method="POST", payload=payload)
 
 

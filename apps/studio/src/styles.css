@@ -2932,3 +2932,263 @@ button {
     display: none;
   }
 }
+
+/* v0.3.0 Phase 3：同一 Graph 的画布编辑、连接建议和有序输入。 */
+.canvas-edit-toolbar {
+  position: absolute;
+  top: 56px;
+  left: 16px;
+  right: 16px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #34475e;
+  border-radius: 9px;
+  background: rgba(11, 20, 30, .96);
+}
+.canvas-edit-toolbar button, .canvas-group-strip button {
+  padding: 7px 9px;
+  font-size: 12px;
+}
+.canvas-search { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; }
+.canvas-search input { min-width: 100px; width: 150px; padding: 6px 8px; font-size: 12px; }
+.canvas-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 220px;
+  max-height: 250px;
+  overflow: auto;
+  display: grid;
+  padding: 8px;
+  gap: 5px;
+  background: #102031;
+  border: 1px solid #405c78;
+  border-radius: 8px;
+}
+.canvas-search-results button { text-align: left; }
+.canvas-group-strip {
+  position: absolute;
+  top: 155px;
+  left: 16px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+.canvas-group-strip > div {
+  display: flex;
+  border: 1px solid var(--group-color, #657c91);
+  border-radius: 7px;
+  background: #101a26;
+  pointer-events: auto;
+}
+[data-group-color="blue"] { --group-color: #65b5ec; }
+[data-group-color="cyan"] { --group-color: #65d0d0; }
+[data-group-color="green"] { --group-color: #79cfa3; }
+[data-group-color="amber"] { --group-color: #e2b967; }
+[data-group-color="violet"] { --group-color: #ba9bee; }
+[data-group-color="purple"] { --group-color: #ba9bee; }
+[data-group-color="rose"] { --group-color: #ed9eb4; }
+[data-group-color="neutral"] { --group-color: #aab9c8; }
+.workflow-node.has-ui-group { border-left: 3px solid var(--group-color, #aab9c8); }
+.node-group-label { display: block; margin-bottom: 7px; color: var(--group-color, #aab9c8); font-size: 12px; }
+.workflow-node.is-collapsed { min-height: 88px; }
+.workflow-node .typed-handle.is-compatible {
+  width: 14px !important;
+  height: 14px !important;
+  border: 2px solid #d7ffe8 !important;
+  background: #5ade94 !important;
+  box-shadow: 0 0 0 5px rgba(70, 220, 140, .25);
+}
+.workflow-node .typed-handle.is-incompatible { opacity: .25; }
+.canvas-connection-hint {
+  position: absolute;
+  z-index: 7;
+  bottom: 20px;
+  left: 70px;
+  right: 180px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #18392c;
+  color: #cbf4de;
+  font-size: 13px;
+  pointer-events: none;
+}
+.canvas-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 8, 15, .78);
+  padding: 16px;
+}
+.canvas-dialog {
+  width: min(440px, 100%);
+  max-height: 90%;
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+  border: 1px solid #536b84;
+  border-radius: 12px;
+  background: #13202e;
+  box-shadow: 0 20px 70px #0008;
+  font-size: 14px;
+}
+.canvas-dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+.canvas-dialog h2 { margin: 0; font-size: 19px; }
+.canvas-dialog p { margin: 0; line-height: 1.6; color: #b7c8d9; }
+.canvas-dialog label { display: grid; gap: 7px; }
+.canvas-dialog :is(select, button) { min-height: 36px; font-size: 14px; }
+.compatible-node-list { display: grid; gap: 8px; }
+.compatible-node-list button { display: grid; gap: 5px; padding: 12px; text-align: left; }
+.compatible-node-list button span { color: #bfd0e1; font-size: 12px; }
+.ordered-input-editor > p { font-size: 13px; line-height: 1.5; color: #b5c6d8; }
+.ordered-input-list { list-style: none; padding: 0; display: grid; gap: 7px; }
+.ordered-input-list li { display: flex; gap: 9px; align-items: center; padding: 9px; border: 1px solid #3b5068; border-radius: 8px; background: #132030; }
+.ordered-input-list li[draggable="true"] { cursor: grab; }
+.ordered-input-index { color: #9bc8e7; font-size: 13px; }
+.ordered-input-title { flex: 1; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.ordered-input-actions { display: flex; gap: 5px; }
+.ordered-input-actions button { min-width: 30px; min-height: 30px; }
+.canvas-live-message { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.canvas-zoom-controls { position: absolute; bottom: 16px; left: 16px; display: grid; z-index: 5; border: 1px solid #435b74; border-radius: 8px; background: #102033; }
+.canvas-zoom-controls button { min-width: 36px; min-height: 36px; font-size: 19px; }
+.authoring-view-panel { margin: 12px 0; padding: 12px; border: 1px solid #3c536b; border-radius: 9px; background: #101d2a; font-size: 13px; }
+.authoring-view-panel fieldset { min-width: 0; margin: 0 0 12px; padding: 10px; border: 1px solid #3c536b; border-radius: 7px; }
+.authoring-view-panel legend { padding: 0 5px; font-size: 14px; }
+.authoring-view-panel label { display: grid; gap: 6px; margin: 9px 0; }
+.authoring-view-panel label:has(input[type="checkbox"]) { display: flex; align-items: center; }
+.authoring-view-panel :is(input:not([type="checkbox"]), select) { width: 100%; min-width: 0; min-height: 34px; font-size: 13px; }
+.authoring-view-panel :is(button, summary) { min-height: 32px; font-size: 13px; }
+.authoring-view-panel p { line-height: 1.5; color: #b5c6d8; }
+.studio-group-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #34495f; }
+.studio-group-editor input { grid-column: 1 / -1; }
+.studio-group-editor select { grid-column: 1 / -1; }
+.inspector-ordered-inputs { margin: 12px 0; padding: 10px; border: 1px solid #3c536b; border-radius: 9px; }
+.inspector-ordered-inputs h3 { font-size: 14px; }
+.authoring-save-error { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 9px 12px; border: 1px solid #b06c61; border-radius: 8px; background: #392220; color: #f6ccc4; font-size: 13px; }
+.authoring-save-error span { flex: 1; min-width: 140px; }
+.authoring-save-error button { font-size: 13px; }
+.edit-history-actions { display: flex; gap: 6px; }
+.edit-history-actions button { min-height: 34px; padding: 6px 10px; font-size: 13px; }
+.canvas-panel :is(button, input, select):focus-visible, .ordered-input-editor button:focus-visible {
+  outline: 3px solid #7cd0ed;
+  outline-offset: 3px;
+}
+@media (max-width: 1280px) {
+  .canvas-group-strip { top: 195px; }
+  .canvas-search { width: 100%; margin-left: 0; }
+  .canvas-search input { flex: 1; }
+}
+
+/* Phase 3 原生控件使用明确配色，避免浏览器默认白底继承浅色文字。 */
+:is(.canvas-edit-toolbar, .canvas-group-strip, .canvas-dialog, .canvas-zoom-controls,
+    .ordered-input-editor, .authoring-view-panel, .authoring-save-error, .edit-history-actions) button,
+.studio-workspace .topbar button:not(.button) {
+  border: 1px solid #486078;
+  border-radius: 6px;
+  background: #182a3c;
+  color: #edf3fa;
+  line-height: 1.35;
+  white-space: nowrap;
+  cursor: pointer;
+}
+:is(.canvas-edit-toolbar, .canvas-group-strip, .canvas-dialog, .canvas-zoom-controls,
+    .ordered-input-editor, .authoring-view-panel, .authoring-save-error, .edit-history-actions) button:hover:not(:disabled),
+.studio-workspace .topbar button:not(.button):hover:not(:disabled) {
+  border-color: #78accd;
+  background: #223c54;
+}
+:is(.canvas-edit-toolbar, .canvas-group-strip, .canvas-dialog, .canvas-zoom-controls,
+    .ordered-input-editor, .authoring-view-panel, .authoring-save-error, .edit-history-actions) button:disabled,
+.studio-workspace .topbar button:not(.button):disabled {
+  border-color: #314356;
+  background: #14202c;
+  color: #8090a1;
+  cursor: not-allowed;
+}
+:is(.canvas-edit-toolbar, .canvas-dialog, .authoring-view-panel) :is(input:not([type="checkbox"]), select, textarea) {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #486078;
+  border-radius: 6px;
+  background: #0b1723;
+  color: #edf3fa;
+  color-scheme: dark;
+  line-height: 1.35;
+}
+:is(.canvas-edit-toolbar, .canvas-dialog, .authoring-view-panel) input::placeholder { color: #9aaec1; opacity: 1; }
+.authoring-view-panel input[type="checkbox"] { accent-color: #66bddf; }
+.canvas-dialog button.primary-action { border-color: #e4b779; background: #dfad66; color: #171b21; }
+.canvas-dialog button.primary-action:hover:not(:disabled) { background: #f0c07e; color: #171b21; }
+.canvas-group-strip button { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.authoring-save-error button { padding: 7px 9px; }
+
+/* 工程操作和运行操作分两行；各按钮整体换行，不把中文挤成单字纵排。 */
+.studio-workspace {
+  min-width: 0;
+  grid-template-rows: auto minmax(0, 1fr) 48px;
+}
+.studio-workspace.has-bottom-drawer { grid-template-rows: auto minmax(0, 1fr) 174px; }
+.studio-workspace .topbar {
+  grid-template-columns: 140px minmax(190px, .7fr) minmax(0, 2fr);
+  grid-template-rows: minmax(70px, auto) auto;
+  min-width: 0;
+  min-height: 124px;
+  padding: 0;
+}
+.studio-workspace .brand-lockup { grid-column: 1; grid-row: 1; min-width: 0; height: 100%; padding: 12px; gap: 9px; }
+.studio-workspace .brand-mark { flex: 0 0 32px; width: 32px; height: 32px; }
+.studio-workspace .workflow-identity { grid-column: 2; grid-row: 1; min-width: 0; height: auto; padding: 10px 14px; }
+.studio-workspace .identity-meta { line-height: 1.4; font-size: 11px; }
+.studio-workspace .project-location {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-content: center;
+  min-width: 0;
+  gap: 6px;
+  padding: 10px 12px 10px 0;
+}
+.studio-workspace .project-location > :is(button, details),
+.studio-workspace .edit-history-actions { flex: 0 0 auto; }
+.studio-workspace .topbar :is(button, summary) { white-space: nowrap; word-break: normal; overflow-wrap: normal; }
+.studio-workspace .project-location .button { height: 34px; padding: 0 10px; font-size: 12px; }
+.studio-workspace .project-developer-entry > summary { padding: 8px; font-size: 12px; }
+.studio-workspace .top-actions {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  height: auto;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid #26384b;
+  background: #0d1722;
+}
+.studio-workspace .top-actions .button { flex: 0 0 auto; font-size: 12px; }
+.studio-workspace .run-selector { min-width: 180px; max-width: 360px; flex: 1 1 220px; }
+.studio-workspace .run-selector select { min-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.studio-workspace .channel-health { flex: 0 1 238px; min-width: 160px; }
+.studio-workspace .project-developer-entry[open] { max-width: calc(100vw - 24px); }
+@media (max-width: 1250px) {
+  .studio-workspace { grid-template-columns: 200px minmax(320px, 1fr) 250px; }
+  .studio-workspace .topbar { grid-template-columns: 125px minmax(170px, .6fr) minmax(0, 2fr); }
+  .studio-workspace .workflow-identity { padding-left: 12px; padding-right: 8px; }
+  .studio-workspace .top-actions { justify-content: flex-start; }
+  .studio-workspace .channel-health { margin-right: auto; }
+}

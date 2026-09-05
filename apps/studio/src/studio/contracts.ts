@@ -498,12 +498,47 @@ export interface StatusEnvelope {
   readonly contract_version: '0.3.0'
   readonly project_path: string | null
   readonly snapshot: ProjectSnapshotWire | null
+  readonly project_session_id: string | null
+  readonly storage_revision: number | null
+  readonly studio_state: StudioStateWire | null
+  readonly authoring_diagnostics: ReadonlyArray<AuthoringDiagnosticWire>
+  readonly studio_warnings: ReadonlyArray<{ readonly code: string; readonly message: string }>
   readonly run_summaries: ReadonlyArray<RunSummaryWire>
   readonly next_run_cursor: string | null
   readonly active_run_id: string | null
   readonly active_operation: ActiveStudioOperation | null
   readonly latest_results: ReadonlyArray<LatestResultWire>
   readonly error: StudioServiceError | null
+}
+
+/** 仅保存展示信息；不进入 Run snapshot、执行签名或参数 Schema。 */
+export interface StudioStateWire {
+  readonly contract_version: '0.3.0'
+  readonly viewport: { readonly x: number; readonly y: number; readonly zoom: number } | null
+  readonly groups: ReadonlyArray<{
+    readonly group_id: string
+    readonly title: string
+    readonly color_token: 'neutral' | 'blue' | 'green' | 'amber' | 'purple' | 'rose'
+    readonly collapsed: boolean
+  }>
+  readonly node_views: ReadonlyArray<{
+    readonly node_id: string
+    readonly display_name: string | null
+    readonly collapsed: boolean
+    readonly group_id: string | null
+  }>
+}
+
+export interface AuthoringDiagnosticWire {
+  readonly code: string
+  readonly path: string
+  readonly message: string
+  readonly validator_keyword: string | null
+}
+
+export interface AuthoringPrecondition {
+  readonly expected_storage_revision: number
+  readonly project_session_id: string
 }
 
 export interface RunSummaryPageEnvelope {
@@ -588,18 +623,18 @@ export type StudioCommand =
       readonly name?: string
     }
   | { readonly operation: 'open_project'; readonly path: string }
-  | { readonly operation: 'save_project'; readonly project: ProjectWire }
+  | ({ readonly operation: 'save_project'; readonly project: ProjectWire; readonly studio_state: StudioStateWire } & AuthoringPrecondition)
   | {
       readonly operation: 'create_av_enhance_v27'
       readonly request: AvEnhanceV27PrepareRequestWire
     }
-  | {
+  | ({
       readonly operation: 'expand_av_enhance_v27'
       readonly request: AvEnhanceV27ExpandRequestWire
-    }
-  | { readonly operation: 'run_all' }
-  | { readonly operation: 'run_to'; readonly node_id: string }
-  | { readonly operation: 'rerun_from_here'; readonly run_id: string; readonly node_id: string }
+    } & AuthoringPrecondition)
+  | ({ readonly operation: 'run_all' } & AuthoringPrecondition)
+  | ({ readonly operation: 'run_to'; readonly node_id: string } & AuthoringPrecondition)
+  | ({ readonly operation: 'rerun_from_here'; readonly run_id: string; readonly node_id: string } & AuthoringPrecondition)
   | {
       readonly operation: 'submit_external'
       readonly run_id: string
@@ -664,7 +699,42 @@ function parseWith<T>(value: unknown, validator: ValidateFunction, label: string
 }
 
 export function parseStatusEnvelope(value: unknown): StatusEnvelope {
-  return parseWith(value, validateStatus, 'Studio status payload')
+  const status = parseWith<StatusEnvelope>(value, validateStatus, 'Studio status payload')
+  const absent = status.snapshot === null
+  if (
+    [status.project_path, status.project_session_id, status.storage_revision, status.studio_state]
+      .some((field) => (field === null) !== absent) ||
+    (absent && (status.authoring_diagnostics.length > 0 || status.studio_warnings.length > 0))
+  ) {
+    throw new StudioContractError('Studio status Project 与 authoring binding 必须完整一致')
+  }
+  if (status.active_operation !== null && status.active_run_id === null) {
+    throw new StudioContractError('Studio status active_operation 必须绑定 active_run_id')
+  }
+  if (status.studio_state !== null && status.snapshot !== null) {
+    validateStudioStateBinding(status.studio_state, status.snapshot.project.graph)
+  }
+  return status
+}
+
+/** 补齐 Python StudioState 的文本与跨引用校验；不计算 Graph 合法性或运行结论。 */
+function validateStudioStateBinding(state: StudioStateWire, graph: ProjectWire['graph']): void {
+  const groups = new Set(state.groups.map((group) => group.group_id))
+  const views = new Set(state.node_views.map((view) => view.node_id))
+  const nodes = new Set(graph.nodes.map((node) => node.node_id))
+  const invalidText = (text: string) => text.trim() !== text || text.includes('\u0000')
+  if (
+    (state.viewport !== null && ![state.viewport.x, state.viewport.y, state.viewport.zoom].every(Number.isFinite)) ||
+    groups.size !== state.groups.length || views.size !== state.node_views.length ||
+    state.groups.some((group) => invalidText(group.title)) ||
+    state.node_views.some((view) =>
+      !nodes.has(view.node_id) ||
+      (view.group_id !== null && !groups.has(view.group_id)) ||
+      (view.display_name !== null && invalidText(view.display_name)),
+    )
+  ) {
+    throw new StudioContractError('StudioState 名称、唯一身份或 Graph/group 引用不一致')
+  }
 }
 
 export function parsePresentationCatalogEnvelope(
@@ -869,7 +939,9 @@ export function parseAvEnhanceV27TemplatePreviewEnvelope(
 }
 
 export function parseStudioCommand(value: unknown): StudioCommand {
-  return parseWith(value, validateCommand, 'Studio command')
+  const command = parseWith<StudioCommand>(value, validateCommand, 'Studio command')
+  if (command.operation === 'save_project') validateStudioStateBinding(command.studio_state, command.project.graph)
+  return command
 }
 
 // 只为迁移现有调用者保留名称；它仍严格解析新的 0.3.0 StatusEnvelope。

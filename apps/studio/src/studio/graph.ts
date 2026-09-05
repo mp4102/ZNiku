@@ -246,6 +246,7 @@ export function copySelection(
 }
 
 export function reorderEdge(graph: GraphWire, selectedEdgeId: string, ordinal: number): GraphWire {
+  if (!Number.isFinite(ordinal)) return graph
   const selected = graph.edges.find((edge) => edgeId(edge) === selectedEdgeId)
   if (!selected || selected.ordinal === null) return graph
   const matching = graph.edges
@@ -266,6 +267,117 @@ export function reorderEdge(graph: GraphWire, selectedEdgeId: string, ordinal: n
       replacements.has(edgeId(edge)) ? { ...edge, ordinal: replacements.get(edgeId(edge))! } : edge,
     ),
   }
+}
+
+export interface ConnectionSource {
+  readonly sourceNodeId: string
+  readonly sourcePortId: string
+}
+
+export interface CompatibleNodeSuggestion {
+  readonly definition: NodeDefinitionWire
+  readonly targetPortId: string
+}
+
+/** 只按 catalog 的精确端口类型建议；不推断媒体业务、参数或模板拓扑。 */
+export function compatibleNodeSuggestions(
+  graph: GraphWire,
+  definitions: ReadonlyArray<NodeDefinitionWire>,
+  sources: ReadonlyArray<ConnectionSource>,
+): ReadonlyArray<CompatibleNodeSuggestion> {
+  if (sources.length === 0) return []
+  const outputs = sources.map(({ sourceNodeId, sourcePortId }) => {
+    const node = graph.nodes.find((candidate) => candidate.node_id === sourceNodeId)
+    return node && definitionForNode(node, definitions)?.output_ports.find((port) => port.port_id === sourcePortId)
+  })
+  if (outputs.some((port) => !port)) return []
+  return definitions.flatMap((definition) => definition.input_ports
+    .filter((input) => outputs.every((output) => output?.data_type === input.data_type))
+    .map((input) => ({ definition, targetPortId: input.port_id })))
+}
+
+/**
+ * 一次生成多个普通节点及边，调用者把整个结果记作一条编辑历史。
+ * 每个 source 分别连接一个新节点；全部成功才返回，不产生部分宏，也不向 Runtime 增加 Map 语义。
+ */
+export function addConnectedNodes(
+  graph: GraphWire,
+  definitions: ReadonlyArray<NodeDefinitionWire>,
+  sources: ReadonlyArray<ConnectionSource>,
+  definition: NodeDefinitionWire,
+  targetPortId: string,
+  nodeIdFactory: () => string,
+  position: { readonly x: number; readonly y: number },
+): { readonly graph: GraphWire; readonly added_node_ids: ReadonlySet<string> } | null {
+  const accepted = compatibleNodeSuggestions(graph, definitions, sources).find((suggestion) =>
+    suggestion.definition.type_id === definition.type_id &&
+    suggestion.definition.version === definition.version && suggestion.targetPortId === targetPortId)
+  if (!accepted || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return null
+  const addedIds = new Set<string>()
+  const existingIds = new Set(graph.nodes.map((node) => node.node_id))
+  let next = graph
+  for (const [index, source] of sources.entries()) {
+    // 注入式 ID factory 故障不能让一次用户操作卡死，失败时原 Graph 始终未被修改。
+    let id = ''
+    for (let retry = 0; retry < 32; retry += 1) {
+      const candidate = nodeIdFactory()
+      if (candidate.length > 0 && !existingIds.has(candidate)) {
+        id = candidate
+        break
+      }
+    }
+    if (!id) return null
+    existingIds.add(id)
+    addedIds.add(id)
+    const node: NodeInstanceWire = {
+      node_id: id,
+      type_id: accepted.definition.type_id,
+      definition_version: accepted.definition.version,
+      parameters: defaultParameters(accepted.definition),
+      ui_position: { x: position.x, y: position.y + index * 240 },
+    }
+    const candidate = connectGraph({
+      source: source.sourceNodeId,
+      sourceHandle: source.sourcePortId,
+      target: id,
+      targetHandle: targetPortId,
+    }, { ...next, nodes: [...next.nodes, node] }, definitions)
+    if (!candidate) return null
+    next = candidate
+  }
+  return { graph: next, added_node_ids: addedIds }
+}
+
+/** 按 DAG 层级和现有节点顺序作确定性布局；只改 ui_position，不改参数和边。 */
+export function autoLayoutGraph(graph: GraphWire): GraphWire {
+  const ranks = new Map(graph.nodes.map((node) => [node.node_id, 0]))
+  const incoming = new Map(graph.nodes.map((node) => [node.node_id, 0]))
+  const adjacency = new Map(graph.nodes.map((node) => [node.node_id, new Set<string>()]))
+  for (const edge of graph.edges) {
+    const targets = adjacency.get(edge.source_node_id)
+    if (!targets || !incoming.has(edge.target_node_id)) return graph
+    if (!targets.has(edge.target_node_id)) {
+      targets.add(edge.target_node_id)
+      incoming.set(edge.target_node_id, incoming.get(edge.target_node_id)! + 1)
+    }
+  }
+  const ready = graph.nodes.filter((node) => incoming.get(node.node_id) === 0).map((node) => node.node_id)
+  for (let index = 0; index < ready.length; index += 1) {
+    const id = ready[index]!
+    for (const target of adjacency.get(id) ?? []) {
+      ranks.set(target, Math.max(ranks.get(target)!, ranks.get(id)! + 1))
+      incoming.set(target, incoming.get(target)! - 1)
+      if (incoming.get(target) === 0) ready.push(target)
+    }
+  }
+  if (ready.length !== graph.nodes.length) return graph
+  const rows = new Map<number, number>()
+  return { ...graph, nodes: graph.nodes.map((node) => {
+    const rank = ranks.get(node.node_id)!
+    const row = rows.get(rank) ?? 0
+    rows.set(rank, row + 1)
+    return { ...node, ui_position: { x: 80 + rank * 360, y: 100 + row * 280 } }
+  }) }
 }
 
 function cloneJson(value: JsonValue): JsonValue {

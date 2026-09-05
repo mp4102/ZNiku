@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from authoring_helpers import authoring_command
 from zniku.graph import (
     Edge,
     ExecutionMode,
@@ -227,7 +228,7 @@ def test_command_without_project_fails_with_stable_conflict(tmp_path: Path) -> N
     application = ProjectServiceApplication(work_root=tmp_path / "work")
 
     with pytest.raises(ProjectServiceError) as captured:
-        application.command({"operation": "run_all"})
+        authoring_command(application, {"operation": "run_all"})
 
     assert captured.value.code == "E_PROJECT_SERVICE_NO_PROJECT"
     assert captured.value.http_status == 409
@@ -237,12 +238,13 @@ def test_create_save_and_reopen_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "created.zniku"
     first = ProjectServiceApplication(work_root=tmp_path / "work-first")
 
-    created = first.command(
+    created = authoring_command(
+        first,
         {
             "operation": "create_project",
             "path": str(path),
             "name": "新建工程",
-        }
+        },
     )
 
     assert created.project_path == str(path)
@@ -255,7 +257,7 @@ def test_create_save_and_reopen_round_trip(tmp_path: Path) -> None:
         name="已保存工程",
         graph=Graph(),
     )
-    saved = first.command({"operation": "save_project", "project": replacement})
+    saved = authoring_command(first, {"operation": "save_project", "project": replacement})
     assert saved.snapshot is not None
     assert saved.snapshot.project == replacement
 
@@ -277,12 +279,13 @@ def test_create_project_uses_injected_definition_catalog(tmp_path: Path) -> None
     )
     path = tmp_path / "catalog.zniku"
 
-    created = application.command(
+    created = authoring_command(
+        application,
         {
             "operation": "create_project",
             "path": str(path),
             "name": "目录工程",
-        }
+        },
     )
 
     assert created.snapshot is not None
@@ -300,14 +303,14 @@ def test_create_project_generates_identity_derives_name_and_never_overwrites(
     path = tmp_path / "我的视频工程.zniku"
     application = ProjectServiceApplication(work_root=tmp_path / "work")
 
-    created = application.command({"operation": "create_project", "path": str(path)})
+    created = authoring_command(application, {"operation": "create_project", "path": str(path)})
 
     assert created.snapshot is not None
     assert created.snapshot.project.name == "我的视频工程"
     assert len(created.snapshot.project.project_id) == 36
     before = path.read_bytes()
     with pytest.raises(ProjectServiceError) as existing:
-        application.command({"operation": "create_project", "path": str(path)})
+        authoring_command(application, {"operation": "create_project", "path": str(path)})
     assert existing.value.code == "E_PROJECT_EXISTS"
     assert path.read_bytes() == before
     assert application.inspect().snapshot == created.snapshot
@@ -340,7 +343,7 @@ def test_save_reuses_python_definition_catalog_and_persists_layout(tmp_path: Pat
     store = _store(tmp_path)
     before = store.load()
     application = ProjectServiceApplication(work_root=tmp_path / "work")
-    application.command({"operation": "open_project", "path": str(store.path)})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
     moved_nodes = tuple(
         node.model_copy(update={"ui_position": UiPosition(x=901.0, y=502.0)})
         if node.node_id == "copy"
@@ -354,7 +357,7 @@ def test_save_reuses_python_definition_catalog_and_persists_layout(tmp_path: Pat
         }
     )
 
-    application.command({"operation": "save_project", "project": replacement})
+    authoring_command(application, {"operation": "save_project", "project": replacement})
     after = store.load()
 
     assert after.project == replacement
@@ -365,13 +368,20 @@ def test_invalid_save_fails_closed_without_changing_project(tmp_path: Path) -> N
     store = _store(tmp_path)
     before = store.load()
     application = ProjectServiceApplication(work_root=tmp_path / "work")
-    application.command({"operation": "open_project", "path": str(store.path)})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
     invalid = before.project.model_copy(
-        update={"graph": Graph(nodes=before.project.graph.nodes, edges=())}
+        update={
+            "graph": Graph(
+                nodes=before.project.graph.nodes,
+                edges=(
+                    before.project.graph.edges[0].model_copy(update={"target_node_id": "unknown"}),
+                ),
+            )
+        }
     )
 
     with pytest.raises(ProjectServiceError) as captured:
-        application.command({"operation": "save_project", "project": invalid})
+        authoring_command(application, {"operation": "save_project", "project": invalid})
 
     assert captured.value.code == "E_PROJECT_GRAPH_INVALID"
     assert captured.value.http_status == 422
@@ -385,9 +395,9 @@ def test_run_to_executes_only_target_ancestor_closure(tmp_path: Path) -> None:
         work_root=tmp_path / "work",
         python_adapters=_adapters(calls),
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
 
-    started = application.command({"operation": "run_to", "node_id": "copy"})
+    started = authoring_command(application, {"operation": "run_to", "node_id": "copy"})
     assert started.active_run_id is not None
     run_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
@@ -423,9 +433,9 @@ def test_run_all_waits_for_manual_handoff_then_submit_registers_output(
         work_root=tmp_path / "work",
         python_adapters=_adapters({}),
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
 
-    started = application.command({"operation": "run_all"})
+    started = authoring_command(application, {"operation": "run_all"})
     assert started.active_run_id is not None
     run_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
@@ -448,13 +458,14 @@ def test_run_all_waits_for_manual_handoff_then_submit_registers_output(
     output_target = handoff.output_targets[0]
     Path(output_target.path).write_text("manual-result", encoding="utf-8")
 
-    submitted = application.command(
+    submitted = authoring_command(
+        application,
         {
             "operation": "submit_external",
             "run_id": waiting_run.run_id,
             "node_run_id": waiting.node_run_id,
             "handoff_id": handoff.handoff_id,
-        }
+        },
     )
     assert submitted.active_run_id == waiting_run.run_id
     assert application.wait_until_idle(timeout=5)
@@ -482,8 +493,8 @@ def test_run_all_rejects_duplicate_when_waiting_run_is_actionable(tmp_path: Path
         work_root=tmp_path / "work",
         python_adapters=_adapters({}),
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
-    started = application.command({"operation": "run_all"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    started = authoring_command(application, {"operation": "run_all"})
     assert started.active_run_id is not None
     run_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
@@ -494,7 +505,7 @@ def test_run_all_rejects_duplicate_when_waiting_run_is_actionable(tmp_path: Path
     before_ids = tuple(summary.run_id for summary in before.run_summaries)
 
     with pytest.raises(ProjectServiceError) as captured:
-        application.command({"operation": "run_all"})
+        authoring_command(application, {"operation": "run_all"})
     after = application.inspect()
 
     conflict = captured.value
@@ -512,8 +523,8 @@ def test_missing_handoff_target_readiness_is_read_only(tmp_path: Path) -> None:
         work_root=tmp_path / "work",
         python_adapters=_adapters({}),
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
-    started = application.command({"operation": "run_all"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    started = authoring_command(application, {"operation": "run_all"})
     assert started.active_run_id is not None
     run_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
@@ -581,8 +592,8 @@ def test_terminal_rerun_creates_new_run_and_reuses_unaffected_source(tmp_path: P
         work_root=tmp_path / "work",
         python_adapters=_adapters(calls),
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
-    started = application.command({"operation": "run_all"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    started = authoring_command(application, {"operation": "run_all"})
     assert started.active_run_id is not None
     first_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
@@ -590,12 +601,13 @@ def test_terminal_rerun_creates_new_run_and_reuses_unaffected_source(tmp_path: P
     first_copy = _latest(first, "copy")
     assert first.state is RunState.COMPLETED
 
-    rerun_started = application.command(
+    rerun_started = authoring_command(
+        application,
         {
             "operation": "rerun_from_here",
             "run_id": first.run_id,
             "node_id": "copy",
-        }
+        },
     )
     assert rerun_started.active_run_id is not None
     second_id = rerun_started.active_run_id
@@ -627,8 +639,8 @@ def test_terminal_rerun_rejects_node_outside_referenced_run(tmp_path: Path) -> N
         work_root=tmp_path / "work",
         python_adapters=_adapters({}),
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
-    started = application.command({"operation": "run_to", "node_id": "source"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    started = authoring_command(application, {"operation": "run_to", "node_id": "source"})
     assert started.active_run_id is not None
     assert application.wait_until_idle(timeout=5)
     first = application.inspect_run_detail(started.active_run_id).run
@@ -636,12 +648,13 @@ def test_terminal_rerun_rejects_node_outside_referenced_run(tmp_path: Path) -> N
     assert tuple(item.node_id for item in first.node_runs) == ("source",)
 
     with pytest.raises(ProjectServiceError) as captured:
-        application.command(
+        authoring_command(
+            application,
             {
                 "operation": "rerun_from_here",
                 "run_id": first.run_id,
                 "node_id": "copy",
-            }
+            },
         )
 
     assert captured.value.code == "E_PROJECT_SERVICE_RERUN_NODE_OUTSIDE_RUN"
@@ -657,8 +670,8 @@ def test_rerun_after_project_edit_uses_new_snapshot_instead_of_waiting_run(
         work_root=tmp_path / "work",
         python_adapters=_adapters({}),
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
-    started = application.command({"operation": "run_all"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    started = authoring_command(application, {"operation": "run_all"})
     assert started.active_run_id is not None
     first_id = started.active_run_id
     assert application.wait_until_idle(timeout=5)
@@ -677,13 +690,14 @@ def test_rerun_after_project_edit_uses_new_snapshot_instead_of_waiting_run(
             "graph": Graph(nodes=changed_nodes, edges=snapshot.project.graph.edges),
         }
     )
-    application.command({"operation": "save_project", "project": changed})
-    rerun_started = application.command(
+    authoring_command(application, {"operation": "save_project", "project": changed})
+    rerun_started = authoring_command(
+        application,
         {
             "operation": "rerun_from_here",
             "run_id": first.run_id,
             "node_id": "source",
-        }
+        },
     )
     assert rerun_started.active_run_id is not None
     assert application.wait_until_idle(timeout=5)
@@ -715,8 +729,8 @@ def test_rerun_after_graph_edit_rejects_new_node_absent_from_referenced_run(
         work_root=tmp_path / "work",
         python_adapters=_adapters({}),
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
-    started = application.command({"operation": "run_all"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    started = authoring_command(application, {"operation": "run_all"})
     assert started.active_run_id is not None
     assert application.wait_until_idle(timeout=5)
     first = application.inspect_run_detail(started.active_run_id).run
@@ -738,15 +752,16 @@ def test_rerun_after_graph_edit_rejects_new_node_absent_from_referenced_run(
             )
         }
     )
-    application.command({"operation": "save_project", "project": changed})
+    authoring_command(application, {"operation": "save_project", "project": changed})
 
     with pytest.raises(ProjectServiceError) as captured:
-        application.command(
+        authoring_command(
+            application,
             {
                 "operation": "rerun_from_here",
                 "run_id": first.run_id,
                 "node_id": "new-source",
-            }
+            },
         )
 
     assert captured.value.code == "E_PROJECT_SERVICE_RERUN_NODE_OUTSIDE_RUN"
@@ -760,8 +775,8 @@ def test_log_projection_rejects_tampered_work_dir_outside_host_root(tmp_path: Pa
         work_root=tmp_path / "work",
         python_adapters=_adapters({}),
     )
-    application.command({"operation": "open_project", "path": str(store.path)})
-    started = application.command({"operation": "run_all"})
+    authoring_command(application, {"operation": "open_project", "path": str(store.path)})
+    started = authoring_command(application, {"operation": "run_all"})
     assert started.active_run_id is not None
     assert application.wait_until_idle(timeout=5)
     run = application.inspect_run_detail(started.active_run_id).run

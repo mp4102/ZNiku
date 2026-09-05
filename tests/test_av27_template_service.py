@@ -16,6 +16,7 @@ from uuid import uuid4
 import pytest
 from pydantic import JsonValue, ValidationError
 
+from authoring_helpers import authoring_command
 from zniku.avenhance_v27 import (
     SOURCE_ADMISSION_TYPE_ID,
     SOURCE_PROGRAM_TYPE_ID,
@@ -276,7 +277,7 @@ def _seed_completed_preparation(path: Path, tmp_path: Path) -> tuple[str, tuple[
 def _create_application(tmp_path: Path) -> tuple[ProjectServiceApplication, dict[str, Any]]:
     application = ProjectServiceApplication(work_root=tmp_path / "work")
     request = _prepare_payload(tmp_path)
-    application.command({"operation": "create_av_enhance_v27", "request": request})
+    authoring_command(application, {"operation": "create_av_enhance_v27", "request": request})
     return application, request
 
 
@@ -324,12 +325,12 @@ def test_template_create_is_atomic_no_replace_and_reopens(tmp_path: Path) -> Non
     assert tuple(path.parent.glob(".zniku-create-*.tmp.zniku")) == ()
 
     with pytest.raises(ProjectServiceError) as captured:
-        application.command({"operation": "create_av_enhance_v27", "request": request})
+        authoring_command(application, {"operation": "create_av_enhance_v27", "request": request})
     assert captured.value.code == "E_AV27_CREATE_EXISTS"
     assert path.read_bytes() == original
 
     reopened = ProjectServiceApplication(work_root=tmp_path / "reopened-work")
-    reopened.command({"operation": "open_project", "path": str(path)})
+    authoring_command(reopened, {"operation": "open_project", "path": str(path)})
     assert reopened.inspect().snapshot == snapshot
 
 
@@ -381,7 +382,7 @@ def test_expand_preview_and_command_use_exact_run_artifacts_and_persist(
     assert split.parameters["planned_effective_video_artifact_ids"] == [video_id]
     assert ProjectStore.open(path).load() == before
 
-    application.command({"operation": "expand_av_enhance_v27", "request": request})
+    authoring_command(application, {"operation": "expand_av_enhance_v27", "request": request})
     saved = ProjectStore.open(path).load()
     assert saved.project == preview.project
     assert saved.definitions == preview.definitions
@@ -390,11 +391,11 @@ def test_expand_preview_and_command_use_exact_run_artifacts_and_persist(
     # 此时从普通 Output target 恢复发布根并重新采集当前文件系统 facts，不能因缺 facts 永久降级。
     repeated = application.preview_av_enhance_v27({"action": "expand", "request": request})
     assert repeated.profile.status == "expanded-compatible"
-    application.command({"operation": "expand_av_enhance_v27", "request": request})
+    authoring_command(application, {"operation": "expand_av_enhance_v27", "request": request})
     assert ProjectStore.open(path).load() == saved
 
     reopened = ProjectServiceApplication(work_root=tmp_path / "work-reopened")
-    reopened.command({"operation": "open_project", "path": str(path)})
+    authoring_command(reopened, {"operation": "open_project", "path": str(path)})
     reopened_status = reopened.inspect()
     assert reopened_status.snapshot == saved
     assert any(summary.run_id == run_id for summary in reopened_status.run_summaries)
@@ -414,7 +415,7 @@ def test_expand_rejects_stale_latest_without_mutating_project(tmp_path: Path) ->
     )
 
     with pytest.raises(ProjectServiceError) as captured:
-        application.command({"operation": "expand_av_enhance_v27", "request": request})
+        authoring_command(application, {"operation": "expand_av_enhance_v27", "request": request})
 
     assert captured.value.code == "E_AV27_EXPAND_STALE"
     assert ProjectStore.open(path).load() == before
@@ -433,7 +434,7 @@ def test_expand_rechecks_publication_target_after_preview_without_mutation(
 
     target.write_bytes(b"operator-owned publication")
     with pytest.raises(ProjectServiceError) as captured:
-        application.command({"operation": "expand_av_enhance_v27", "request": request})
+        authoring_command(application, {"operation": "expand_av_enhance_v27", "request": request})
 
     assert captured.value.code == "E_AV27_NAMING_EXISTS"
     assert target.read_bytes() == b"operator-owned publication"
@@ -445,7 +446,7 @@ def test_reexpand_rejects_freely_edited_graph_without_partial_save(tmp_path: Pat
     path = Path(cast(str, prepare["project_path"]))
     run_id, _ = _seed_completed_preparation(path, tmp_path)
     request = _expand_payload(tmp_path, run_id)
-    application.command({"operation": "expand_av_enhance_v27", "request": request})
+    authoring_command(application, {"operation": "expand_av_enhance_v27", "request": request})
     store = ProjectStore.open(path)
     expanded = store.load()
 
@@ -471,7 +472,7 @@ def test_reexpand_rejects_freely_edited_graph_without_partial_save(tmp_path: Pat
     before_failure = store.load()
 
     with pytest.raises(ProjectServiceError) as captured:
-        application.command({"operation": "expand_av_enhance_v27", "request": request})
+        authoring_command(application, {"operation": "expand_av_enhance_v27", "request": request})
 
     assert captured.value.code == "E_AV27_EXPAND_GRAPH_DIVERGED"
     assert store.load() == before_failure

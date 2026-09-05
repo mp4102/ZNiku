@@ -22,8 +22,14 @@ import { edgeId } from '../graph'
 import { asParameterSchema, type ParameterDraftValidation } from '../parameter-draft'
 import { handoffResourceKey, readinessLabel } from './HandoffCenter'
 import type { WorkflowProgressData } from '../../model'
+import { OrderedInputList } from './OrderedInputList'
 
 export interface NodeInspectorProps {
+  readonly advanced?: boolean
+  readonly authoringPanel?: ReactNode
+  readonly orderedInputs?: ReadonlyArray<{ readonly label: string; readonly edges: ReadonlyArray<EdgeWire> }>
+  readonly nodeLabel?: (nodeId: string) => string
+  readonly sourcePortLabel?: (nodeId: string, portId: string) => string
   readonly selectedNode: { readonly node_id: string; readonly type_id: string; readonly definition_version: string } | null
   readonly selectedDefinition: NodeDefinitionWire | null
   readonly selectedPresentation: NodePresentationWire | null
@@ -80,9 +86,11 @@ export function NodeInspector(props: NodeInspectorProps) {
     <aside className="inspector-panel">
       <div className="panel-heading inspector-heading">
         <span className="eyebrow">INSPECTOR</span>
-        <h2>{selectedNode ? selectedPresentation?.title ?? selectedNode.node_id : selectedEdge ? 'Data edge' : '未选择实体'}</h2>
-        {(selectedNode || selectedEdge) && <code>{selectedNode ? `${selectedNode.type_id}@${selectedNode.definition_version}` : edgeId(selectedEdge!)}</code>}
+        <h2>{selectedNode ? props.nodeLabel?.(selectedNode.node_id) ?? selectedPresentation?.title ?? selectedNode.node_id : selectedEdge ? '连接设置' : '未选择实体'}</h2>
+        {props.advanced && (selectedNode || selectedEdge) && <code>{selectedNode ? `${selectedNode.type_id}@${selectedNode.definition_version}` : edgeId(selectedEdge!)}</code>}
       </div>
+      {props.authoringPanel}
+      {props.orderedInputs?.map((input) => <section className="inspector-ordered-inputs" key={input.label}><h3>{input.label}</h3><OrderedInputList edges={input.edges} nodeLabel={props.nodeLabel ?? ((id) => id)} portLabel={props.sourcePortLabel ?? ((_nodeId, portId) => portId)} disabled={busy || !graphEditable} onReorder={props.onReorderEdge} /></section>)}
       {selectedNode && selectedDefinition && parameterValidation ? (
         <div className="inspector-content">
           {selectedPresentation && <p className="node-presentation-description">{selectedPresentation.description}</p>}
@@ -93,7 +101,7 @@ export function NodeInspector(props: NodeInspectorProps) {
               draft={parameterDraft}
               validation={parameterValidation}
               presentation={selectedPresentation}
-              readOnly={!graphEditable}
+              readOnly={!graphEditable || busy}
               onPickPath={props.onPickParameterPath}
               onPickError={props.onParameterPickerError}
               onChange={props.onParameterDraftChange}
@@ -107,7 +115,7 @@ export function NodeInspector(props: NodeInspectorProps) {
             </div>
             <details className="parameter-raw-json">
               <summary>高级 → 原始参数</summary>
-              <textarea aria-label="节点参数 JSON" value={parameterText} onChange={(event) => props.onParameterTextChange(event.target.value)} rows={10} readOnly={!graphEditable} />
+              <textarea aria-label="节点参数 JSON" value={parameterText} onChange={(event) => props.onParameterTextChange(event.target.value)} rows={10} readOnly={!graphEditable || busy} />
               {parameterRawError && <p role="alert">{parameterRawError}</p>}
             </details>
             <details><summary>高级 → parameter_schema</summary><pre>{JSON.stringify(selectedDefinition.parameter_schema, null, 2)}</pre></details>
@@ -151,7 +159,7 @@ export function NodeInspector(props: NodeInspectorProps) {
           )}
         </div>
       ) : selectedEdge ? (
-        <div className="inspector-content"><section><h3>Edge</h3><p>{selectedEdge.source_node_id}.{selectedEdge.source_port_id} → {selectedEdge.target_node_id}.{selectedEdge.target_port_id}</p>{selectedEdge.ordinal !== null && <label className="ordinal-editor">Ordinal<input aria-label="Edge ordinal" type="number" min={0} value={selectedEdge.ordinal} disabled={!graphEditable} onChange={(event) => props.onReorderEdge(edgeId(selectedEdge), Number(event.target.value))} /></label>}<button className="button button--danger inspector-action" type="button" disabled={!graphEditable} onClick={props.onDeleteEdge}>删除所选连接</button></section></div>
+        <div className="inspector-content"><section><h3>连接</h3><p>{props.nodeLabel?.(selectedEdge.source_node_id) ?? selectedEdge.source_node_id} → {props.nodeLabel?.(selectedEdge.target_node_id) ?? selectedEdge.target_node_id}</p>{props.advanced && selectedEdge.ordinal !== null && <label className="ordinal-editor">Ordinal<input aria-label="Edge ordinal" type="number" min={0} value={selectedEdge.ordinal} disabled={!graphEditable} onChange={(event) => props.onReorderEdge(edgeId(selectedEdge), Number(event.target.value))} /></label>}<button className="button button--danger inspector-action" type="button" disabled={busy || !graphEditable} onClick={props.onDeleteEdge}>删除所选连接</button></section></div>
       ) : <div className="empty-inspector">选择节点或连接查看配置、运行状态、日志和输出。</div>}
       {handoffCenter}
       {actionableRun && <button className="button button--danger abandon-run" type="button" disabled={mutationBlocked || actionableRunIsRunning} onClick={props.onAbandonRun}>Abandon Run</button>}
