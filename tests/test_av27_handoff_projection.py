@@ -20,8 +20,10 @@ from zniku.graph import (
     PortSpec,
     PythonExecutorSpec,
 )
+from zniku.media import external_video_transform_definition
 from zniku.project_service.av27_handoff import project_av27_handoff_contracts
-from zniku.project_service.models import RunDetailEnvelope
+from zniku.project_service.handoff import project_handoff_contracts
+from zniku.project_service.models import RerunPreviewEnvelope, RunDetailEnvelope
 from zniku.runtime import (
     Artifact,
     ExternalHandoff,
@@ -210,3 +212,66 @@ def test_wire_rejects_wrong_handoff_input_and_unknown_projection_fields() -> Non
     payload["handoff_contracts"][0]["unexpected"] = True
     with pytest.raises(ValidationError):
         RunDetailEnvelope.model_validate(payload)
+
+
+@pytest.mark.parametrize("preset", ("enhancement", "fi"))
+def test_generic_transform_handoff_projects_actual_optional_constraints(preset: str) -> None:
+    run, artifact = _fixture("enhancement")
+    definition = external_video_transform_definition(preset)  # type: ignore[arg-type]
+    manual = run.graph_snapshot.nodes[1].model_copy(
+        update={
+            "type_id": definition.type_id,
+            "definition_version": definition.version,
+            "parameters": {
+                "tool": "Synthetic",
+                "model": "Synthetic",
+                "tool_version": "1",
+                "expected_width": 3840,
+            },
+        }
+    )
+    updated = run.model_copy(
+        update={
+            "graph_snapshot": Graph(
+                nodes=(run.graph_snapshot.nodes[0], manual), edges=run.graph_snapshot.edges
+            ),
+            "definitions_snapshot": (run.definitions_snapshot[0], definition),
+            "node_runs": (
+                run.node_runs[0].model_copy(update={"definition_version": definition.version}),
+            ),
+        }
+    )
+    before = updated.model_dump_json()
+    contracts = project_handoff_contracts(updated, (artifact,))
+    assert len(contracts) == 1
+    rows = {field.label: field.value for field in contracts[0].fields}
+    assert rows["输出宽度(像素)"] == "3840"
+    assert "输出高度(像素)" not in rows
+    assert rows["帧数关系"] == (
+        "输出帧数是输入的两倍(N → 2N)" if preset == "fi" else "不额外限制输入/输出帧数关系"
+    )
+    assert updated.model_dump_json() == before
+    RunDetailEnvelope(run=updated, artifacts=(artifact,), handoff_contracts=contracts)
+
+
+def test_rerun_preview_wire_rejects_overlap_duplicates_unknown_and_wrong_version() -> None:
+    value = RerunPreviewEnvelope(
+        project_session_id=str(uuid4()),
+        storage_revision=1,
+        run_id=str(uuid4()),
+        node_id="manual",
+        mode="new_run",
+        rerun_node_ids=("manual", "sink"),
+        reusable_node_ids=("source",),
+        projected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    assert RerunPreviewEnvelope.model_validate_json(value.model_dump_json()) == value
+    for changes in (
+        {"rerun_node_ids": ("manual", "manual")},
+        {"reusable_node_ids": ("manual",)},
+        {"rerun_node_ids": ("sink",)},
+        {"contract_version": "0.2.0"},
+        {"unexpected": True},
+    ):
+        with pytest.raises(ValidationError):
+            RerunPreviewEnvelope.model_validate({**value.model_dump(), **changes})

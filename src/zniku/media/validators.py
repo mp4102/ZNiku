@@ -47,6 +47,17 @@ def validate_mux_media(context: NodeValidatorContext) -> NodeValidatorResult:
     return _validated(lambda: _validate_mux_media(context))
 
 
+def transform_frame_relation(parameters: Mapping[str, object], type_id: str) -> str:
+    """解析 Transform 的既有帧关系，供正式 validator 与只读交付说明共同使用。"""
+
+    value = parameters.get("frame_relation")
+    if value is None:
+        return "double" if type_id.endswith(".fi.external") else "any"
+    if isinstance(value, str) and value in {"any", "equal", "double"}:
+        return value
+    raise MediaNodeError("E_MEDIA_TRANSFORM_FRAME_RELATION", "frame_relation 无效")
+
+
 def _validate_video_transform(context: NodeValidatorContext) -> Mapping[str, object]:
     output = _single_output(context, "video")
     output_info = probe_media(output.path)
@@ -73,15 +84,7 @@ def _validate_video_transform(context: NodeValidatorContext) -> Mapping[str, obj
     if expected_rate is not None and output_video.frame_rate != expected_rate:
         raise MediaNodeError("E_MEDIA_TRANSFORM_FPS", "输出 frame rate 不符合节点约束")
 
-    relation_value = parameters.get("frame_relation")
-    if relation_value is None:
-        relation = (
-            "double" if context.request.definition.type_id.endswith(".fi.external") else "any"
-        )
-    elif isinstance(relation_value, str) and relation_value in {"any", "equal", "double"}:
-        relation = relation_value
-    else:
-        raise MediaNodeError("E_MEDIA_TRANSFORM_FRAME_RELATION", "frame_relation 无效")
+    relation = transform_frame_relation(parameters, context.request.definition.type_id)
     relation_summary: dict[str, object] = {"relation": relation}
     if relation != "any":
         source = _single_input_path(context, "video")

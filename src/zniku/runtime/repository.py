@@ -496,6 +496,54 @@ class RuntimeRepository:
             ]
             return tuple(self._read_run(connection, run_id) for run_id in run_ids)
 
+    def list_run_window(
+        self,
+        *,
+        terminal: bool,
+        limit: int | None = None,
+        before: tuple[str, str] | None = None,
+    ) -> tuple[Run, ...]:
+        """先在 SQLite 做 keyset 选择，再严格读取有界历史；不扫描反序列化旧 snapshot。
+
+        非终态必须全部保留给操作者，不因分页隐藏等待任务。终态强制限定 1..101 条；多取一条
+        只用于生成下一页游标。游标必须精确属于当前终态历史，不能把其他工程游标当作位置。
+        """
+
+        if (
+            type(terminal) is not bool
+            or (terminal and (type(limit) is not int or not 1 <= limit <= 101))
+            or (not terminal and (limit is not None or before is not None))
+        ):
+            raise RuntimeConflictError("E_RUN_WINDOW_INVALID", "Run window 参数非法")
+        with self._read_connection() as connection:
+            parameters: list[object] = []
+            clause = (
+                "state NOT IN ('pending', 'running')"
+                if terminal
+                else ("state IN ('pending', 'running')")
+            )
+            if before is not None:
+                row = connection.execute(
+                    "SELECT created_at, state FROM runs WHERE run_id = ?", (before[1],)
+                ).fetchone()
+                if (
+                    row is None
+                    or row["state"] in {"pending", "running"}
+                    or (
+                        _parse_timestamp(row["created_at"], context="Run.created_at").isoformat()
+                        != before[0]
+                    )
+                ):
+                    raise RuntimeConflictError("E_RUN_CURSOR_INVALID", "cursor 不属于终态历史")
+                clause += " AND (created_at < ? OR (created_at = ? AND run_id < ?))"
+                parameters.extend((row["created_at"], row["created_at"], before[1]))
+            query = f"SELECT run_id FROM runs WHERE {clause} ORDER BY created_at DESC, run_id DESC"
+            if limit is not None:
+                query += " LIMIT ?"
+                parameters.append(limit)
+            identities = tuple(row[0] for row in connection.execute(query, parameters))
+            return tuple(self._read_run(connection, identity) for identity in identities)
+
     def transition_run(
         self,
         run_id: str,

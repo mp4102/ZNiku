@@ -30,11 +30,12 @@ from zniku.avenhance_v27.template import (
     TemplatePreviewRequest,
 )
 from zniku.graph import NodeDefinition
+from zniku.graph.models import Identifier
 from zniku.presentation import PresentationCatalog, PresentationDiagnostic
 from zniku.project import AuthoringDiagnostic, Project, ProjectSnapshot, StudioState, StudioWarning
 from zniku.project.studio import StorageRevision
 from zniku.runtime import Artifact, LatestNodeResult, Run, RuntimeFailure
-from zniku.runtime.models import UtcTimestamp
+from zniku.runtime.models import RandomId, UtcTimestamp
 
 PROJECT_SERVICE_CONTRACT_VERSION: Literal["0.3.0"] = "0.3.0"
 type ActiveProjectOperation = Literal[
@@ -342,6 +343,35 @@ class NodeLogEnvelope(ProjectServiceModel):
     contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
     run_id: str
     log: NodeLogProjection
+
+
+class RerunPreviewEnvelope(ProjectServiceModel):
+    """对精确工程会话、存储计数和所选 Run/节点的只读重跑影响；不是执行计划。"""
+
+    contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
+    project_session_id: ProjectSessionId
+    storage_revision: StorageRevision
+    run_id: RandomId
+    node_id: Identifier
+    mode: Literal["same_run", "new_run"]
+    rerun_node_ids: tuple[Identifier, ...]
+    reusable_node_ids: tuple[Identifier, ...]
+    projected_at: UtcTimestamp
+
+    @model_validator(mode="after")
+    def validate_node_sets(self) -> RerunPreviewEnvelope:
+        """所选节点必须从头运行；两组节点唯一且互斥，拒绝误导性的双重身份。"""
+
+        rerun, reusable = set(self.rerun_node_ids), set(self.reusable_node_ids)
+        if (
+            self.node_id not in rerun
+            or len(rerun) != len(self.rerun_node_ids)
+            or len(reusable) != len(self.reusable_node_ids)
+            or rerun & reusable
+            or any(not identity for identity in rerun | reusable)
+        ):
+            raise ValueError("E_RERUN_PREVIEW_NODE_SETS: 节点集合必须唯一、互斥且包含所选重跑节点")
+        return self
 
 
 class CreatorAudioTrackSummary(ProjectServiceModel):

@@ -16,6 +16,8 @@ from ipaddress import ip_address
 from typing import Any, Final, Protocol
 from urllib.parse import SplitResult, parse_qsl, urlsplit
 
+from pydantic import BaseModel
+
 from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
 from .service import ProjectServiceApplication, ProjectServiceError
 
@@ -255,6 +257,7 @@ def make_project_service_handler(
                 not in {
                     "/api/studio/command",
                     "/api/studio/templates/av-enhance-v27/preview",
+                    "/api/studio/rerun-preview",
                 }
             ):
                 self._error(HTTPStatus.NOT_FOUND, "E_PROJECT_SERVICE_ROUTE", "未知 route")
@@ -283,11 +286,13 @@ def make_project_service_handler(
                 return
             try:
                 payload = _load_json(self.rfile.read(length))
-                envelope = (
-                    application.preview_av_enhance_v27(payload)
-                    if parsed.path == "/api/studio/templates/av-enhance-v27/preview"
-                    else application.command(payload)
-                )
+                envelope: BaseModel
+                if parsed.path == "/api/studio/templates/av-enhance-v27/preview":
+                    envelope = application.preview_av_enhance_v27(payload)
+                elif parsed.path == "/api/studio/rerun-preview":
+                    envelope = application.preview_rerun(payload)
+                else:
+                    envelope = application.command(payload)
             except _JsonPayloadError as error:
                 self._error(HTTPStatus.BAD_REQUEST, "E_PROJECT_SERVICE_JSON", str(error))
                 return

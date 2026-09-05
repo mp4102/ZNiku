@@ -94,7 +94,7 @@ from zniku.runtime import (
 from zniku.runtime.progress import MonotonicClock, WallClock
 from zniku.runtime.runner import MediaProbe, NodeValidator
 
-from .av27_handoff import project_av27_handoff_contracts
+from .handoff import project_handoff_contracts
 from .models import (
     AbandonRunCommand,
     ActiveProjectOperation,
@@ -114,6 +114,7 @@ from .models import (
     PresentationCatalogEnvelope,
     ProjectServiceFailure,
     RerunFromHereCommand,
+    RerunPreviewEnvelope,
     RunAllCommand,
     RunDetailEnvelope,
     RunNodeStateCounts,
@@ -354,28 +355,30 @@ class ProjectServiceApplication:
         try:
             authoring = store.load_authoring()
             snapshot = authoring.snapshot
-            runs = runtime.repository.list_runs()
-            summaries = tuple(self._summarize_run(run) for run in runs)
-            by_id = {summary.run_id: summary for summary in summaries}
-            if view_run_id is not None and view_run_id not in by_id:
-                raise ProjectServiceError(
-                    "E_PROJECT_SERVICE_RUN_NOT_FOUND",
-                    f"Run 不存在：{view_run_id}",
-                    http_status=404,
+            terminal = tuple(
+                self._summarize_run(run)
+                for run in runtime.repository.list_run_window(
+                    terminal=True, limit=_STATUS_TERMINAL_LIMIT + 1
                 )
-            if active_run_id is not None and active_run_id not in by_id:
-                active_run_id = None
-
-            ordered = self._sort_summaries(summaries)
-            terminal = tuple(summary for summary in ordered if not summary.actionable)
+            )
             terminal_window = terminal[:_STATUS_TERMINAL_LIMIT]
-            included = {summary.run_id for summary in terminal_window}
-            included.update(summary.run_id for summary in ordered if summary.actionable)
-            if active_run_id is not None:
-                included.add(active_run_id)
-            if view_run_id is not None:
-                included.add(view_run_id)
-            projected = tuple(summary for summary in ordered if summary.run_id in included)
+            by_id = {summary.run_id: summary for summary in terminal_window}
+            for run in runtime.repository.list_run_window(terminal=False):
+                by_id[run.run_id] = self._summarize_run(run)
+            for identity in (active_run_id, view_run_id):
+                if identity is None or identity in by_id:
+                    continue
+                try:
+                    by_id[identity] = self._summarize_run(runtime.repository.get_run(identity))
+                except RuntimeNotFoundError:
+                    if identity == view_run_id:
+                        raise ProjectServiceError(
+                            "E_PROJECT_SERVICE_RUN_NOT_FOUND",
+                            f"Run 不存在：{identity}",
+                            http_status=404,
+                        ) from None
+                    active_run_id = None
+            projected = self._sort_summaries(tuple(by_id.values()))
             next_cursor = (
                 self._encode_cursor(terminal_window[-1])
                 if len(terminal) > len(terminal_window) and terminal_window
@@ -424,30 +427,26 @@ class ProjectServiceApplication:
             )
         _, runtime = self._require_session()
         try:
-            ordered = self._sort_summaries(
-                tuple(self._summarize_run(run) for run in runtime.repository.list_runs())
-            )
-            terminal = tuple(summary for summary in ordered if not summary.actionable)
-            start = 0
-            if cursor is not None:
-                identity = self._decode_cursor(cursor)
-                positions = tuple(
-                    index
-                    for index, summary in enumerate(terminal)
-                    if self._cursor_identity(summary) == identity
+            try:
+                terminal = tuple(
+                    self._summarize_run(run)
+                    for run in runtime.repository.list_run_window(
+                        terminal=True,
+                        limit=limit + 1,
+                        before=None if cursor is None else self._decode_cursor(cursor),
+                    )
                 )
-                if len(positions) != 1:
+            except RuntimeConflictError as failure:
+                if failure.code == "E_RUN_CURSOR_INVALID":
                     raise ProjectServiceError(
                         "E_PROJECT_SERVICE_CURSOR_INVALID",
                         "cursor 不属于当前 terminal Run 历史",
                         http_status=400,
-                    )
-                start = positions[0] + 1
-            page = terminal[start : start + limit]
+                    ) from failure
+                raise
+            page = terminal[:limit]
             next_cursor = (
-                self._encode_cursor(page[-1])
-                if page and start + len(page) < len(terminal)
-                else None
+                self._encode_cursor(page[-1]) if page and len(page) < len(terminal) else None
             )
             return RunSummaryPageEnvelope(
                 run_summaries=page,
@@ -469,7 +468,7 @@ class ProjectServiceApplication:
                 run=run,
                 artifacts=artifacts,
                 progress_samples=self._project_progress(run, runtime),
-                handoff_contracts=project_av27_handoff_contracts(run, artifacts),
+                handoff_contracts=project_handoff_contracts(run, artifacts),
             )
         except (RuntimeRepositoryError, ValidationError) as failure:
             raise self._translate_failure(failure) from failure
@@ -480,6 +479,43 @@ class ProjectServiceApplication:
         _, runtime = self._require_session()
         node_run = self._bound_node_run(runtime, run_id, node_run_id)
         return NodeLogEnvelope(run_id=run_id, log=self._project_logs(node_run))
+
+    def preview_rerun(self, payload: object) -> RerunPreviewEnvelope:
+        """按正式重跑请求只读预览影响；持锁防止本会话切换，返回前再次检查存储 CAS。"""
+
+        try:
+            command = RerunFromHereCommand.model_validate(payload)
+        except ValidationError as failure:
+            raise ProjectServiceError(
+                "E_PROJECT_SERVICE_COMMAND_INVALID", str(failure), http_status=422
+            ) from failure
+        with self._state:
+            self._assert_authoring_binding(command)
+            self._assert_idle()
+            _, runtime = self._require_session()
+            try:
+                run, same_run = self._rerun_context(command)
+                impact = runtime.inspect_rerun_impact(
+                    run.run_id, command.node_id, new_run=not same_run
+                )
+                self._assert_authoring_binding(command)
+                return RerunPreviewEnvelope(
+                    project_session_id=command.project_session_id,
+                    storage_revision=command.expected_storage_revision,
+                    run_id=command.run_id,
+                    node_id=command.node_id,
+                    mode="same_run" if same_run else "new_run",
+                    rerun_node_ids=impact.rerun_node_ids,
+                    reusable_node_ids=impact.reusable_node_ids,
+                    projected_at=utc_now(),
+                )
+            except (
+                ProjectStoreError,
+                RuntimeRepositoryError,
+                RuntimeServiceError,
+                ValidationError,
+            ) as failure:
+                raise self._translate_failure(failure) from failure
 
     def inspect_external_readiness(
         self,
@@ -1397,11 +1433,7 @@ class ProjectServiceApplication:
 
     def _start_run(self, command: RunAllCommand | RunToCommand) -> None:
         _, runtime = self._require_session()
-        conflicts = tuple(
-            run
-            for run in self._sort_runs(runtime.repository.list_runs())
-            if run.state in {RunState.PENDING, RunState.RUNNING}
-        )
+        conflicts = runtime.repository.list_run_window(terminal=False)
         if conflicts:
             raise ProjectServiceError(
                 "E_PROJECT_SERVICE_RUN_CONFLICT",
@@ -1419,23 +1451,9 @@ class ProjectServiceApplication:
         self._begin_worker(operation, run.run_id, lambda: runtime.run_until_blocked(run.run_id))
 
     def _rerun(self, command: RerunFromHereCommand) -> None:
-        store, runtime = self._require_session()
-        run = runtime.repository.get_run(command.run_id)
-        if command.node_id not in {item.node_id for item in run.node_runs}:
-            raise ProjectServiceError(
-                "E_PROJECT_SERVICE_RERUN_NODE_OUTSIDE_RUN",
-                f"节点 {command.node_id!r} 不属于引用 Run 的执行闭包",
-                http_status=409,
-            )
-        current = store.load()
-        # 位置仅影响画布；参数、连线、节点与定义仍须精确一致才能沿用原 Run。
-        omitted = {"nodes": {"__all__": {"ui_position"}}}
-        snapshot_still_current = (
-            run.graph_snapshot.model_dump(exclude=omitted)
-            == current.project.graph.model_dump(exclude=omitted)
-            and run.definitions_snapshot == current.definitions
-        )
-        if run.state is RunState.RUNNING and snapshot_still_current:
+        _, runtime = self._require_session()
+        run, same_run = self._rerun_context(command)
+        if same_run:
             run_id = run.run_id
             self._begin_worker(
                 "rerun_from_here",
@@ -1452,6 +1470,27 @@ class ProjectServiceApplication:
         )
         run_id = replacement.run_id
         self._begin_worker("rerun_from_here", run_id, lambda: runtime.run_until_blocked(run_id))
+
+    def _rerun_context(self, command: RerunFromHereCommand) -> tuple[Run, bool]:
+        """正式 command 与只读预览共享同一原 Run/当前 Graph 选择，不复制资格规则。"""
+
+        store, runtime = self._require_session()
+        run = runtime.repository.get_run(command.run_id)
+        if command.node_id not in {item.node_id for item in run.node_runs}:
+            raise ProjectServiceError(
+                "E_PROJECT_SERVICE_RERUN_NODE_OUTSIDE_RUN",
+                f"节点 {command.node_id!r} 不属于引用 Run 的执行闭包",
+                http_status=409,
+            )
+        current = store.load()
+        # 位置仅影响画布；参数、连线、节点与定义仍须精确一致才能沿用原 Run。
+        omitted = {"nodes": {"__all__": {"ui_position"}}}
+        snapshot_still_current = (
+            run.graph_snapshot.model_dump(exclude=omitted)
+            == current.project.graph.model_dump(exclude=omitted)
+            and run.definitions_snapshot == current.definitions
+        )
+        return run, run.state is RunState.RUNNING and snapshot_still_current
 
     def _submit_external(self, command: SubmitExternalCommand) -> None:
         _, runtime = self._require_session()

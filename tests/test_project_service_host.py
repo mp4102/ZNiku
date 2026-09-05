@@ -549,6 +549,52 @@ def test_av27_template_preview_http_route_is_read_only_and_strict(tmp_path: Path
         assert not target.exists()
 
 
+def test_rerun_preview_http_uses_strict_command_binding_without_mutation(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    application = ProjectServiceApplication(
+        work_root=tmp_path / "work",
+        python_adapters={"tests.phase3:http-source": lambda context: PythonAdapterResult()},
+    )
+    with _serve(application) as (base_url, _):
+        _post_command(base_url, {"operation": "open_project", "path": str(store.path)})
+        _, started, _ = _post_command(base_url, {"operation": "run_all"})
+        assert application.wait_until_idle(timeout=5)
+        _, state, _ = _request(base_url, "/api/studio/status")
+        payload = {
+            "operation": "rerun_from_here",
+            "run_id": started["active_run_id"],
+            "node_id": "source",
+            "project_session_id": state["project_session_id"],
+            "expected_storage_revision": state["storage_revision"],
+        }
+        before = store.path.read_bytes()
+        status, preview, headers = _request(
+            base_url,
+            "/api/studio/rerun-preview",
+            method="POST",
+            payload=payload,
+        )
+        assert status == 200
+        assert preview["contract_version"] == "0.3.0"
+        assert preview["run_id"] == payload["run_id"]
+        assert preview["mode"] == "new_run"
+        assert preview["rerun_node_ids"] == ["source"]
+        assert preview["reusable_node_ids"] == []
+        assert headers.get("Cache-Control") == "no-store"
+        assert store.path.read_bytes() == before
+        for changes in ({"expected_storage_revision": 99}, {"contract_version": "0.3.0"}):
+            status, _, _ = _request(
+                base_url,
+                "/api/studio/rerun-preview",
+                method="POST",
+                payload={**payload, **changes},
+            )
+            assert status in {409, 422}
+        status, _, _ = _request(base_url, "/api/studio/rerun-preview")
+        assert status == 404
+        assert store.path.read_bytes() == before
+
+
 def test_get_remains_available_and_mutation_rejects_while_worker_is_busy(
     tmp_path: Path,
 ) -> None:

@@ -45,9 +45,12 @@ import type {
   ProjectSnapshotWire,
   RunDetailEnvelope,
   RunSummaryWire,
+  RerunPreviewEnvelope,
+  RerunPreviewRequest,
   StatusEnvelope,
   StudioCommand,
   StudioStateWire,
+  StudioServiceError,
 } from './contracts'
 import {
   addConnectedNodes,
@@ -71,7 +74,10 @@ import {
   type HostBridge,
   type HostCapabilitiesEnvelope,
   type HostDialogCapability,
+  type HostPathReference,
+  type HostSystemCapability,
 } from './host-bridge'
+import { isFullCheck, readinessMatchesHandoff, sameObservedOutputs } from './handoff-check'
 import { readRecentProjects, rememberRecentProject } from './recent-projects'
 import type { ParameterPickerRequest } from './SchemaParameterForm'
 import { groupStudioDefinitions } from './catalog'
@@ -85,6 +91,7 @@ import { NodePalette } from './components/NodePalette'
 import { ProjectHome } from './components/ProjectHome'
 import { ProjectShell } from './components/ProjectShell'
 import { RunCanvasOverlays, RunCenter, targetLabel } from './components/RunCenter'
+import { RetryImpactDialog } from './components/RetryImpactDialog'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
 
 // 仅决定能否继续展示“模板已就绪”标签，不进入 Run 绑定、执行或存储版本。
@@ -444,6 +451,18 @@ export function StudioWorkspace({
   )
   // 与当前 readiness 分离的页面内历史说明。仅显式完整检查可以更新，不参与 Submit 授权。
   const [lastFullPrecheckFailures, setLastFullPrecheckFailures] = useState<ReadonlyMap<string, ExternalHandoffReadiness>>(new Map())
+  const [checkedOutputs, setCheckedOutputs] = useState<ReadonlyMap<string, ExternalHandoffReadiness>>(new Map())
+  const checkedOutputsRef = useRef<ReadonlyMap<string, ExternalHandoffReadiness>>(new Map())
+  const [checkingNodeRunId, setCheckingNodeRunId] = useState<string | null>(null)
+  const [submittingNodeRunId, setSubmittingNodeRunId] = useState<string | null>(null)
+  const handoffActionRef = useRef<symbol | null>(null)
+  const [runtimeDiagnosticsOpen, setRuntimeDiagnosticsOpen] = useState(false)
+  const [retryOpen, setRetryOpen] = useState(false)
+  const [retryBusy, setRetryBusy] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
+  const [retryPreview, setRetryPreview] = useState<RerunPreviewEnvelope | null>(null)
+  const retryTokenRef = useRef<symbol | null>(null)
+  const retryBindingRef = useRef<{ request: RerunPreviewRequest; generation: number } | null>(null)
   const [logs, setLogs] = useState<ReadonlyMap<string, NodeLogEnvelope>>(new Map())
   const [statusHealth, setStatusHealth] = useState<ChannelHealth>(initialHealth.status)
   const [resourceHealth, setResourceHealth] = useState<ResourceHealth>(emptyResourceHealth)
@@ -456,6 +475,7 @@ export function StudioWorkspace({
   const [historyBusy, setHistoryBusy] = useState(false)
   const [boundaryError, setBoundaryError] = useState<string | null>(null)
   const [clientHint, setClientHint] = useState<string | null>(null)
+  const [commandFailure, setCommandFailure] = useState<StudioServiceError | null>(null)
   const [projectPath, setProjectPath] = useState('')
   const [projectId, setProjectId] = useState('')
   const [projectName, setProjectName] = useState('ZNIKU Project')
@@ -467,7 +487,7 @@ export function StudioWorkspace({
   const [parameterDraft, setParameterDraft] = useState<JsonObject>({})
   const [parameterText, setParameterText] = useState('{}')
   const [parameterRawError, setParameterRawError] = useState<string | null>(null)
-  const [bottomOpen, setBottomOpen] = useState(true)
+  const [bottomOpen, setBottomOpen] = useState(advanced)
   const [pollEpoch, setPollEpoch] = useState(0)
   const [detailPollEpoch, setDetailPollEpoch] = useState(0)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -594,6 +614,12 @@ export function StudioWorkspace({
     }))
   }, [])
 
+  const updateCheckedOutputs = useCallback((updater: (current: ReadonlyMap<string, ExternalHandoffReadiness>) => ReadonlyMap<string, ExternalHandoffReadiness>) => {
+    const next = updater(checkedOutputsRef.current)
+    checkedOutputsRef.current = next
+    setCheckedOutputs(next)
+  }, [])
+
   const markResourceHealth = useCallback(
     (channel: ResourceChannelName, resourceKey: string, stale: boolean) => {
       setResourceHealth((current) => {
@@ -631,7 +657,7 @@ export function StudioWorkspace({
       },
     ) => {
       const previous = statusRef.current
-      const pathChanged = previous !== null && previous.project_path !== next.project_path
+      const pathChanged = previous !== null && (previous.project_path !== next.project_path || previous.project_session_id !== next.project_session_id)
       const firstAuthority = previous === null
       if (!ingestAuthoring(next, options.replaceProject, options.macroLabel, selectionGuardRef.current.parameterDraftDirty)) return false
       statusRef.current = next
@@ -651,6 +677,7 @@ export function StudioWorkspace({
         latestTemplatePreviewRef.current = null
         setTemplateProfile(null)
         setLastFullPrecheckFailures(new Map())
+        updateCheckedOutputs(() => new Map())
       }
       if (firstAuthority || pathChanged || options.resetHistory) {
         replaceHistory(next.run_summaries, next.next_run_cursor, false)
@@ -676,7 +703,7 @@ export function StudioWorkspace({
       markStatusHealth(false)
       return true
     },
-    [ingestAuthoring, markStatusHealth, replaceHistory],
+    [ingestAuthoring, markStatusHealth, replaceHistory, updateCheckedOutputs],
   )
   authoring.onSaved.current = (next) => { acceptStatus(next, { replaceProject: false }) }
 
@@ -687,6 +714,10 @@ export function StudioWorkspace({
       detailRef.current = null
       setDetail(null)
       setReadiness(new Map())
+      updateCheckedOutputs(() => new Map())
+      handoffActionRef.current = null
+      setCheckingNodeRunId(null)
+      setSubmittingNodeRunId(null)
       setLogs(new Map())
       setResourceHealth(emptyResourceHealth())
       selectedLogResourceRef.current = null
@@ -703,7 +734,7 @@ export function StudioWorkspace({
       detailRegressionEpisodeRef.current.clear()
       detailQueuedRevisionRef.current.clear()
     }
-  }, [])
+  }, [updateCheckedOutputs])
 
   const loadDetail = useCallback(
     (runId: string, generation: number): Promise<RunDetailEnvelope | null> => {
@@ -852,8 +883,22 @@ export function StudioWorkspace({
           ) {
             return null
           }
+          const currentNodeRun = latestNodeRuns(detailRef.current?.run ?? null).get(
+            detailRef.current?.run.node_runs.find((item) => item.node_run_id === nodeRunId)?.node_id ?? '',
+          )
+          if (!currentNodeRun || currentNodeRun.node_run_id !== nodeRunId || !readinessMatchesHandoff(next, currentNodeRun) || next.probe_requested !== probe) {
+            throw new Error('外部检查响应与当前处理步骤或目标文件不一致；请重新检查。')
+          }
           acceptedResourceSequenceRef.current.readiness.set(resourceKey, sequence)
           setReadiness((current) => new Map(current).set(nodeRunId, next))
+          const handoffKey = handoffResourceKey(runId, nodeRunId, next.handoff_id)
+          updateCheckedOutputs((current) => {
+            const previous = current.get(handoffKey)
+            if (!previous || sameObservedOutputs(previous, next)) return current
+            const retained = new Map(current)
+            retained.delete(handoffKey)
+            return retained
+          })
           if (probe && next.probe_requested && !next.ready_for_submit) {
             setLastFullPrecheckFailures((current) => new Map(current).set(
               handoffResourceKey(next.run_id, next.node_run_id, next.handoff_id), next,
@@ -885,7 +930,7 @@ export function StudioWorkspace({
       readinessProbeFlightRef.current.set(resourceKey, { generation, token, promise: guarded })
       return guarded
     },
-    [effectiveGateway, markResourceHealth],
+    [effectiveGateway, markResourceHealth, updateCheckedOutputs],
   )
 
   const loadLog = useCallback(
@@ -1398,7 +1443,11 @@ export function StudioWorkspace({
       const retained = [...current].filter(([key, failure]) => failure.run_id !== currentRun.run_id || waitingKeys.has(key))
       return retained.length === current.size ? current : new Map(retained)
     })
-  }, [currentRun, waitingNodeRuns])
+    updateCheckedOutputs((current) => {
+      const retained = [...current].filter(([key]) => waitingKeys.has(key))
+      return retained.length === current.size ? current : new Map(retained)
+    })
+  }, [currentRun, updateCheckedOutputs, waitingNodeRuns])
   const health = useMemo<Record<ChannelName, ChannelHealth>>(
     () => ({
       status: statusHealth,
@@ -1445,9 +1494,9 @@ export function StudioWorkspace({
 
   useEffect(() => {
     selectedLogResourceRef.current = selectedLogResourceKey
-    if (!viewRunId || !selectedNodeRun?.log_path || !selectedLogResourceKey) return
+    if ((!advanced && !runtimeDiagnosticsOpen) || !viewRunId || !selectedNodeRun?.log_path || !selectedLogResourceKey) return
     void loadLog(viewRunId, selectedNodeRun.node_run_id, generationRef.current)
-  }, [loadLog, selectedLogResourceKey, selectedNodeRun?.log_path, selectedNodeRun?.node_run_id, viewRunId])
+  }, [advanced, runtimeDiagnosticsOpen, loadLog, selectedLogResourceKey, selectedNodeRun?.log_path, selectedNodeRun?.node_run_id, viewRunId])
 
   const changeSelection = useCallback((
     nodeIds: ReadonlySet<string>,
@@ -1751,6 +1800,7 @@ export function StudioWorkspace({
       setBoundaryError(null)
       setClientHint(null)
       commandErrorRef.current = null
+      setCommandFailure(null)
       const previousPath = statusRef.current?.project_path ?? null
       const previousViewRunId = viewRunIdRef.current
       // 任意命令都会切换请求 generation，因此先取消旧历史分页在 UI 上的互斥占位。
@@ -1863,10 +1913,12 @@ export function StudioWorkspace({
           }
         } else if (error instanceof StudioGatewayError && error.code) {
           commandErrorRef.current = error.message
-          setClientHint(`${error.code}: 本次操作未完成，工程和媒体没有被修改。`)
+          setCommandFailure({ code: error.code, message: error.message, related_run_ids: error.relatedRunIds })
+          setClientHint('本次操作未完成；本地编辑仍保留，请查看问题清单和最新处理记录。')
         } else {
           const message = error instanceof Error ? error.message : '本机工程服务操作失败'
           commandErrorRef.current = message
+          setCommandFailure({ code: 'E_STUDIO_REQUEST_FAILED', message, related_run_ids: [] })
           setBoundaryError('本次操作未完成；本地编辑已保留，请检查工程状态后重试。')
         }
         return null
@@ -2043,42 +2095,115 @@ export function StudioWorkspace({
     return () => window.clearTimeout(timer)
   }, [fitView, fitViewEpoch])
 
-  const validateAndSubmit = useCallback(
-    async (nodeRun: NodeRunWire) => {
-      if (!viewRunId || !nodeRun.external_handoff || health.readiness.stale) return
-      const runId = viewRunId
-      const nodeRunId = nodeRun.node_run_id
-      const handoffId = nodeRun.external_handoff.handoff_id
-      const checked = await loadReadiness(
-        runId,
-        nodeRunId,
-        true,
-        generationRef.current,
-      )
-      if (!checked?.ready_for_submit) {
-        const reasons = checked?.targets.flatMap((target) => target.message ? [`${target.port_id}: ${target.message}`] : []).join('；')
-        setClientHint(`外部输出尚未通过完整 probe/validator，未发送 Submit。${reasons ? ` ${reasons}` : ''}`)
+  const handoffIsCurrent = useCallback((nodeRun: NodeRunWire, generation: number): boolean => {
+    const current = latestNodeRuns(detailRef.current?.run ?? null).get(nodeRun.node_id)
+    return generation === generationRef.current && viewRunIdRef.current === nodeRun.run_id &&
+      current?.state === 'waiting_external' && current.node_run_id === nodeRun.node_run_id &&
+      current.external_handoff?.handoff_id === nodeRun.external_handoff?.handoff_id
+  }, [])
+
+  const checkOutput = useCallback(async (nodeRun: NodeRunWire) => {
+    const generation = generationRef.current
+    if (!nodeRun.external_handoff || handoffActionRef.current || busyRef.current ||
+        health.status.stale || health.detail.stale || !handoffIsCurrent(nodeRun, generation)) return
+    const token = Symbol('check-output')
+    handoffActionRef.current = token
+    setCheckingNodeRunId(nodeRun.node_run_id)
+    const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, nodeRun.external_handoff.handoff_id)
+    updateCheckedOutputs((current) => { const next = new Map(current); next.delete(key); return next })
+    try {
+      const checked = await loadReadiness(nodeRun.run_id, nodeRun.node_run_id, true, generation)
+      if (handoffActionRef.current !== token || !handoffIsCurrent(nodeRun, generation)) return
+      if (!checked || !isFullCheck(checked, nodeRun)) {
+        setClientHint('输出尚未通过完整检查。请按问题提示替换文件，再检查；本次没有提交产物。')
         return
       }
-      if (
-        checked.run_id !== runId ||
-        checked.node_run_id !== nodeRunId ||
-        checked.handoff_id !== handoffId
-      ) {
-        setClientHint('E_STUDIO_HANDOFF_IDENTITY_MISMATCH：probe 身份不匹配，未发送 Submit。')
+      updateCheckedOutputs((current) => new Map(current).set(key, checked))
+      setClientHint('输出检查通过。确认外部工具已完成写入后，可点击“提交并继续”。')
+    } finally {
+      if (handoffActionRef.current === token) { handoffActionRef.current = null; setCheckingNodeRunId(null) }
+    }
+  }, [handoffIsCurrent, health.detail.stale, health.status.stale, loadReadiness, updateCheckedOutputs])
+
+  const submitOutput = useCallback(async (nodeRun: NodeRunWire) => {
+    const generation = generationRef.current
+    const handoff = nodeRun.external_handoff
+    if (!handoff || handoffActionRef.current || busyRef.current || health.status.stale ||
+        health.detail.stale || health.readiness.stale || !handoffIsCurrent(nodeRun, generation)) return
+    const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, handoff.handoff_id)
+    const previous = checkedOutputsRef.current.get(key)
+    if (!previous || !isFullCheck(previous, nodeRun)) { setClientHint('请先检查输出，再显式提交。'); return }
+    const token = Symbol('submit-output')
+    handoffActionRef.current = token
+    setSubmittingNodeRunId(nodeRun.node_run_id)
+    try {
+      // 用户确认与检查分开；确认时重新完整预检，替换文件必须回到检查步骤，不能暗中提交新文件。
+      const fresh = await loadReadiness(nodeRun.run_id, nodeRun.node_run_id, true, generation)
+      if (handoffActionRef.current !== token || !handoffIsCurrent(nodeRun, generation)) return
+      if (!fresh || !isFullCheck(fresh, nodeRun) || !sameObservedOutputs(previous, fresh)) {
+        updateCheckedOutputs((current) => { const next = new Map(current); next.delete(key); return next })
+        setClientHint('输出已变化或未通过最新检查；没有提交。请重新检查输出，再确认提交。')
         return
       }
-      await executeCommands([
-        {
-          operation: 'submit_external',
-          run_id: runId,
-          node_run_id: nodeRunId,
-          handoff_id: handoffId,
-        },
-      ])
-    },
-    [executeCommands, health.readiness.stale, loadReadiness, viewRunId],
-  )
+      await executeCommands([{ operation: 'submit_external', run_id: nodeRun.run_id,
+        node_run_id: nodeRun.node_run_id, handoff_id: handoff.handoff_id }])
+      updateCheckedOutputs((current) => { const next = new Map(current); next.delete(key); return next })
+    } finally {
+      if (handoffActionRef.current === token) { handoffActionRef.current = null; setSubmittingNodeRunId(null) }
+    }
+  }, [executeCommands, handoffIsCurrent, health.detail.stale, health.readiness.stale, health.status.stale, loadReadiness, updateCheckedOutputs])
+
+  const requestRerun = useCallback(async (nodeId: string, runId: string) => {
+    if (busyRef.current || selectionGuardRef.current.parameterDraftDirty) {
+      setClientHint('请先完成当前操作，并应用或放弃未应用的设置。'); return
+    }
+    const token = Symbol('rerun-preview')
+    const generation = generationRef.current
+    retryTokenRef.current = token
+    retryBindingRef.current = null
+    setRetryOpen(true)
+    setRetryPreview(null)
+    setRetryError(null)
+    setRetryBusy(true)
+    try {
+      const binding = await flushAuthoring()
+      if (generation !== generationRef.current || retryTokenRef.current !== token) return
+      if (selectionGuardRef.current.parameterDraftDirty) throw new Error('节点设置已变化；请先应用或放弃，再预览重跑影响。')
+      if (!effectiveGateway.previewRerun) throw new Error('当前服务尚不支持重跑影响预览，请同步更新前后端。')
+      const request: RerunPreviewRequest = { operation: 'rerun_from_here', run_id: runId, node_id: nodeId, ...binding }
+      const preview = await effectiveGateway.previewRerun(request)
+      if (generation !== generationRef.current || retryTokenRef.current !== token) return
+      if (preview.run_id !== runId || preview.node_id !== nodeId || preview.project_session_id !== binding.project_session_id ||
+          preview.storage_revision !== binding.expected_storage_revision || JSON.stringify(precondition()) !== JSON.stringify(binding)) {
+        throw new Error('工程在预览期间已变化，请重新预览重跑影响。')
+      }
+      retryBindingRef.current = { request, generation }
+      setRetryPreview(preview)
+    } catch (error) {
+      if (retryTokenRef.current === token) setRetryError(safeVisibleServiceError(error instanceof Error ? error.message : '无法读取重跑影响', '暂时无法预览重跑影响；请检查步骤设置与输入文件。'))
+    } finally {
+      if (retryTokenRef.current === token) setRetryBusy(false)
+    }
+  }, [effectiveGateway, flushAuthoring, precondition])
+
+  const confirmRerun = async () => {
+    const binding = retryBindingRef.current
+    if (!binding || !retryPreview || retryBusy || busyRef.current) return
+    if (health.status.stale || health.detail.stale || status?.active_operation) {
+      setRetryError('当前任务状态尚不可用于重跑；请等待服务恢复后重新预览。'); return
+    }
+    try {
+      const current = precondition()
+      if (binding.generation !== generationRef.current || binding.request.run_id !== viewRunIdRef.current ||
+          dirty || selectionGuardRef.current.parameterDraftDirty || current.project_session_id !== binding.request.project_session_id ||
+          current.expected_storage_revision !== binding.request.expected_storage_revision) throw new Error('changed')
+    } catch { setRetryError('工程或查看的任务已变化；请关闭此窗口，重新预览重跑影响。'); return }
+    setRetryBusy(true)
+    const result = await executeCommands([binding.request], { preferCreatedRun: true })
+    setRetryBusy(false)
+    if (result) { setRetryOpen(false); retryBindingRef.current = null }
+    else setRetryError('未能开始重跑。已保留原有记录，请检查任务状态后重新预览。')
+  }
 
   const copyPath = useCallback(async (path: string) => {
     try {
@@ -2133,10 +2258,15 @@ export function StudioWorkspace({
   const rerunNodeIncluded = singleSelectedNodeId
     ? runLatestAttempts.has(singleSelectedNodeId)
     : false
-  const serviceBusy = busy || operationActive
+  const serviceBusy = busy || operationActive || submittingNodeRunId !== null
   const runBlocked = serviceBusy || homeActionBusy || health.status.stale || !draft || diagnostics.length > 0 || parameterDraftDirty || !!authoring.error
   const detailMutationBlocked = serviceBusy || homeActionBusy || health.status.stale || health.detail.stale
   const firstWaiting = waitingNodeRuns[0] ?? null
+  const firstWaitingObserved = firstWaiting ? readiness.get(firstWaiting.node_run_id) ?? null : null
+  const firstWaitingChecked = firstWaiting?.external_handoff ? checkedOutputs.get(handoffResourceKey(
+    firstWaiting.run_id, firstWaiting.node_run_id, firstWaiting.external_handoff.handoff_id)) : null
+  const firstWaitingCheckCurrent = !!firstWaiting && !!firstWaitingChecked && !!firstWaitingObserved &&
+    isFullCheck(firstWaitingChecked, firstWaiting) && sameObservedOutputs(firstWaitingChecked, firstWaitingObserved)
   const firstFailed = [...runLatestAttempts.values()].find(
     (nodeRun) => nodeRun.state === 'failed',
   ) ?? null
@@ -2272,9 +2402,81 @@ export function StudioWorkspace({
   }
 
   const nodeLabel = (nodeId: string): string => {
-    const node = graph.nodes.find((item) => item.node_id === nodeId)
+    const node = graph.nodes.find((item) => item.node_id === nodeId) ?? currentRun?.graph_snapshot.nodes.find((item) => item.node_id === nodeId)
     return studioState?.node_views.find((view) => view.node_id === nodeId)?.display_name
-      ?? (node ? presentationsByKey.get(`${node.type_id}@${node.definition_version}`)?.title ?? node.type_id : nodeId)
+      ?? (node ? presentationsByKey.get(`${node.type_id}@${node.definition_version}`)?.title ?? node.type_id : advanced ? nodeId : '历史步骤')
+  }
+  const launchHandoff = async (nodeRun: NodeRunWire, capability: HostSystemCapability,
+    selector: Extract<HostPathReference, { readonly kind: 'handoff' }>['selector']) => {
+    if (!nodeRun.external_handoff || !handoffIsCurrent(nodeRun, generationRef.current)) return
+    try {
+      await effectiveHostBridge.launch(capability, { kind: 'handoff', run_id: nodeRun.run_id,
+        node_run_id: nodeRun.node_run_id, handoff_id: nodeRun.external_handoff.handoff_id, selector })
+      setHostError(null)
+    } catch {
+      setClientHint('无法打开本机文件位置；请重新连接桌面能力，或使用“复制路径”。')
+    }
+  }
+  const locateCurrentNode = (nodeId: string) => {
+    if (!changeSelection(new Set([nodeId]), new Set())) return
+    setShowRunSnapshot(false)
+    void fitView({ nodes: [{ id: nodeId }], padding: 0.3, maxZoom: 1.2, duration: 0 })
+  }
+  const locateRunNode = (nodeId: string) => {
+    if (!changeSelection(new Set([nodeId]), new Set())) return
+    setShowRunSnapshot(true)
+    void fitView({ nodes: [{ id: nodeId }], padding: 0.3, maxZoom: 1.2, duration: 0 })
+  }
+  const openExternalAssistant = (nodeId: string) => {
+    locateRunNode(nodeId)
+    // 定位节点后把操作步骤滚入侧栏；仅改变视图，不改变交接或 Run 身份。
+    requestAnimationFrame(() => document.getElementById('external-processing-assistant')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }))
+  }
+  const blockedRunReason = health.status.stale ? '本机服务连接已中断；请重新连接。'
+    : serviceBusy || homeActionBusy ? '当前操作尚未完成，请稍候。'
+      : !draft ? '请先新建或打开工程。'
+        : parameterDraftDirty ? '请先应用或放弃未应用的节点设置。'
+          : authoring.error ? '工程尚未保存；请先处理保存问题。'
+            : diagnostics.length > 0 ? '请修复标出的必填设置或连接。' : undefined
+  const blockedDetailReason = detailMutationBlocked ? '当前任务状态不可用于操作；请等待或重新连接。'
+    : parameterDraftDirty ? '请先应用或放弃未应用的设置。' : undefined
+  const repairGraph = () => {
+    setBottomOpen(true)
+    const diagnostic = diagnostics.find((item) => item.node_id || item.edge_id)
+    if (diagnostic?.node_id) locateCurrentNode(diagnostic.node_id)
+    else if (diagnostic?.edge_id && changeSelection(new Set(), new Set([diagnostic.edge_id]))) setShowRunSnapshot(false)
+    else if (parameterDraftDirty && selectedNode) locateCurrentNode(selectedNode.node_id)
+  }
+  const runningStep = [...runLatestAttempts.values()].find((item) => item.state === 'running')
+  const outputStep = [...runLatestAttempts.values()].reverse().find((item) => item.state === 'completed' && item.output_artifact_ids.length > 0)
+  const completedStep = [...runLatestAttempts.values()].reverse().find((item) => item.state === 'completed')
+  const executionChanged = !!currentRun && !!draft && graphPresentationComparison(currentRun.graph_snapshot) !== graphPresentationComparison(draft.project.graph)
+  const hasStaleResult = status?.latest_results.some((item) => item.stale) ?? false
+  const primaryAction = health.status.stale ? {
+    label: '重新连接', disabled: loading, reason: '与本机服务的连接已中断，保留最后可信状态。',
+    onAction: () => setReconnectEpoch((value) => value + 1),
+  } : !draft ? {
+    label: '新建或打开工程', disabled: loading, reason: loading ? '正在连接本机工程服务。' : undefined,
+    onAction: () => setHomeOpen(true),
+  } : runningStep ? {
+    label: '查看当前进度', disabled: false, onAction: () => locateRunNode(runningStep.node_id),
+  } : firstWaiting ? {
+    label: '继续外部处理', disabled: false, onAction: () => openExternalAssistant(firstWaiting.node_id),
+  } : firstFailed ? {
+    label: '查看问题并重试此步骤', disabled: detailMutationBlocked || parameterDraftDirty,
+    reason: blockedDetailReason, onAction: () => { locateRunNode(firstFailed.node_id); void requestRerun(firstFailed.node_id, firstFailed.run_id) },
+  } : globalActionSummary && globalActionSummary.run_id !== viewRunId ? {
+    label: '查看待处理任务', disabled: false, onAction: () => selectRun(globalActionSummary.run_id),
+  } : parameterDraftDirty || diagnostics.length > 0 ? {
+    label: '修复设置或连接', disabled: false, reason: blockedRunReason, onAction: repairGraph,
+  } : authoring.error ? {
+    label: '处理保存问题', disabled: false, reason: '本地编辑仍保留，尚不能开始处理。', onAction: () => { void saveProject() },
+  } : viewedSummary?.state === 'completed' && !executionChanged && !hasStaleResult ? {
+    label: outputStep ? '查看输出' : '查看完成记录', disabled: false,
+    reason: outputStep ? undefined : '此任务没有声明输出文件；已完成的步骤记录仍保留。',
+    onAction: () => { if (outputStep ?? completedStep) locateRunNode((outputStep ?? completedStep)!.node_id); else setBottomOpen(true) },
+  } : {
+    label: '开始处理', disabled: runBlocked, reason: blockedRunReason, onAction: () => { void saveThenRun({ operation: 'run_all' }) },
   }
   const editStudioState = (label: string, updater: (state: StudioStateWire) => StudioStateWire) => {
     if (!graphEditable || busy || homeActionBusy || parameterDraftDirty) return
@@ -2308,6 +2510,8 @@ export function StudioWorkspace({
 
   return (
     <main className={`app-shell studio-workspace ${bottomOpen ? 'has-bottom-drawer' : ''}`}>
+      {retryOpen && <RetryImpactDialog preview={retryPreview} nodeLabel={nodeLabel} busy={retryBusy} error={retryError}
+        onConfirm={() => void confirmRerun()} onCancel={() => { retryTokenRef.current = null; retryBindingRef.current = null; setRetryOpen(false); setRetryBusy(false) }} />}
       <ProjectHome
         busy={serviceBusy || homeActionBusy}
         hasOpenProject={draft !== null}
@@ -2416,6 +2620,13 @@ export function StudioWorkspace({
         onSaveProject={() => void saveProject()}
         runCenter={(
           <RunCenter
+            advanced={advanced}
+            nodeLabel={nodeLabel}
+            primaryAction={primaryAction}
+            blockedReasons={{ runAll: blockedRunReason,
+              runTo: blockedRunReason ?? (!singleSelectedNodeId ? '先选择一个步骤。' : showRunSnapshot ? '请切回当前工作流后再执行局部处理。' : undefined),
+              rerun: blockedDetailReason ?? (!singleSelectedNodeId ? '先选择一个步骤。' : !rerunId || !rerunNodeIncluded ? '所选步骤不属于当前查看任务的执行范围。' : undefined) }}
+            onRecoverService={() => setReconnectEpoch((value) => value + 1)}
             health={health}
             status={status}
             summaries={allSummaries}
@@ -2426,7 +2637,7 @@ export function StudioWorkspace({
             onSelectRun={selectRun}
             onRunAll={() => void saveThenRun({ operation: 'run_all' })}
             onRunTo={() => singleSelectedNodeId && void saveThenRun({ operation: 'run_to', node_id: singleSelectedNodeId })}
-            onRerun={() => singleSelectedNodeId && rerunId && void saveThenRun({ operation: 'rerun_from_here', run_id: rerunId, node_id: singleSelectedNodeId })}
+            onRerun={() => singleSelectedNodeId && rerunId && void requestRerun(singleSelectedNodeId, rerunId)}
           />
         )}
       />
@@ -2473,8 +2684,10 @@ export function StudioWorkspace({
         edges={flowEdges}
         editable={graphEditable}
         busy={busy || homeActionBusy}
-        modeLabel={showRunSnapshot && currentRun ? 'Run snapshot' : 'Current Graph'}
-        contextLabel={viewedSummary ? `${viewedSummary.run_id} · ${targetLabel(viewedSummary)} · ${viewedSummary.state}` : '编辑与运行使用同一 Project authority'}
+        advanced={advanced}
+        showingSnapshot={showRunSnapshot && currentRun !== null}
+        modeLabel={showRunSnapshot && currentRun ? advanced ? 'Run snapshot' : '本次处理的工作流' : advanced ? 'Current Graph' : '当前工作流'}
+        contextLabel={advanced && viewedSummary ? `${viewedSummary.run_id} · ${targetLabel(viewedSummary)} · ${viewedSummary.state}` : showRunSnapshot && currentRun ? '只读记录；编辑当前工作流不改变这次处理。' : '自由编辑，修改将用于下一次处理。'}
         snapshotChanged={snapshotChanged}
         canToggleSnapshot={currentRun !== null}
         loading={loading}
@@ -2493,15 +2706,17 @@ export function StudioWorkspace({
         isValidConnection={connectionIsValid}
         overlays={(
           <RunCanvasOverlays
+            advanced={advanced}
+            nodeLabel={nodeLabel}
             viewedSummary={viewedSummary}
             firstWaiting={firstWaiting}
             firstWaitingInputPaths={firstWaitingInputPaths}
-            firstWaitingReadinessLabel={firstWaiting ? readinessLabel(readiness.get(firstWaiting.node_run_id) ?? null) : ''}
+            firstWaitingReadinessLabel={health.readiness.stale ? '检测离线，保留上次观察' : firstWaitingCheckCurrent ? '完整检查通过，等待你提交' : firstWaiting ? readinessLabel(firstWaitingObserved) : ''}
             firstWaitingElapsedLabel={firstWaiting ? elapsedLabel(firstWaiting.started_at ?? firstWaiting.created_at) : ''}
             globalActionSummary={globalActionSummary}
             firstFailed={firstFailed}
             sameRun={globalActionSummary?.run_id === viewRunId}
-            onLocateNode={(nodeId) => changeSelection(new Set([nodeId]), new Set())}
+            onLocateNode={locateRunNode}
             onSelectRun={selectRun}
           />
         )}
@@ -2509,6 +2724,9 @@ export function StudioWorkspace({
 
       <NodeInspector
         advanced={advanced}
+        advancedDetailsOpen={advanced || runtimeDiagnosticsOpen}
+        onToggleDiagnostics={setRuntimeDiagnosticsOpen}
+        selectedLatestResult={selectedNode ? latestResults.get(selectedNode.node_id) ?? null : null}
         authoringPanel={authoringPanel}
         orderedInputs={orderedInputs}
         nodeLabel={nodeLabel}
@@ -2540,6 +2758,16 @@ export function StudioWorkspace({
         lastFullPrecheckFailure={currentRun && selectedNodeRun?.external_handoff ? lastFullPrecheckFailures.get(handoffResourceKey(currentRun.run_id, selectedNodeRun.node_run_id, selectedNodeRun.external_handoff.handoff_id)) ?? null : null}
         handoffCenter={(
           <HandoffCenter
+            advanced={advanced}
+            nodeLabel={nodeLabel}
+            checkedOutputs={checkedOutputs}
+            checkingNodeRunId={checkingNodeRunId}
+            submittingNodeRunId={submittingNodeRunId}
+            onCheckOutput={(nodeRun) => void checkOutput(nodeRun)}
+            onSubmitOutput={(nodeRun) => void submitOutput(nodeRun)}
+            canRevealHandoff={hostCapabilityAvailable('reveal_in_file_manager')}
+            canOpenHandoffInput={hostCapabilityAvailable('open_with_system_player')}
+            onLaunchHandoff={(nodeRun, capability, selector) => void launchHandoff(nodeRun, capability, selector)}
             waitingNodeRuns={waitingNodeRuns}
             detail={currentDetail}
             artifactsById={artifactsById}
@@ -2547,14 +2775,15 @@ export function StudioWorkspace({
             lastFullPrecheckFailures={lastFullPrecheckFailures}
             mutationBlocked={detailMutationBlocked}
             readinessStale={health.readiness.stale}
-            onSelectNode={(nodeId) => changeSelection(new Set([nodeId]), new Set())}
+            onSelectNode={locateRunNode}
             onCopyPath={(path) => void copyPath(path)}
-            onValidateAndSubmit={(nodeRun) => void validateAndSubmit(nodeRun)}
           />
         )}
         actionableRun={viewedSummary?.actionable ?? false}
         actionableRunIsRunning={(viewedSummary?.state_counts.running ?? 0) > 0}
-        clientHint={clientHint ?? (status?.studio_warnings.map((warning) => warning.message).join('；') || presentationError)}
+        clientHint={clientHint && !advanced && /(?:E_[A-Z_]+|probe|validator|Submit|Run detail|stdout|stderr)/.test(clientHint)
+          ? '操作暂未完成。请查看问题提示；详细原因保留在高级诊断中。'
+          : clientHint ?? (status?.studio_warnings.map((warning) => warning.message).join('；') || presentationError)}
         boundaryError={draft ? boundaryError : null}
         onParameterDraftChange={changeParameterDraft}
         onPickParameterPath={pickParameterPath}
@@ -2571,21 +2800,27 @@ export function StudioWorkspace({
         canOpenArtifact={hostCapabilityAvailable('open_with_system_player')}
         onRevealArtifact={(artifactId) => void launchArtifact('reveal_in_file_manager', artifactId)}
         onOpenArtifact={(artifactId) => void launchArtifact('open_with_system_player', artifactId)}
-        onValidateAndSubmit={(nodeRun) => void validateAndSubmit(nodeRun)}
         onReorderEdge={(id, ordinal) => updateGraph((current) => reorderEdge(current, id, ordinal))}
         onDeleteEdge={deleteSelected}
-        onAbandonRun={() => viewRunId && void executeCommands([{ operation: 'abandon_run', run_id: viewRunId }])}
+        onAbandonRun={() => {
+          if (viewRunId && window.confirm('放弃此任务会停止等待中的步骤；已完成结果仍保留。是否继续？')) void executeCommands([{ operation: 'abandon_run', run_id: viewRunId }])
+        }}
       />
 
       <DiagnosticsPanel
+        advanced={advanced}
+        nodeLabel={nodeLabel}
+        runtimeProblems={[...runLatestAttempts.values()].flatMap((item) => item.error ? [{ code: item.error.reason, message: item.error.message, node_id: item.node_id }] : [])}
+        onRecoverService={() => setReconnectEpoch((value) => value + 1)}
         open={bottomOpen}
         diagnostics={diagnostics}
-        serviceError={status?.error ?? null}
+        serviceError={commandFailure ?? status?.error ?? (boundaryError ? { code: 'E_STUDIO_SERVICE_UNAVAILABLE', message: boundaryError, related_run_ids: [] } : null)}
         hasOlderRuns={historyCursor !== null}
         historyBusy={historyBusy}
         onToggle={() => setBottomOpen((open) => !open)}
-        onLocateNode={(nodeId) => changeSelection(new Set([nodeId]), new Set())}
-        onLocateEdge={(id) => changeSelection(new Set(), new Set([id]))}
+        onLocateNode={locateCurrentNode}
+        onLocateRuntimeNode={locateRunNode}
+        onLocateEdge={(id) => { if (changeSelection(new Set(), new Set([id]))) setShowRunSnapshot(false) }}
         onLoadOlderRuns={() => void loadOlderRuns()}
       />
     </main>

@@ -2,6 +2,7 @@
 
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { WorkflowNode } from '../model'
+import { creatorElapsedLabel, nodeStateLabel } from '../studio/run-presentation'
 
 const statusLabels = {
   pending: 'Pending',
@@ -21,6 +22,7 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
   const stale = data.latestResult?.stale === true
   const state = data.nodeRun?.state
   const advanced = data.advanced !== false
+  const manual = data.executorKind === 'manual_external' || state === 'waiting_external'
   const inputLabel = (id: string) => data.portLabels?.input[id] ?? id
   const outputLabel = (id: string) => data.portLabels?.output[id] ?? id
 
@@ -30,7 +32,7 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
         state ? `status-${state}` : ''
       } ${stale ? 'status-stale' : ''} ${data.collapsed ? 'is-collapsed' : ''} ${data.connecting ? 'is-connecting' : ''} ${data.groupLabel ? 'has-ui-group' : ''}`}
       data-group-color={data.groupColorToken}
-      aria-label={`${data.instanceId} 节点`}
+      aria-label={`${advanced ? data.instanceId : data.label} 节点`}
     >
       {data.inputs.map((port, index) => (
         <Handle
@@ -54,32 +56,33 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
       </div>
       <strong>{data.label}</strong>
       {advanced && <span className="node-subtitle">{data.typeId}</span>}
-      {!data.collapsed && data.summaries.length > 0 && <div className="node-parameter-summary">{data.summaries.map((summary) => <span key={summary}>{summary}</span>)}</div>}
+      {!data.collapsed && data.summaries.length > 0 && <div className="node-parameter-summary" role="list" aria-label="关键设置">{data.summaries.map((summary, index) => <span role="listitem" key={`${index}-${summary}`}>{summary}</span>)}</div>}
       {!data.collapsed && (data.inputs.length > 1 || data.outputs.length > 1) && (
         <div className="multi-port-summary">
           {data.inputs.length > 1 && <span>输入 · {data.inputs.map((port) => inputLabel(port.port_id)).join(' + ')}</span>}
           {data.outputs.length > 1 && <span>输出 · {data.outputs.map((port) => outputLabel(port.port_id)).join(' + ')}</span>}
         </div>
       )}
-      {state && <span className={`run-chip run-chip--${state}`}>{statusLabels[state]}</span>}
-      {stale && <span className="run-chip run-chip--stale">Stale</span>}
-      {data.progress.mode === 'determinate' && data.progress.fraction !== null && (
+      {state && <span className={`run-chip run-chip--${state}`}>{advanced ? statusLabels[state] : nodeStateLabel(state)}</span>}
+      {data.nodeRun?.reused_from_result_id && <span className="run-chip run-chip--reused">{advanced ? 'Reused' : nodeStateLabel('reused')}</span>}
+      {stale && <span className="run-chip run-chip--stale">{advanced ? 'Stale' : nodeStateLabel('stale')}</span>}
+      {!manual && data.progress.mode === 'determinate' && data.progress.fraction !== null && (
         <span className="node-progress">{Math.round(data.progress.fraction * 100)}%</span>
       )}
-      {data.progress.mode === 'indeterminate' && (
+      {!manual && data.progress.mode === 'indeterminate' && (
         <span className="node-progress node-progress--indeterminate" aria-label="进度不确定">
-          <i aria-hidden="true" /> Working…
+          <i aria-hidden="true" /> {advanced ? 'Working…' : '正在处理…'}
         </span>
       )}
-      {(data.progress.measurement || data.progress.elapsed) && (
+      {((!manual && data.progress.measurement) || data.progress.elapsed) && (
         <span className="node-progress-detail">
-          {data.progress.measurement && (
+          {!manual && data.progress.measurement && (
             <span>
               {data.progress.measurement.current} / {data.progress.measurement.total}{' '}
-              {data.progress.measurement.unit}
+              {advanced ? data.progress.measurement.unit : data.progress.measurement.unit === 'frames' ? '帧' : data.progress.measurement.unit === 'bytes' ? '字节' : data.progress.measurement.unit === 'items' ? '项' : data.progress.measurement.unit === 'microseconds' ? '微秒' : ''}
             </span>
           )}
-          {data.progress.elapsed && <span>{data.progress.elapsed}</span>}
+          {data.progress.elapsed && <span>{advanced ? data.progress.elapsed : creatorElapsedLabel(data.progress.elapsed, state === 'waiting_external')}</span>}
         </span>
       )}
 

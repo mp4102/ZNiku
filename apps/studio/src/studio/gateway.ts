@@ -11,6 +11,7 @@ import {
   parseExternalHandoffReadiness,
   parseNodeLogEnvelope,
   parsePresentationCatalogEnvelope,
+  parseRerunPreviewEnvelope,
   parseRunDetailEnvelope,
   parseRunSummaryPageEnvelope,
   parseStatusEnvelope,
@@ -21,6 +22,8 @@ import {
   type AvEnhanceV27TemplatePreviewRequestWire,
   type NodeLogEnvelope,
   type PresentationCatalogEnvelopeWire,
+  type RerunPreviewEnvelope,
+  type RerunPreviewRequest,
   type RunDetailEnvelope,
   type RunSummaryPageEnvelope,
   type StatusEnvelope,
@@ -34,6 +37,7 @@ export interface StudioGateway {
   inspect(viewRunId?: string | null): Promise<StatusEnvelope>
   listRuns(cursor?: string | null, limit?: number): Promise<RunSummaryPageEnvelope>
   inspectRun(runId: string): Promise<RunDetailEnvelope>
+  previewRerun?(request: RerunPreviewRequest): Promise<RerunPreviewEnvelope>
   inspectLog(runId: string, nodeRunId: string): Promise<NodeLogEnvelope>
   inspectReadiness(
     runId: string,
@@ -174,6 +178,18 @@ export class FetchStudioGateway implements StudioGateway {
       throw new StudioContractError('Node log 的 run_id/node_run_id 与请求资源不一致')
     }
     return envelope
+  }
+
+  async previewRerun(request: RerunPreviewRequest): Promise<RerunPreviewEnvelope> {
+    const payload = parseStudioCommand(request)
+    const preview = await this.request('/api/studio/rerun-preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parseRerunPreviewEnvelope)
+    if (preview.run_id !== request.run_id || preview.node_id !== request.node_id ||
+        preview.project_session_id !== request.project_session_id || preview.storage_revision !== request.expected_storage_revision) {
+      throw new StudioContractError('重跑影响预览与请求工程、Run 或存储版本不一致')
+    }
+    return preview
   }
 
   async inspectReadiness(

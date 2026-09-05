@@ -93,6 +93,14 @@ class _ResolvedInputs:
     runner_inputs: tuple[RunnerInput, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class RerunImpact:
+    """只读的当前重跑影响，不持久化、不保留执行计划，也不保证稍后仍可复用。"""
+
+    rerun_node_ids: tuple[str, ...]
+    reusable_node_ids: tuple[str, ...]
+
+
 class RuntimeService:
     """在单用户本地 Project 上同步推进普通 DAG Run。
 
@@ -242,6 +250,79 @@ class RuntimeService:
         return self.create_run(
             expected_storage_revision=expected_storage_revision, rerun_from_node_id=node_id
         )
+
+    def inspect_rerun_impact(self, run_id: str, node_id: str, *, new_run: bool) -> RerunImpact:
+        """复用同一候选检查作只读预览；不创建 attempt、不写 stale、不执行 adapter。
+
+        当前 Project 将建立新 Run 时，以拓扑顺序解析能保留的直接输入 Artifact，再调用正式
+        reuse 候选规则。被请求节点及其下游一律从头运行。现有 Run 中未被取代的 completed
+        结果只作快速可读性检查；其历史记录保持不变。
+        """
+
+        original = self._repository.get_run(run_id)
+        if not new_run:
+            selected = self._selected_node_ids(original)
+            if original.state is not RunState.RUNNING or node_id not in selected:
+                raise RuntimeServiceError("E_SERVICE_RERUN_RUN_STATE", "Run 不能在原位重跑")
+            latest = self._latest_attempts(original, selected)
+            closure = set(Scheduler(original.graph_snapshot).downstream_closure(node_id))
+            rerun = tuple(item for item in selected if item in closure)
+            if any(latest[item].state is NodeRunState.RUNNING for item in rerun):
+                raise RuntimeServiceError("E_SERVICE_RERUN_ACTIVE", "不能取代仍在运行的 attempt")
+            reusable = tuple(
+                item
+                for item in selected
+                if item not in closure
+                and latest[item].state is NodeRunState.COMPLETED
+                and all(
+                    self._probe_artifact(self._repository.get_artifact(identity))[0]
+                    for identity in latest[item].output_artifact_ids
+                )
+            )
+            return RerunImpact(rerun, reusable)
+
+        snapshot = self._repository.project_store.load()
+        try:
+            GraphValidator(snapshot.definitions).validate(snapshot.project.graph)
+        except GraphValidationError as error:
+            raise RuntimeServiceError("E_SERVICE_GRAPH_INVALID", str(error)) from error
+        scheduler = Scheduler(snapshot.project.graph)
+        if node_id not in scheduler.topological_order:
+            raise RuntimeServiceError("E_SERVICE_RERUN_NODE_UNKNOWN", "当前图已不含所选节点")
+        forced = set(scheduler.downstream_closure(node_id))
+        # 普通模型仅在本次函数栈中用于共享签名比较，不写 snapshot、历史或磁盘工作目录。
+        projected = Run.pending(
+            project_id=snapshot.project.project_id,
+            graph_snapshot=snapshot.project.graph,
+            definitions_snapshot=snapshot.definitions,
+        )
+        nodes = {item.node_id: item for item in snapshot.project.graph.nodes}
+        outputs: dict[tuple[str, str], str] = {}
+        rerun_ids: list[str] = []
+        reusable_ids: list[str] = []
+        for identity in scheduler.topological_order:
+            incoming = capture_node_signature(snapshot.project.graph, identity).incoming_edges
+            source_keys = tuple((edge.source_node_id, edge.source_port_id) for edge in incoming)
+            if identity in forced or any(key not in outputs for key in source_keys):
+                rerun_ids.append(identity)
+                continue
+            attempt = NodeRun.pending(
+                run_id=projected.run_id,
+                node_id=identity,
+                definition_version=nodes[identity].definition_version,
+                attempt=1,
+                input_artifact_ids=tuple(outputs[key] for key in source_keys),
+                work_dir=str(self._work_root),
+            )
+            result = self._find_reusable_result(projected, attempt, persist_probe_stale=False)
+            if result is None:
+                rerun_ids.append(identity)
+                continue
+            reusable_ids.append(identity)
+            outputs.update(
+                {(identity, item.producer_port_id): item.artifact_id for item in result.outputs}
+            )
+        return RerunImpact(tuple(rerun_ids), tuple(reusable_ids))
 
     def run_until_blocked(self, run_id: str) -> Run:
         """顺序执行全部即时 ready 节点，直到完成或只剩 blocked/waiting/failed。
@@ -671,14 +752,29 @@ class RuntimeService:
         )
 
     def _try_reuse(self, run: Run, node_run: NodeRun) -> bool:
+        result = self._find_reusable_result(run, node_run)
+        if result is None:
+            return False
+        self._repository.reuse_result(
+            node_run.node_run_id,
+            result.result_id,
+            completed_at=utc_now(),
+        )
+        return True
+
+    def _find_reusable_result(
+        self, run: Run, node_run: NodeRun, *, persist_probe_stale: bool = True
+    ) -> NodeResult | None:
+        """共享正式复用候选规则；只读预览禁止把 probe 失败写回 latest。"""
+
         # attempt > 1 是操作者明确要求从头重跑的 closure；复用会悄悄撤销该意图。
         if node_run.attempt != 1:
-            return False
+            return None
         latest = self._repository.get_latest(node_run.node_id)
         if latest is None:
-            return False
+            return None
         if latest.updated_at <= run.created_at and latest.stale:
-            return False
+            return None
 
         candidates = self._repository.list_results_for_node(
             node_run.node_id,
@@ -690,21 +786,20 @@ class RuntimeService:
                 result for result in candidates if result.result_id == latest.result_id
             )
         for result in candidates:
-            if not self._candidate_matches(run, node_run, result):
+            if not self._candidate_matches(
+                run, node_run, result, persist_probe_stale=persist_probe_stale
+            ):
                 continue
-            self._repository.reuse_result(
-                node_run.node_run_id,
-                result.result_id,
-                completed_at=utc_now(),
-            )
-            return True
-        return False
+            return result
+        return None
 
     def _candidate_matches(
         self,
         run: Run,
         node_run: NodeRun,
         result: NodeResult,
+        *,
+        persist_probe_stale: bool = True,
     ) -> bool:
         """按 active Run snapshot 检查一个在 Run 启动前完成的历史结果。"""
 
@@ -752,7 +847,8 @@ class RuntimeService:
                 probe_reason = reason
         current_latest = self._repository.get_latest(node_run.node_id)
         if (
-            probe_reason is not None
+            persist_probe_stale
+            and probe_reason is not None
             and current_latest is not None
             and current_latest.result_id == result.result_id
             and not current_latest.stale

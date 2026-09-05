@@ -10,8 +10,9 @@ Graph 与 Runtime 的唯一上位架构权威是
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
 当前产品代码仍保持 `0.2.0` package 版本。v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
-创作者建项、HostBridge、Undo/Redo、兼容连接、纯展示分组与 CAS 自动保存。运行中心重构、双击交付和
-新用户真实验收仍属于 Phase 4–6，完整证据见 [Phase 3 验收记录](../../docs/v0.3.0-phase3-acceptance.md)。
+创作者建项、HostBridge、Undo/Redo、兼容连接、纯展示分组与 CAS 自动保存。Phase 4 已实现创作者运行中心、
+外部处理助手与只读重跑影响预览，完整门禁与合成浏览器闭环已通过，见 [Phase 4 验收记录](../../docs/v0.3.0-phase4-acceptance.md)。
+双击交付、媒体预览和新用户真实验收仍属于尚未开始的 Phase 5–6。
 
 当前 0.2.0 Phase 1–5 与 v0.2.1 Phase 1–5 已实现产品面：
 
@@ -56,6 +57,19 @@ npm run dev
 - 新工程使用 schema 3；旧 schema 2 首次保存时在工程旁保留 `.zniku-schema2-backup-<UUID>.zniku` 一致
   备份。别名、分组、折叠和 viewport 不进入 Run snapshot，普通刷新／重开保留已保存内容但清空撤销历史；
 - 前后端需要同时更新；save、expand 与三个运行入口要求 exact session 和 storage revision，旧请求失败关闭。
+
+## 运行与外部处理
+
+- 默认层使用“开始处理”“继续外部处理”“查看问题并重试”等上下文主操作；精确命令与 identity 在高级层；
+- automatic 只展示可信测量，外部工具只显示等待与文件观察，不显示倒计时或伪造百分比；
+- 外部文件“已发现”不代表合格；先选择“检查输出”，通过后另行显式选择“提交并继续”；
+- 替换文件后重新检查；页面提交前和正式 Runtime Submit 均保留完整验证，不会自动登记 Artifact；
+- 重试先查看服务端返回的从头运行／可复用清单，取消没有副作用；确认时重新检查工程会话、存储版本与编辑；
+- Run 历史按时间、目标和结果命名；默认轮询使用有界 summary，日志仅按需定向读取；
+- 输出目录和播放器使用既有 HostBridge 引用；本阶段不增加任意系统命令能力。
+
+`POST /api/studio/rerun-preview` 使用与正式 `rerun_from_here` 相同的严格请求，仅返回 `0.3.0`
+`RerunPreviewEnvelope`。该投影不持久化执行计划，不代替实际 command 的完整校验。
 
 ## 验证
 

@@ -16,6 +16,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
+from time import monotonic
 from typing import BinaryIO, Literal
 from uuid import uuid4
 
@@ -770,9 +771,14 @@ def _copy_stream_with_progress(
     *,
     total: int,
 ) -> None:
-    """逐块复制并按已读取的源字节数上报；源大小漂移时失败关闭。"""
+    """逐块核验短写和源大小，最多每 250 ms 上报可信字节样本。
+
+    每个 callback 都会重验 attempt binding；不能让每 MiB 数据触发 SQLite 往返。这里只合并
+    展示采样，不跳过任何复制检查、最终 probe 或 validator；首个样本和 EOF 核验后样本保留。
+    """
 
     current = 0
+    last_report_at: float | None = None
     while chunk := source.read(1024 * 1024):
         written = target.write(chunk)
         if written != len(chunk):
@@ -780,9 +786,13 @@ def _copy_stream_with_progress(
         current += written
         if current > total:
             raise MediaNodeError("E_MEDIA_OUTPUT_SOURCE_CHANGED", "复制期间源文件大小增加")
-        _report_progress(context, current=current, total=total, unit="bytes")
+        observed_at = monotonic()
+        if current < total and (last_report_at is None or observed_at - last_report_at >= 0.25):
+            _report_progress(context, current=current, total=total, unit="bytes")
+            last_report_at = observed_at
     if current != total:
         raise MediaNodeError("E_MEDIA_OUTPUT_SOURCE_CHANGED", "复制期间源文件大小减少")
+    _report_progress(context, current=current, total=total, unit="bytes")
 
 
 def _single_input(context: PythonAdapterContext, port_id: str) -> RunnerInput:

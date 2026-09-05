@@ -4936,6 +4936,88 @@
       ],
       "type": "string"
     },
+    "RerunPreviewEnvelope": {
+      "additionalProperties": false,
+      "description": "对精确工程会话、存储计数和所选 Run/节点的只读重跑影响；不是执行计划。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "same_run",
+            "new_run"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "projected_at": {
+          "format": "date-time",
+          "title": "Projected At",
+          "type": "string"
+        },
+        "rerun_node_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "type": "string"
+          },
+          "title": "Rerun Node Ids",
+          "type": "array"
+        },
+        "reusable_node_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            "type": "string"
+          },
+          "title": "Reusable Node Ids",
+          "type": "array"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Storage Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "storage_revision",
+        "run_id",
+        "node_id",
+        "mode",
+        "rerun_node_ids",
+        "reusable_node_ids",
+        "projected_at"
+      ],
+      "title": "RerunPreviewEnvelope",
+      "type": "object"
+    },
     "Run": {
       "additionalProperties": false,
       "description": "保存启动瞬间的普通 Graph/NodeDefinition snapshot 与 NodeRun 历史。",

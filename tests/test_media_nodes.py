@@ -423,7 +423,12 @@ def test_frame_rate_transform_and_mux_remain_indeterminate(
     assert reporter.samples == []
 
 
-def test_output_copy_reports_exact_chunk_bytes(tmp_path: Path) -> None:
+def test_output_copy_reports_exact_chunk_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """快速复制只合并展示采样，仍报告首个字节样本与精确 EOF。"""
+
+    monkeypatch.setattr(media_adapters_module, "monotonic", lambda: 1.0)
     reporter = RecordingProgress()
     context = _progress_context(tmp_path, reporter)
     payload = b"x" * (2 * 1024 * 1024 + 17)
@@ -439,13 +444,50 @@ def test_output_copy_reports_exact_chunk_bytes(tmp_path: Path) -> None:
     assert target.getvalue() == payload
     assert [sample[1] for sample in reporter.samples] == [
         1024 * 1024,
-        2 * 1024 * 1024,
         len(payload),
     ]
     assert all(sample[2:] == (len(payload), "bytes") for sample in reporter.samples)
     assert [sample[0] for sample in reporter.samples] == sorted(
         sample[0] for sample in reporter.samples
     )
+
+
+def test_output_copy_timed_samples_and_source_drift_remain_strict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reporter = RecordingProgress()
+    context = _progress_context(tmp_path, reporter)
+    times = iter((0.0, 0.1, 0.3, 0.4, 0.7))
+    monkeypatch.setattr(media_adapters_module, "monotonic", lambda: next(times))
+    payload = b"x" * (4 * 1024 * 1024 + 1)
+    media_adapters_module._copy_stream_with_progress(
+        context, BytesIO(payload), BytesIO(), total=len(payload)
+    )
+    assert [sample[1] for sample in reporter.samples] == [
+        1024 * 1024,
+        3 * 1024 * 1024,
+        len(payload),
+    ]
+    monkeypatch.setattr(media_adapters_module, "monotonic", lambda: 0.0)
+    for expected_size in (len(payload) - 1, len(payload) + 1):
+        with pytest.raises(MediaNodeError, match="E_MEDIA_OUTPUT_SOURCE_CHANGED"):
+            media_adapters_module._copy_stream_with_progress(
+                context, BytesIO(payload), BytesIO(), total=expected_size
+            )
+
+
+def test_output_copy_short_write_never_reports_success(tmp_path: Path) -> None:
+    class ShortWriter(BytesIO):
+        def write(self, value: Any) -> int:
+            return super().write(value[:-1])
+
+    reporter = RecordingProgress()
+    context = _progress_context(tmp_path, reporter)
+    with pytest.raises(MediaNodeError, match="E_MEDIA_OUTPUT_WRITE_INCOMPLETE"):
+        media_adapters_module._copy_stream_with_progress(
+            context, BytesIO(b"synthetic"), ShortWriter(), total=9
+        )
+    assert reporter.samples == []
 
 
 def test_ffmpeg_reporter_failure_terminates_then_kills_stubborn_process(

@@ -32,6 +32,8 @@ export interface AddConnectedNodesRequest {
 }
 
 export interface GraphCanvasProps {
+  readonly advanced?: boolean
+  readonly showingSnapshot?: boolean
   readonly nodes: WorkflowNode[]
   readonly edges: WorkflowEdge[]
   readonly editable: boolean
@@ -67,6 +69,7 @@ export interface GraphCanvasProps {
 }
 
 export function GraphCanvas({
+  advanced = true, showingSnapshot,
   nodes, edges, editable, busy, modeLabel, contextLabel, snapshotChanged,
   canToggleSnapshot, loading, boundaryError, hasProject, overlays,
   graph, definitions = emptyDefinitions, groups = [], viewport, definitionLabel, portLabel,
@@ -133,8 +136,8 @@ export function GraphCanvas({
       <div className="canvas-context">
         <div><span className="context-mode">{modeLabel}</span><strong>{contextLabel}</strong></div>
         <div className="canvas-context-actions">
-          {canToggleSnapshot && <button type="button" onClick={onToggleSnapshot}>{modeLabel === 'Run snapshot' ? '查看当前 Graph' : '查看 Run snapshot'}</button>}
-          {snapshotChanged && <span>Run snapshot / 当前 Graph 已变化</span>}
+          {canToggleSnapshot && (advanced || (showingSnapshot ?? modeLabel === 'Run snapshot')) && <button type="button" onClick={onToggleSnapshot}>{(showingSnapshot ?? modeLabel === 'Run snapshot') ? advanced ? '查看当前 Graph' : '编辑当前工作流' : '查看 Run snapshot'}</button>}
+          {snapshotChanged && <span>{advanced ? 'Run snapshot / 当前 Graph 已变化' : '当前编辑与这次处理记录不同'}</span>}
         </div>
       </div>
       {hasProject && !loading && <div className="canvas-edit-toolbar" aria-label="画布工具">

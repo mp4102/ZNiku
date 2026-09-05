@@ -6,6 +6,7 @@ import {
   parseNodeLogEnvelope,
   parsePresentationCatalogEnvelope,
   parseRunDetailEnvelope,
+  parseRerunPreviewEnvelope,
   parseRunSummaryPageEnvelope,
   parseStatusEnvelope,
   parseStudioCommand,
@@ -24,9 +25,22 @@ import {
   defaultStudioState,
   runningProgressDetail,
   studioEnvelope,
+  rerunPreviewEnvelope,
 } from './test-fixtures'
 
 describe('Studio Project Service 0.3.0 contract', () => {
+  it('重跑预览必须闭合、唯一、互斥并包含目标节点；不接受未知版本或执行指令', () => {
+    const value = rerunPreviewEnvelope({ operation: 'rerun_from_here', run_id: handoffFixtureIds.run,
+      node_id: 'transform', project_session_id: projectSessionId, expected_storage_revision: 1 })
+    expect(parseRerunPreviewEnvelope(value)).toEqual(value)
+    for (const patch of [
+      { contract_version: '0.4.0' }, { execute: true }, { mode: 'resume' },
+      { rerun_node_ids: ['transform', 'transform'] },
+      { reusable_node_ids: ['source', 'source'] },
+      { reusable_node_ids: ['transform'] }, { rerun_node_ids: [] }, { rerun_node_ids: ['sink'] },
+      { storage_revision: -1 }, { project_session_id: 'old-page' },
+    ]) expect(() => parseRerunPreviewEnvelope({ ...value, ...patch })).toThrow(StudioContractError)
+  })
   it('分别解析轻量 status、Run detail、日志、readiness 与历史页', () => {
     const status = parseStatusEnvelope(handoffEnvelope())
     const detail = parseRunDetailEnvelope(handoffDetailEnvelope())

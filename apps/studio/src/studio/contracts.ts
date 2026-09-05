@@ -541,6 +541,21 @@ export interface AuthoringPrecondition {
   readonly project_session_id: string
 }
 
+export type RerunPreviewRequest = Extract<StudioCommand, { readonly operation: 'rerun_from_here' }>
+
+/** Python 只读重跑影响投影；不是承诺或 ExecutionPlan，正式 command 再次校验。 */
+export interface RerunPreviewEnvelope {
+  readonly contract_version: '0.3.0'
+  readonly project_session_id: string
+  readonly storage_revision: number
+  readonly run_id: string
+  readonly node_id: string
+  readonly mode: 'same_run' | 'new_run'
+  readonly rerun_node_ids: ReadonlyArray<string>
+  readonly reusable_node_ids: ReadonlyArray<string>
+  readonly projected_at: string
+}
+
 export interface RunSummaryPageEnvelope {
   readonly contract_version: '0.3.0'
   readonly run_summaries: ReadonlyArray<RunSummaryWire>
@@ -674,6 +689,7 @@ const validateTemplatePreviewRequest = compileDefinition('TemplatePreviewRequest
 const validateTemplatePreviewEnvelope = compileDefinition('TemplatePreviewEnvelope')
 const validateCommand = compileDefinition('ProjectServiceCommand')
 const validatePresentationCatalog = compileDefinition('PresentationCatalogEnvelope')
+const validateRerunPreview = compileDefinition('RerunPreviewEnvelope')
 
 export class StudioContractError extends Error {
   constructor(message: string) {
@@ -873,6 +889,15 @@ function validateProgressSamples(detail: RunDetailEnvelope): void {
 
 export function parseNodeLogEnvelope(value: unknown): NodeLogEnvelope {
   return parseWith(value, validateNodeLog, 'Studio Node log')
+}
+
+export function parseRerunPreviewEnvelope(value: unknown): RerunPreviewEnvelope {
+  const preview = parseWith<RerunPreviewEnvelope>(value, validateRerunPreview, 'Studio rerun preview')
+  const allIds = [...preview.rerun_node_ids, ...preview.reusable_node_ids]
+  if (new Set(allIds).size !== allIds.length || !preview.rerun_node_ids.includes(preview.node_id)) {
+    throw new StudioContractError('重跑影响清单的唯一性或目标绑定不一致')
+  }
+  return preview
 }
 
 export function parseExternalHandoffReadiness(value: unknown): ExternalHandoffReadiness {

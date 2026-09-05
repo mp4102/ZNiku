@@ -3192,3 +3192,102 @@ button {
   .studio-workspace .top-actions { justify-content: flex-start; }
   .studio-workspace .channel-health { margin-right: auto; }
 }
+
+/* v0.3.0 Phase 4：任务语言的运行中心、问题恢复与外部处理助手。 */
+.studio-workspace .creator-run-center { justify-content: flex-start; gap: 12px; }
+.creator-run-action { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: 1 1 270px; min-width: 0; }
+.studio-workspace .creator-run-action .button--primary { min-height: 38px; height: auto; font-size: 14px; padding: 9px 14px; }
+.action-disabled-reason { margin: 0; color: #c3cddd; line-height: 1.5; font-size: 13px; }
+.creator-run-action > .action-disabled-reason { flex: 1 1 220px; max-width: 420px; }
+.run-service-warning { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; color: #ffd9ac; background: #342616; border: 1px solid #80613b; border-radius: 6px; font-size: 13px; line-height: 1.5; }
+.run-service-warning small { font-size: 13px; }
+.run-advanced-actions { position: relative; flex: 0 0 auto; margin-left: auto; font-size: 13px; }
+.run-advanced-actions > summary { cursor: pointer; padding: 9px; border: 1px solid #42566d; border-radius: 6px; color: #d5e2ef; background: #162638; }
+.run-advanced-body { position: absolute; z-index: 35; top: calc(100% + 8px); right: 0; width: min(560px, calc(100vw - 32px)); max-height: min(480px, 70vh); overflow: auto; padding: 15px; border: 1px solid #4c647e; border-radius: 8px; background: #101d2b; box-shadow: 0 16px 40px #0009; }
+.run-advanced-body > p { color: #c6d3e1; line-height: 1.5; overflow-wrap: anywhere; }
+.exact-run-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.exact-run-actions > div { display: grid; align-content: start; gap: 8px; }
+.run-advanced-body .channel-health { margin-top: 10px; font-size: 12px; line-height: 1.7; }
+.studio-workspace .creator-run-center .run-selector { flex: 0 1 300px; }
+.creator-run-center .run-selector > span { font-size: 12px; color: #bdcad8; }
+.creator-run-center .run-selector select { min-height: 34px; color-scheme: dark; font-size: 13px; }
+.canvas-run-overlays { position: absolute; bottom: 65px; left: 14px; right: 14px; z-index: 7; display: grid; gap: 8px; pointer-events: none; }
+.canvas-run-overlays .run-summary-strip { position: static; flex-wrap: wrap; gap: 7px 12px; padding: 9px 12px; font-size: 13px; line-height: 1.4; }
+.canvas-run-overlays .next-action-banner { position: static; display: flex; flex-wrap: wrap; gap: 8px; padding: 11px; font-size: 13px; line-height: 1.5; }
+.canvas-run-overlays .next-action-copy { flex: 1 1 180px; }
+.canvas-run-overlays .next-action-copy small { font-size: 12px; white-space: normal; }
+.canvas-run-overlays .next-action-copy code { font-size: 11px; overflow-wrap: anywhere; white-space: normal; }
+.canvas-run-overlays button { pointer-events: auto; }
+.run-chip--reused { border-color: #498664; background: #183a2c; color: #b5efcd; }
+.workflow-node .node-parameter-summary { display: grid; gap: 4px; margin-top: 8px; }
+.workflow-node .node-parameter-summary > span { display: block; color: #c1cfde; font: 400 12px/1.45 'Segoe UI Variable', 'Microsoft YaHei UI', sans-serif; letter-spacing: normal; white-space: normal; overflow-wrap: anywhere; }
+.workflow-node .node-progress-detail { flex-wrap: wrap; color: #b7c8d9; font: 400 12px/1.45 'Segoe UI Variable', 'Microsoft YaHei UI', sans-serif; }
+.studio-workspace.has-bottom-drawer { grid-template-rows: auto minmax(0, 1fr) min(310px, 36vh); }
+.creator-problems { display: flex; flex-direction: column; min-height: 0; }
+.creator-problems .drawer-toggle { flex: 0 0 47px; }
+.creator-problems .diagnostic-list { min-height: 0; overflow: auto; align-items: stretch; }
+.problem-card { flex: 0 0 min(410px, calc(100vw - 42px)); min-width: 280px; padding: 13px; border: 1px solid #78534b; border-radius: 9px; background: #251d20; font-size: 13px; line-height: 1.5; overflow-y: auto; }
+.problem-card > header { display: grid; gap: 5px; }
+.problem-card > header strong { color: #ffcfbc; font-size: 15px; }
+.problem-card > header span { color: #c8d4e2; }
+.problem-card dl { margin: 12px 0; }
+.problem-card dt { margin-top: 9px; color: #f0d2bd; font-weight: 600; }
+.problem-card dd { margin: 3px 0 0; color: #d5dbe3; }
+.problem-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.problem-actions > span { color: #c4cddd; }
+.problem-advanced { margin-top: 12px; border-top: 1px solid #594147; padding-top: 8px; }
+.problem-advanced summary { cursor: pointer; color: #d2dceb; }
+.problem-advanced p, .problem-advanced pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: #c5d2e0; }
+.problem-history-action { align-self: flex-start; flex: 0 0 165px; }
+.problem-history-action p { color: #c5d2e0; font-size: 13px; }
+.retry-impact { display: grid; gap: 15px; }
+.retry-impact h3 { margin: 0 0 9px; font-size: 15px; color: #e2edf8; }
+.retry-impact ul, .retry-impact ol { margin: 0; padding-left: 24px; color: #cbdbea; line-height: 1.8; }
+.retry-impact section { padding: 12px; border: 1px solid #3f566c; border-radius: 8px; background: #102132; }
+.retry-impact-error { border: 1px solid #966758; background: #3a2522; padding: 12px; border-radius: 8px; }
+.retry-impact-error strong { color: #ffcab6; }
+.retry-impact-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.handoff-queue > p, .handoff-step > p { font-size: 13px; line-height: 1.6; color: #c5d1df; }
+.handoff-steps { display: grid; gap: 12px; }
+.handoff-step { padding: 12px; border: 1px solid #435870; border-radius: 8px; background: #122030; }
+.handoff-step h4 { margin: 0 0 10px; font-size: 14px; color: #edf3f9; }
+.handoff-step ol, .handoff-step ul { padding-left: 20px; font-size: 13px; color: #c5d1df; line-height: 1.7; }
+.handoff-check-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.handoff-status, .handoff-target-status { font-size: 13px; line-height: 1.5; color: #e5d4af; }
+.handoff-disabled-reason { padding: 9px 10px; margin: 8px 0; border-left: 3px solid #d0ab6c; background: #2b271d; color: #e4d5b8; line-height: 1.5; font-size: 13px; }
+.handoff-file-name { font-size: 13px; color: #dbebf8; overflow-wrap: anywhere; }
+.handoff-advanced, .inspector-runtime-details { margin-top: 14px; padding-top: 10px; border-top: 1px solid #3d4f64; font-size: 13px; }
+.handoff-advanced summary, .inspector-runtime-details summary { min-height: 32px; cursor: pointer; color: #c7d9e8; }
+/* 外部助手位于窄 Inspector：编号不占一整列，避免四层内边距挤压交付要求。 */
+.handoff-queue { margin: 12px 8px; padding: 8px; }
+.handoff-queue > article { min-width: 0; padding: 0; border: 0; background: transparent; }
+.handoff-queue > article + article { padding-top: 12px; border-top: 1px solid #3f5268; }
+.handoff-queue .handoff-steps { list-style: none; margin: 8px 0 0; padding: 0; counter-reset: handoff-step; }
+.handoff-queue .handoff-step { min-width: 0; padding: 8px; counter-increment: handoff-step; }
+.handoff-queue .handoff-step > h4 { display: flex; align-items: flex-start; gap: 7px; font-size: 14px; line-height: 1.45; }
+.handoff-queue .handoff-step > h4::before { content: counter(handoff-step); display: inline-grid; place-items: center; flex: 0 0 22px; min-height: 22px; border: 1px solid #6a8ba5; border-radius: 50%; color: #d5eaf9; font-size: 12px; line-height: 1; }
+.handoff-queue .handoff-step > p { font-size: 13px; line-height: 1.6; }
+.handoff-queue .handoff-contract { margin: 10px 0 0; padding: 10px 0 0; border: 0; border-top: 1px solid #42586f; border-radius: 0; }
+.handoff-queue .handoff-contract small { display: block; color: #bac9d8; font-size: 12px; line-height: 1.6; }
+.handoff-queue .handoff-contract dl > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; min-width: 0; padding-bottom: 8px; border-bottom: 1px solid #2b3f52; }
+.handoff-queue .handoff-contract dt { color: #a9c2d7; font-size: 12px; line-height: 1.5; }
+.handoff-queue .handoff-contract dd { min-width: 0; margin: 0; color: #e1ebf5; font-size: 13px; line-height: 1.5; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.handoff-queue .handoff-advanced { min-width: 0; overflow-wrap: anywhere; }
+.handoff-queue .handoff-advanced dd { margin-left: 0; }
+.runtime-user-status { margin: 12px 0; padding: 10px 12px; border: 1px solid #49627a; border-radius: 8px; background: #132738; color: #dfedf9; font-size: 14px; line-height: 1.6; }
+.runtime-preserved { color: #c5d6e1; font-size: 13px; line-height: 1.6; }
+.runtime-problem, .handoff-problem { margin: 12px 0; padding: 11px; border: 1px solid #866055; border-radius: 8px; background: #302326; color: #ead4ca; font-size: 13px; line-height: 1.6; }
+.runtime-problem h4, .handoff-problem h4 { margin: 0 0 8px; color: #ffd0bc; font-size: 14px; }
+.inspector-run-actions { margin: 14px 16px; padding: 10px; border: 1px solid #604b45; border-radius: 8px; color: #d5c4bc; font-size: 13px; line-height: 1.6; }
+.inspector-run-actions summary { cursor: pointer; }
+.inspector-artifacts { padding: 10px; border: 1px solid #40566a; border-radius: 8px; font-size: 13px; }
+:is(.problem-actions, .run-service-warning, .handoff-step, .handoff-check-actions, .inspector-artifacts, .inspector-runtime-details) button { min-height: 34px; padding: 6px 10px; border: 1px solid #4a647e; border-radius: 6px; color: #edf3f9; background: #192e43; font-size: 13px; cursor: pointer; }
+:is(.problem-actions, .run-service-warning, .handoff-step, .handoff-check-actions, .inspector-artifacts, .inspector-runtime-details) button:hover:not(:disabled) { background: #24435f; border-color: #8ab5d1; }
+:is(.problem-actions, .handoff-step, .handoff-check-actions, .inspector-artifacts, .inspector-runtime-details) button:disabled { background: #19242f; border-color: #3c4d5e; color: #9aaabd; cursor: not-allowed; }
+:is(.creator-run-center, .creator-problems, .handoff-queue, .inspector-runtime-details) :is(button, summary, select):focus-visible { outline: 3px solid #91dafa; outline-offset: 3px; }
+@media (max-width: 1250px) {
+  .studio-workspace .creator-run-center .run-selector { flex: 1 1 220px; }
+  .creator-run-action { flex: 1 1 300px; }
+  .canvas-run-overlays { left: 10px; right: 10px; bottom: 60px; }
+  .canvas-run-overlays .run-summary-strip { font-size: 12px; }
+}

@@ -12,7 +12,16 @@ import type {
   RunWire,
   StatusEnvelope,
   StudioStateWire,
+  RerunPreviewEnvelope,
+  RerunPreviewRequest,
 } from './contracts'
+
+export function rerunPreviewEnvelope(request: RerunPreviewRequest): RerunPreviewEnvelope {
+  return { contract_version: '0.3.0', project_session_id: request.project_session_id,
+    storage_revision: request.expected_storage_revision, run_id: request.run_id, node_id: request.node_id,
+    mode: 'new_run', rerun_node_ids: [request.node_id], reusable_node_ids: request.node_id === 'source' ? [] : ['source'],
+    projected_at: '2026-09-05T00:00:00Z' }
+}
 
 const emptySchema = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',

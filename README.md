@@ -12,7 +12,7 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - 已交付基线：`ZNIKU Studio 0.2.0` Phase 0–5，Core 已完成 legacy 清理与最小自动化验收
 - 已验收增量：`v0.2.1` Phase 0–5 已完成，真实 MR-off GUI 闭环与操作者验收通过；external MR 仍是未验证范围
 - 当前开发分支：`v0.3.0`
-- 当前增量阶段：**v0.3.0 Phase 0–3 已完成；Phase 4–6 尚未实施**
+- 当前增量阶段：**v0.3.0 Phase 0–4 已完成；Phase 5–6 尚未实施**
 - Graph／Runtime 上位架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
 - Studio UX 下位设计：[创作者体验基线](docs/architecture/studio-ux-baseline.md)
 - 分阶段计划：[v0.3.0 创作者体验重构执行方案](docs/v0.3.0-execution-plan.md)
@@ -20,6 +20,7 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - Phase 1 证据：[v0.3.0 Phase 1 验收记录](docs/v0.3.0-phase1-acceptance.md)
 - Phase 2 证据：[v0.3.0 Phase 2 验收记录](docs/v0.3.0-phase2-acceptance.md)
 - Phase 3 证据：[v0.3.0 Phase 3 验收记录](docs/v0.3.0-phase3-acceptance.md)
+- Phase 4 证据：[v0.3.0 Phase 4 验收记录](docs/v0.3.0-phase4-acceptance.md)
 - 当前实现版本：`0.2.0`；package/product 版本按计划保持不变，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
   `zniku.project_service`、`zniku.presentation`、`zniku.media` 与 `zniku.avenhance_v27`
 - 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
@@ -53,6 +54,11 @@ v0.3.0 Phase 3 已加入可撤销的自由画布、兼容端口建议与批量�
 别名／分组／折叠／视口，以及基于 storage revision/CAS 的自动保存。安全的不完整图能够保存但不能运行；
 Run all、Run to here 和 Rerun from here 都先保存最新编辑再校验会话及存储版本。`.zniku` 新增独立
 StudioState 表，旧 schema 2 首次保存时备份并事务迁移到 schema 3；展示不改变执行、reuse 或 stale。
+
+v0.3.0 Phase 4 已实现创作者运行中心、中文问题卡片、任务式历史与外部处理助手；精确身份、运行命令和日志
+进入高级层。外部输出必须先检查再显式提交，提交时仍由 Python 完整重验。重跑前展示 Python 的只读影响清单，
+确认后才执行正式命令；状态历史读取改为 SQL 有界窗口，OutputFile 字节采样不再每 MiB 触发回调。Python
+完整门禁与正式服务合成浏览器闭环已通过，详见 Phase 4 验收记录；这不代表 Phase 5／6 已完成。
 
 ## 产品核心
 
@@ -147,6 +153,7 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | [`docs/v0.3.0-phase1-acceptance.md`](docs/v0.3.0-phase1-acceptance.md) | v0.3.0 Phase 1 Presentation、Schema 表单与组件边界验收 |
 | [`docs/v0.3.0-phase2-acceptance.md`](docs/v0.3.0-phase2-acceptance.md) | v0.3.0 Phase 2 创作者建项、HostBridge 与模板引导验收 |
 | [`docs/v0.3.0-phase3-acceptance.md`](docs/v0.3.0-phase3-acceptance.md) | v0.3.0 Phase 3 画布编辑、草稿保存、StudioState 与 CAS 验收 |
+| [`docs/v0.3.0-phase4-acceptance.md`](docs/v0.3.0-phase4-acceptance.md) | v0.3.0 Phase 4 运行中心、外部处理助手、重跑影响与有界读取验收 |
 | [`docs/v0.2.1-acceptance.md`](docs/v0.2.1-acceptance.md) | v0.2.1 Phase 5 已完成验收及未验证范围 |
 | [`docs/phase5-acceptance.md`](docs/phase5-acceptance.md) | Phase 5 可重复门禁及其证明边界 |
 | [`docs/brand-baseline.md`](docs/brand-baseline.md) | 品牌、产品名与代码标识 |
@@ -229,6 +236,7 @@ ZNiku/
 │   ├── v0.3.0-phase1-acceptance.md # v0.3.0 Phase 1 展示合同与参数表单证据
 │   ├── v0.3.0-phase2-acceptance.md # v0.3.0 Phase 2 建项、HostBridge 与模板引导证据
 │   ├── v0.3.0-phase3-acceptance.md # v0.3.0 Phase 3 可撤销画布、自动保存与迁移证据
+│   ├── v0.3.0-phase4-acceptance.md # v0.3.0 Phase 4 创作者运行与外部处理证据
 │   └── brand-baseline.md
 ├── AGENTS.md
 └── VERSION                      # 0.2.0 产品实现版本
@@ -277,7 +285,8 @@ npm run dev
 
 浏览器打开 Vite 输出的 loopback 地址。Studio 默认连接 `http://127.0.0.1:18765`；可通过
 `window.__ZNIKU_STUDIO_API_BASE__` 为可信 LAN 开发环境显式替换。确认 Graph diagnostics 为 0 后点击
-`Run all`，在同一画布查看各节点状态、日志与两个发布路径。`--split-frame N` 可显式调整切分帧；只有明确
+“开始处理”（高级层保留 `Run all`），在同一画布查看状态与发布结果，按需打开高级日志。
+`--split-frame N` 可显式调整切分帧；只有明确
 允许覆盖两个同名 smoke 输出时才增加 `--overwrite`。生产构建与门禁：
 
 ```powershell

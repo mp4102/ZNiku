@@ -402,7 +402,9 @@ def test_status_summary_and_detail_are_separate_bounded_read_models(tmp_path: Pa
     }
     assert {item.artifact_id for item in detail.artifacts} == referenced_ids
     assert detail.progress_samples == ()
-    assert detail.handoff_contracts == ()
+    assert len(detail.handoff_contracts) == 1
+    assert detail.handoff_contracts[0].node_run_id == _latest(detail.run, "manual").node_run_id
+    assert detail.handoff_contracts[0].title == "外部处理交付要求"
 
     with pytest.raises(ProjectServiceError) as missing:
         application.inspect(view_run_id="00000000-0000-4000-8000-ffffffffffff")
@@ -479,6 +481,190 @@ def test_logs_are_bounded_and_bound_to_exact_run_and_attempt(tmp_path: Path) -> 
         application.inspect_node_logs(first_id, second_node_run.node_run_id)
     assert outside.value.code == "E_PROJECT_SERVICE_NODE_RUN_OUTSIDE_RUN"
     assert outside.value.http_status == 409
+
+
+def test_status_and_history_do_not_deserialize_the_full_run_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """长历史只读取 SQL 选择窗口，status 不借助无界 list_runs 或偷偷读取日志。"""
+
+    store = ProjectStore.create(
+        tmp_path / "history.zniku",
+        Project(project_id="history", name="合成历史", graph=Graph()),
+        (),
+    )
+    application = _application(tmp_path, store)
+    identities = [_run_and_wait(application, {"operation": "run_all"}) for _ in range(24)]
+    loaded: list[str] = []
+    original_read = RuntimeRepository._read_run
+
+    def read(repository: RuntimeRepository, connection: sqlite3.Connection, identity: str) -> Run:
+        loaded.append(identity)
+        return original_read(repository, connection, identity)
+
+    def disallowed(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("高频只读投影不得加载完整历史或日志")
+
+    monkeypatch.setattr(RuntimeRepository, "list_runs", disallowed)
+    monkeypatch.setattr(RuntimeRepository, "_read_run", read)
+    monkeypatch.setattr(application, "_read_log", disallowed)
+    status = application.inspect()
+    assert len(status.run_summaries) == 20
+    assert identities[0] not in loaded
+    assert set(loaded).issubset(set(identities[-21:]))
+    loaded.clear()
+    page = application.list_run_summaries(limit=5)
+    assert len(page.run_summaries) == 5
+    assert len(loaded) == 6
+
+
+def test_rerun_preview_same_run_is_read_only_and_binding_is_strict(tmp_path: Path) -> None:
+    """预览、路径缺失和旧会话均不创建 attempt 或污染 latest/stale。"""
+
+    store = _store(tmp_path, include_manual=True, include_sink=True)
+    application = _application(tmp_path, store)
+    run_id, run, waiting = _start_waiting_run(application)
+    status = application.inspect()
+    request = {
+        "operation": "rerun_from_here",
+        "run_id": run_id,
+        "node_id": "manual",
+        "project_session_id": status.project_session_id,
+        "expected_storage_revision": status.storage_revision,
+    }
+    before_db, before_tree = _sqlite_dump(store.path), _tree(application.work_root)
+    preview = application.preview_rerun(request)
+    assert preview.mode == "same_run"
+    assert preview.rerun_node_ids == ("manual", "sink")
+    assert preview.reusable_node_ids == ("source",)
+    assert preview.project_session_id == status.project_session_id
+    assert preview.storage_revision == status.storage_revision
+    assert application.inspect_run_detail(run_id).run == run
+    assert _sqlite_dump(store.path) == before_db
+    assert _tree(application.work_root) == before_tree
+
+    source = _latest(run, "source")
+    artifact = next(
+        item
+        for item in application.inspect_run_detail(run_id).artifacts
+        if item.artifact_id == source.output_artifact_ids[0]
+    )
+    Path(artifact.path).unlink()
+    missing = application.preview_rerun(request)
+    assert missing.reusable_node_ids == ()
+    assert _sqlite_dump(store.path) == before_db
+    with pytest.raises(ProjectServiceError, match="E_PROJECT_STORAGE_CONFLICT"):
+        application.preview_rerun(
+            {**request, "expected_storage_revision": 1 + int(status.storage_revision or 0)}
+        )
+    with pytest.raises(ProjectServiceError, match="E_PROJECT_SESSION_CONFLICT"):
+        application.preview_rerun(
+            {**request, "project_session_id": "00000000-0000-4000-8000-000000000000"}
+        )
+    for extra in ({"contract_version": "0.3.0"}, {"operation": "run_all"}, {"node_id": "missing"}):
+        with pytest.raises(ProjectServiceError):
+            application.preview_rerun({**request, **extra})
+    assert _latest(application.inspect_run_detail(run_id).run, "manual") == waiting
+    assert _sqlite_dump(store.path) == before_db
+
+
+def test_datafile_handoff_instructions_do_not_require_media_stream_checks(tmp_path: Path) -> None:
+    """非媒体插件的只读帮助必须明确排除媒体流要求，不冒认 FFprobe 或额外验收。"""
+
+    validator_calls: list[str] = []
+    store = _store(tmp_path, include_manual=True)
+    application = _application(tmp_path, store, validator_calls=validator_calls)
+    run_id, _, waiting = _start_waiting_run(application)
+    before = _sqlite_dump(store.path)
+    contracts = application.inspect_run_detail(run_id).handoff_contracts
+    assert len(contracts) == 1
+    assert contracts[0].node_run_id == waiting.node_run_id
+    fields = {item.label: item.value for item in contracts[0].fields}
+    assert fields["目标文件"] == "DataFile"
+    assert "仅媒体输出需要识别声明的媒体流" in fields["基本检查"]
+    assert "非媒体输出不要求流识别" in fields["基本检查"]
+    assert "FFprobe" not in fields["基本检查"]
+    assert validator_calls == []
+    assert _sqlite_dump(store.path) == before
+
+
+def test_rerun_preview_new_run_uses_real_reuse_rules_without_writing_stale(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path, include_manual=True, include_sink=True)
+    application = _application(tmp_path, store)
+    run_id, _, waiting = _start_waiting_run(application)
+    assert waiting.external_handoff is not None
+    Path(waiting.external_handoff.output_targets[0].path).write_text("valid", encoding="utf-8")
+    _run_and_wait(
+        application,
+        {
+            "operation": "submit_external",
+            "run_id": run_id,
+            "node_run_id": waiting.node_run_id,
+            "handoff_id": waiting.external_handoff.handoff_id,
+        },
+    )
+    status = application.inspect()
+    request = {
+        "operation": "rerun_from_here",
+        "run_id": run_id,
+        "node_id": "manual",
+        "project_session_id": status.project_session_id,
+        "expected_storage_revision": status.storage_revision,
+    }
+    before = _sqlite_dump(store.path)
+    preview = application.preview_rerun(request)
+    assert preview.mode == "new_run"
+    assert preview.rerun_node_ids == ("manual", "sink")
+    assert preview.reusable_node_ids == ("source",)
+    assert _sqlite_dump(store.path) == before
+    detail = application.inspect_run_detail(run_id)
+    source_output = next(
+        item
+        for item in detail.artifacts
+        if item.artifact_id == _latest(detail.run, "source").output_artifact_ids[0]
+    )
+    Path(source_output.path).unlink()
+    missing = application.preview_rerun(request)
+    assert missing.rerun_node_ids == ("source", "manual", "sink")
+    assert missing.reusable_node_ids == ()
+    assert _sqlite_dump(store.path) == before
+
+
+def test_rerun_preview_rechecks_cas_after_slow_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _store(tmp_path, include_manual=True)
+    application = _application(tmp_path, store)
+    run_id, _, _ = _start_waiting_run(application)
+    status = application.inspect()
+    from zniku.runtime.service import RuntimeService
+
+    original = RuntimeService._probe_artifact
+
+    def changing_probe(runtime: RuntimeService, artifact: Any) -> Any:
+        current = store.load_authoring()
+        store.save(
+            current.snapshot.project,
+            current.snapshot.definitions,
+            studio_state=current.studio_state,
+            expected_storage_revision=current.storage_revision,
+        )
+        return original(runtime, artifact)
+
+    monkeypatch.setattr(RuntimeService, "_probe_artifact", changing_probe)
+    with pytest.raises(ProjectServiceError, match="E_PROJECT_STORAGE_CONFLICT"):
+        application.preview_rerun(
+            {
+                "operation": "rerun_from_here",
+                "run_id": run_id,
+                "node_id": "manual",
+                "project_session_id": status.project_session_id,
+                "expected_storage_revision": status.storage_revision,
+            }
+        )
+    assert len(application.inspect_run_detail(run_id).run.node_runs) == 2
 
 
 def test_readiness_five_states_are_read_only(tmp_path: Path) -> None:

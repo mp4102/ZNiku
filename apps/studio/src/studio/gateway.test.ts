@@ -5,6 +5,7 @@ import {
   type PresentationCatalogEnvelopeWire,
   type AvEnhanceV27TemplatePreviewRequestWire,
   type StudioCommand,
+  type RerunPreviewRequest,
 } from './contracts'
 import { FetchStudioGateway, StudioGatewayError } from './gateway'
 import {
@@ -18,6 +19,7 @@ import {
   projectSessionId,
   defaultStudioState,
   studioEnvelope,
+  rerunPreviewEnvelope,
 } from './test-fixtures'
 
 afterEach(() => {
@@ -30,6 +32,26 @@ function response(value: unknown, ok = true, status = 200): Response {
 }
 
 describe('FetchStudioGateway 0.3.0', () => {
+  it('只读重跑预览严格绑定请求，不接受未知字段和其他工程或 Run 回执', async () => {
+    const request: RerunPreviewRequest = { operation: 'rerun_from_here', run_id: handoffFixtureIds.run,
+      node_id: 'transform', project_session_id: projectSessionId, expected_storage_revision: 0 }
+    const preview = rerunPreviewEnvelope(request)
+    const fetchMock = vi.fn().mockResolvedValue(response(preview))
+    vi.stubGlobal('fetch', fetchMock)
+    const gateway = new FetchStudioGateway('http://loopback.test')
+    expect(await gateway.previewRerun(request)).toEqual(preview)
+    expect(fetchMock).toHaveBeenLastCalledWith('http://loopback.test/api/studio/rerun-preview', expect.objectContaining({ method: 'POST', body: JSON.stringify(request) }))
+    for (const changed of [
+      { ...preview, storage_revision: 1 }, { ...preview, node_id: 'other', rerun_node_ids: ['other'] },
+      { ...preview, project_session_id: handoffFixtureIds.run },
+      { ...preview, run_id: projectSessionId }, { ...preview, unexpected: true },
+      { ...preview, reusable_node_ids: ['transform'] },
+    ]) {
+      fetchMock.mockResolvedValueOnce(response(changed))
+      await expect(gateway.previewRerun(request)).rejects.toThrow(StudioContractError)
+    }
+    await expect(gateway.previewRerun({ ...request, contract_version: '0.3.0' } as unknown as RerunPreviewRequest)).rejects.toThrow(StudioContractError)
+  })
   it('只向固定 endpoint 发送严格 v2.7 preview request 并解析 Python response', async () => {
     const payload: AvEnhanceV27TemplatePreviewRequestWire = {
       action: 'prepare',

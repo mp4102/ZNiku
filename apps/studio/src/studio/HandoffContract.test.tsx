@@ -15,18 +15,23 @@ describe('只读人工交付说明', () => {
         { label: '输出 exact N', value: '199' },
         { label: '输出 canonical FPS', value: '60000/1001' },
         { label: '输出 geometry', value: '不可用（不猜测）' },
+        { label: 'toString', value: '只读扩展字段' },
+        { label: '__proto__', value: '纯文本，不引用对象原型' },
       ],
     }} />)
     expect(screen.getByText('199')).toBeInTheDocument()
     expect(screen.getByText('60000/1001')).toBeInTheDocument()
     expect(screen.getByText('不可用（不猜测）')).toBeInTheDocument()
     expect(screen.queryByText('200')).not.toBeInTheDocument()
+    expect(screen.getByText('toString')).toBeInTheDocument()
+    expect(screen.getByText('__proto__')).toBeInTheDocument()
   })
 
-  it('显示服务端具体 readiness failure，而非只显示 probe_failed', () => {
+  it('默认解释检测失败且高级详情保留服务端完整原因', () => {
     const readiness = handoffReadinessEnvelope('probe_failed', true)
     render(<ReadinessMessages readiness={{ ...readiness, targets: readiness.targets.map((target) => ({ ...target, message: 'E_AV27_FI_DOUBLE_COUNT: FI 输出必须精确为 2N-1' })) }} />)
-    expect(screen.getByRole('status')).toHaveTextContent('E_AV27_FI_DOUBLE_COUNT')
+    expect(screen.getByRole('status')).not.toHaveTextContent('E_AV27_FI_DOUBLE_COUNT')
+    expect(screen.getByText(/E_AV27_FI_DOUBLE_COUNT/)).not.toBeVisible()
   })
 
   it('Source summary 直接显示已登记 exact N/FPS，header duration 不冒充 exact duration', () => {
@@ -36,8 +41,8 @@ describe('只读人工交付说明', () => {
     } }} />)
     expect(screen.getByText('100')).toBeInTheDocument()
     expect(screen.getByText('30000/1001')).toBeInTheDocument()
-    expect(screen.getByText('Observed duration (seconds)')).toBeInTheDocument()
+    expect(screen.getByText('探测时长（秒）')).toBeInTheDocument()
     expect(screen.getByText('3.336667')).toBeInTheDocument()
-    expect(screen.getByText('完整 media_info（只读）')).toBeInTheDocument()
+    expect(screen.getByText('高级 → 完整媒体登记信息（只读）')).toBeInTheDocument()
   })
 })
