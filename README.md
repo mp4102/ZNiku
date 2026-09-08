@@ -16,6 +16,8 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - Graph／Runtime 上位架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
 - Studio UX 下位设计：[创作者体验基线](docs/architecture/studio-ux-baseline.md)
 - 分阶段计划：[v0.3.0 创作者体验重构执行方案](docs/v0.3.0-execution-plan.md)
+- 已批准增量：[工程数据与外部交接专项](docs/v0.3.0-project-data-execution.md)；工程旁持久数据、显式换盘迁移、外部收件与点分命名。
+- 增量证据：[工程数据专项验收](docs/v0.3.0-project-data-acceptance.md)；新候选不自动迁移或改写旧工程。
 - Phase 0 证据：[v0.3.0 Phase 0 验收记录](docs/v0.3.0-phase0-acceptance.md)
 - Phase 1 证据：[v0.3.0 Phase 1 验收记录](docs/v0.3.0-phase1-acceptance.md)
 - Phase 2 证据：[v0.3.0 Phase 2 验收记录](docs/v0.3.0-phase2-acceptance.md)
@@ -55,7 +57,9 @@ v0.3.0 Phase 2 已加入工程首页、默认隐藏的工程身份、有界 Host
 v0.3.0 Phase 3 已加入可撤销的自由画布、兼容端口建议与批量连接、键盘连接、有序输入拖动排序、
 别名／分组／折叠／视口，以及基于 storage revision/CAS 的自动保存。安全的不完整图能够保存但不能运行；
 Run all、Run to here 和 Rerun from here 都先保存最新编辑再校验会话及存储版本。`.zniku` 新增独立
-StudioState 表，旧 schema 2 首次保存时备份并事务迁移到 schema 3；展示不改变执行、reuse 或 stale。
+StudioState 表，最初由 schema 2 升至 3；当前 schema 4 另存工程数据位置。旧 schema 2/3 普通读取不改文件，
+首次 authoring/配置写入升级前备份并事务升级；普通 Runtime 写入不提前升级，展示与存储配置不改变
+执行、reuse 或 stale。
 
 v0.3.0 Phase 4 已实现创作者运行中心、中文问题卡片、任务式历史与外部处理助手；精确身份、运行命令和日志
 进入高级层。外部输出必须先检查再显式提交，提交时仍由 Python 完整重验。重跑前展示 Python 的只读影响清单，
@@ -105,8 +109,8 @@ Graph Core 只校验 node／port／edge 存在、typed output→input、required
   NodeDefinition 的 JSON Schema 验证。
 - `zniku.project`：公开 `Project`、`ProjectStore` 与独立 `StudioState`；`.zniku` 是带 schema version 的
   单文件 SQLite authority。schema v2 保存普通 Run snapshot、attempt、Artifact、NodeResult、日志索引和
-  latest-result head；schema v3 另存纯展示状态与存储 CAS。v1 严格校验后迁移到 v2，v2 首次 authoring
-  保存前创建一致备份再事务迁移到 v3，读取或运行不提前升为 v3。
+  latest-result head；schema v3 另存纯展示状态与存储 CAS，v4 独立保存 `ProjectStorage`。v1 严格校验后
+  迁移到 v2，v2/v3 首次 authoring/配置写入前创建一致备份再事务升至 v4；普通读取或运行不提前升级。
 - `zniku.runtime`：公开最小 Runtime 模型、`Scheduler`、completed reuse／downstream stale 分析、支持
   三类 executor 的 `NodeRunner` 与运行编排服务。持久状态只有 `pending`、`running`、
   `waiting_external`、`completed` 和 `failed`；`ready`／`blocked` 只即时计算。

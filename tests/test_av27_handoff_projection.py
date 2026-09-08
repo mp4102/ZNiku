@@ -173,11 +173,48 @@ def test_contract_projects_exact_snapshot_and_input_without_mutation(stage: str)
     assert fields["输出 canonical FPS"] == ("60000/1001" if stage == "fi" else "30000/1001")
     assert "1920" in fields["输出 geometry"]
     assert "bt709" in fields["输出 signal"]
+    assert fields["输出容器与名称"] == f"{'Matroska' if stage == 'mr' else 'MOV'} · output.mov"
     if stage != "mr":
         assert fields["视频 codec / pixel format"] == "ProRes 422 HQ / yuv422p10le"
     envelope = RunDetailEnvelope(run=run, artifacts=(artifact,), handoff_contracts=contracts)
     assert RunDetailEnvelope.model_validate_json(envelope.model_dump_json()) == envelope
     assert (run.model_dump_json(), artifact.model_dump_json()) == before
+
+
+@pytest.mark.parametrize(
+    ("stage", "path", "expected"),
+    [
+        ("mr", "synthetic/mr.mkv", "Matroska · mr.mkv"),
+        ("enhancement", "synthetic/enhancement.mov", "MOV · enhancement.mov"),
+        ("fi", "synthetic/fi.mov", "MOV · fi.mov"),
+        (
+            "enhancement",
+            "synthetic/B/Synthetic.B.leaf-0001.enhancement.mov",
+            "MOV · Synthetic.B.leaf-0001.enhancement.mov",
+        ),
+        (
+            "fi",
+            "synthetic\\B\\Synthetic.B.enhancement.fi.mov",
+            "MOV · Synthetic.B.enhancement.fi.mov",
+        ),
+    ],
+)
+def test_output_name_comes_only_from_frozen_handoff_target(
+    stage: str, path: str, expected: str
+) -> None:
+    run, artifact = _fixture(stage)
+    attempt = run.node_runs[0]
+    assert attempt.external_handoff is not None
+    handoff = attempt.external_handoff.model_copy(
+        update={"output_targets": (ExternalOutputTarget(port_id="video", path=path),)}
+    )
+    run = run.model_copy(
+        update={"node_runs": (attempt.model_copy(update={"external_handoff": handoff}),)}
+    )
+    before = run.model_dump_json()
+    fields = project_av27_handoff_contracts(run, (artifact,))[0].fields
+    assert next(item.value for item in fields if item.label == "输出容器与名称") == expected
+    assert run.model_dump_json() == before
 
 
 def test_missing_metadata_is_unavailable_and_old_attempt_not_projected() -> None:

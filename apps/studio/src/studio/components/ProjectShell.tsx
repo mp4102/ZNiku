@@ -18,6 +18,7 @@ export interface ProjectShellProps {
   readonly onRedo?: () => void
   readonly onToggleAdvanced?: () => void
   readonly onReloadProject?: () => void
+  readonly onOpenStorage?: () => void
   readonly profile: { readonly status: string; readonly compatible: boolean; readonly modified: boolean } | null
   readonly projectPath: string
   readonly projectIdDraft: string
@@ -53,6 +54,7 @@ export function ProjectShell({
   onRedo,
   onToggleAdvanced,
   onReloadProject,
+  onOpenStorage,
   profile,
   projectPath,
   projectIdDraft,
@@ -97,6 +99,7 @@ export function ProjectShell({
       </div>
       <div className="project-location">
         {desktopControls}
+        {onOpenStorage && <button className="button button--ghost" type="button" disabled={serviceBusy || statusStale || !projectId} onClick={onOpenStorage}>工程数据</button>}
         <div className="edit-history-actions"><button aria-label="撤销" title="撤销 Ctrl+Z" type="button" disabled={serviceBusy || !canUndo} onClick={onUndo}>撤销</button><button aria-label="重做" title="重做 Ctrl+Shift+Z" type="button" disabled={serviceBusy || !canRedo} onClick={onRedo}>重做</button></div>
         <button type="button" className="button button--ghost" aria-pressed={advanced} onClick={onToggleAdvanced}>{advanced ? '返回创作者模式' : '高级节点图'}</button>
         <button className="button button--ghost" disabled={serviceBusy} onClick={onHome} type="button">工程首页</button>

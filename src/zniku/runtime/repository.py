@@ -354,6 +354,7 @@ class RuntimeRepository:
             schema_version = cast(int, connection.execute("PRAGMA user_version").fetchone()[0])
             if application_id != PROJECT_APPLICATION_ID or schema_version not in {
                 2,
+                3,
                 PROJECT_SCHEMA_VERSION,
             }:
                 raise RuntimeRepositoryError(

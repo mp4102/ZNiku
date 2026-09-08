@@ -31,6 +31,7 @@ from zniku.graph import (
 )
 from zniku.runtime.models import FrameRange
 
+from .paths import incoming_directory_name
 from .process_window import background_creation_flags
 from .progress import ProgressError, ProgressInfrastructureError, ProgressReporter
 
@@ -600,6 +601,11 @@ class NodeRunner:
         layout = self._create_layout(request.node_run_id)
         targets = self._output_targets(request, layout)
         self._create_output_parents(targets, layout)
+        # 收件目录按 attempt 与输出端口隔离；创建失败不得发布 waiting handoff。
+        for target in targets:
+            (layout.work_dir / "incoming" / incoming_directory_name(target.port_id)).mkdir(
+                parents=True, exist_ok=False
+            )
         return ManualHandoff(
             schema_version=_HANDOFF_SCHEMA_VERSION,
             node_run_id=request.node_run_id,

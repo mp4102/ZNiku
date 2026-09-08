@@ -1031,6 +1031,15 @@ shell command/`shell=True`、TS definition injection，以及真实媒体路径�
 
 ## 15. 一句话合同
 
+2026-09-08 经操作者批准的存储命名增量：新配置工程的 Split、Enhancement、Merge、FI 由 Python
+`descriptive_output_paths` 在普通 attempt 输出内生成章目录及点分名称。示例为
+`Example (2026).A.leaf-0001.mkv`、`Example (2026).A.leaf-0001.enhancement.mov`、
+`Example (2026).A.enhancement.mov`、`Example (2026).A.enhancement.fi.mov`。文件序号按章从 0001 开始；
+Graph 的全局 leaf ID、port、ordinal、参数和媒体 validator 不变。当前 Split 直接产 leaves，不为
+`Example (2026).A.mkv` 另造整章副本，也不跳过单 leaf 的 Merge。无唯一可投影来源的自由图保留定义默认名。
+旧 handoff 始终使用已经保存的实际 target；新 validator 只接受正式解析 target 对应的名称，不放宽为任意名。
+详见[工程数据专项](../v0.3.0-project-data-execution.md)。
+
 > **ZNIKU v0.2.1 先用普通 Source/Admission/MR 节点建立 admitted Artifact，再由 server-side expand 从这些
 > Artifact 的 N/FPS 与 strict selector 确定性派生 Chapter/Leaf 并追加 v2.7 DAG；第二个普通 Run 复用 completed preparation nodes，
 > Graph Core 始终只执行 typed DAG，不获得任何 AVEnhanceFlow 业务状态机。**

@@ -22,6 +22,14 @@ from zniku.project_service.handoff_import import (
     HandoffImportPreviewEnvelope,
     HandoffImportPreviewRequest,
 )
+from zniku.project_service.handoff_inbox import (
+    HandoffInboxConfirmEnvelope,
+    HandoffInboxConfirmRequest,
+    HandoffInboxObserveEnvelope,
+    HandoffInboxObserveRequest,
+    HandoffInboxPreviewEnvelope,
+    HandoffInboxPreviewRequest,
+)
 from zniku.project_service.host_bridge import (
     HOST_PATH_REFERENCE_ADAPTER,
     HostCapabilitiesEnvelope,
@@ -46,6 +54,12 @@ from zniku.project_service.models import (
     TemplatePreviewEnvelope,
 )
 from zniku.project_service.preview import MediaPreviewEnvelope, MediaPreviewRequest
+from zniku.project_service.storage import StorageInspection, StorageMigrationPreview
+from zniku.project_service.storage_api import (
+    StorageInspectRequest,
+    StorageLocationRequest,
+    StorageMigrationConfirmRequest,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "apps" / "studio" / "src" / "service" / "project-service.schema.json"
@@ -135,6 +149,11 @@ def render_schema() -> str:
         HostInvokeEnvelope,
         HandoffImportPreviewEnvelope,
         HandoffImportConfirmEnvelope,
+        HandoffInboxObserveEnvelope,
+        HandoffInboxPreviewEnvelope,
+        HandoffInboxConfirmEnvelope,
+        StorageInspection,
+        StorageMigrationPreview,
         MediaPreviewEnvelope,
         DesktopSessionEnvelope,
         DesktopCloseEnvelope,
@@ -183,6 +202,12 @@ def render_schema() -> str:
         MediaPreviewRequest,
         HandoffImportPreviewRequest,
         HandoffImportConfirmRequest,
+        HandoffInboxObserveRequest,
+        HandoffInboxPreviewRequest,
+        HandoffInboxConfirmRequest,
+        StorageInspectRequest,
+        StorageLocationRequest,
+        StorageMigrationConfirmRequest,
         DesktopCloseRequest,
         DesktopPreferencesRequest,
     )

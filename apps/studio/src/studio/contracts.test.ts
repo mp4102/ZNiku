@@ -31,6 +31,11 @@ import {
 } from './test-fixtures'
 
 describe('Studio Project Service 0.3.0 contract', () => {
+  it('工程数据维护可以没有 Run，但仍绑定当前工程且不是运行 command', () => {
+    const value = studioEnvelope({ active_operation: 'migrate_storage', active_run_id: null })
+    expect(parseStatusEnvelope(value)).toEqual(value)
+    expect(() => parseStudioCommand({ operation: 'migrate_storage' })).toThrow(StudioContractError)
+  })
   it('重跑预览必须闭合、唯一、互斥并包含目标节点；不接受未知版本或执行指令', () => {
     const value = rerunPreviewEnvelope({ operation: 'rerun_from_here', run_id: handoffFixtureIds.run,
       node_id: 'transform', project_session_id: projectSessionId, expected_storage_revision: 1 })

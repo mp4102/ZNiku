@@ -3,7 +3,8 @@
 validator 只消费当前 attempt 的直接 ``RunnerInput``、已声明输出与受控 probe 结果；不会读取
 Project、NodeResult sidecar 或 AVEnhanceFlow task/state。automatic producer 的原始帧计数必须先与
 计划和 header 闭合，随后才通过 ``media_info_extensions`` 写入统一 namespace。任何未知字段、
-模糊帧数、流布局、颜色或顺序异常都失败关闭，且失败结果不携带可合并 extension。
+模糊帧数、流布局、颜色或顺序异常都失败关闭，且失败结果不携带可合并 extension。文件名只接受
+当前请求正式 output path 的精确 basename；未覆盖的端口继续使用旧固定名称，不接受任意来件名。
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Final, cast
 
 from zniku.avenhance_v27.planner import (
@@ -192,7 +193,7 @@ def _validate_source_program(context: NodeValidatorContext) -> _Validation:
 def _validate_source_admission(context: NodeValidatorContext) -> _Validation:
     sources = _ordered_inputs(context, "sources", kind="MediaFile", producer_port="source_media")
     output = _single_output(context, "gate")
-    _require_fixed_name(output, "admission.json")
+    _require_fixed_name(context, output, "admission.json")
     _require_no_producer_metadata(output)
     parameters = context.request.node.parameters
     mode = _enum(parameters.get("source_mode"), "source_mode", {"program", "pre_chaptered"})
@@ -260,7 +261,7 @@ def _validate_mosaic_restoration(context: NodeValidatorContext) -> _Validation:
     source = _single_input(context, "video", kind="VideoFile")
     _single_input(context, "gate", kind="DataFile", producer_port="gate")
     output = _single_output(context, "video")
-    _require_fixed_name(output, "mr.mkv")
+    _require_fixed_name(context, output, "mr.mkv")
     _require_no_producer_metadata(output)
     expected = _metadata_contract(source)
     media = probe_header(output.path)
@@ -347,7 +348,7 @@ def _validate_atomic_split(context: NodeValidatorContext) -> _Validation:
         source_counts.append(producer_count)
         for segment in source_segments:
             output = outputs[segment.port_id]
-            _require_fixed_name(output, f"{segment.port_id}.mkv")
+            _require_fixed_name(context, output, f"{segment.port_id}.mkv")
             if output.frame_range != FrameRange(
                 start_frame=segment.start_frame,
                 end_frame=segment.end_frame,
@@ -408,7 +409,7 @@ def _validate_atomic_split(context: NodeValidatorContext) -> _Validation:
 def _validate_enhancement(context: NodeValidatorContext) -> _Validation:
     source = _single_input(context, "video", kind="VideoFile")
     output = _single_output(context, "video")
-    _require_fixed_name(output, "enhancement.mov")
+    _require_fixed_name(context, output, "enhancement.mov")
     _require_no_producer_metadata(output)
     input_contract = _metadata_contract(source)
     parameters = context.request.node.parameters
@@ -471,7 +472,7 @@ def _validate_enhancement(context: NodeValidatorContext) -> _Validation:
 def _validate_merge_video(context: NodeValidatorContext) -> _Validation:
     inputs = _ordered_inputs(context, "videos", kind="VideoFile", producer_port="video")
     output = _single_output(context, "video")
-    _require_fixed_name(output, "merge.mov")
+    _require_fixed_name(context, output, "merge.mov")
     parameters = context.request.node.parameters
     contracts = tuple(_metadata_contract(item) for item in inputs)
     expected = _positive_int(parameters.get("expected_frames"), "expected_frames")
@@ -537,7 +538,7 @@ def _validate_merge_video(context: NodeValidatorContext) -> _Validation:
 def _validate_frame_interpolation(context: NodeValidatorContext) -> _Validation:
     source = _single_input(context, "video", kind="VideoFile", producer_port="video")
     output = _single_output(context, "video")
-    _require_fixed_name(output, "fi.mov")
+    _require_fixed_name(context, output, "fi.mov")
     _require_no_producer_metadata(output)
     input_contract = _metadata_contract(source)
     parameters = context.request.node.parameters
@@ -606,7 +607,7 @@ def _validate_frame_interpolation(context: NodeValidatorContext) -> _Validation:
 def _validate_program_encode(context: NodeValidatorContext) -> _Validation:
     inputs = _ordered_inputs(context, "chapters", kind="VideoFile", producer_port="video")
     output = _single_output(context, "video")
-    _require_fixed_name(output, "program.mp4")
+    _require_fixed_name(context, output, "program.mp4")
     parameters = context.request.node.parameters
     chapters = parse_program_chapters(parameters.get("chapters"))
     if len(inputs) != len(chapters):
@@ -694,7 +695,7 @@ def _validate_final_mux(context: NodeValidatorContext) -> _Validation:
     sources = _ordered_inputs(context, "sources", kind="MediaFile", producer_port="source_media")
     _single_input(context, "gate", kind="DataFile", producer_port="gate")
     output = _single_output(context, "media")
-    _require_fixed_name(output, "final.mkv")
+    _require_fixed_name(context, output, "final.mkv")
     parameters = context.request.node.parameters
     mode = _enum(parameters.get("source_mode"), "source_mode", {"program", "pre_chaptered"})
     if mode == "program" and len(sources) != 1:
@@ -944,7 +945,24 @@ def _outputs(
     return values
 
 
-def _require_fixed_name(output: ValidatedOutput, expected: str) -> None:
+def _require_fixed_name(
+    context: NodeValidatorContext, output: ValidatedOutput, expected: str
+) -> None:
+    """名称服从当前 attempt 的正式路径覆盖；路径 confinement 仍由 Runner 强制。
+
+    不从输出自身或节点参数提取预期名称，否则任意来件都会自我满足验收。重复覆盖失败关闭，
+    其他端口的覆盖不得改变本端口合同；旧请求没有覆盖时保留原固定名。
+    """
+
+    overrides = tuple(
+        item for item in context.request.output_paths if item.port_id == output.port_id
+    )
+    if len(overrides) > 1:
+        raise Av27MediaError("E_AV27_OUTPUT_PATH", "output port 的正式路径覆盖不唯一")
+    if overrides:
+        expected = PureWindowsPath(overrides[0].relative_path).name
+        if not expected or expected in {".", ".."}:
+            raise Av27MediaError("E_AV27_OUTPUT_PATH", "output 正式路径缺少文件名")
     if output.path.name != expected:
         raise Av27MediaError("E_AV27_OUTPUT_PATH", f"output 文件名必须为 {expected!r}")
 

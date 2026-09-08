@@ -38,7 +38,7 @@ from zniku.runtime import (
     NodeValidatorContext,
     RunnerInput,
 )
-from zniku.runtime.runner import ValidatedOutput
+from zniku.runtime.runner import OutputPathSpec, ValidatedOutput
 
 _SOURCE_RATE = Fraction(30000, 1001)
 _OUTPUT_RATE = Fraction(60000, 1001)
@@ -231,6 +231,7 @@ def _context(
     *,
     inputs: tuple[RunnerInput, ...] = (),
     outputs: tuple[ValidatedOutput, ...],
+    output_paths: tuple[OutputPathSpec, ...] = (),
 ) -> NodeValidatorContext:
     node = NodeInstance(
         node_id="node-under-test",
@@ -244,6 +245,7 @@ def _context(
         definition=definition,
         node=node,
         inputs=inputs,
+        output_paths=output_paths,
     )
     return NodeValidatorContext(request=request, work_dir=tmp_path, outputs=outputs)
 
@@ -485,9 +487,11 @@ def test_mosaic_restoration_closes_n_to_n_and_operator_declaration(
     assert invalid.summary["code"] == "E_AV27_MR_FRAME_COUNT"
 
 
+@pytest.mark.parametrize("descriptive", [False, True])
 def test_atomic_split_uses_group_producer_count_without_leaf_traversal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    descriptive: bool,
 ) -> None:
     source = _input(
         tmp_path,
@@ -509,14 +513,14 @@ def test_atomic_split_uses_group_producer_count_without_leaf_traversal(
         _output(
             tmp_path,
             "leaf-0001",
-            "leaf-0001.mkv",
+            "A/Synthetic.A.leaf-0001.mkv" if descriptive else "leaf-0001.mkv",
             producer={"output_frames": 100},
             frame_range=FrameRange(start_frame=0, end_frame=40),
         ),
         _output(
             tmp_path,
             "leaf-0002",
-            "leaf-0002.mkv",
+            "A/Synthetic.A.leaf-0002.mkv" if descriptive else "leaf-0002.mkv",
             producer={"output_frames": 100},
             frame_range=FrameRange(start_frame=40, end_frame=100),
         ),
@@ -562,6 +566,14 @@ def test_atomic_split_uses_group_producer_count_without_leaf_traversal(
             parameters,
             inputs=(source, gate),
             outputs=outputs,
+            output_paths=(
+                tuple(
+                    OutputPathSpec(item.port_id, str(item.path.relative_to(tmp_path)))
+                    for item in outputs
+                )
+                if descriptive
+                else ()
+            ),
         )
     )
 
@@ -589,6 +601,14 @@ def test_atomic_split_uses_group_producer_count_without_leaf_traversal(
             parameters,
             inputs=(source, gate),
             outputs=wrong,
+            output_paths=(
+                tuple(
+                    OutputPathSpec(item.port_id, str(item.path.relative_to(tmp_path)))
+                    for item in outputs
+                )
+                if descriptive
+                else ()
+            ),
         )
     )
     assert invalid.passed is False
@@ -801,9 +821,13 @@ def test_enhancement_accepts_declared_integer_scale_and_rejects_hdr(
     ).passed
 
 
+@pytest.mark.parametrize(
+    "output_name", ["enhancement.mov", "B/Synthetic.B.leaf-0001.enhancement.mov"]
+)
 def test_enhancement_scale_one_does_not_require_declaration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    output_name: str,
 ) -> None:
     source = _input(
         tmp_path,
@@ -813,7 +837,7 @@ def test_enhancement_scale_one_does_not_require_declaration(
         artifact_id="leaf",
         namespace=_namespace(frames=10),
     )
-    output = _output(tmp_path, "video", "enhancement.mov")
+    output = _output(tmp_path, "video", output_name)
     header = _media(
         output.path,
         _video(codec="prores", profile="HQ", pixel_format="yuv422p10le", frames=10),
@@ -838,6 +862,9 @@ def test_enhancement_scale_one_does_not_require_declaration(
             parameters,
             inputs=(source,),
             outputs=(output,),
+            output_paths=(
+                () if output_name == "enhancement.mov" else (OutputPathSpec("video", output_name),)
+            ),
         )
     )
     assert result.passed is True
@@ -846,9 +873,99 @@ def test_enhancement_scale_one_does_not_require_declaration(
     assert stage["actual_scale_factor"] == 1
 
 
+@pytest.mark.parametrize(
+    ("output_name", "output_paths", "expected_pass"),
+    [
+        ("enhancement.mov", (), True),
+        ("B/Synthetic.B.leaf-0001.enhancement.mov", (), False),
+        (
+            "enhancement.mov",
+            (OutputPathSpec("video", "B/Synthetic.B.leaf-0001.enhancement.mov"),),
+            False,
+        ),
+        (
+            "B/Synthetic.B.leaf-0002.enhancement.mov",
+            (OutputPathSpec("video", "B/Synthetic.B.leaf-0001.enhancement.mov"),),
+            False,
+        ),
+        (
+            "B/Synthetic.B.leaf-0001.enhancement.mov",
+            (OutputPathSpec("video", "B/Synthetic.B.leaf-0001.enhancement.mov"),),
+            True,
+        ),
+        (
+            "B/Synthetic.B.leaf-0001.enhancement.mov",
+            (OutputPathSpec("another-port", "B/Synthetic.B.leaf-0001.enhancement.mov"),),
+            False,
+        ),
+        (
+            "B/Synthetic.B.leaf-0001.enhancement.mov",
+            (
+                OutputPathSpec("video", "B/Synthetic.B.leaf-0001.enhancement.mov"),
+                OutputPathSpec("video", "B/Synthetic.B.leaf-0001.enhancement.mov"),
+            ),
+            False,
+        ),
+    ],
+)
+def test_enhancement_only_accepts_exact_current_formal_output_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    output_name: str,
+    output_paths: tuple[OutputPathSpec, ...],
+    expected_pass: bool,
+) -> None:
+    """路径覆盖是正式目标，不是任意文件名放行；旧名称也不能覆盖新 attempt 合同。"""
+
+    source = _input(
+        tmp_path,
+        "video",
+        kind="VideoFile",
+        producer_port="video",
+        artifact_id="leaf",
+        namespace=_namespace(frames=10),
+    )
+    output = _output(tmp_path, "video", output_name)
+    monkeypatch.setattr(
+        validators,
+        "probe_header",
+        lambda path: _media(
+            path,
+            _video(codec="prores", profile="HQ", pixel_format="yuv422p10le", frames=10),
+            format_name="mov",
+        ),
+    )
+    result = validators.validate_enhancement(
+        _context(
+            tmp_path,
+            enhancement_definition(),
+            {
+                "model_name": "Synthetic Enhancement",
+                "expected_input_geometry": _geometry(),
+                "expected_output_geometry": _geometry(),
+                "expected_frames": 10,
+                "expected_fps": "30000/1001",
+                "chapter_id": "chapter-0002",
+                "chapter_ordinal": 1,
+                "leaf_id": "leaf-0002",
+                "leaf_ordinal": 1,
+            },
+            inputs=(source,),
+            outputs=(output,),
+            output_paths=output_paths,
+        )
+    )
+    assert result.passed is expected_pass
+    if not expected_pass:
+        assert result.summary["code"] == "E_AV27_OUTPUT_PATH"
+        assert result.media_info_extensions == {}
+
+
+@pytest.mark.parametrize("output_name", ["merge.mov", "B/Synthetic.B.enhancement.mov"])
 def test_merge_closes_ordered_input_sum_and_exact_producer_schema(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    output_name: str,
 ) -> None:
     stage = {
         "kind": "enhancement",
@@ -872,7 +989,7 @@ def test_merge_closes_ordered_input_sum_and_exact_producer_schema(
     output = _output(
         tmp_path,
         "video",
-        "merge.mov",
+        output_name,
         producer={"output_frames": 100},
     )
     header = _media(
@@ -898,6 +1015,9 @@ def test_merge_closes_ordered_input_sum_and_exact_producer_schema(
             parameters,
             inputs=inputs,
             outputs=(output,),
+            output_paths=(
+                () if output_name == "merge.mov" else (OutputPathSpec("video", output_name),)
+            ),
         )
     )
     assert result.passed is True
@@ -919,6 +1039,9 @@ def test_merge_closes_ordered_input_sum_and_exact_producer_schema(
             parameters,
             inputs=inputs,
             outputs=(malformed,),
+            output_paths=(
+                () if output_name == "merge.mov" else (OutputPathSpec("video", output_name),)
+            ),
         )
     )
     assert invalid.passed is False
@@ -933,6 +1056,7 @@ def test_merge_closes_ordered_input_sum_and_exact_producer_schema(
         (_OUTPUT_RATE, 200, False, "E_AV27_FI_DOUBLE_COUNT"),
     ],
 )
+@pytest.mark.parametrize("output_name", ["fi.mov", "B/Synthetic.B.enhancement.fi.mov"])
 def test_fi_rate_tolerance_and_two_n_minus_one(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -940,6 +1064,7 @@ def test_fi_rate_tolerance_and_two_n_minus_one(
     frames: int,
     expected_pass: bool,
     code: str | None,
+    output_name: str,
 ) -> None:
     source = _input(
         tmp_path,
@@ -949,7 +1074,7 @@ def test_fi_rate_tolerance_and_two_n_minus_one(
         artifact_id="merge",
         namespace=_namespace(frames=100),
     )
-    output = _output(tmp_path, "video", "fi.mov")
+    output = _output(tmp_path, "video", output_name)
     header = _media(
         output.path,
         _video(
@@ -981,6 +1106,9 @@ def test_fi_rate_tolerance_and_two_n_minus_one(
             parameters,
             inputs=(source,),
             outputs=(output,),
+            output_paths=(
+                () if output_name == "fi.mov" else (OutputPathSpec("video", output_name),)
+            ),
         )
     )
     assert result.passed is expected_pass

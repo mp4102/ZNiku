@@ -1,5 +1,6 @@
 /** 外部处理助手只投影正式交接；检查与提交是独立意图，文件存在绝不触发执行。 */
 
+import type { ReactNode } from 'react'
 import { HandoffContract, HandoffPrecheckFailure, ReadinessMessages, fileName } from '../HandoffContract'
 import type { ArtifactWire, ExternalHandoffReadiness, NodeRunWire, RunDetailEnvelope } from '../contracts'
 import { isFullCheck, readinessMatchesHandoff, sameObservedOutputs } from '../handoff-check'
@@ -39,6 +40,7 @@ export interface HandoffCenterProps {
   readonly waitingNodeRuns: ReadonlyArray<NodeRunWire>
   readonly selectedNodeId: string | null
   readonly importController?: HandoffImportController
+  readonly inboxControls?: (nodeRun: NodeRunWire) => ReactNode
   readonly canImportHandoff?: boolean
   readonly detail: RunDetailEnvelope | null
   readonly artifactsById: ReadonlyMap<string, ArtifactWire>
@@ -142,7 +144,8 @@ export function HandoffCenter(props: HandoffCenterProps) {
                 {(!props.canRevealHandoff || !props.canOpenHandoffInput) && <p className="handoff-disabled-reason">本机打开能力不可用时，可复制路径后在外部工具中打开；使用 ZNIKU launcher 启动可连接本机能力。</p>}
               </li>
               <li className="handoff-step">
-                <h4>选择处理好的文件，或手动保存到目标位置</h4>
+                <h4>交回处理好的文件</h4>
+                {props.inboxControls?.(nodeRun)}
                 {handoff.output_targets.map((target) => {
                   const state = observed?.targets.find((item) => item.port_id === target.port_id && item.ordinal === target.ordinal)?.state
                   const status = state === 'missing' ? '尚未发现' : state === 'empty' ? '文件为空' : state === 'probe_failed' ? '检查未通过' : state ? '已发现' : '等待检测'

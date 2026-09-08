@@ -38,6 +38,7 @@ from pydantic import (
 
 from zniku.media.probe import MediaNodeError, probe_media, require_media_kind
 from zniku.runtime import NodeRunState
+from zniku.runtime.paths import incoming_directory_name
 
 HOST_BRIDGE_CONTRACT_VERSION: Literal["0.3.0"] = "0.3.0"
 HOST_TOKEN_HEADER: Final = "X-ZNIKU-Host-Token"
@@ -279,8 +280,19 @@ class HandoffOutputTargetSelector(HostBridgeModel):
     ordinal: Annotated[int, Field(ge=0)] | None = None
 
 
+class HandoffIncomingDirectorySelector(HostBridgeModel):
+    """打开当前外部任务的端口收件目录，不能由浏览器提供路径。"""
+
+    role: Literal["incoming_directory"]
+    port_id: HostIdentifier
+    ordinal: Annotated[int, Field(ge=0)] | None = None
+
+
 type HandoffPathSelector = Annotated[
-    HandoffWorkDirectorySelector | HandoffInputArtifactSelector | HandoffOutputTargetSelector,
+    HandoffWorkDirectorySelector
+    | HandoffInputArtifactSelector
+    | HandoffOutputTargetSelector
+    | HandoffIncomingDirectorySelector,
     Field(discriminator="role"),
 ]
 
@@ -514,6 +526,21 @@ class ProjectServiceHostPathResolver:
                 "handoff output target 不存在或不唯一",
                 http_status=HTTPStatus.CONFLICT,
             )
+        if isinstance(selector, HandoffIncomingDirectorySelector):
+            root = self._application.work_root.resolve(strict=True)
+            work = _existing_absolute_path(node_run.work_dir)
+            incoming = _existing_absolute_path(
+                work / "incoming" / incoming_directory_name(selector.port_id)
+            )
+            if (
+                work.parent != root
+                or incoming != work / "incoming" / incoming_directory_name(selector.port_id)
+                or not incoming.is_dir()
+            ):
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_REFERENCE", "收件目录不在当前 attempt 内", http_status=409
+                )
+            return incoming
         return _absolute_path(matches[0].path)
 
 

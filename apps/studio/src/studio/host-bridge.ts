@@ -54,6 +54,7 @@ export type HostPathReference =
         | { readonly role: 'work_directory' }
         | { readonly role: 'input_artifact'; readonly artifact_id: string }
         | { readonly role: 'output_target'; readonly port_id: string; readonly ordinal?: number | null }
+        | { readonly role: 'incoming_directory'; readonly port_id: string; readonly ordinal?: number | null }
     }
 
 export interface HostDialogArguments {
@@ -88,6 +89,13 @@ export interface HostBridge {
   /** 选择只产生预览；确认只复制/验证，不替代 Runtime 的显式 Submit。 */
   previewHandoffImport?(request: HandoffImportPreviewRequest): Promise<HandoffImportPreviewEnvelope>
   confirmHandoffImport?(request: HandoffImportConfirmRequest): Promise<HandoffImportEnvelope>
+  observeHandoffInbox?(request: HandoffImportBinding): Promise<HandoffInboxObserveEnvelope>
+  previewHandoffInbox?(request: HandoffInboxPreviewRequest): Promise<HandoffInboxPreviewEnvelope>
+  confirmHandoffInbox?(request: HandoffInboxConfirmRequest): Promise<HandoffInboxConfirmEnvelope>
+  inspectStorage?(projectSessionId: string): Promise<StorageInspection>
+  configureStorage?(request: StorageLocationRequest): Promise<StorageInspection>
+  previewStorageMigration?(request: StorageLocationRequest): Promise<StorageMigrationPreview>
+  confirmStorageMigration?(request: StorageMigrationConfirmRequest): Promise<StorageInspection>
   inspectDesktop?(): Promise<DesktopSessionEnvelope>
   closeDesktop?(instanceId: string): Promise<void>
   saveDesktopPreferences?(instanceId: string, preferences: DesktopPreferences): Promise<void>
@@ -150,6 +158,97 @@ export interface HandoffImportEnvelope extends Omit<HandoffImportPreviewRequest,
   readonly source_size: number
   readonly target_path: string
   readonly status: 'imported'
+}
+
+export type HandoffImportBinding = Omit<HandoffImportPreviewRequest, 'selection_handle'>
+export interface HandoffInboxCandidate {
+  readonly candidate_handle: string
+  readonly name: string
+  readonly size: number
+  readonly mtime_ns: number
+}
+export interface HandoffInboxObserveEnvelope extends HandoffImportBinding {
+  readonly inbox_path: string
+  readonly allowed_suffix: string
+  readonly candidates: ReadonlyArray<HandoffInboxCandidate>
+  readonly rejected_count: number
+  readonly expires_in_seconds: 300
+}
+export interface HandoffInboxPreviewRequest extends HandoffImportBinding {
+  readonly candidate_handle: string
+}
+export interface HandoffInboxPreviewEnvelope extends HandoffImportBinding {
+  readonly inbox_id: string
+  readonly source_name: string
+  readonly source_size: number
+  readonly target_path: string
+  readonly replace_existing: boolean
+  readonly action: 'move'
+  readonly expires_in_seconds: 300
+}
+export interface HandoffInboxConfirmRequest {
+  readonly contract_version: '0.3.0'
+  readonly inbox_id: string
+  readonly overwrite: boolean
+}
+export interface HandoffInboxConfirmEnvelope extends HandoffImportBinding {
+  readonly inbox_id: string
+  readonly source_name: string
+  readonly source_size: number
+  readonly target_path: string
+  readonly status: 'collected'
+}
+export interface ProjectStorage {
+  readonly contract_version: '0.3.0'
+  readonly mode: 'adjacent' | 'custom' | 'legacy'
+  readonly data_root: string
+  readonly attempts_root: string
+  readonly retention: 'keep'
+  readonly media_basename: string | null
+}
+export interface StorageDependency {
+  readonly path: string
+  readonly artifact_ids: ReadonlyArray<string>
+  readonly state: 'present' | 'missing' | 'unreadable'
+}
+export interface StorageInspection {
+  readonly contract_version: '0.3.0'
+  readonly storage: ProjectStorage
+  readonly configured: boolean
+  readonly attempt_count: number
+  readonly registered_file_count: number
+  readonly registered_bytes: number
+  readonly managed_file_count: number
+  readonly managed_bytes: number
+  readonly missing: ReadonlyArray<StorageDependency>
+  readonly external_dependencies: ReadonlyArray<StorageDependency>
+  readonly coverage: 'registered_artifacts'
+  readonly warnings: ReadonlyArray<string>
+}
+export interface StorageLocationRequest {
+  readonly contract_version?: '0.3.0'
+  readonly project_session_id: string
+  readonly expected_storage_revision: number
+  readonly selection_handle: string | null
+}
+export interface StorageMigrationPreview {
+  readonly contract_version: '0.3.0'
+  readonly ticket_id: string
+  readonly project_session_id: string
+  readonly expected_storage_revision: number
+  readonly source: ProjectStorage
+  readonly target: ProjectStorage
+  readonly attempt_count: number
+  readonly file_count: number
+  readonly byte_count: number
+  readonly external_dependencies: ReadonlyArray<StorageDependency>
+  readonly originals_retained: true
+}
+export interface StorageMigrationConfirmRequest {
+  readonly contract_version?: '0.3.0'
+  readonly project_session_id: string
+  readonly expected_storage_revision: number
+  readonly ticket_id: string
 }
 
 interface HostBridgeBootstrap {
@@ -301,6 +400,8 @@ export class FetchHostBridge implements HostBridge {
   private readonly bootstrapError: string | null
   private preferenceWrites: Promise<void> = Promise.resolve()
   private readonly importPreviews = new Map<string, HandoffImportPreviewEnvelope>()
+  private readonly inboxPreviews = new Map<string, HandoffInboxPreviewEnvelope>()
+  private readonly storagePreviews = new Map<string, StorageMigrationPreview>()
 
   constructor(bootstrap: HostBridgeBootstrap | undefined = window.__ZNIKU_HOST_BRIDGE__) {
     let baseUrl: string | null = null
@@ -410,6 +511,80 @@ export class FetchHostBridge implements HostBridge {
       'handoff_id', 'port_id', 'ordinal', 'source_name', 'source_size', 'target_path'] as const
     if (keys.some((key) => result[key] !== preview[key])) {
       throw new HostBridgeError('文件导入响应不属于已确认的任务与文件，请刷新检查实际结果。')
+    }
+    return result
+  }
+
+  private dataPost<T>(route: string, request: object, inputSchema: string, outputSchema: string): Promise<T> {
+    parseWith(request, compileDefinition(inputSchema), inputSchema)
+    return this.request(`/api/studio/${route}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+    }, (value) => parseWith<T>(value, compileDefinition(outputSchema), outputSchema))
+  }
+
+  async observeHandoffInbox(request: HandoffImportBinding): Promise<HandoffInboxObserveEnvelope> {
+    const result = await this.dataPost<HandoffInboxObserveEnvelope>('handoff-inbox/observe', request,
+      'HandoffInboxObserveRequest', 'HandoffInboxObserveEnvelope')
+    this.assertInboxBinding(request, result)
+    return result
+  }
+
+  private assertInboxBinding(request: HandoffImportBinding, result: HandoffImportBinding): void {
+    const keys = ['contract_version', 'project_session_id', 'run_id', 'node_run_id', 'handoff_id', 'port_id', 'ordinal'] as const
+    if (keys.some((key) => request[key] !== result[key])) throw new HostBridgeError('收件响应不属于当前工程与外部任务。')
+  }
+
+  async previewHandoffInbox(request: HandoffInboxPreviewRequest): Promise<HandoffInboxPreviewEnvelope> {
+    const result = await this.dataPost<HandoffInboxPreviewEnvelope>('handoff-inbox/preview', request,
+      'HandoffInboxPreviewRequest', 'HandoffInboxPreviewEnvelope')
+    this.assertInboxBinding(request, result)
+    this.inboxPreviews.set(result.inbox_id, result)
+    if (this.inboxPreviews.size > 32) this.inboxPreviews.delete(this.inboxPreviews.keys().next().value!)
+    return result
+  }
+
+  async confirmHandoffInbox(request: HandoffInboxConfirmRequest): Promise<HandoffInboxConfirmEnvelope> {
+    const preview = this.inboxPreviews.get(request.inbox_id)
+    if (!preview) throw new HostBridgeError('收件预览已失效，请重新选择候选。')
+    this.inboxPreviews.delete(request.inbox_id)
+    const result = await this.dataPost<HandoffInboxConfirmEnvelope>('handoff-inbox/confirm', request,
+      'HandoffInboxConfirmRequest', 'HandoffInboxConfirmEnvelope')
+    this.assertInboxBinding(preview, result)
+    const keys = ['inbox_id', 'source_name', 'source_size', 'target_path'] as const
+    if (keys.some((key) => preview[key] !== result[key])) throw new HostBridgeError('收纳结果与预览不一致，请检查实际文件，不要重复确认。')
+    return result
+  }
+
+  inspectStorage(projectSessionId: string): Promise<StorageInspection> {
+    return this.dataPost('storage/inspect', { contract_version: '0.3.0', project_session_id: projectSessionId },
+      'StorageInspectRequest', 'StorageInspection')
+  }
+
+  configureStorage(request: StorageLocationRequest): Promise<StorageInspection> {
+    return this.dataPost('storage/configure', request, 'StorageLocationRequest', 'StorageInspection')
+  }
+
+  async previewStorageMigration(request: StorageLocationRequest): Promise<StorageMigrationPreview> {
+    const result = await this.dataPost<StorageMigrationPreview>('storage/preview', request,
+      'StorageLocationRequest', 'StorageMigrationPreview')
+    if (result.project_session_id !== request.project_session_id || result.expected_storage_revision !== request.expected_storage_revision) {
+      throw new HostBridgeError('迁移预览不属于当前工程，请重新检查。')
+    }
+    this.storagePreviews.set(result.ticket_id, result)
+    if (this.storagePreviews.size > 32) this.storagePreviews.delete(this.storagePreviews.keys().next().value!)
+    return result
+  }
+
+  async confirmStorageMigration(request: StorageMigrationConfirmRequest): Promise<StorageInspection> {
+    const preview = this.storagePreviews.get(request.ticket_id)
+    if (!preview || preview.project_session_id !== request.project_session_id || preview.expected_storage_revision !== request.expected_storage_revision) {
+      throw new HostBridgeError('迁移预览已失效，请重新选择位置。')
+    }
+    this.storagePreviews.delete(request.ticket_id)
+    const result = await this.dataPost<StorageInspection>('storage/confirm', request,
+      'StorageMigrationConfirmRequest', 'StorageInspection')
+    if (result.storage.data_root !== preview.target.data_root || result.storage.attempts_root !== preview.target.attempts_root) {
+      throw new HostBridgeError('迁移响应与已确认位置不一致，请刷新检查实际工程。')
     }
     return result
   }

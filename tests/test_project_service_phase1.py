@@ -287,7 +287,7 @@ def _sqlite_dump(path: Path) -> tuple[str, ...]:
 def test_phase1_wire_version_is_exact() -> None:
     """浏览器 wire 升为 exact 0.3.0，不能与 Project schema version 捆绑。"""
 
-    assert PROJECT_SCHEMA_VERSION == 3
+    assert PROJECT_SCHEMA_VERSION == 4
     assert project_service.PROJECT_SERVICE_CONTRACT_VERSION == "0.3.0"
 
 

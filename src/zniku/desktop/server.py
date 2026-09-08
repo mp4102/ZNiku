@@ -51,6 +51,7 @@ def build_desktop_application(work_root: Path) -> ProjectServiceApplication:
 
     return ProjectServiceApplication(
         work_root=work_root,
+        project_data_default=True,
         definition_catalog=(*built_in_media_definitions(), *built_in_av27_definitions()),
         python_adapters={**media_python_adapters(), **av27_python_adapters()},
         validators={**media_validators(), **av27_validators()},

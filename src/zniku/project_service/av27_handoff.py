@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from pathlib import PureWindowsPath
 
 from zniku.avenhance_v27.definitions import (
     AV27_NODE_VERSION,
@@ -100,6 +101,12 @@ def project_av27_handoff_contracts(
         )
         signal = params.get("expected_signal") if is_fi else namespace.get("signal")
         version = params.get("model_version")
+        output_names = tuple(
+            PureWindowsPath(target.path).name
+            for target in handoff.output_targets
+            if target.port_id == "video"
+        )
+        output_name = output_names[0] if len(output_names) == 1 else _UNAVAILABLE
         rows: list[tuple[str, object]] = [
             ("Model name(操作者声明)", params.get("model_name")),
             (
@@ -116,11 +123,7 @@ def project_av27_handoff_contracts(
             ("SAR / field / rotation", "1:1(或缺失) / progressive / 0°"),
             (
                 "输出容器与名称",
-                "Matroska · mr.mkv"
-                if is_mr
-                else "MOV · fi.mov"
-                if is_fi
-                else "MOV · enhancement.mov",
+                f"{'Matroska' if is_mr else 'MOV'} · {output_name}",
             ),
             (
                 "视频 codec / pixel format",

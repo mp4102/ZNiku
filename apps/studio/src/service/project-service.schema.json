@@ -7,6 +7,7 @@
         "rerun_from_here",
         "submit_external",
         "import_external",
+        "migrate_storage",
         "abandon_run"
       ],
       "type": "string"
@@ -516,6 +517,34 @@
       "additionalProperties": false,
       "description": "以严格请求原子创建 AVEnhanceFlow v2.7 preparation Project。",
       "properties": {
+        "data_parent_directory": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data Parent Directory"
+        },
+        "media_basename": {
+          "anyOf": [
+            {
+              "maxLength": 180,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Media Basename"
+        },
         "operation": {
           "const": "create_av_enhance_v27",
           "title": "Operation",
@@ -2888,6 +2917,582 @@
       "title": "HandoffImportPreviewRequest",
       "type": "object"
     },
+    "HandoffInboxCandidate": {
+      "additionalProperties": false,
+      "description": "一次目录观察的普通文件摘要；mtime 仅为变化提示，不是内容身份。",
+      "properties": {
+        "candidate_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Candidate Handle",
+          "type": "string"
+        },
+        "mtime_ns": {
+          "minimum": 0,
+          "title": "Mtime Ns",
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "size": {
+          "exclusiveMinimum": 0,
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "candidate_handle",
+        "name",
+        "size",
+        "mtime_ns"
+      ],
+      "title": "HandoffInboxCandidate",
+      "type": "object"
+    },
+    "HandoffInboxConfirmEnvelope": {
+      "additionalProperties": false,
+      "description": "仅说明候选收纳完成；用户仍须通过原有检查与提交推进任务。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "inbox_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Inbox Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "source_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Source Name",
+          "type": "string"
+        },
+        "source_size": {
+          "exclusiveMinimum": 0,
+          "title": "Source Size",
+          "type": "integer"
+        },
+        "status": {
+          "const": "collected",
+          "default": "collected",
+          "title": "Status",
+          "type": "string"
+        },
+        "target_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Target Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "port_id",
+        "ordinal",
+        "inbox_id",
+        "source_name",
+        "source_size",
+        "target_path",
+        "status"
+      ],
+      "title": "HandoffInboxConfirmEnvelope",
+      "type": "object"
+    },
+    "HandoffInboxConfirmRequest": {
+      "additionalProperties": false,
+      "description": "一次性确认收纳；覆盖必须为显式 true，无法传入任意文件路径。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "inbox_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Inbox Id",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "inbox_id",
+        "overwrite"
+      ],
+      "title": "HandoffInboxConfirmRequest",
+      "type": "object"
+    },
+    "HandoffInboxObserveEnvelope": {
+      "additionalProperties": false,
+      "description": "零、一或多候选都只是投影；不猜选文件，不执行媒体检查或 Submit。",
+      "properties": {
+        "allowed_suffix": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Allowed Suffix",
+          "type": "string"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/HandoffInboxCandidate"
+          },
+          "maxItems": 64,
+          "title": "Candidates",
+          "type": "array"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expires_in_seconds": {
+          "const": 300,
+          "default": 300,
+          "title": "Expires In Seconds",
+          "type": "integer"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "inbox_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Inbox Path",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "rejected_count": {
+          "maximum": 256,
+          "minimum": 0,
+          "title": "Rejected Count",
+          "type": "integer"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "port_id",
+        "ordinal",
+        "inbox_path",
+        "allowed_suffix",
+        "candidates",
+        "rejected_count",
+        "expires_in_seconds"
+      ],
+      "title": "HandoffInboxObserveEnvelope",
+      "type": "object"
+    },
+    "HandoffInboxObserveRequest": {
+      "additionalProperties": false,
+      "description": "只引用精确交接身份，不允许浏览器提交收件箱路径。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "port_id",
+        "ordinal"
+      ],
+      "title": "HandoffInboxObserveRequest",
+      "type": "object"
+    },
+    "HandoffInboxPreviewEnvelope": {
+      "additionalProperties": false,
+      "description": "说明受控移动的目标及覆盖行为，预览本身不创建文件。",
+      "properties": {
+        "action": {
+          "const": "move",
+          "default": "move",
+          "title": "Action",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expires_in_seconds": {
+          "const": 300,
+          "default": 300,
+          "title": "Expires In Seconds",
+          "type": "integer"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "inbox_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Inbox Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "replace_existing": {
+          "title": "Replace Existing",
+          "type": "boolean"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "source_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Source Name",
+          "type": "string"
+        },
+        "source_size": {
+          "exclusiveMinimum": 0,
+          "title": "Source Size",
+          "type": "integer"
+        },
+        "target_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Target Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "port_id",
+        "ordinal",
+        "inbox_id",
+        "source_name",
+        "source_size",
+        "target_path",
+        "replace_existing",
+        "action",
+        "expires_in_seconds"
+      ],
+      "title": "HandoffInboxPreviewEnvelope",
+      "type": "object"
+    },
+    "HandoffInboxPreviewRequest": {
+      "additionalProperties": false,
+      "description": "用户必须明确选择观察结果中的一个候选句柄。",
+      "properties": {
+        "candidate_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Candidate Handle",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "port_id",
+        "ordinal",
+        "candidate_handle"
+      ],
+      "title": "HandoffInboxPreviewRequest",
+      "type": "object"
+    },
+    "HandoffIncomingDirectorySelector": {
+      "additionalProperties": false,
+      "description": "打开当前外部任务的端口收件目录，不能由浏览器提供路径。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "incoming_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "port_id",
+        "ordinal"
+      ],
+      "title": "HandoffIncomingDirectorySelector",
+      "type": "object"
+    },
     "HandoffInputArtifactSelector": {
       "additionalProperties": false,
       "description": "选择 handoff 明确绑定的一个输入 Artifact。",
@@ -2997,6 +3602,7 @@
     "HandoffPathSelector": {
       "discriminator": {
         "mapping": {
+          "incoming_directory": "#/$defs/HandoffIncomingDirectorySelector",
           "input_artifact": "#/$defs/HandoffInputArtifactSelector",
           "output_target": "#/$defs/HandoffOutputTargetSelector",
           "work_directory": "#/$defs/HandoffWorkDirectorySelector"
@@ -3012,6 +3618,9 @@
         },
         {
           "$ref": "#/$defs/HandoffOutputTargetSelector"
+        },
+        {
+          "$ref": "#/$defs/HandoffIncomingDirectorySelector"
         }
       ]
     },
@@ -3400,6 +4009,43 @@
       "title": "ArtifactPathReference",
       "type": "object"
     },
+    "Host_HostSystemArguments_HandoffIncomingDirectorySelector": {
+      "additionalProperties": false,
+      "description": "打开当前外部任务的端口收件目录，不能由浏览器提供路径。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "incoming_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "port_id"
+      ],
+      "title": "HandoffIncomingDirectorySelector",
+      "type": "object"
+    },
     "Host_HostSystemArguments_HandoffInputArtifactSelector": {
       "additionalProperties": false,
       "description": "选择 handoff 明确绑定的一个输入 Artifact。",
@@ -3508,6 +4154,7 @@
     "Host_HostSystemArguments_HandoffPathSelector": {
       "discriminator": {
         "mapping": {
+          "incoming_directory": "#/$defs/Host_HostSystemArguments_HandoffIncomingDirectorySelector",
           "input_artifact": "#/$defs/Host_HostSystemArguments_HandoffInputArtifactSelector",
           "output_target": "#/$defs/Host_HostSystemArguments_HandoffOutputTargetSelector",
           "work_directory": "#/$defs/Host_HostSystemArguments_HandoffWorkDirectorySelector"
@@ -3523,6 +4170,9 @@
         },
         {
           "$ref": "#/$defs/Host_HostSystemArguments_HandoffOutputTargetSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_HostSystemArguments_HandoffIncomingDirectorySelector"
         }
       ]
     },
@@ -3628,6 +4278,43 @@
         "artifact_id"
       ],
       "title": "ArtifactPathReference",
+      "type": "object"
+    },
+    "Host_MediaPreviewRequest_HandoffIncomingDirectorySelector": {
+      "additionalProperties": false,
+      "description": "打开当前外部任务的端口收件目录，不能由浏览器提供路径。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "incoming_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "port_id"
+      ],
+      "title": "HandoffIncomingDirectorySelector",
       "type": "object"
     },
     "Host_MediaPreviewRequest_HandoffInputArtifactSelector": {
@@ -3738,6 +4425,7 @@
     "Host_MediaPreviewRequest_HandoffPathSelector": {
       "discriminator": {
         "mapping": {
+          "incoming_directory": "#/$defs/Host_MediaPreviewRequest_HandoffIncomingDirectorySelector",
           "input_artifact": "#/$defs/Host_MediaPreviewRequest_HandoffInputArtifactSelector",
           "output_target": "#/$defs/Host_MediaPreviewRequest_HandoffOutputTargetSelector",
           "work_directory": "#/$defs/Host_MediaPreviewRequest_HandoffWorkDirectorySelector"
@@ -3753,6 +4441,9 @@
         },
         {
           "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffOutputTargetSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffIncomingDirectorySelector"
         }
       ]
     },
@@ -3894,6 +4585,43 @@
       "title": "ArtifactPathReference",
       "type": "object"
     },
+    "Host_Reference_HandoffIncomingDirectorySelector": {
+      "additionalProperties": false,
+      "description": "打开当前外部任务的端口收件目录，不能由浏览器提供路径。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "incoming_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "port_id"
+      ],
+      "title": "HandoffIncomingDirectorySelector",
+      "type": "object"
+    },
     "Host_Reference_HandoffInputArtifactSelector": {
       "additionalProperties": false,
       "description": "选择 handoff 明确绑定的一个输入 Artifact。",
@@ -4002,6 +4730,7 @@
     "Host_Reference_HandoffPathSelector": {
       "discriminator": {
         "mapping": {
+          "incoming_directory": "#/$defs/Host_Reference_HandoffIncomingDirectorySelector",
           "input_artifact": "#/$defs/Host_Reference_HandoffInputArtifactSelector",
           "output_target": "#/$defs/Host_Reference_HandoffOutputTargetSelector",
           "work_directory": "#/$defs/Host_Reference_HandoffWorkDirectorySelector"
@@ -4017,6 +4746,9 @@
         },
         {
           "$ref": "#/$defs/Host_Reference_HandoffOutputTargetSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_Reference_HandoffIncomingDirectorySelector"
         }
       ]
     },
@@ -6045,6 +6777,69 @@
       "title": "ProjectSnapshot",
       "type": "object"
     },
+    "ProjectStorage": {
+      "additionalProperties": false,
+      "description": "保存工程资产位置；keep 表示完成、退出和重跑均不会自动删除已存资产。",
+      "properties": {
+        "attempts_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Attempts Root",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "data_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Data Root",
+          "type": "string"
+        },
+        "media_basename": {
+          "anyOf": [
+            {
+              "maxLength": 180,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Media Basename"
+        },
+        "mode": {
+          "enum": [
+            "adjacent",
+            "custom",
+            "legacy"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "retention": {
+          "const": "keep",
+          "default": "keep",
+          "title": "Retention",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "mode",
+        "data_root",
+        "attempts_root",
+        "retention",
+        "media_basename"
+      ],
+      "title": "ProjectStorage",
+      "type": "object"
+    },
     "PublicationPreviewEnvelope": {
       "additionalProperties": false,
       "description": "投影 Python 唯一计算的输出位置及将来的目录创建需求。",
@@ -6812,6 +7607,304 @@
         "error"
       ],
       "title": "StatusEnvelope",
+      "type": "object"
+    },
+    "StorageDependency": {
+      "additionalProperties": false,
+      "description": "列出已登记文件的缺失或外部依赖，不推断未知插件参数中的隐含文件。",
+      "properties": {
+        "artifact_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Ids",
+          "type": "array"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "present",
+            "missing",
+            "unreadable"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "artifact_ids",
+        "state"
+      ],
+      "title": "StorageDependency",
+      "type": "object"
+    },
+    "StorageInspectRequest": {
+      "additionalProperties": false,
+      "description": "只读检查必须绑定当前工程会话。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_session_id"
+      ],
+      "title": "StorageInspectRequest",
+      "type": "object"
+    },
+    "StorageInspection": {
+      "additionalProperties": false,
+      "description": "只读归档前检查；覆盖范围明确不等于完整离线归档包。",
+      "properties": {
+        "attempt_count": {
+          "title": "Attempt Count",
+          "type": "integer"
+        },
+        "configured": {
+          "title": "Configured",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "coverage": {
+          "const": "registered_artifacts",
+          "default": "registered_artifacts",
+          "title": "Coverage",
+          "type": "string"
+        },
+        "external_dependencies": {
+          "items": {
+            "$ref": "#/$defs/StorageDependency"
+          },
+          "title": "External Dependencies",
+          "type": "array"
+        },
+        "managed_bytes": {
+          "title": "Managed Bytes",
+          "type": "integer"
+        },
+        "managed_file_count": {
+          "title": "Managed File Count",
+          "type": "integer"
+        },
+        "missing": {
+          "items": {
+            "$ref": "#/$defs/StorageDependency"
+          },
+          "title": "Missing",
+          "type": "array"
+        },
+        "registered_bytes": {
+          "title": "Registered Bytes",
+          "type": "integer"
+        },
+        "registered_file_count": {
+          "title": "Registered File Count",
+          "type": "integer"
+        },
+        "storage": {
+          "$ref": "#/$defs/ProjectStorage"
+        },
+        "warnings": {
+          "default": [
+            "此检查只覆盖已登记 Artifact；未运行节点和第三方插件的隐含文件依赖不在覆盖范围内。",
+            "保存工程文件与工作数据不等于完整离线归档；请同时保留外部依赖中的源素材和发布结果。"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "storage",
+        "configured",
+        "attempt_count",
+        "registered_file_count",
+        "registered_bytes",
+        "managed_file_count",
+        "managed_bytes",
+        "missing",
+        "external_dependencies",
+        "coverage",
+        "warnings"
+      ],
+      "title": "StorageInspection",
+      "type": "object"
+    },
+    "StorageLocationRequest": {
+      "additionalProperties": false,
+      "description": "null 明确表示工程旁默认；非空句柄表示用户刚选择的数据父目录。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "selection_handle": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 24,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Selection Handle"
+        }
+      },
+      "required": [
+        "project_session_id",
+        "expected_storage_revision",
+        "selection_handle"
+      ],
+      "title": "StorageLocationRequest",
+      "type": "object"
+    },
+    "StorageMigrationConfirmRequest": {
+      "additionalProperties": false,
+      "description": "确认不能修改预览已绑定的源位置、目标或工程。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "ticket_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Ticket Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_session_id",
+        "expected_storage_revision",
+        "ticket_id"
+      ],
+      "title": "StorageMigrationConfirmRequest",
+      "type": "object"
+    },
+    "StorageMigrationPreview": {
+      "additionalProperties": false,
+      "description": "绑定工程会话、CAS 与固定目标的短期内存迁移预览。",
+      "properties": {
+        "attempt_count": {
+          "title": "Attempt Count",
+          "type": "integer"
+        },
+        "byte_count": {
+          "title": "Byte Count",
+          "type": "integer"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "external_dependencies": {
+          "items": {
+            "$ref": "#/$defs/StorageDependency"
+          },
+          "title": "External Dependencies",
+          "type": "array"
+        },
+        "file_count": {
+          "title": "File Count",
+          "type": "integer"
+        },
+        "originals_retained": {
+          "const": true,
+          "default": true,
+          "title": "Originals Retained",
+          "type": "boolean"
+        },
+        "project_session_id": {
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectStorage"
+        },
+        "target": {
+          "$ref": "#/$defs/ProjectStorage"
+        },
+        "ticket_id": {
+          "title": "Ticket Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "ticket_id",
+        "project_session_id",
+        "expected_storage_revision",
+        "source",
+        "target",
+        "attempt_count",
+        "file_count",
+        "byte_count",
+        "external_dependencies",
+        "originals_retained"
+      ],
+      "title": "StorageMigrationPreview",
       "type": "object"
     },
     "StudioState": {

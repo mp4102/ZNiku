@@ -202,7 +202,7 @@ Draft 2020-12 authoring shape。未列入 corpus 的 Schema 能力不在 v0.3.0 
 
 不得把别名、分组、折叠、viewport、模式、选区或未应用 draft 塞入 NodeInstance parameters。
 
-### 7.2 StudioState 与 schema 3
+### 7.2 StudioState 与 schema 4 的兼容保存
 
 ```text
 StudioState
@@ -227,7 +227,8 @@ GroupViewState
 实例显示名不要求唯一，稳定身份始终是 node_id。删除节点必须清理相应 NodeViewState；复制节点产生新的
 node_id。StudioState 损坏时回退默认展示并报告 warning，不得损坏或改写 Graph、Run 或 Artifact。
 
-`.zniku` schema 2→3 必须事务化；首次迁移前自动创建唯一、不覆盖既有备份的可恢复副本。迁移失败时保留
+StudioState 在 schema 3 引入；2026-09-08 批准的 schema 4 仅增加独立工程数据配置。旧 schema 2/3 读取保持
+只读；显式写入升级必须事务化，升级前自动创建唯一、不覆盖既有备份的可恢复副本。迁移失败时保留
 原工程并失败关闭；未知更高版本继续失败关闭。旧 Graph、definitions、历史 Run、Artifact、reuse 和 stale
 结论不得被迁移改写。
 
@@ -329,6 +330,15 @@ picker selection handle、当前工程会话、Run、最新 waiting NodeRun、ha
 HostBridge 六项 capability，不提供通用文件管理能力，也不改变 Runtime 状态机。
 
 ## 10. HostBridge
+
+2026-09-08 经操作者批准的交接补充：新工程默认使用工程旁持久数据目录，并允许选专用磁盘。界面提供
+“工程数据”入口，显示实际位置、永久保留策略、占用和工程外依赖；有数据时更改位置必须走明确的迁移
+预览/确认，原件不自动删除。介质不可用时禁止静默回退到 AppData。
+
+外部节点进入等待前自动创建独立收件目录。助手提供打开输入/收件目录、选择文件复制以及有界收件候选
+列表；任意来件名称不等于任意媒体合同，多个候选必须显式选择。收纳前说明规范名称与是否替换，成功后
+仍需正式检查与显式 Submit。复制中、候选换代、过期请求、错误归属或多输出歧义均不猜测完成。
+所有命名与路径由 Python 提供，Studio 不解析文件名推导章节、leaf 或任务身份。
 
 ### 10.1 正式范围
 

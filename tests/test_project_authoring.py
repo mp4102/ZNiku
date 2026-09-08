@@ -124,6 +124,7 @@ def _binding(application: ProjectServiceApplication) -> dict[str, Any]:
 
 def _as_schema2(store: ProjectStore) -> None:
     with closing(sqlite3.connect(store.path)) as connection, connection:
+        connection.execute("DROP TABLE project_storage")
         connection.execute("DROP TABLE studio_state")
         connection.execute("PRAGMA user_version = 2")
 
@@ -133,7 +134,8 @@ def _rows(path: Path) -> dict[str, list[tuple[Any, ...]]]:
         names = [
             row[0]
             for row in connection.execute(
-                "SELECT name FROM sqlite_schema WHERE type='table' AND name != 'studio_state'"
+                "SELECT name FROM sqlite_schema WHERE type='table' "
+                "AND name NOT IN ('studio_state', 'project_storage')"
             )
         ]
         return {name: connection.execute(f"SELECT * FROM {name}").fetchall() for name in names}

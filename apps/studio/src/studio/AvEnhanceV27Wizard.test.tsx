@@ -135,6 +135,60 @@ async function reachResumeAnalysis(user: ReturnType<typeof userEvent.setup>): Pr
 }
 
 describe('AVEnhanceFlow v2.7 创作者向导', () => {
+  it('专用数据父目录只在显式开始分析后随media_basename交给创建命令', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    const onPickDataDirectory = vi.fn(async () => 'E:\\archive-parent')
+    render(<AvEnhanceV27Wizard {...props} onPickDataDirectory={onPickDataDirectory} />)
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    expect(screen.getByText('专用磁盘父目录：E:\\archive-parent')).toBeVisible()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+    await reachAnalysis(user)
+    expect(props.onCreate).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    await waitFor(() => expect(props.onCreate).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'project.hidden-session-id' }), {
+      data_parent_directory: 'E:\\archive-parent', media_basename: 'Movie (2026)',
+    }))
+    expect(props.onStartPreparationRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('数据父目录取消后仍使用默认位置，恢复默认不会把旧磁盘带入创建', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    const onPickDataDirectory = vi.fn<() => Promise<string | null>>().mockResolvedValueOnce(null).mockResolvedValueOnce('E:\\old-choice')
+    render(<AvEnhanceV27Wizard {...props} onPickDataDirectory={onPickDataDirectory} />)
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    expect(screen.getByText('使用工程旁默认位置')).toBeVisible()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    expect(screen.getByText('专用磁盘父目录：E:\\old-choice')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '恢复工程旁默认' }))
+    await reachAnalysis(user)
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    await waitFor(() => expect(props.onCreate).toHaveBeenCalledWith(expect.anything(), { media_basename: 'Movie (2026)' }))
+  })
+
+  it.each(['edit', 'close'] as const)('数据父目录%s后迟到选择不改变当前表单或创建工程', async (action) => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    let finish!: (value: string | null) => void
+    const onPickDataDirectory = vi.fn<() => Promise<string | null>>(() => new Promise((resolve) => { finish = resolve }))
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} onPickDataDirectory={onPickDataDirectory} />)
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    if (action === 'edit') await user.type(screen.getByLabelText('工程名称'), '已变化')
+    else {
+      rerender(<AvEnhanceV27Wizard {...props} open={false} onPickDataDirectory={onPickDataDirectory} />)
+      rerender(<AvEnhanceV27Wizard {...props} open onPickDataDirectory={onPickDataDirectory} />)
+    }
+    await act(async () => finish('E:\\late-disk'))
+    expect(screen.getByText('使用工程旁默认位置')).toBeVisible()
+    expect(screen.queryByText(/late-disk/)).not.toBeInTheDocument()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+  })
+
   it('以显式五步动作绑定本次分析 Run，并只展示 Python creator 摘要', async () => {
     const user = userEvent.setup()
     const props = baseProps()
@@ -152,7 +206,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     await waitFor(() => expect(props.onStartPreparationRun).toHaveBeenCalledTimes(1))
     expect(props.onCreate).toHaveBeenCalledWith(expect.objectContaining({
       project_id: 'project.hidden-session-id', sources: [{ source_path: 'D:\\Media\\source.mkv', source_ordinal: 0 }],
-    }))
+    }), { media_basename: 'Movie (2026)' })
     rerender(<AvEnhanceV27Wizard {...props} runSummaries={[runSummary()]} />)
     await waitFor(() => expect(props.onPreview).toHaveBeenCalledWith({ action: 'expand', request: expect.objectContaining({ preparation_run_id: runId }) }))
     expect(await screen.findByText('117.7 MiB · Matroska')).toBeVisible()
@@ -295,7 +349,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
         { source_path: 'D:\\Media\\b.mkv', source_ordinal: 0, chapter_label: '前篇' },
         { source_path: 'D:\\Media\\a.mkv', source_ordinal: 1, chapter_label: '后篇' },
       ],
-    })))
+    }), { media_basename: 'Movie (2026)' }))
     await waitFor(() => expect(props.onStartPreparationRun).toHaveBeenCalledTimes(1))
     rerender(<AvEnhanceV27Wizard {...props} runSummaries={[runSummary()]} />)
     await waitFor(() => {

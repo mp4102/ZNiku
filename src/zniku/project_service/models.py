@@ -1,6 +1,6 @@
 """定义 ZNIKU Studio 与本地 Project Service 之间的 0.3.0 wire 合同。
 
-Project authoring 保存使用 schema 3 和 CAS；本模块定义浏览器与 Project Service 的成对 wire。
+Project authoring 保存使用 schema 4 和 CAS；本模块定义浏览器与 Project Service 的成对 wire。
 Run summary、
 定向日志和 handoff readiness 都是已有 SQLite authority 的只读投影，不引入第二套运行状态。所有
 请求和响应拒绝未知字段、隐式类型转换及非有限数值，未知客户端默认失败关闭。
@@ -35,6 +35,7 @@ from zniku.graph import NodeDefinition
 from zniku.graph.models import Identifier
 from zniku.presentation import PresentationCatalog, PresentationDiagnostic
 from zniku.project import AuthoringDiagnostic, Project, ProjectSnapshot, StudioState, StudioWarning
+from zniku.project.paths import MEDIA_BASENAME_MAX_UNITS, validate_filename_component
 from zniku.project.studio import StorageRevision
 from zniku.runtime import Artifact, LatestNodeResult, Run, RuntimeFailure
 from zniku.runtime.models import RandomId, UtcTimestamp
@@ -46,6 +47,7 @@ type ActiveProjectOperation = Literal[
     "rerun_from_here",
     "submit_external",
     "import_external",
+    "migrate_storage",
     "abandon_run",
 ]
 type RunTargetMode = Literal["all", "selected"]
@@ -243,7 +245,7 @@ class StatusEnvelope(ProjectServiceModel):
     def validate_active_binding(self) -> StatusEnvelope:
         """后台 operation 存在时必须同时给出其 Run binding。"""
 
-        if self.active_operation is not None and self.active_run_id is None:
+        if self.active_operation not in {None, "migrate_storage"} and self.active_run_id is None:
             raise ValueError("E_STATUS_ACTIVE_RUN_MISSING: active operation 必须绑定 Run")
         fields = (
             self.project_path,
@@ -551,6 +553,45 @@ class CreateAvEnhanceV27Command(ProjectServiceModel):
 
     operation: Literal["create_av_enhance_v27"]
     request: PrepareRequest
+    data_parent_directory: LocalPath | None = None
+    media_basename: Annotated[str, StringConstraints(min_length=1, max_length=180)] | None = None
+
+    @field_validator("data_parent_directory")
+    @classmethod
+    def validate_data_parent(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        path = (
+            PureWindowsPath(value) if PureWindowsPath(value).is_absolute() else PurePosixPath(value)
+        )
+        if (
+            value != value.strip()
+            or "\x00" in value
+            or not path.is_absolute()
+            or ".." in path.parts
+        ):
+            raise ValueError("E_PROJECT_STORAGE_PATH: 数据父目录必须是无上跳的绝对路径")
+        return value
+
+    @field_validator("media_basename")
+    @classmethod
+    def validate_storage_basename(cls, value: str | None) -> str | None:
+        return (
+            None
+            if value is None
+            else validate_filename_component(value, max_units=MEDIA_BASENAME_MAX_UNITS)
+        )
+
+    @model_validator(mode="after")
+    def reject_null_storage_options(self) -> CreateAvEnhanceV27Command:
+        """省略配置表示默认；显式 null 和非法基础名均不得创建工程。"""
+
+        if any(
+            name in self.model_fields_set and getattr(self, name) is None
+            for name in ("data_parent_directory", "media_basename")
+        ):
+            raise ValueError("E_PROJECT_STORAGE_REQUEST: 存储配置不接受显式 null")
+        return self
 
 
 class AuthoringBoundCommand(ProjectServiceModel):

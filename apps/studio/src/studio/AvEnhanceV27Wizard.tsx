@@ -49,12 +49,13 @@ export interface AvEnhanceV27WizardProps {
   readonly onPickProjectPath?: (suggestedName: string) => Promise<string | null>
   readonly onPickSources?: (multiple: boolean) => Promise<ReadonlyArray<string> | null>
   readonly onPickOutputDirectory?: () => Promise<string | null>
+  readonly onPickDataDirectory?: () => Promise<string | null>
   readonly onRevealOutputDirectory?: (selectedPath: string) => Promise<void>
   readonly onPreview: (
     request: AvEnhanceV27TemplatePreviewRequestWire,
   ) => Promise<AvEnhanceV27TemplatePreviewEnvelope | null>
   readonly onPreviewPublication: (request: AvEnhanceV27PublicationPreviewRequestWire) => Promise<AvEnhanceV27PublicationPreviewEnvelope>
-  readonly onCreate: (request: AvEnhanceV27PrepareRequestWire) => Promise<boolean>
+  readonly onCreate: (request: AvEnhanceV27PrepareRequestWire, storage?: { readonly data_parent_directory?: string; readonly media_basename: string }) => Promise<boolean>
   readonly onStartPreparationRun?: () => Promise<string | null>
   readonly onExpand: (request: AvEnhanceV27ExpandRequestWire) => Promise<boolean>
   readonly onLocateNode: (nodeId: string) => void
@@ -145,6 +146,7 @@ export function AvEnhanceV27Wizard({
   onPickProjectPath,
   onPickSources,
   onPickOutputDirectory,
+  onPickDataDirectory,
   onRevealOutputDirectory,
   onPreview,
   onPreviewPublication,
@@ -166,6 +168,7 @@ export function AvEnhanceV27Wizard({
   const publicationFlightRef = useRef<symbol | null>(null)
 
   const [step, setStep] = useState<WizardStep>(1)
+  const [dataParent, setDataParent] = useState<string | null>(null)
   const [preview, setPreview] = useState<AvEnhanceV27TemplatePreviewEnvelope | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
   const [pickerFailure, setPickerFailure] = useState<{ readonly message: string; readonly rawMessage: string } | null>(null)
@@ -253,6 +256,7 @@ export function AvEnhanceV27Wizard({
       setPreparationCreated(continuing)
       setAnalysisRunId(null)
       setProjectPath(continuing ? currentProjectPath : '')
+      setDataParent(null)
       setProjectId(continuing ? currentProjectId : projectIdFactory())
       setProjectName(continuing ? currentProjectName || '未命名视频工程' : '未命名视频工程')
       setSelectorMode('single')
@@ -502,6 +506,20 @@ export function AvEnhanceV27Wizard({
     }
   }
 
+  const chooseDataDirectory = async () => {
+    if (!onPickDataDirectory) return
+    const epoch = responseEpochRef.current
+    const flight = ++pickerFlightRef.current
+    try {
+      const path = await onPickDataDirectory()
+      if (path === null || epoch !== responseEpochRef.current || flight !== pickerFlightRef.current) return
+      setDataParent(path)
+      invalidateExpansion()
+    } catch (error) {
+      if (epoch === responseEpochRef.current && flight === pickerFlightRef.current) reportPickerError(error, '无法选择工作数据磁盘。')
+    }
+  }
+
   const chooseSources = async () => {
     if (!onPickSources) return
     const epoch = responseEpochRef.current
@@ -625,7 +643,10 @@ export function AvEnhanceV27Wizard({
         throw new Error('素材准备检查未通过；没有创建工程或运行任务。')
       }
       previewRequestRef.current = request
-      const created = await onCreate(prepareRequest)
+      const created = await onCreate(prepareRequest, {
+        ...(dataParent ? { data_parent_directory: dataParent } : {}),
+        media_basename: `${title} (${year})`,
+      })
       if (epoch !== responseEpochRef.current || !open) return
       previewRequestRef.current = null
       if (!created) throw new Error('工程没有创建；素材和原有工程保持不变。')
@@ -735,6 +756,15 @@ export function AvEnhanceV27Wizard({
               <details className="creator-advanced-entry"><summary>开发浏览器高级入口</summary><p>正式桌面路径使用原生选择器；这里只为开发环境保留手工路径。</p><label>工程路径<input aria-label="模板工程路径" disabled={controlsDisabled || preparationCreated} onChange={(event) => { setProjectPath(event.target.value); invalidateExpansion() }} value={projectPath} /></label>{sources.map((source, index) => <label key={index}>Source {index + 1} path<input aria-label={`Source ${index + 1} path`} disabled={controlsDisabled || preparationCreated} onChange={(event) => updateSource(index, { source_path: event.target.value })} value={source.source_path} /></label>)}{sourceMode === 'pre_chaptered' && <button className="button button--ghost" disabled={controlsDisabled || preparationCreated} onClick={() => { setSources((current) => [...current, { source_path: '', chapter_label: '' }]); invalidateExpansion() }} type="button">添加 Source</button>}</details>
             </section>
           )}
+
+          {step === 1 && <section className="creator-step" aria-label="工作数据位置">
+            <h3>工作数据</h3>
+            <p>中间产物和外部处理结果默认保存在工程旁的同名 .data 文件夹，完成或退出不会自动清除。</p>
+            <p>{dataParent ? `专用磁盘父目录：${dataParent}` : '使用工程旁默认位置'}</p>
+            <button className="button button--ghost" type="button" disabled={controlsDisabled || preparationCreated || !onPickDataDirectory} onClick={() => void chooseDataDirectory()}>选择工作数据父目录</button>
+            {dataParent && <button type="button" disabled={controlsDisabled || preparationCreated} onClick={() => { setDataParent(null); invalidateExpansion() }}>恢复工程旁默认</button>}
+            <small>系统会在所选父目录内新建工程同名 .data 文件夹，不会混用其他工程的数据。</small>
+          </section>}
 
           {step === 2 && (
             <section className="creator-step" aria-label="处理方案">

@@ -21,7 +21,7 @@ import type {
 } from './studio/contracts'
 import { StudioGatewayError, type StudioGateway } from './studio/gateway'
 import { inspectGraph } from './studio/graph'
-import type { HostBridge, HostCapabilitiesEnvelope, HostSelection, HandoffImportPreviewEnvelope } from './studio/host-bridge'
+import type { HostBridge, HostCapabilitiesEnvelope, HostSelection, HandoffImportPreviewEnvelope, StorageInspection, HandoffInboxPreviewEnvelope } from './studio/host-bridge'
 import { HostBridgeError } from './studio/host-bridge'
 import {
   failedDetailEnvelope,
@@ -264,9 +264,100 @@ function hostCapabilitiesEnvelope(): HostCapabilitiesEnvelope {
   return { contract_version: '0.3.0', capabilities }
 }
 
+function storageInspectionFixture(): StorageInspection {
+  return { contract_version: '0.3.0', configured: true, attempt_count: 0,
+    storage: { contract_version: '0.3.0', mode: 'adjacent', data_root: 'D:\\synthetic.data', attempts_root: 'D:\\synthetic.data\\attempts', retention: 'keep', media_basename: null },
+    registered_file_count: 0, registered_bytes: 0, managed_file_count: 0, managed_bytes: 0,
+    missing: [], external_dependencies: [], coverage: 'registered_artifacts', warnings: ['纯合成登记资产检查。'] }
+}
+
 describe('ZNIKU Studio 0.3.0 Project workspace', () => {
   // 原有精确命令、身份和日志回归在高级层验证；Phase 4 创作者路径在后文显式使用默认模式。
   beforeEach(() => { window.localStorage.setItem('zniku.studio.density', 'advanced') })
+
+  it('工程数据先等未完成保存落盘，再用相同session和最新revision打开维护面板', async () => {
+    const saving = new Deferred<StatusEnvelope>()
+    const gateway = new RecordingGateway(studioEnvelope(), {
+      command: (command) => command.operation === 'save_project' ? saving.promise : gateway.envelope,
+    })
+    const inspectStorage = vi.fn(async (_session: string) => storageInspectionFixture())
+    const configureStorage = vi.fn<NonNullable<HostBridge['configureStorage']>>(async () => storageInspectionFixture())
+    const host: HostBridge = { configured: true, inspectCapabilities: async () => hostCapabilitiesEnvelope(),
+      pick: vi.fn(async () => null), launch: vi.fn(), inspectStorage, configureStorage }
+    render(<App gateway={gateway} hostBridge={host} />)
+    fireEvent.click(await screen.findByRole('button', { name: '关闭工程首页' }))
+    fireEvent.click(screen.getByLabelText('transform 节点'))
+    const alias = screen.getByLabelText('节点别名')
+    fireEvent.change(alias, { target: { value: '换盘前最后编辑' } })
+    fireEvent.blur(alias)
+    await waitFor(() => expect(gateway.commands.filter((item) => item.operation === 'save_project')).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: '工程数据' }))
+    expect(inspectStorage).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: '工程数据与归档检查' })).not.toBeInTheDocument()
+    await act(async () => saving.resolve(studioEnvelope()))
+    const dialog = await screen.findByRole('dialog', { name: '工程数据与归档检查' })
+    await within(dialog).findByText('纯合成登记资产检查。')
+    expect(inspectStorage).toHaveBeenCalledWith(gateway.envelope.project_session_id)
+    expect(gateway.envelope.studio_state?.node_views[0]?.display_name).toBe('换盘前最后编辑')
+    expect(gateway.envelope.snapshot?.project.graph).toEqual(projectSnapshot.project.graph)
+    fireEvent.click(within(dialog).getByRole('button', { name: '恢复工程旁默认' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存数据位置' }))
+    await waitFor(() => expect(configureStorage).toHaveBeenCalledWith({ project_session_id: gateway.envelope.project_session_id, expected_storage_revision: 1, selection_handle: null }))
+    expect(gateway.commands.every((item) => item.operation === 'save_project')).toBe(true)
+  })
+
+  it('工程数据不会丢弃尚未应用的参数编辑，也不会为此打开存储维护', async () => {
+    const gateway = new RecordingGateway()
+    const inspectStorage = vi.fn(async (_session: string) => storageInspectionFixture())
+    const host: HostBridge = { configured: true, inspectCapabilities: async () => hostCapabilitiesEnvelope(), pick: vi.fn(async () => null), launch: vi.fn(), inspectStorage }
+    render(<App gateway={gateway} hostBridge={host} />)
+    fireEvent.click(await screen.findByRole('button', { name: '关闭工程首页' }))
+    fireEvent.click(screen.getByLabelText('transform 节点'))
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'strength' }), { target: { value: '9' } })
+    fireEvent.click(screen.getByRole('button', { name: '工程数据' }))
+    await flushReact()
+    expect(screen.getByRole('spinbutton', { name: 'strength' })).toHaveValue(9)
+    expect(screen.getByRole('button', { name: '应用设置' })).toBeEnabled()
+    expect(inspectStorage).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: '工程数据与归档检查' })).not.toBeInTheDocument()
+    expect(gateway.commands).toHaveLength(0)
+    expect(gateway.envelope.snapshot?.project.graph).toEqual(projectSnapshot.project.graph)
+  })
+
+  it('收件箱自身busy不会锁死收纳确认，收纳完成清除检查资格但不自动Submit', async () => {
+    window.localStorage.removeItem('zniku.studio.density')
+    const gateway = new RecordingGateway(handoffEnvelope())
+    let preview!: HandoffInboxPreviewEnvelope
+    const observeHandoffInbox = vi.fn<NonNullable<HostBridge['observeHandoffInbox']>>(async (binding) => ({ ...binding,
+      inbox_path: 'C:\\synthetic\\incoming\\out', allowed_suffix: '.mkv', rejected_count: 0, expires_in_seconds: 300,
+      candidates: [{ candidate_handle: 'candidate-synthetic', name: 'external-result.mkv', size: 4096, mtime_ns: 1 }] }))
+    const previewHandoffInbox = vi.fn<NonNullable<HostBridge['previewHandoffInbox']>>(async (request) => {
+      preview = { ...request, inbox_id: 'inbox-synthetic', source_name: 'external-result.mkv', source_size: 4096,
+        target_path: handoffDetailEnvelope().run.node_runs.find((item) => item.external_handoff)!.external_handoff!.output_targets[0]!.path,
+        replace_existing: false, action: 'move', expires_in_seconds: 300 }
+      return preview
+    })
+    const confirmHandoffInbox = vi.fn<NonNullable<HostBridge['confirmHandoffInbox']>>(async () => ({ ...preview, status: 'collected' }))
+    const host: HostBridge = { configured: true, inspectCapabilities: async () => hostCapabilitiesEnvelope(), pick: vi.fn(async () => null), launch: vi.fn(), observeHandoffInbox, previewHandoffInbox, confirmHandoffInbox }
+    render(<App gateway={gateway} hostBridge={host} />)
+    fireEvent.click(await screen.findByRole('button', { name: '关闭工程首页' }))
+    const task = await selectHandoffTask()
+    fireEvent.click(within(task).getByRole('button', { name: '检查输出' }))
+    await waitFor(() => expect(within(task).getByRole('button', { name: '提交并继续' })).toBeEnabled())
+    fireEvent.click(await within(task).findByRole('button', { name: '检查并收纳：external-result.mkv' }))
+    const dialog = await screen.findByRole('dialog', { name: '确认收纳外部处理文件' })
+    const confirm = within(dialog).getByRole('button', { name: '确认检查并收纳' })
+    expect(confirm).toBeEnabled()
+    expect(confirmHandoffInbox).not.toHaveBeenCalled()
+    const readinessCount = gateway.readinessArguments.length
+    fireEvent.click(confirm)
+    await within(task).findByText('文件已按规范名称收纳。请检查输出，再由你“提交并继续”；系统没有自动提交。')
+    expect(confirmHandoffInbox).toHaveBeenCalledExactlyOnceWith({ contract_version: '0.3.0', inbox_id: 'inbox-synthetic', overwrite: false })
+    await waitFor(() => expect(gateway.readinessArguments.length).toBeGreaterThan(readinessCount))
+    expect(gateway.readinessArguments.at(-1)).toEqual([handoffFixtureIds.run, handoffFixtureIds.transformNodeRun, false])
+    expect(within(task).getByRole('button', { name: '提交并继续' })).toBeDisabled()
+    expect(gateway.commands).toHaveLength(0)
+  })
   it('Project Service 缺失时失败关闭，不回退旧正式投影或浏览器 mock', async () => {
     render(<App gateway={unavailableGateway('loopback offline')} />)
 
@@ -708,6 +799,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
 
     await waitFor(() => expect(gateway.commands).toContainEqual({
       operation: 'create_av_enhance_v27',
+      media_basename: 'Movie (2026)',
       request: expect.objectContaining({
         profile_version: '2.7.0',
         project_path: targetPath,
@@ -2350,13 +2442,14 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
       },
     })
     render(<App gateway={gateway} />)
-
+    fireEvent.click(await screen.findByRole('button', { name: '关闭工程首页' }))
+    await flushReact()
     const taskList = await screen.findByRole('region', { name: '待外部处理任务' })
     expect(within(taskList).getAllByRole('button')).toHaveLength(2)
     expect(screen.queryByRole('button', { name: '检查输出' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('READINESS STALE')
-    fireEvent.click(within(taskList).getByRole('button', { name: '查看外部任务：test.transform' }))
-    expect(screen.getAllByRole('button', { name: '检查输出' })).toHaveLength(1)
+    fireEvent.click(within(taskList).getByRole('button', { name: /^查看外部任务：test\.transform(?:（1）)?$/ }))
+    expect(await screen.findAllByRole('button', { name: '检查输出' })).toHaveLength(1)
     expect(screen.getByRole('button', { name: '检查输出' })).toBeDisabled()
   })
 

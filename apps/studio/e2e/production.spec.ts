@@ -1,15 +1,27 @@
 /** 生产资源 + 真 Python/SQLite/Runtime；仅原生选择窗口使用显式的合成测试平台。 */
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { copyFile, readFile, readdir, stat } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import axe from 'axe-core'
 import type { GraphWire, RunDetailEnvelope, StatusEnvelope } from '../src/studio/contracts'
 
 let service: ChildProcessWithoutNullStreams
 let origin: string
 let fixture: { wizard_project: string; output_root: string; output_collision: string; external_project: string }
+test.beforeEach(async ({ page }) => {
+  // 只记录本文件的合成服务错误；失败发生在最终 assertions 前时也必须保留真实浏览器原因。
+  page.on('pageerror', (error) => console.log('PRODUCTION_PAGE_ERROR', error.stack ?? error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') console.log('PRODUCTION_CONSOLE_ERROR', message.location().url, message.text())
+  })
+  page.on('response', async (response) => {
+    if (response.status() >= 400 && response.url().startsWith(origin)) {
+      console.log('PRODUCTION_HTTP_ERROR', response.status(), response.url(), await response.text().catch(() => '<body unavailable>'))
+    }
+  })
+})
 test.beforeAll(async () => {
   service = spawn('uv', ['run', '--locked', '--extra', 'dev', 'python', 'tools/studio_production_fixture.py'], {
     cwd: resolve('../..'), env: { ...process.env, PYTHONUTF8: '1' }, shell: false,
@@ -730,4 +742,106 @@ test('生产新标签：读取旧 bootstrap 后迟挂载不会回写并覆盖新
   } finally {
     releaseScript()
   }
+})
+
+test('生产工程数据：工程旁目录、任意来件名显式收纳和归档依赖检查', async ({ page }, info) => {
+  const errors: string[] = []
+  const commands: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('request', (request) => {
+    if (request.url() === `${origin}/api/studio/command` && request.method() === 'POST') {
+      commands.push((request.postDataJSON() as { operation: string }).operation)
+    }
+  })
+  // 独立工程只复用 fixture 已生成的合成输入；所有写入严格位于测试 TemporaryDirectory。
+  const opened = await page.request.post(`${origin}/api/studio/command`, {
+    headers: { Origin: origin }, data: { operation: 'open_project', path: fixture.external_project },
+  })
+  expect(opened.status()).toBe(200)
+  const template = (await opened.json() as StatusEnvelope).snapshot!
+  const graph = { nodes: template.project.graph.nodes.filter((node) => ['source-A', 'enhance-A'].includes(node.node_id)),
+    edges: template.project.graph.edges.filter((edge) => edge.target_node_id === 'enhance-A') }
+  const projectPath = join(dirname(fixture.external_project), 'inbox-acceptance.zniku')
+  const created = await page.request.post(`${origin}/api/studio/command`, {
+    headers: { Origin: origin }, data: { operation: 'create_project', path: projectPath, name: '合成工程数据与收件验收' },
+  })
+  expect(created.status()).toBe(200)
+  const fresh = await created.json() as StatusEnvelope
+  const saved = await page.request.post(`${origin}/api/studio/command`, {
+    headers: { Origin: origin }, data: { operation: 'save_project', project_session_id: fresh.project_session_id,
+      expected_storage_revision: fresh.storage_revision, project: { ...fresh.snapshot!.project, graph }, studio_state: fresh.studio_state },
+  })
+  expect(saved.status()).toBe(200)
+  await page.goto(origin)
+  await page.getByRole('button', { name: '关闭工程首页', exact: true }).click()
+  await expect(page.locator('.workflow-identity')).toContainText('合成工程数据与收件验收')
+  await page.getByRole('button', { name: '开始处理', exact: true }).click()
+  await expect.poll(async () => (await readStatus(page)).run_summaries.length).toBe(1)
+  const runId = (await readStatus(page)).run_summaries[0]!.run_id
+  const detail = async (): Promise<RunDetailEnvelope> => await (await page.request.get(`${origin}/api/studio/runs/${runId}`)).json() as RunDetailEnvelope
+  await expect.poll(async () => (await detail()).run.node_runs.filter((node) => node.state === 'waiting_external').length, { timeout: 45_000 }).toBe(1)
+  const before = await detail()
+  const node = before.run.node_runs.find((item) => item.node_id === 'enhance-A')!
+  const target = node.external_handoff!.output_targets[0]!.path
+  const dataRoot = projectPath.replace(/\.zniku$/, '.data')
+  expect(node.work_dir.startsWith(join(dataRoot, 'attempts') + sep)).toBe(true)
+  expect(target.startsWith(node.work_dir + sep)).toBe(true)
+  await page.locator('.react-flow__node[data-id="enhance-A"]').click()
+  const inbox = page.getByRole('region', { name: '当前任务收件箱', exact: true })
+  await expect(inbox).toBeVisible()
+  await expect(inbox.getByText(/收件箱中尚无可用的/)).toBeVisible()
+  const inboxPath = await inbox.locator('code.handoff-target-path').innerText()
+  expect(inboxPath.startsWith(join(node.work_dir, 'incoming') + sep)).toBe(true)
+  expect((await stat(inboxPath)).isDirectory()).toBe(true)
+  const original = join(dirname(fixture.external_project), 'external-A-12.mkv')
+  const arrival = join(inboxPath, 'Topaz_export_arbitrary_name.mkv')
+  const otherArrival = join(inboxPath, 'another_candidate.mkv')
+  await copyFile(original, arrival)
+  await copyFile(join(dirname(fixture.external_project), 'external-B-15.mkv'), otherArrival)
+  await inbox.getByRole('button', { name: '刷新收件箱', exact: true }).click()
+  await expect(inbox.getByText(/发现多个候选/)).toBeVisible()
+  expect(await detail()).toEqual(before)
+  expect(await exists(target)).toBe(false)
+  expect(commands.filter((operation) => operation === 'submit_external')).toEqual([])
+  await inbox.getByRole('button', { name: '检查并收纳：Topaz_export_arbitrary_name.mkv', exact: true }).click()
+  const confirmDialog = page.getByRole('dialog', { name: '确认收纳外部处理文件', exact: true })
+  await expect(confirmDialog.getByText(target, { exact: true })).toBeVisible()
+  await expect(confirmDialog.getByText(/来件原名称将不再保留/)).toBeVisible()
+  await accessibility(page, '收件显式移动确认')
+  await page.screenshot({ path: info.outputPath('inbox-collect-confirm.png'), fullPage: true })
+  expect(await exists(arrival)).toBe(true)
+  const collectedResponse = page.waitForResponse((response) => response.url() === `${origin}/api/studio/handoff-inbox/confirm`)
+  await confirmDialog.getByRole('button', { name: '确认检查并收纳', exact: true }).click()
+  const collected = await collectedResponse
+  expect(collected.status()).toBe(200)
+  expect(await collected.json()).toMatchObject({ status: 'collected', node_run_id: node.node_run_id, target_path: target })
+  await expect(confirmDialog).not.toBeVisible()
+  expect(await exists(arrival)).toBe(false)
+  expect(await exists(otherArrival)).toBe(true)
+  expect(await readFile(target)).toEqual(await readFile(original))
+  expect((await stat(target)).nlink).toBe(1)
+  expect(await detail()).toEqual(before)
+  expect(commands.filter((operation) => operation === 'submit_external')).toEqual([])
+  const helper = page.getByRole('region', { name: '外部处理助手', exact: true })
+  await helper.getByRole('button', { name: '检查输出', exact: true }).click()
+  await expect(helper.getByRole('button', { name: '提交并继续', exact: true })).toBeEnabled()
+  await helper.getByRole('button', { name: '提交并继续', exact: true }).click()
+  await expect.poll(async () => (await detail()).run.state).toBe('completed')
+  await expect(page.getByRole('button', { name: '工程数据', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: '工程数据', exact: true }).click()
+  const panel = page.getByRole('dialog', { name: '工程数据与归档检查', exact: true })
+  await expect(panel.getByText(dataRoot, { exact: true })).toBeVisible()
+  await expect(panel.getByText('工程文件旁', { exact: true })).toBeVisible()
+  await expect(panel.getByText('工程资产长期保留。', { exact: true })).toBeVisible()
+  await expect(panel.getByText('已登记文件未发现缺失。', { exact: true })).toBeVisible()
+  await expect(panel.getByText(join(dirname(fixture.external_project), 'input-A-12.mkv'), { exact: true })).toBeVisible()
+  await expect(panel.getByText(/不等于完整离线归档/)).toBeVisible()
+  await accessibility(page, '工程旁数据与归档依赖检查')
+  await page.screenshot({ path: info.outputPath('project-data-inspection.png'), fullPage: true })
+  await panel.getByRole('button', { name: '完成', exact: true }).click()
+  expect(await exists(otherArrival)).toBe(true)
+  expect(await readFile(target)).toEqual(await readFile(original))
+  expect(commands.filter((operation) => operation === 'submit_external')).toHaveLength(1)
+  expect(errors).toEqual([])
 })

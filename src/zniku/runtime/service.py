@@ -75,6 +75,7 @@ from .runner import (
 from .scheduler import Scheduler
 
 type ArtifactQuickProbe = Callable[[Artifact], bool]
+type OutputPathResolver = Callable[[Run, NodeInstance, NodeDefinition], tuple[OutputPathSpec, ...]]
 
 
 class RuntimeServiceError(RuntimeError):
@@ -120,6 +121,7 @@ class RuntimeService:
         artifact_quick_probe: ArtifactQuickProbe | None = None,
         progress_wall_clock: WallClock | None = None,
         progress_monotonic_clock: MonotonicClock | None = None,
+        output_path_resolver: OutputPathResolver | None = None,
     ) -> None:
         root = Path(work_root)
         try:
@@ -139,6 +141,7 @@ class RuntimeService:
             ffprobe_executable=ffprobe_executable,
         )
         self._artifact_quick_probe = artifact_quick_probe or _default_artifact_quick_probe
+        self._output_path_resolver = output_path_resolver
         self._progress_wall_clock = progress_wall_clock or utc_now
         self._progress_monotonic_clock = progress_monotonic_clock or monotonic
         self._progress_lock = threading.RLock()
@@ -913,16 +916,35 @@ class RuntimeService:
                 "E_SERVICE_INPUT_BINDING_MISMATCH",
                 "NodeRun input_artifact_ids 与 graph edge 解析结果不一致",
             )
+        output_paths = tuple(
+            OutputPathSpec(port_id=item.port_id, relative_path=item.relative_path)
+            for item in definition.executor.output_paths
+        )
+        if node_run.external_handoff is not None:
+            # 已交接的目标是持久身份绑定；后续命名策略不能重新解释历史收件位置。
+            output_root = Path(node_run.work_dir) / "outputs"
+            try:
+                output_paths = tuple(
+                    OutputPathSpec(
+                        port_id=item.port_id,
+                        relative_path=Path(item.path).relative_to(output_root).as_posix(),
+                    )
+                    for item in node_run.external_handoff.output_targets
+                )
+            except ValueError as error:
+                raise RuntimeServiceError(
+                    "E_SERVICE_HANDOFF_TARGET", "持久交接目标不在当前 attempt 输出目录内"
+                ) from error
+        elif self._output_path_resolver is not None:
+            # 仅接受宿主代码注入的路径策略；Graph 不携带 callback，Runner 仍完整校验边界。
+            output_paths = self._output_path_resolver(run, node, definition) or output_paths
         return NodeExecutionRequest(
             node_run_id=node_run.node_run_id,
             attempt=node_run.attempt,
             definition=definition,
             node=node,
             inputs=inputs.runner_inputs,
-            output_paths=tuple(
-                OutputPathSpec(port_id=item.port_id, relative_path=item.relative_path)
-                for item in definition.executor.output_paths
-            ),
+            output_paths=output_paths,
         )
 
     def _resolve_inputs(self, run: Run, node_id: str) -> _ResolvedInputs:

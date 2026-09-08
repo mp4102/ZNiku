@@ -98,6 +98,8 @@ import { DesktopExit } from './components/DesktopExit'
 import { NodePalette } from './components/NodePalette'
 import { ProjectHome } from './components/ProjectHome'
 import { ProjectShell } from './components/ProjectShell'
+import { ProjectStoragePanel } from './components/ProjectStoragePanel'
+import { HandoffInbox } from './components/HandoffInbox'
 import { RunCanvasOverlays, RunCenter, targetLabel } from './components/RunCenter'
 import { RetryImpactDialog } from './components/RetryImpactDialog'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
@@ -484,6 +486,11 @@ export function StudioWorkspace({
   })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [storageOpen, setStorageOpen] = useState(false)
+  const [dataBusy, setDataBusy] = useState(false)
+  const [inboxBusy, setInboxBusy] = useState(false)
+  const [inboxSubmissionFences, setInboxSubmissionFences] = useState<ReadonlySet<string>>(new Set())
+  const inboxSubmissionFencesRef = useRef<ReadonlySet<string>>(new Set())
   const [historyBusy, setHistoryBusy] = useState(false)
   const [boundaryError, setBoundaryError] = useState<string | null>(null)
   const [clientHint, setClientHint] = useState<string | null>(null)
@@ -711,6 +718,9 @@ export function StudioWorkspace({
         }
       }
       if (pathChanged) {
+        setStorageOpen(false)
+        inboxSubmissionFencesRef.current = new Set()
+        setInboxSubmissionFences(new Set())
         latestTemplatePreviewRef.current = null
         setTemplateProfile(null)
         setLastFullPrecheckFailures(new Map())
@@ -795,6 +805,8 @@ export function StudioWorkspace({
       if (existing) detailFlightRef.current.delete(resourceKey)
 
       const token = Symbol(resourceKey)
+      const requestedWhileIdle = statusRef.current?.active_operation === null
+      const requestedInboxFences = new Set(inboxSubmissionFencesRef.current)
       detailRequestedSummaryRevisionRef.current = requestedSummaryRevision
       const request = (async (): Promise<RunDetailEnvelope | null> => {
         const sequence = ++sequenceRef.current.detail
@@ -813,6 +825,16 @@ export function StudioWorkspace({
           const merged = monotonicDetail(detailRef.current, incoming)
           detailRef.current = merged.detail
           setDetail(merged.detail)
+          if (!merged.regressed && requestedWhileIdle && statusRef.current?.active_operation === null) {
+            // Submit 之后的旧 waiting 响应不能重启收件观察。只有操作已空闲时新发起的 detail
+            // 才解除它在发起时已看到的暂停，避免观察请求落到刚完成的旧任务上。
+            const remaining = new Set(inboxSubmissionFencesRef.current)
+            for (const key of requestedInboxFences) if (key.startsWith(`${runId}/`)) remaining.delete(key)
+            if (remaining.size !== inboxSubmissionFencesRef.current.size) {
+              inboxSubmissionFencesRef.current = remaining
+              setInboxSubmissionFences(remaining)
+            }
+          }
           detailBackoffRef.current.delete(resourceKey)
           const priorDetailError = detailBoundaryErrorRef.current
           detailBoundaryErrorRef.current = null
@@ -2107,9 +2129,9 @@ export function StudioWorkspace({
   )
 
   const createAvEnhanceV27 = useCallback(
-    (request: AvEnhanceV27PrepareRequestWire) =>
+    (request: AvEnhanceV27PrepareRequestWire, storage?: { readonly data_parent_directory?: string; readonly media_basename: string }) =>
       applyAvEnhanceV27Mutation(
-        { operation: 'create_av_enhance_v27', request },
+        { operation: 'create_av_enhance_v27', request, ...storage },
         'preparation',
       ),
     [applyAvEnhanceV27Mutation],
@@ -2259,6 +2281,9 @@ export function StudioWorkspace({
         setClientHint('输出已变化或未通过最新检查；没有提交。请重新检查输出，再确认提交。')
         return
       }
+      const fences = new Set(inboxSubmissionFencesRef.current).add(key)
+      inboxSubmissionFencesRef.current = fences
+      setInboxSubmissionFences(fences)
       await executeCommands([{ operation: 'submit_external', run_id: nodeRun.run_id,
         node_run_id: nodeRun.node_run_id, handoff_id: handoff.handoff_id }])
       updateCheckedOutputs((current) => { const next = new Map(current); next.delete(key); return next })
@@ -2628,11 +2653,17 @@ export function StudioWorkspace({
 
   return (
     <main className={`app-shell studio-workspace ${bottomOpen ? 'has-bottom-drawer' : ''}`}>
+      {storageOpen && status?.project_session_id && status.storage_revision !== null && <ProjectStoragePanel
+        key={status.project_session_id} bridge={effectiveHostBridge}
+        projectSessionId={status.project_session_id} storageRevision={status.storage_revision}
+        onClose={() => setStorageOpen(false)}
+        onBusyChange={(active) => { busyRef.current = active; setBusy(active); setDataBusy(active) }}
+        onChanged={() => { setPollEpoch((value) => value + 1); setDetailPollEpoch((value) => value + 1) }} />}
       <nav className="studio-skip-links" aria-label="跳转到工作区"><a href="#workflow-canvas">跳到画布</a><a href="#node-palette">跳到节点面板</a><a href="#node-inspector">跳到步骤设置</a></nav>
       {retryOpen && <RetryImpactDialog preview={retryPreview} nodeLabel={nodeLabel} busy={retryBusy} error={retryError}
         onConfirm={() => void confirmRerun()} onCancel={() => { retryTokenRef.current = null; retryBindingRef.current = null; setRetryOpen(false); setRetryBusy(false) }} />}
       <ProjectHome
-        desktopControls={homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy} />}
+        desktopControls={homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || dataBusy || inboxBusy} />}
         busy={serviceBusy || homeActionBusy}
         hasOpenProject={draft !== null}
         hostBridgeAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file')}
@@ -2669,6 +2700,7 @@ export function StudioWorkspace({
         onExpand={expandAvEnhanceV27}
         onLocateNode={locateTemplateNode}
         onPickOutputDirectory={pickTemplateOutputDirectory}
+        onPickDataDirectory={async () => (await pickHostPaths('select_directory', { title: '选择工作数据父目录（保留中间产物）' }))?.[0] ?? null}
         onRevealOutputDirectory={revealTemplateOutputDirectory}
         onPickProjectPath={async (suggestedName) => (await pickHostPaths('save_file', {
           title: '保存 ZNIKU 视频工程',
@@ -2689,8 +2721,14 @@ export function StudioWorkspace({
         serviceError={boundaryError ? '本机工程服务暂时不可用；当前工程和媒体没有被修改。' : null}
       />
       <ProjectShell
-        desktopControls={!homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy} />}
+        desktopControls={!homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || dataBusy || inboxBusy} />}
         projectName={draft?.project.name ?? null}
+        onOpenStorage={effectiveHostBridge.inspectStorage ? () => {
+          void flushAuthoring().then(() => {
+            if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用设置。')
+            setStorageOpen(true)
+          }).catch((error: unknown) => setClientHint(error instanceof Error ? error.message : '无法打开工程数据'))
+        } : undefined}
         projectId={draft?.project.project_id ?? null}
         nodeCount={draft?.project.graph.nodes.length ?? 0}
         dirty={dirty}
@@ -2892,6 +2930,23 @@ export function StudioWorkspace({
             nodeLabel={nodeLabel}
             selectedNodeId={selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null}
             importController={handoffImport}
+            inboxControls={status?.project_session_id && effectiveHostBridge.observeHandoffInbox ? (nodeRun) => {
+              const handoff = nodeRun.external_handoff!
+              const target = handoff.output_targets.length === 1 ? handoff.output_targets[0] : null
+              if (!target || target.ordinal !== null) return null
+              return <HandoffInbox key={`${status.project_session_id}/${handoff.handoff_id}`}
+                bridge={effectiveHostBridge}
+                binding={{ contract_version: '0.3.0', project_session_id: status.project_session_id!,
+                  run_id: nodeRun.run_id, node_run_id: nodeRun.node_run_id, handoff_id: handoff.handoff_id,
+                  port_id: target.port_id, ordinal: target.ordinal }}
+                disabled={inboxSubmissionFences.has(handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, handoff.handoff_id)) || (busy && !inboxBusy) || (operationActive && !inboxBusy) || homeActionBusy || checkingNodeRunId !== null || submittingNodeRunId !== null || health.status.stale || health.detail.stale}
+                onBusyChange={(active) => { busyRef.current = active; setBusy(active); setInboxBusy(active) }}
+                onCollected={() => {
+                  const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, handoff.handoff_id)
+                  updateCheckedOutputs((previous) => { const next = new Map(previous); next.delete(key); return next })
+                  void loadReadiness(nodeRun.run_id, nodeRun.node_run_id, false, generationRef.current)
+                }} />
+            } : undefined}
             canImportHandoff={hostCapabilityAvailable('open_file') && !!effectiveHostBridge.previewHandoffImport && !!effectiveHostBridge.confirmHandoffImport}
             checkedOutputs={checkedOutputs}
             checkingNodeRunId={checkingNodeRunId}

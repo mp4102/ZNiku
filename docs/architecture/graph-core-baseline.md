@@ -146,6 +146,17 @@ Studio 不直接实现媒体算法。Runtime 也不理解 MR、Enhancement 或 F
 首选使用单个 SQLite-backed `.zniku` 工程文件；媒体文件和大日志保持外置。工程允许导出普通 JSON graph，
 但 JSON 不成为第二套运行 authority。
 
+2026-09-08 经操作者批准的工程数据补充：工程可以在同一 SQLite 中独立保存数据位置、永久保留策略与
+非执行命名基名；这些不属于 Graph 参数、StudioState 或第二套运行权威。新桌面工程的数据默认位于
+工程旁同名 `.data` 目录，可显式选择专用磁盘；旧工程保持原有路径，禁止打开时自动搬迁或回退到系统盘。
+旧 schema 2/3 显式写入升级至 4 前必须保留唯一可恢复备份；已为 schema 4 的配置/迁移使用事务和 CAS。
+未知版本、字段或路径失败关闭。
+
+产物迁移是显式存储维护：只复制当前工程已绑定的 attempt，逐文件检查复制结果后事务切换 Artifact、
+NodeRun 工作/日志及 handoff 目标路径，保留原位置文件；不改变 Graph/Run snapshot、参数、身份、状态、
+时序或 reuse/stale 结论。首版仅允许无活动或等待 Run 时迁移，有历史数据时不能用“更改位置”代替迁移。
+归档检查必须列出数据目录外的已登记源素材/输出及检查范围，不把 `.zniku` 单文件宣称为完整离线归档。
+
 同一个 `Project.graph` 既是 Studio 正在编辑的 Graph，也是下一次 Run 的唯一候选来源。为支持逐步编排、
 自动保存和崩溃恢复，它可以保存仅带有第 7.1 节闭合集合 authoring diagnostics 的暂不可运行状态；不得另存
 一张隐藏的“最后可运行 Graph”，也不得生成 Compiler、Freeze、ExecutionPlan 或领域级 Revision authority。
@@ -415,6 +426,12 @@ pending → failed  （executor、attempt 目录或 handoff 准备失败）
 
 每个 attempt 使用独立工作目录。成功退出并通过最小校验后才登记 Artifact，避免半成品被下游消费；这属于
 基本执行正确性，不是 Evidence 或安全协议。
+
+外部 attempt 在进入等待前建立自己的单层 `incoming/<端口安全编码>` 收件目录。目录编码只避免文件系统
+逃逸和命名冲突，不限制 Graph port ID，也不是领域 digest。自动发现仅返回有界候选，不
+认定外部工具完成、登记 Artifact 或自动 Submit。用户明确确认后才检查并将本目录候选按正式目标名称收纳；
+外部位置的文件仍只复制、保留源。失败保留候选和旧正式产物；多候选不得按名称、大小或时间猜选。
+已登记成果、外部来件和历史结果默认长期保留，完成、关闭、重跑或删除画布节点不触发媒体回收。
 
 ## 11. 复用、失效与缓存
 

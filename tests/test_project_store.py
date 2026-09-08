@@ -135,6 +135,7 @@ def test_create_uses_sqlite_header_and_phase_2_project_runtime_tables(tmp_path: 
             )
         }
     assert tables == {
+        "project_storage",
         "studio_state",
         "project",
         "node_definitions",
@@ -349,6 +350,7 @@ def test_phase_1_schema_migrates_transactionally_without_changing_project(
     with sqlite3.connect(path) as connection:
         connection.execute("PRAGMA foreign_keys = OFF")
         for table in (
+            "project_storage",
             "studio_state",
             "latest_results",
             "artifacts",
@@ -388,6 +390,7 @@ def test_corrupt_phase_1_model_is_rejected_before_any_migration_write(
     with sqlite3.connect(path) as connection:
         connection.execute("PRAGMA foreign_keys = OFF")
         for table in (
+            "project_storage",
             "studio_state",
             "latest_results",
             "artifacts",
@@ -423,6 +426,7 @@ def test_phase_1_migration_post_check_failure_rolls_back_ddl_and_version(
     with sqlite3.connect(path) as connection:
         connection.execute("PRAGMA foreign_keys = OFF")
         for table in (
+            "project_storage",
             "studio_state",
             "latest_results",
             "artifacts",
@@ -473,6 +477,7 @@ def test_malformed_phase_1_schema_fails_without_partial_migration(tmp_path: Path
     with sqlite3.connect(path) as connection:
         connection.execute("PRAGMA foreign_keys = OFF")
         for table in (
+            "project_storage",
             "studio_state",
             "latest_results",
             "artifacts",

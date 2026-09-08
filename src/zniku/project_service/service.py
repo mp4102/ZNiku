@@ -28,6 +28,7 @@ from zniku.avenhance_v27.definitions import (
     SOURCE_ADMISSION_TYPE_ID,
     SOURCE_PROGRAM_TYPE_ID,
 )
+from zniku.avenhance_v27.naming import descriptive_output_paths
 from zniku.avenhance_v27.preflight import (
     Av27BindingFacts,
     Av27PublicationFacts,
@@ -73,6 +74,7 @@ from zniku.project import (
     ProjectStore,
     ProjectStoreError,
 )
+from zniku.project.storage import new_project_storage
 from zniku.runtime import (
     Artifact,
     ArtifactQuickProbe,
@@ -93,7 +95,7 @@ from zniku.runtime import (
     utc_now,
 )
 from zniku.runtime.progress import MonotonicClock, WallClock
-from zniku.runtime.runner import MediaProbe, NodeValidator
+from zniku.runtime.runner import MediaProbe, NodeValidator, OutputPathSpec
 
 from .handoff import project_handoff_contracts
 from .handoff_import import HandoffImportBinding, ImportAuthority
@@ -132,6 +134,7 @@ from .models import (
     parse_project_service_command,
     parse_template_preview_request,
 )
+from .storage_paths import existing_storage_root, prepare_storage_location
 
 _LOG_TAIL_LIMIT: Final = 128 * 1024
 _STATUS_TERMINAL_LIMIT: Final = 20
@@ -177,6 +180,7 @@ class ProjectServiceApplication:
         progress_wall_clock: WallClock | None = None,
         progress_monotonic_clock: MonotonicClock | None = None,
         third_party_presentation_catalogs: Iterable[object] = (),
+        project_data_default: bool = False,
     ) -> None:
         root = Path(work_root)
         try:
@@ -220,6 +224,7 @@ class ProjectServiceApplication:
             ) from error
 
         self._definition_catalog = catalog
+        self._project_data_default = project_data_default
         self._third_party_presentation_catalogs = third_party_presentations
         self._presentation_resolution = presentation_resolution
         self._python_adapters = dict(python_adapters or {})
@@ -240,9 +245,42 @@ class ProjectServiceApplication:
 
     @property
     def work_root(self) -> Path:
-        """返回进程启动时固定的 attempt 根；command 不能替换它。"""
+        """返回当前工程的持久 attempt 根；未配置的旧工程保留启动时原位置。"""
 
-        return self._work_root
+        with self._state:
+            return self._effective_work_root(self._store)
+
+    def _effective_work_root(self, store: ProjectStore | None) -> Path:
+        storage = None if store is None else store.load_storage()
+        return self._work_root if storage is None else existing_storage_root(storage)
+
+    @contextmanager
+    def storage_authority(
+        self, project_session_id: str, *, modifying: bool = False
+    ) -> Iterator[tuple[ProjectStore, Path]]:
+        """把数据检查/迁移绑定当前工程；复制期可轮询，但不能切工程、运行或退出。"""
+
+        with self._state:
+            self._assert_idle()
+            self.assert_preview_session(project_session_id)
+            if self._desktop_closing:
+                raise ProjectServiceError("E_DESKTOP_CLOSING", "应用正在关闭", http_status=409)
+            store, _ = self._require_session()
+            if modifying:
+                self._active_operation = "migrate_storage"
+        try:
+            yield store, self._work_root
+            with self._state:
+                self.assert_preview_session(project_session_id)
+                if modifying:
+                    self._runtime = self._runtime_for(store)
+        except ProjectStoreError as error:
+            raise self._translate_failure(error) from error
+        finally:
+            if modifying:
+                with self._state:
+                    self._active_operation = None
+                    self._state.notify_all()
 
     def assert_preview_session(self, project_session_id: str | None) -> None:
         """预览生成前后校验页面会话；不加载全量历史，也不修改领域状态。"""
@@ -296,7 +334,9 @@ class ProjectServiceApplication:
                     "多输出节点请按各目标放好文件，再执行完整检查",
                     http_status=422,
                 )
-            authority = ImportAuthority(runtime, node_run, targets[0], self._work_root, store.path)
+            authority = ImportAuthority(
+                runtime, node_run, targets[0], self._effective_work_root(store), store.path
+            )
             previous_run_id = self._active_run_id
             if importing:
                 self._active_operation = "import_external"
@@ -841,7 +881,10 @@ class ProjectServiceApplication:
             raise ProjectServiceError(
                 "E_PROJECT_SERVICE_PROJECT_INVALID", str(error), http_status=422
             ) from error
-        store = ProjectStore.create(path, project, self._definition_catalog)
+        storage = new_project_storage(path) if self._project_data_default else None
+        if storage is not None:
+            prepare_storage_location(storage, current=None)
+        store = ProjectStore.create(path, project, self._definition_catalog, storage=storage)
         self._store = store
         self._runtime = self._runtime_for(store)
         self._project_session_id = str(uuid4())
@@ -859,10 +902,36 @@ class ProjectServiceApplication:
                 http_status=422,
             )
         project_path, _ = validate_prepare_paths(command.request)
+        if (
+            command.data_parent_directory is not None
+            and not Path(command.data_parent_directory).is_absolute()
+        ):
+            raise ProjectServiceError(
+                "E_PROJECT_STORAGE_PATH", "数据父目录必须是当前主机的绝对路径", http_status=422
+            )
+        storage = (
+            new_project_storage(
+                project_path,
+                data_root=(
+                    Path(command.data_parent_directory) / project_path.with_suffix(".data").name
+                    if command.data_parent_directory is not None
+                    else None
+                ),
+                media_basename=command.media_basename
+                or Path(command.request.sources[0].source_path).stem,
+            )
+            if self._project_data_default
+            or command.data_parent_directory is not None
+            or command.media_basename is not None
+            else None
+        )
+        if storage is not None:
+            prepare_storage_location(storage, current=None)
         store = ProjectStore.create_atomically(
             project_path,
             build.project,
             build.definitions,
+            storage=storage,
         )
         self._store = store
         self._runtime = self._runtime_for(store)
@@ -1677,15 +1746,27 @@ class ProjectServiceApplication:
         worker.start()
 
     def _runtime_for(self, store: ProjectStore) -> RuntimeService:
+        storage = store.load_storage()
+
+        def resolve_paths(
+            run: Run, node: NodeInstance, definition: NodeDefinition
+        ) -> tuple[OutputPathSpec, ...]:
+            if storage is None or storage.media_basename is None:
+                return ()
+            return descriptive_output_paths(
+                node, definition, media_basename=storage.media_basename, graph=run.graph_snapshot
+            )
+
         return RuntimeService(
             store,
-            self._work_root,
+            self._effective_work_root(store),
             python_adapters=self._python_adapters,
             validators=self._validators,
             media_probe=self._media_probe,
             artifact_quick_probe=self._artifact_quick_probe,
             progress_wall_clock=self._progress_wall_clock,
             progress_monotonic_clock=self._progress_monotonic_clock,
+            output_path_resolver=resolve_paths,
         )
 
     def _session_view(
@@ -1788,7 +1869,7 @@ class ProjectServiceApplication:
         if node_run.log_path is None:
             return "", False, False
         try:
-            root = self._work_root.resolve(strict=True)
+            root = self.work_root.resolve(strict=True)
             work_dir = Path(node_run.work_dir).resolve(strict=True)
             work_dir.relative_to(root)
             log_dir = Path(node_run.log_path).resolve(strict=True)

@@ -4,8 +4,8 @@ SQLite 文件是 Project、Graph 与精确 NodeDefinition 的唯一持久化 aut
 Graph 校验，再通过单个事务替换 Core 表；任一步失败都会回滚，已有工程内容保持不变。读取会检查
 SQLite header、应用标识、schema version、表结构、外键与模型内容，未知或损坏输入默认失败关闭。
 
-schema v3 独立保存 StudioState 与 authoring 写入计数。schema v2 读取保持只读，首次保存前建立
-唯一备份，再把迁移和 authoring 保存合为一个事务；Runtime 表和运行历史不被迁移改写。
+schema v4 独立保存工程数据位置，schema v3 的 StudioState 与 authoring 写入计数不变。
+schema v2/v3 普通读取保持只读，显式写入升级前建立唯一备份；配置不改变 Graph 或 Runtime 语义。
 """
 
 from __future__ import annotations
@@ -24,9 +24,11 @@ from pydantic import ValidationError
 
 from zniku.graph import Graph, GraphValidationError, GraphValidator, NodeDefinition
 from zniku.project.models import Project, ProjectSnapshot
+from zniku.project.storage import ProjectStorage
 from zniku.project.studio import ProjectAuthoringSnapshot, StudioState, StudioWarning
 
-PROJECT_SCHEMA_VERSION: Final = 3
+PROJECT_SCHEMA_VERSION: Final = 4
+STUDIO_SCHEMA_VERSION: Final = 3
 RUNTIME_SCHEMA_VERSION: Final = 2
 PROJECT_APPLICATION_ID: Final = 0x5A4E494B  # ASCII "ZNIK"
 _SQLITE_HEADER: Final = b"SQLite format 3\x00"
@@ -114,11 +116,22 @@ _V2_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
     **_CORE_COLUMNS,
     **_RUNTIME_COLUMNS,
 }
-_EXPECTED_TABLES: Final = _V2_TABLES | {"studio_state"}
-_EXPECTED_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
+_V3_TABLES: Final = _V2_TABLES | {"studio_state"}
+_V3_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
     **_V2_COLUMNS,
     "studio_state": ("singleton", "storage_revision", "payload_json"),
 }
+_EXPECTED_TABLES: Final = _V3_TABLES | {"project_storage"}
+_EXPECTED_COLUMNS: Final[Mapping[str, tuple[str, ...]]] = {
+    **_V3_COLUMNS,
+    "project_storage": ("singleton", "payload_json"),
+}
+_STORAGE_SCHEMA_SQL: Final = """
+CREATE TABLE project_storage (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    payload_json TEXT
+)
+"""
 _STUDIO_SCHEMA_SQL: Final = """
 CREATE TABLE studio_state (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -429,6 +442,8 @@ class ProjectStore:
         path: str | os.PathLike[str],
         project: Project,
         definitions: Iterable[NodeDefinition],
+        *,
+        storage: ProjectStorage | None = None,
     ) -> ProjectStore:
         """创建并写入首个完整 ProjectSnapshot；已存在目标永不覆盖。
 
@@ -440,6 +455,8 @@ class ProjectStore:
         if not store.path.parent.exists():
             raise _format_error("E_PROJECT_PARENT_MISSING", f"父目录不存在：{store.path.parent}")
         snapshot = store._validated_snapshot(project, tuple(definitions))
+        if storage is not None:
+            storage = ProjectStorage.model_validate(storage)
 
         try:
             with store.path.open("xb") as owned_stream:
@@ -458,6 +475,11 @@ class ProjectStore:
                 for statement in _RUNTIME_SCHEMA_STATEMENTS:
                     connection.execute(statement)
                 connection.execute(_STUDIO_SCHEMA_SQL)
+                connection.execute(_STORAGE_SCHEMA_SQL)
+                connection.execute(
+                    "INSERT INTO project_storage VALUES (1, ?)",
+                    (storage.model_dump_json() if storage is not None else None,),
+                )
                 connection.execute(
                     "INSERT INTO studio_state VALUES (1, 0, ?)",
                     (StudioState().model_dump_json(),),
@@ -483,6 +505,8 @@ class ProjectStore:
         path: str | os.PathLike[str],
         project: Project,
         definitions: Iterable[NodeDefinition],
+        *,
+        storage: ProjectStorage | None = None,
     ) -> ProjectStore:
         """在同目录完成初始化后，以 no-replace 原子发布新 Project。
 
@@ -510,6 +534,7 @@ class ProjectStore:
                 temporary_path,
                 snapshot.project,
                 snapshot.definitions,
+                storage=storage,
             )
             temporary_stat = temporary_store.path.stat()
             temporary_identity = (temporary_stat.st_dev, temporary_stat.st_ino)
@@ -604,14 +629,7 @@ class ProjectStore:
                         view for view in current_studio.node_views if view.node_id in current_ids
                     ),
                 )
-            if connection.execute("PRAGMA user_version").fetchone()[0] == RUNTIME_SCHEMA_VERSION:
-                self._backup_before_studio_migration()
-                connection.execute(_STUDIO_SCHEMA_SQL)
-                connection.execute(
-                    "INSERT INTO studio_state VALUES (1, 0, ?)",
-                    (StudioState().model_dump_json(),),
-                )
-                connection.execute(f"PRAGMA user_version = {PROJECT_SCHEMA_VERSION}")
+            self._upgrade_storage_schema(connection)
             connection.execute("DELETE FROM graph_edges")
             connection.execute("DELETE FROM graph_nodes")
             connection.execute("DELETE FROM node_definitions")
@@ -738,6 +756,95 @@ class ProjectStore:
         except sqlite3.Error as error:
             raise ProjectStoreError("E_PROJECT_LOAD_FAILED", str(error)) from error
 
+    def load_storage(self) -> ProjectStorage | None:
+        """只读返回独立存储配置；旧 schema 或未配置工程返回 None，不自动迁移。"""
+
+        self._assert_file_and_schema()
+        try:
+            with closing(sqlite3.connect(self.path)) as connection:
+                self._configure_connection(connection)
+                connection.execute("BEGIN")
+                return self._read_project_storage(connection)
+        except sqlite3.Error as error:
+            raise ProjectStoreError("E_PROJECT_STORAGE_READ", str(error)) from error
+
+    @staticmethod
+    def _read_project_storage(connection: sqlite3.Connection) -> ProjectStorage | None:
+        if connection.execute("PRAGMA user_version").fetchone()[0] < PROJECT_SCHEMA_VERSION:
+            return None
+        rows = connection.execute("SELECT singleton, payload_json FROM project_storage").fetchall()
+        if len(rows) != 1 or rows[0][0] != 1:
+            raise _validation_error("E_PROJECT_STORAGE_INVALID", "缺少唯一工程存储配置")
+        if rows[0][1] is None:
+            return None
+        try:
+            payload = _dump_json(_load_json(rows[0][1], context="ProjectStorage"))
+            return ProjectStorage.model_validate_json(payload)
+        except (ProjectValidationError, ValidationError, TypeError) as error:
+            raise _validation_error("E_PROJECT_STORAGE_INVALID", str(error)) from error
+
+    def configure_storage(self, storage: ProjectStorage, *, expected_storage_revision: int) -> int:
+        """以 CAS 保存存储配置；已有 attempt 换位置必须走显式迁移，不能产生两套隐含根。"""
+
+        storage = ProjectStorage.model_validate(storage)
+        self._assert_file_and_schema()
+        try:
+            with closing(sqlite3.connect(self.path)) as connection:
+                connection.row_factory = sqlite3.Row
+                self._configure_connection(connection)
+                connection.execute("BEGIN IMMEDIATE")
+                snapshot = self._read_snapshot(connection)
+                self._validated_snapshot(snapshot.project, snapshot.definitions)
+                revision = self._read_storage_revision(connection)
+                self._check_storage_revision(revision, expected_storage_revision)
+                current = self._read_project_storage(connection)
+                if (
+                    current != storage
+                    and connection.execute("SELECT 1 FROM node_runs LIMIT 1").fetchone()
+                ):
+                    raise ProjectStoreError(
+                        "E_PROJECT_STORAGE_MIGRATION_REQUIRED",
+                        "工程已有执行记录，请使用迁移已有工程数据；更改位置不会自动移动历史产物",
+                    )
+                self._upgrade_storage_schema(connection)
+                next_revision = self._write_project_storage(connection, storage, revision)
+                connection.commit()
+                return next_revision
+        except sqlite3.Error as error:
+            raise ProjectStoreError("E_PROJECT_STORAGE_WRITE", str(error)) from error
+
+    @staticmethod
+    def _write_project_storage(
+        connection: sqlite3.Connection, storage: ProjectStorage, revision: int
+    ) -> int:
+        next_revision = revision + 1
+        if next_revision > 9007199254740991:
+            raise _validation_error("E_PROJECT_REVISION_INVALID", "storage revision 已超出范围")
+        connection.execute(
+            "UPDATE project_storage SET payload_json = ? WHERE singleton = 1",
+            (storage.model_dump_json(),),
+        )
+        connection.execute(
+            "UPDATE studio_state SET storage_revision = ? WHERE singleton = 1", (next_revision,)
+        )
+        return next_revision
+
+    def _upgrade_storage_schema(self, connection: sqlite3.Connection) -> None:
+        """调用方持有写事务时备份旧库并升级；没有 Graph 或运行状态迁移。"""
+
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version == PROJECT_SCHEMA_VERSION:
+            return
+        self._backup_before_studio_migration()
+        if version == RUNTIME_SCHEMA_VERSION:
+            connection.execute(_STUDIO_SCHEMA_SQL)
+            connection.execute(
+                "INSERT INTO studio_state VALUES (1, 0, ?)", (StudioState().model_dump_json(),)
+            )
+        connection.execute(_STORAGE_SCHEMA_SQL)
+        connection.execute("INSERT INTO project_storage VALUES (1, NULL)")
+        connection.execute(f"PRAGMA user_version = {PROJECT_SCHEMA_VERSION}")
+
     @staticmethod
     def _check_storage_revision(actual: int, expected: int | None) -> None:
         if expected is not None and (
@@ -791,7 +898,9 @@ class ProjectStore:
     def _backup_before_studio_migration(self) -> None:
         """持有主库写锁时创建 SQLite 一致备份；目标排他创建且永不覆盖已有备份。"""
 
-        backup_path = self.path.with_name(f".zniku-schema2-backup-{uuid.uuid4().hex}.zniku")
+        with closing(sqlite3.connect(self.path)) as version_connection:
+            version = version_connection.execute("PRAGMA user_version").fetchone()[0]
+        backup_path = self.path.with_name(f".zniku-schema{version}-backup-{uuid.uuid4().hex}.zniku")
         try:
             with backup_path.open("xb"):
                 pass
@@ -846,7 +955,11 @@ class ProjectStore:
                     self._migrate_phase_1_to_phase_2(connection)
                     connection.execute("BEGIN")
                     schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-                elif schema_version not in {RUNTIME_SCHEMA_VERSION, PROJECT_SCHEMA_VERSION}:
+                elif schema_version not in {
+                    RUNTIME_SCHEMA_VERSION,
+                    STUDIO_SCHEMA_VERSION,
+                    PROJECT_SCHEMA_VERSION,
+                }:
                     raise _format_error(
                         "E_PROJECT_SCHEMA_VERSION_UNKNOWN",
                         f"未知 schema version：{schema_version}",
@@ -855,11 +968,16 @@ class ProjectStore:
                     connection,
                     expected_tables=_EXPECTED_TABLES
                     if schema_version == PROJECT_SCHEMA_VERSION
+                    else _V3_TABLES
+                    if schema_version == STUDIO_SCHEMA_VERSION
                     else _V2_TABLES,
                     expected_columns=_EXPECTED_COLUMNS
                     if schema_version == PROJECT_SCHEMA_VERSION
+                    else _V3_COLUMNS
+                    if schema_version == STUDIO_SCHEMA_VERSION
                     else _V2_COLUMNS,
                 )
+                self._read_project_storage(connection)
                 if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                     raise _format_error("E_PROJECT_FOREIGN_KEY_INVALID", "工程包含无效外键")
             finally:

@@ -19,9 +19,11 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 from pydantic import BaseModel
 
 from .handoff_import import HandoffImportManager
+from .handoff_inbox import HandoffInboxManager
 from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
 from .preview import PreviewCache
 from .service import ProjectServiceApplication, ProjectServiceError
+from .storage_api import StorageApi
 
 _MAX_BODY_BYTES: Final = 4 * 1024 * 1024
 _MAX_HOST_BODY_BYTES: Final = 64 * 1024
@@ -34,6 +36,17 @@ _HOST_PREVIEW_ROUTE: Final = f"{_HOST_BRIDGE_PREFIX}/preview"
 _HANDOFF_IMPORT_PREFIX: Final = "/api/studio/handoff-import"
 _HANDOFF_IMPORT_PREVIEW: Final = f"{_HANDOFF_IMPORT_PREFIX}/preview"
 _HANDOFF_IMPORT_CONFIRM: Final = f"{_HANDOFF_IMPORT_PREFIX}/confirm"
+_INBOX_PREFIX: Final = "/api/studio/handoff-inbox"
+_STORAGE_PREFIX: Final = "/api/studio/storage"
+_DATA_ROUTES: Final = frozenset(
+    (
+        *[f"{_INBOX_PREFIX}/{action}" for action in ("observe", "preview", "confirm")],
+        *[
+            f"{_STORAGE_PREFIX}/{action}"
+            for action in ("inspect", "configure", "preview", "confirm")
+        ],
+    )
+)
 _RUNTIME_ID = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 _RUN_DETAIL_ROUTE = re.compile(rf"^/api/studio/runs/(?P<run_id>{_RUNTIME_ID})$")
 _NODE_LOG_ROUTE = re.compile(
@@ -158,6 +171,8 @@ def make_project_service_handler(
     """把 Project session 与可选 launcher-local HostBridge 绑定到 HTTP handler。"""
 
     handoff_import = HandoffImportManager()
+    handoff_inbox = HandoffInboxManager()
+    storage_api = StorageApi()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "ZNIKUProjectService/0.3.0"
@@ -333,6 +348,7 @@ def make_project_service_handler(
                     _HOST_PREVIEW_ROUTE,
                     _HANDOFF_IMPORT_PREVIEW,
                     _HANDOFF_IMPORT_CONFIRM,
+                    *_DATA_ROUTES,
                 }:
                     raise HostBridgeFailure(
                         "E_HOST_BRIDGE_ROUTE",
@@ -364,6 +380,7 @@ def make_project_service_handler(
                         _HOST_PREVIEW_ROUTE,
                         _HANDOFF_IMPORT_PREVIEW,
                         _HANDOFF_IMPORT_CONFIRM,
+                        *_DATA_ROUTES,
                     }:
                         raise HostBridgeFailure(
                             "E_HOST_BRIDGE_METHOD",
@@ -401,6 +418,7 @@ def make_project_service_handler(
                     _HOST_PREVIEW_ROUTE,
                     _HANDOFF_IMPORT_PREVIEW,
                     _HANDOFF_IMPORT_CONFIRM,
+                    *_DATA_ROUTES,
                 }:
                     raise HostBridgeFailure(
                         "E_HOST_BRIDGE_ROUTE",
@@ -432,6 +450,24 @@ def make_project_service_handler(
                     )
                     response_payload = operation(
                         payload, session=host_bridge, application=application
+                    ).model_dump(mode="json")
+                    status = HTTPStatus.OK
+                elif parsed.path.startswith(f"{_INBOX_PREFIX}/"):
+                    inbox_operation = {
+                        "observe": handoff_inbox.observe,
+                        "preview": handoff_inbox.preview,
+                        "confirm": handoff_inbox.confirm,
+                    }[parsed.path.rsplit("/", 1)[-1]]
+                    response_payload = inbox_operation(
+                        payload, session=host_bridge, application=application
+                    ).model_dump(mode="json")
+                    status = HTTPStatus.OK
+                elif parsed.path.startswith(f"{_STORAGE_PREFIX}/"):
+                    response_payload = storage_api.invoke(
+                        parsed.path.rsplit("/", 1)[-1],
+                        payload,
+                        session=host_bridge,
+                        application=application,
                     ).model_dump(mode="json")
                     status = HTTPStatus.OK
                 else:
@@ -491,7 +527,9 @@ def make_project_service_handler(
         def _is_host_bridge_target(self) -> bool:
             """用 path 前缀隔离 HostBridge，畸形 target 也不得落入普通 CORS。"""
 
-            return self.path.startswith((_HOST_BRIDGE_PREFIX, _HANDOFF_IMPORT_PREFIX))
+            return self.path.startswith(
+                (_HOST_BRIDGE_PREFIX, _HANDOFF_IMPORT_PREFIX, _INBOX_PREFIX, _STORAGE_PREFIX)
+            )
 
         def _authorize_host(self, session: HostBridgeSession) -> None:
             origins = self.headers.get_all("Origin", [])
