@@ -25,7 +25,7 @@ from pydantic import (
 )
 
 from zniku.graph import Edge, GraphValidator, NodeDefinition, NodeInstance
-from zniku.media.definitions import output_file_definition
+from zniku.media.definitions import is_supported_output_file_definition, output_file_definition
 from zniku.project import Project, ProjectSnapshot
 
 from .definitions import (
@@ -230,6 +230,7 @@ class Av27PublicationFacts(_PreflightModel):
     canonical_parent_exists: bool
     canonical_parent_is_directory: bool
     canonical_parent_contained: bool
+    canonical_parent_is_symlink_or_reparse: bool = False
     target_exists: bool
     target_is_regular_file: bool
     target_is_symlink_or_reparse: bool
@@ -431,7 +432,11 @@ class _Inspector:
                 continue
             self.expected_definitions[node.node_id] = expected
             actual = catalog.get((node.type_id, node.definition_version))
-            if actual != expected:
+            if actual != expected and not (
+                node.type_id == _OUTPUT_TYPE_ID
+                and actual is not None
+                and is_supported_output_file_definition(actual)
+            ):
                 self.add(
                     "E_AV27_PREFLIGHT_DEFINITION_MISMATCH",
                     f"节点必须绑定冻结定义 {expected.type_id}@{expected.version}",
@@ -1375,6 +1380,16 @@ class _Inspector:
             output_height=int(geometry["height"]),
         )
         self._check_publication_facts(output)
+        if "output_root" in output.parameters:
+            self._expect_parameter(
+                output,
+                "protected_paths",
+                list(
+                    dict.fromkeys(
+                        str(source.parameters.get("source_path")) for source in context.sources
+                    )
+                ),
+            )
 
     def _check_output_naming(
         self,
@@ -1425,11 +1440,14 @@ class _Inspector:
                 field_path="parameters.target_path",
             )
             return
-        parent_match = re.fullmatch(r"(?P<title>.+) \((?P<year>[0-9]{4})\)", path.parent.name)
+        marker = "MR Enhanced" if mr_mode == "external" else "Enhanced"
+        suffix = f" - {marker} FI{rate_label} {output_height}p.mkv"
+        name_prefix = path.name[: -len(suffix)] if path.name.endswith(suffix) else ""
+        parent_match = re.fullmatch(r"(?P<title>.+) \((?P<year>[0-9]{4})\)", name_prefix)
         if parent_match is None:
             self.add(
                 "E_AV27_PREFLIGHT_NAMING",
-                "canonical title directory 必须为 <Title> (<Year>)",
+                "canonical 成品名称必须包含 <Title> (<Year>) 与固定媒体后缀",
                 node=output,
                 field_path="parameters.target_path",
             )
@@ -1443,7 +1461,6 @@ class _Inspector:
                 node=output,
                 field_path="parameters.target_path",
             )
-        marker = "MR Enhanced" if mr_mode == "external" else "Enhanced"
         expected_name = f"{title} ({year}) - {marker} FI{rate_label} {output_height}p.mkv"
         if path.name != expected_name:
             self.add(
@@ -1452,6 +1469,19 @@ class _Inspector:
                 node=output,
                 field_path="parameters.target_path",
             )
+        root_value = output.parameters.get("output_root")
+        if root_value is None:
+            layout_safe = path.parent.name == f"{title} ({year})"
+        else:
+            root = PurePosixPath(str(root_value).replace("\\", "/"))
+            create_parent = output.parameters.get("create_parent")
+            layout_safe = (create_parent is False and path.parent == root) or (
+                create_parent is True
+                and path.parent.parent == root
+                and path.parent.name == f"{title} ({year})"
+            )
+        if not layout_safe:
+            self.add("E_AV27_PREFLIGHT_NAMING", "输出布局与显式 root/创建权限不一致", node=output)
 
     def _index_chapters(
         self,
@@ -1501,6 +1531,8 @@ class _Inspector:
         target_path = _pure_absolute_path(facts.target_path)
         output_root = _pure_absolute_path(facts.resolved_output_root)
         parent = _pure_absolute_path(facts.resolved_canonical_parent)
+        has_root = "output_root" in output.parameters
+        create_parent = output.parameters.get("create_parent", False) is True
         lexical_safe = (
             target_path is not None
             and output_root is not None
@@ -1510,13 +1542,25 @@ class _Inspector:
             and ".." not in output_root.parts
             and ".." not in parent.parts
             and target_path.parent == parent
-            and _is_strict_descendant(parent, output_root)
+            and (
+                (has_root and not create_parent and parent == output_root)
+                or ((not has_root or create_parent) and parent.parent == output_root)
+            )
+            and (
+                not has_root
+                or _pure_absolute_path(str(output.parameters["output_root"])) == output_root
+            )
+        )
+        parent_ready = (facts.canonical_parent_exists and facts.canonical_parent_is_directory) or (
+            create_parent
+            and not facts.canonical_parent_exists
+            and not facts.canonical_parent_is_directory
         )
         base_ready = (
             facts.output_root_exists
             and facts.output_root_is_directory
-            and facts.canonical_parent_exists
-            and facts.canonical_parent_is_directory
+            and parent_ready
+            and not facts.canonical_parent_is_symlink_or_reparse
             and facts.canonical_parent_contained
             and facts.target_contained
         )

@@ -91,6 +91,7 @@ export function readRecentProjects(storage: Storage | null = safeLocalStorage())
 export function rememberRecentProject(
   project: Omit<RecentProject, 'opened_at'> & { readonly opened_at?: string },
   storage: Storage | null = safeLocalStorage(),
+  previous?: ReadonlyArray<RecentProject>,
 ): RecentProject[] {
   if (!storage) return []
   const openedAt = project.opened_at ?? new Date().toISOString()
@@ -105,7 +106,7 @@ export function rememberRecentProject(
   const normalizedPath = project.path.toLocaleLowerCase()
   const projects = [
     { path: project.path, name: project.name, opened_at: openedAt },
-    ...readRecentProjects(storage).filter(
+    ...(previous ?? readRecentProjects(storage)).filter(
       (item) => item.path.toLocaleLowerCase() !== normalizedPath,
     ),
   ].slice(0, MAX_RECENT_PROJECTS)

@@ -16,6 +16,7 @@ import sys
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from http import HTTPStatus
 from ipaddress import ip_address
@@ -780,20 +781,7 @@ class HostBridgeSession:
                 "HostBridge system-action arguments 字段或类型无效",
                 http_status=HTTPStatus.UNPROCESSABLE_ENTITY,
             ) from error
-        reference = arguments.reference
-        if isinstance(reference, PickerSelectionReference):
-            with self._lock:
-                path = self._selections.get(reference.selection_handle)
-            if path is None:
-                raise HostBridgeFailure(
-                    "E_HOST_BRIDGE_REFERENCE",
-                    "picker selection handle 未知或已淘汰",
-                    http_status=HTTPStatus.CONFLICT,
-                )
-            path = _existing_absolute_path(path)
-        else:
-            path = self._path_resolver.resolve(reference)
-            path = _existing_absolute_path(path)
+        path = self.resolve_path_reference(arguments.reference)
         if capability == "open_with_system_player":
             if not path.is_file():
                 raise HostBridgeFailure(
@@ -829,6 +817,28 @@ class HostBridgeSession:
             ) from error
         return HostInvokeEnvelope(status="launched")
 
+    def resolve_path_reference(self, reference: HostPathReference) -> Path:
+        """只读解析当前 session 的路径引用，供系统动作与静帧预览共享。
+
+        HTTP 调用者必须先执行 ``authorize``；此方法不签发票据、不启动进程，也不修改
+        Project。无效 picker handle、错误 Run/handoff 绑定仍沿用同一失败语义。
+        """
+
+        if isinstance(reference, PickerSelectionReference):
+            with self._lock:
+                path = self._selections.get(reference.selection_handle)
+            if path is None:
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_REFERENCE",
+                    "picker selection handle 未知或已淘汰",
+                    http_status=HTTPStatus.CONFLICT,
+                )
+            path = _existing_absolute_path(path)
+        else:
+            path = self._path_resolver.resolve(reference)
+            path = _existing_absolute_path(path)
+        return path
+
 
 def _running_on_windows() -> bool:
     """保留运行时平台判断，避免类型检查器按自身宿主裁剪另一平台分支。"""
@@ -837,7 +847,7 @@ def _running_on_windows() -> bool:
 
 
 class WindowsHostPlatform:
-    """使用 Windows Tk 原生 picker 与固定系统命令的宿主后端。"""
+    """使用临时置顶 owner 的 Windows Tk picker 与固定系统命令，不接管浏览器窗口。"""
 
     def __init__(self) -> None:
         self._dialog_lock = threading.Lock()
@@ -866,7 +876,12 @@ class WindowsHostPlatform:
         capability: HostCapability,
         arguments: HostDialogArguments,
     ) -> Sequence[str] | None:
-        """串行打开一个原生 picker；并发点击明确失败而不弹出多个窗口。"""
+        """串行打开置顶 picker，取消或失败都销毁 owner 并释放互斥。
+
+        隐藏 root 不等于前台窗口；Windows 原生对话框只保证在 owner 上方，不保证高于
+        浏览器。临时透明 toolwindow 必须实际映射，使其 native topmost 属性生效，并由
+        owned dialog 继承。只在用户点击时请求一次焦点，不循环抢焦点或更改系统前台策略。
+        """
 
         if not self._dialog_lock.acquire(blocking=False):
             raise HostBridgeFailure(
@@ -882,8 +897,22 @@ class WindowsHostPlatform:
             if arguments.extensions:
                 filetypes = [("允许的文件", " ".join(f"*{item}" for item in arguments.extensions))]
             root = tk.Tk()
-            root.withdraw()
             try:
+                root.withdraw()
+                root.title("ZNIKU Studio")
+                root.geometry(
+                    f"1x1+{max(0, root.winfo_screenwidth() // 2)}"
+                    f"+{max(0, root.winfo_screenheight() // 2)}"
+                )
+                root.attributes("-alpha", 0.0)
+                root.attributes("-toolwindow", True)
+                root.attributes("-topmost", True)
+                root.deiconify()
+                root.update_idletasks()
+                root.lift()
+                # Windows 可拒绝前台请求；这不能取消已生效的置顶或扩大为强制抢焦点。
+                with suppress(tk.TclError):
+                    root.focus_force()
                 if capability == "open_file":
                     value = filedialog.askopenfilename(
                         parent=root,
@@ -915,7 +944,11 @@ class WindowsHostPlatform:
                     return (value,) if value else None
                 raise AssertionError("非 picker capability 进入 choose_paths")
             finally:
-                root.destroy()
+                # 撤销置顶失败也必须尝试销毁；销毁失败仍由最外层 finally 释放选择器锁。
+                try:
+                    root.attributes("-topmost", False)
+                finally:
+                    root.destroy()
         finally:
             self._dialog_lock.release()
 

@@ -1,12 +1,13 @@
 /**
  * 消费 launcher 注入的 HostBridge 0.3.0 闭集能力。
  *
- * 每次显式调用都先签发五秒一次性票据再立即消费；本模块不重试系统动作，也不把 token 写入 URL、
- * Storage、错误或日志。所有响应都按 Python 生成的 JSON Schema 失败关闭。
+ * 原生系统动作先签发五秒一次性票据再立即消费；静帧只读，外部文件导入采用独立的预览与确认。
+ * 本模块不重试副作用，也不把 token 写入 URL、Storage、错误或日志。所有响应都按 Python Schema 失败关闭。
  */
 
 import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js'
 import projectServiceSchema from '../service/project-service.schema.json'
+import type { RecentProject } from './recent-projects'
 
 export type HostCapability =
   | 'open_file'
@@ -82,6 +83,73 @@ export interface HostBridge {
     argumentsValue?: HostDialogArguments,
   ): Promise<ReadonlyArray<HostSelection> | null>
   launch(capability: HostSystemCapability, reference: HostPathReference): Promise<void>
+  /** 只读静帧请求；可选仅兼容旧测试 double，不签发系统动作票据。 */
+  preview?(request: MediaPreviewRequest): Promise<MediaPreviewEnvelope>
+  /** 选择只产生预览；确认只复制/验证，不替代 Runtime 的显式 Submit。 */
+  previewHandoffImport?(request: HandoffImportPreviewRequest): Promise<HandoffImportPreviewEnvelope>
+  confirmHandoffImport?(request: HandoffImportConfirmRequest): Promise<HandoffImportEnvelope>
+  inspectDesktop?(): Promise<DesktopSessionEnvelope>
+  closeDesktop?(instanceId: string): Promise<void>
+  saveDesktopPreferences?(instanceId: string, preferences: DesktopPreferences): Promise<void>
+}
+
+export interface DesktopPreferences {
+  readonly density: 'creator' | 'advanced'
+  readonly recent_projects: ReadonlyArray<RecentProject>
+}
+
+export interface DesktopSessionEnvelope {
+  readonly contract_version: '0.3.0'
+  readonly instance_id: string
+  readonly busy: boolean
+  readonly closing: boolean
+}
+
+export interface MediaPreviewRequest {
+  readonly contract_version: '0.3.0'
+  readonly project_session_id: string | null
+  readonly reference: HostPathReference
+}
+
+export interface MediaPreviewEnvelope extends MediaPreviewRequest {
+  readonly image_data_url: string
+  readonly width: number
+  readonly height: number
+  readonly cache_hit: boolean
+}
+
+export interface HandoffImportPreviewRequest {
+  readonly contract_version: '0.3.0'
+  readonly selection_handle: string
+  readonly project_session_id: string
+  readonly run_id: string
+  readonly node_run_id: string
+  readonly handoff_id: string
+  readonly port_id: string
+  readonly ordinal: number | null
+}
+
+export interface HandoffImportPreviewEnvelope extends HandoffImportPreviewRequest {
+  readonly import_id: string
+  readonly source_name: string
+  readonly source_size: number
+  readonly target_path: string
+  readonly replace_existing: boolean
+  readonly expires_in_seconds: 300
+}
+
+export interface HandoffImportConfirmRequest {
+  readonly contract_version: '0.3.0'
+  readonly import_id: string
+  readonly overwrite: boolean
+}
+
+export interface HandoffImportEnvelope extends Omit<HandoffImportPreviewRequest, 'selection_handle'> {
+  readonly import_id: string
+  readonly source_name: string
+  readonly source_size: number
+  readonly target_path: string
+  readonly status: 'imported'
 }
 
 interface HostBridgeBootstrap {
@@ -92,6 +160,7 @@ interface HostBridgeBootstrap {
 declare global {
   interface Window {
     __ZNIKU_HOST_BRIDGE__?: HostBridgeBootstrap
+    __ZNIKU_DESKTOP__?: { readonly contractVersion: '0.3.0'; readonly instanceId: string; readonly preferences?: DesktopPreferences }
   }
 }
 
@@ -102,22 +171,41 @@ type SchemaDocument = {
 
 const schemaDocument = projectServiceSchema as unknown as SchemaDocument
 const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: true })
+const definitionValidators = new Map<string, ValidateFunction>()
 
 function compileDefinition(name: string): ValidateFunction {
+  const cached = definitionValidators.get(name)
+  if (cached) return cached
   if (!schemaDocument.$defs || !(name in schemaDocument.$defs)) {
     throw new Error(`Python Project Service Schema 缺少 $defs/${name}`)
   }
-  return ajv.compile({
+  const validator = ajv.compile({
     $schema: schemaDocument.$schema ?? 'https://json-schema.org/draft/2020-12/schema',
     $defs: schemaDocument.$defs,
     $ref: `#/$defs/${name}`,
   })
+  definitionValidators.set(name, validator)
+  return validator
 }
 
 const validateCapabilities = compileDefinition('HostCapabilitiesEnvelope')
 const validateUserAction = compileDefinition('HostUserActionEnvelope')
 const validateInvoke = compileDefinition('HostInvokeEnvelope')
 const validateReference = compileDefinition('HostPathReference')
+// 延迟编译：预览不是启动、建项或运行的前置条件。
+let validatePreviewRequest: ValidateFunction | undefined
+let validatePreviewEnvelope: ValidateFunction | undefined
+
+function sameReference(left: HostPathReference, right: HostPathReference): boolean {
+  // 只比较 wire 身份字段，不比较序列化属性顺序，也不生成领域 digest。
+  const ordered = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) => {
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      return Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
+    }
+    return item
+  })
+  return ordered(left) === ordered(right)
+}
 const capabilityOrder: ReadonlyArray<HostCapability> = [
   'open_file',
   'open_files',
@@ -211,6 +299,8 @@ export class FetchHostBridge implements HostBridge {
   private readonly baseUrl: string | null
   private readonly token: string | null
   private readonly bootstrapError: string | null
+  private preferenceWrites: Promise<void> = Promise.resolve()
+  private readonly importPreviews = new Map<string, HandoffImportPreviewEnvelope>()
 
   constructor(bootstrap: HostBridgeBootstrap | undefined = window.__ZNIKU_HOST_BRIDGE__) {
     let baseUrl: string | null = null
@@ -271,6 +361,83 @@ export class FetchHostBridge implements HostBridge {
     if (result.status !== 'launched' || result.selections.length !== 0) {
       throw new HostBridgeError('HostBridge 系统动作没有返回 launched 结果')
     }
+  }
+
+  async preview(request: MediaPreviewRequest): Promise<MediaPreviewEnvelope> {
+    validatePreviewRequest ??= compileDefinition('MediaPreviewRequest')
+    validatePreviewEnvelope ??= compileDefinition('MediaPreviewEnvelope')
+    parseWith(request, validatePreviewRequest, 'Media preview request')
+    const result = await this.request('/api/host-bridge/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }, (value) => parseWith<MediaPreviewEnvelope>(value, validatePreviewEnvelope!, 'Media preview response'))
+    if (result.project_session_id !== request.project_session_id || !sameReference(result.reference, request.reference)) {
+      throw new HostBridgeError('静帧响应不属于当前工程与媒体引用。')
+    }
+    return result
+  }
+
+  async inspectDesktop(): Promise<DesktopSessionEnvelope> {
+    const validator = compileDefinition('DesktopSessionEnvelope')
+    return this.request('/api/desktop/session', { method: 'GET' },
+      (value) => parseWith<DesktopSessionEnvelope>(value, validator, 'Desktop session'))
+  }
+
+  async previewHandoffImport(request: HandoffImportPreviewRequest): Promise<HandoffImportPreviewEnvelope> {
+    parseWith(request, compileDefinition('HandoffImportPreviewRequest'), 'Handoff import preview request')
+    const result = await this.request('/api/studio/handoff-import/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+    }, (value) => parseWith<HandoffImportPreviewEnvelope>(value, compileDefinition('HandoffImportPreviewEnvelope'), 'Handoff import preview response'))
+    if (Object.entries(request).some(([key, value]) => result[key as keyof HandoffImportPreviewRequest] !== value)) {
+      throw new HostBridgeError('文件导入预览不属于当前工程、任务与所选文件。')
+    }
+    this.importPreviews.set(result.import_id, result)
+    if (this.importPreviews.size > 64) this.importPreviews.delete(this.importPreviews.keys().next().value!)
+    return result
+  }
+
+  async confirmHandoffImport(request: HandoffImportConfirmRequest): Promise<HandoffImportEnvelope> {
+    parseWith(request, compileDefinition('HandoffImportConfirmRequest'), 'Handoff import confirm request')
+    const preview = this.importPreviews.get(request.import_id)
+    if (!preview) throw new HostBridgeError('文件导入预览已失效，请重新选择文件。')
+    // 确认有文件副作用：发出前消费本地绑定，网络结果不明也不自动重试。
+    this.importPreviews.delete(request.import_id)
+    const result = await this.request('/api/studio/handoff-import/confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+    }, (value) => parseWith<HandoffImportEnvelope>(value, compileDefinition('HandoffImportConfirmEnvelope'), 'Handoff import response'))
+    const keys = ['contract_version', 'import_id', 'project_session_id', 'run_id', 'node_run_id',
+      'handoff_id', 'port_id', 'ordinal', 'source_name', 'source_size', 'target_path'] as const
+    if (keys.some((key) => result[key] !== preview[key])) {
+      throw new HostBridgeError('文件导入响应不属于已确认的任务与文件，请刷新检查实际结果。')
+    }
+    return result
+  }
+
+  async closeDesktop(instanceId: string): Promise<void> {
+    await this.preferenceWrites.catch(() => undefined)
+    const request = { contract_version: '0.3.0', instance_id: instanceId, confirm: true }
+    parseWith(request, compileDefinition('DesktopCloseRequest'), 'Desktop close request')
+    const validator = compileDefinition('DesktopCloseEnvelope')
+    const result = await this.request('/api/desktop/close', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+    }, (value) => parseWith<{ readonly instance_id: string }>(value, validator, 'Desktop close response'))
+    if (result.instance_id !== instanceId) throw new HostBridgeError('退出响应不属于当前桌面实例。')
+  }
+
+  saveDesktopPreferences(instanceId: string, preferences: DesktopPreferences): Promise<void> {
+    const request = { contract_version: '0.3.0', instance_id: instanceId, ...preferences }
+    parseWith(request, compileDefinition('DesktopPreferencesRequest'), 'Desktop preferences request')
+    // 同一 session 单路有序保存；不让慢响应把新密度/最近工程回写成旧值，也不重试副作用。
+    const body = JSON.stringify(request)
+    const pending = this.preferenceWrites.catch(() => undefined).then(async () => {
+      const result = await this.request('/api/desktop/preferences', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(10_000),
+      }, (value) => parseWith<{ readonly instance_id: string }>(value, compileDefinition('DesktopPreferencesEnvelope'), 'Desktop preferences response'))
+      if (result.instance_id !== instanceId) throw new HostBridgeError('偏好响应不属于当前桌面实例。')
+    })
+    this.preferenceWrites = pending
+    return pending
   }
 
   private async invoke(capability: HostCapability, argumentsValue: object): Promise<HostInvokeEnvelope> {
@@ -348,4 +515,14 @@ export class FetchHostBridge implements HostBridge {
 
 export function createHostBridge(): HostBridge {
   return new FetchHostBridge()
+}
+
+export function readDesktopPreferences(): DesktopPreferences | null {
+  const value = window.__ZNIKU_DESKTOP__
+  if (!value?.preferences) return null
+  try {
+    const parsed = parseWith<DesktopPreferences>({ contract_version: value.contractVersion,
+      instance_id: value.instanceId, ...value.preferences }, compileDefinition('DesktopPreferencesEnvelope'), 'Desktop preference bootstrap')
+    return { density: parsed.density, recent_projects: parsed.recent_projects }
+  } catch { return null } // 纯 UI 偏好损坏不得阻断正式工程或修改 Graph。
 }

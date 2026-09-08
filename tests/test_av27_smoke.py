@@ -52,7 +52,8 @@ def test_smoke_waiting_requires_explicit_keep_root() -> None:
     assert "--keep-root" in result.stderr
 
 
-def test_av27_full_synthetic_project_service_smoke(tmp_path: Path) -> None:
+@pytest.mark.parametrize("layout", ("direct", "title_subdirectory"))
+def test_av27_full_synthetic_project_service_smoke(tmp_path: Path, layout: str) -> None:
     """真实短媒体覆盖两段 authoring、MR/Enhancement/FI、双章单编码、原音频和复用。"""
 
     ffmpeg = shutil.which("ffmpeg")
@@ -71,11 +72,12 @@ def test_av27_full_synthetic_project_service_smoke(tmp_path: Path) -> None:
     ):
         pytest.skip("AV27 E2E 需要 ffv1/prores_ks/libx265")
     retained = tmp_path / "synthetic-e2e"
-    result = _invoke("--keep-root", str(retained))
+    result = _invoke("--keep-root", str(retained), "--publication-layout", layout)
     assert result.returncode == 0, result.stderr
     summary = json.loads(result.stdout)
     assert summary["evidence_kind"] == "synthetic_only"
     assert summary["state"] == "completed"
+    assert summary["publication_layout"] == layout
     assert summary["source_frame_count"] == 24
     assert summary["chapter_count"] == summary["leaf_count"] == 2
     assert summary["fi_frame_counts"] == [19, 27]
@@ -89,3 +91,6 @@ def test_av27_full_synthetic_project_service_smoke(tmp_path: Path) -> None:
     assert summary["config_stale_nodes"] == ["final", "output", "program"]
     assert len(summary["reused_nodes"]) == 13
     assert Path(summary["project_path"]).is_file()
+    published = retained / "published"
+    assert len(tuple(published.rglob("*.mkv"))) == 1
+    assert (published / "Synthetic AV27 (2026)").is_dir() == (layout == "title_subdirectory")

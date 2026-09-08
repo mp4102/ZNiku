@@ -12,7 +12,7 @@ const present = handoffReadinessEnvelope('present', false)
 const passed = handoffReadinessEnvelope('probe_passed', true)
 function props(overrides: Partial<HandoffCenterProps> = {}): HandoffCenterProps {
   return {
-    waitingNodeRuns: [waiting], nodeLabel: () => '画质增强', detail,
+    waitingNodeRuns: [waiting], selectedNodeId: waiting.node_id, nodeLabel: () => '画质增强', detail,
     artifactsById: new Map(detail.artifacts.map((item) => [item.artifact_id, item])),
     readiness: new Map([[waiting.node_run_id, present]]), checkedOutputs: new Map(),
     lastFullPrecheckFailures: new Map(), checkingNodeRunId: null, submittingNodeRunId: null,

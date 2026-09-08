@@ -310,6 +310,7 @@ def test_source_program_runs_one_timeline_traversal_and_extends_both_outputs(
     assert calls == {"header": 1, "timeline": 1}
     assert set(result.media_info_extensions) == {"video", "source_media"}
     assert result.media_info_extensions["video"][AV27_NAMESPACE]["frame_count"] == 100
+
     assert result.media_info_extensions["source_media"][AV27_NAMESPACE]["audio_tracks"] == [
         item.to_summary() for item in audio
     ]
@@ -721,6 +722,22 @@ def test_enhancement_accepts_declared_integer_scale_and_rejects_hdr(
     )
     assert result.passed is True
     assert result.media_info_extensions["video"][AV27_NAMESPACE]["frame_count"] == 100
+
+    # 错分段必须保持原有失败语义，同时让创作者看到服务端实际比较的数值。
+    with monkeypatch.context() as frame_patch:
+        frame_patch.setattr(validators, "_external_frame_count", lambda _media: (99, "header"))
+        wrong_frames = validators.validate_enhancement(
+            _context(
+                tmp_path,
+                enhancement_definition(),
+                parameters,
+                inputs=(source,),
+                outputs=(output,),
+            )
+        )
+        assert wrong_frames.passed is False
+        assert wrong_frames.summary["code"] == "E_AV27_ENHANCEMENT_FRAME_COUNT"
+        assert "预期 100 帧，实际 99 帧" in str(wrong_frames.message)
 
     bad_video = _video(
         codec="prores",

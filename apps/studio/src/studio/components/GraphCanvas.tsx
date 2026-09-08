@@ -12,9 +12,11 @@ import type { WorkflowEdge, WorkflowNode } from '../../model'
 import type { GraphWire, NodeDefinitionWire } from '../contracts'
 import { compatibleNodeSuggestions, type ConnectionSource } from '../graph'
 import { CanvasDialog, ConnectNodesDialog } from './ConnectNodesDialog'
+import { useCanvasNodeGeometry } from './use-canvas-node-geometry'
 
 const nodeTypes = { workflow: WorkflowNodeCard }
 const emptyDefinitions: ReadonlyArray<NodeDefinitionWire> = []
+const emptyGroups: ReadonlyArray<CanvasGroupView> = []
 
 export interface CanvasGroupView {
   readonly group_id: string
@@ -72,7 +74,7 @@ export function GraphCanvas({
   advanced = true, showingSnapshot,
   nodes, edges, editable, busy, modeLabel, contextLabel, snapshotChanged,
   canToggleSnapshot, loading, boundaryError, hasProject, overlays,
-  graph, definitions = emptyDefinitions, groups = [], viewport, definitionLabel, portLabel,
+  graph, definitions = emptyDefinitions, groups = emptyGroups, viewport, definitionLabel, portLabel,
   onAutoLayout, onViewportChange, onToggleGroup, onAddConnectedNodes, onNodeDragStart, onNodeDragStop,
   onToggleSnapshot, onNodesChange, onEdgesChange, onSelectionChange, onNodeClick, onEdgeClick,
   onConnect, isValidConnection,
@@ -112,8 +114,11 @@ export function GraphCanvas({
     void (direction === 'in' ? instance.zoomIn({ duration: 0 }) : instance.zoomOut({ duration: 0 }))
       .then(() => { if (editable) onViewportChange?.(instance.getViewport()) })
   }
+  const groupsByNode = useMemo(() => new Map(groups.flatMap((group) => group.node_ids.map((id) => [id, group] as const))), [groups])
   const decoratedNodes = useMemo(() => nodes.map((node): WorkflowNode => {
-    const group = groups.find((item) => item.node_ids.includes(node.id))
+    const group = groupsByNode.get(node.id)
+    // 无分组/连接高亮时保持原 data 引用；位置拖动不必重绘每张卡片的正文。
+    if (!group && !connecting) return node
     const inputIds = connecting?.handleType === 'source' ? node.data.inputs.filter((port) => isValidConnection({
       source: connecting.nodeId ?? '', sourceHandle: connecting.handleId ?? '', target: node.id, targetHandle: port.port_id,
     })).map((port) => port.port_id) : []
@@ -129,14 +134,15 @@ export function GraphCanvas({
       compatibleInputPortIds: inputIds,
       compatibleOutputPortIds: outputIds,
     } }
-  }), [nodes, groups, connecting, isValidConnection])
+  }), [nodes, groupsByNode, connecting, isValidConnection])
+  const canvasNodes = useCanvasNodeGeometry(decoratedNodes, !disabled, onNodesChange)
 
   return (
-    <section className="canvas-panel" aria-label="Studio Designer 画布">
+    <section className="canvas-panel" aria-label="Studio Designer 画布" id="workflow-canvas" tabIndex={-1}>
       <div className="canvas-context">
         <div><span className="context-mode">{modeLabel}</span><strong>{contextLabel}</strong></div>
         <div className="canvas-context-actions">
-          {canToggleSnapshot && (advanced || (showingSnapshot ?? modeLabel === 'Run snapshot')) && <button type="button" onClick={onToggleSnapshot}>{(showingSnapshot ?? modeLabel === 'Run snapshot') ? advanced ? '查看当前 Graph' : '编辑当前工作流' : '查看 Run snapshot'}</button>}
+          {canToggleSnapshot && <button type="button" onClick={onToggleSnapshot}>{(showingSnapshot ?? modeLabel === 'Run snapshot') ? advanced ? '查看当前 Graph' : '编辑当前工作流' : advanced ? '查看 Run snapshot' : '查看处理记录'}</button>}
           {snapshotChanged && <span>{advanced ? 'Run snapshot / 当前 Graph 已变化' : '当前编辑与这次处理记录不同'}</span>}
         </div>
       </div>
@@ -170,15 +176,15 @@ export function GraphCanvas({
       {connecting && <div className="canvas-connection-hint" role="status">亮起的端口可以连接；从输出拖到空白处可添加下一步。</div>}
       {overlays}
       {loading ? (
-        <div className="authority-empty" role="status"><strong>正在连接 Project Service…</strong></div>
+        <div className="authority-empty" role="status"><strong>{advanced ? '正在连接 Project Service…' : '正在连接本机工程服务…'}</strong></div>
       ) : boundaryError && !hasProject ? (
-        <div className="authority-empty" role="alert"><strong>Project Service 不可用</strong><p>{boundaryError}</p><p>Studio 不会回退浏览器内存数据。</p></div>
+        <div className="authority-empty" role="alert"><strong>本机工程服务暂时不可用</strong><p>{advanced ? boundaryError : '工程与已有媒体仍然保留。请在工程首页重新连接。'}</p>{advanced && <p>Studio 不会回退浏览器内存数据。</p>}</div>
       ) : !hasProject ? (
         <div className="authority-empty"><strong>尚未打开工程</strong><p>在工程首页新建或打开已有工程。</p></div>
       ) : (
         <ReactFlow
-          nodes={decoratedNodes} edges={edges} nodeTypes={nodeTypes}
-          onInit={setInstance} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+          nodes={canvasNodes.nodes} edges={edges} nodeTypes={nodeTypes}
+          onInit={setInstance} onNodesChange={canvasNodes.onNodesChange} onEdgesChange={onEdgesChange}
           onSelectionChange={onSelectionChange} onNodeClick={onNodeClick} onEdgeClick={onEdgeClick}
           onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop}
           onConnect={onConnect} isValidConnection={isValidConnection}

@@ -4,6 +4,9 @@ import { HandoffContract, HandoffPrecheckFailure, ReadinessMessages, fileName } 
 import type { ArtifactWire, ExternalHandoffReadiness, NodeRunWire, RunDetailEnvelope } from '../contracts'
 import { isFullCheck, readinessMatchesHandoff, sameObservedOutputs } from '../handoff-check'
 import type { HostPathReference, HostSystemCapability } from '../host-bridge'
+import { handoffSummary } from '../handoff-presentation'
+import { HandoffImportDialog } from './HandoffImportDialog'
+import type { HandoffImportController } from '../use-handoff-import'
 
 export function handoffResourceKey(runId: string, nodeRunId: string, handoffId: string): string {
   return `${runId}/${nodeRunId}/${handoffId}`
@@ -34,6 +37,9 @@ export interface HandoffCenterProps {
   readonly advanced?: boolean
   readonly nodeLabel?: (nodeId: string) => string
   readonly waitingNodeRuns: ReadonlyArray<NodeRunWire>
+  readonly selectedNodeId: string | null
+  readonly importController?: HandoffImportController
+  readonly canImportHandoff?: boolean
   readonly detail: RunDetailEnvelope | null
   readonly artifactsById: ReadonlyMap<string, ArtifactWire>
   readonly readiness: ReadonlyMap<string, ExternalHandoffReadiness>
@@ -59,11 +65,27 @@ export interface HandoffCenterProps {
 export function HandoffCenter(props: HandoffCenterProps) {
   const { waitingNodeRuns, detail, artifactsById, readiness, checkedOutputs } = props
   if (!waitingNodeRuns.length) return null
+  const waiting = waitingNodeRuns.filter((item) => item.state === 'waiting_external' && item.external_handoff !== null)
+  if (props.selectedNodeId === null) return <section className="handoff-task-list" aria-label="待外部处理任务">
+    <h3>待外部处理任务</h3>
+    <p>先选择具体任务，再打开输入、导入文件、检查并提交。每个任务只接收自己的产物。</p>
+    {waiting.map((nodeRun) => {
+      const title = props.nodeLabel?.(nodeRun.node_id) ?? '外部处理步骤'
+      return <button type="button" className="handoff-task-summary" key={nodeRun.node_run_id}
+        aria-label={`查看外部任务：${title}`} onClick={() => props.onSelectNode(nodeRun.node_id)}>
+        <strong>{title}</strong>
+        {handoffSummary(nodeRun, artifactsById, detail).map((line) => <span key={line}>{line}</span>)}
+        <span>{elapsedLabel(nodeRun.external_handoff!.created_at)} · 查看此任务</span>
+      </button>
+    })}
+  </section>
+  const selected = waiting.filter((nodeRun) => nodeRun.node_id === props.selectedNodeId)
+  if (!selected.length) return null
   return (
     <section className="handoff-queue" aria-label="外部处理助手" id="external-processing-assistant">
       <h3>外部处理助手</h3>
       <p>在外部工具中完成处理后，先检查输出，再由你提交并继续。这里不会自动操作外部工具。</p>
-      {waitingNodeRuns.filter((item) => item.state === 'waiting_external' && item.external_handoff !== null).map((nodeRun) => {
+      {selected.map((nodeRun) => {
         const handoff = nodeRun.external_handoff!
         const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, handoff.handoff_id)
         const candidate = readiness.get(nodeRun.node_run_id) ?? null
@@ -72,8 +94,9 @@ export function HandoffCenter(props: HandoffCenterProps) {
         const checkStillCurrent = !!checked && isFullCheck(checked, nodeRun) && !!observed && sameObservedOutputs(checked, observed)
         const checking = props.checkingNodeRunId === nodeRun.node_run_id
         const submitting = props.submittingNodeRunId === nodeRun.node_run_id
-        const anyOperation = props.checkingNodeRunId !== null || props.submittingNodeRunId !== null
-        const disabledReason = anyOperation ? '正在检查或提交，请等待本次操作完成。'
+        const anyOperation = props.checkingNodeRunId !== null || props.submittingNodeRunId !== null || props.importController?.busy
+        const disabledReason = props.importController?.busy ? '正在选择或导入文件，请先完成或取消本次操作。'
+          : anyOperation ? '正在检查或提交，请等待本次操作完成。'
           : props.mutationBlocked ? '当前连接或工程状态不允许操作，请先恢复连接并处理提示。'
           : props.readinessStale ? '文件检测暂时离线；恢复检测后才能检查或提交。'
           : !observed ? '正在读取此任务的目标文件状态，请稍候。'
@@ -92,6 +115,9 @@ export function HandoffCenter(props: HandoffCenterProps) {
               <em>{elapsedLabel(handoff.created_at)}</em>
               <span>定位到此节点</span>
             </button>
+            <div className="handoff-task-identity" aria-label="当前外部任务标识">
+              {handoffSummary(nodeRun, artifactsById, detail).map((line) => <strong key={line}>{line}</strong>)}
+            </div>
             <ol className="handoff-steps">
               <li className="handoff-step">
                 <h4>确认处理要求</h4>
@@ -116,17 +142,25 @@ export function HandoffCenter(props: HandoffCenterProps) {
                 {(!props.canRevealHandoff || !props.canOpenHandoffInput) && <p className="handoff-disabled-reason">本机打开能力不可用时，可复制路径后在外部工具中打开；使用 ZNIKU launcher 启动可连接本机能力。</p>}
               </li>
               <li className="handoff-step">
-                <h4>保存到目标文件</h4>
+                <h4>选择处理好的文件，或手动保存到目标位置</h4>
                 {handoff.output_targets.map((target) => {
                   const state = observed?.targets.find((item) => item.port_id === target.port_id && item.ordinal === target.ordinal)?.state
                   const status = state === 'missing' ? '尚未发现' : state === 'empty' ? '文件为空' : state === 'probe_failed' ? '检查未通过' : state ? '已发现' : '等待检测'
                   return <div className="handoff-path" key={`${target.port_id}-${target.ordinal ?? 'one'}`}>
                     <strong className="handoff-file-name">{fileName(target.path)}</strong>
                     <span className="handoff-target-status">{status}</span>
+                    <code className="handoff-target-path">{target.path}</code>
+                    {props.importController && handoff.output_targets.length === 1 && <button type="button" disabled={!!anyOperation || props.mutationBlocked || !props.canImportHandoff}
+                      onClick={() => void props.importController!.choose(nodeRun, target, nodeTitle)}>选择处理好的文件</button>}
                     <button type="button" onClick={() => props.onCopyPath(target.path)}>复制目标路径</button>
                   </div>
                 })}
                 <p>文件出现只表示已发现，不代表外部工具已完成，也不会自动继续。</p>
+                {handoff.output_targets.length > 1 && <p>多输出任务请按各目标放置文件后统一检查。</p>}
+                {props.importController?.message && <p className="handoff-import-message" role="status">{props.importController.message}</p>}
+                {props.importController?.error && <p className="handoff-import-error" role="alert">{props.importController.error}</p>}
+                {props.importController?.rawError && <details className="handoff-import-diagnostic"><summary>高级 → 导入原始详情</summary><pre>{props.importController.rawError}</pre></details>}
+                {props.importController?.preview && <HandoffImportDialog key={props.importController.preview.envelope.import_id} controller={props.importController} />}
               </li>
               <li className="handoff-step">
                 <h4>检查后，由你提交并继续</h4>

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from zniku.runtime.models import Artifact
+from zniku.runtime.process_window import background_creation_flags
 
 
 class MediaNodeError(RuntimeError):
@@ -130,6 +131,7 @@ def probe_media(
             encoding="utf-8",
             errors="replace",
             shell=False,
+            creationflags=background_creation_flags(),
             check=False,
             timeout=3600 if count_frames else 60,
         )

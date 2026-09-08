@@ -27,6 +27,7 @@ from zniku.media.probe import (
     require_media_kind,
     resolve_media_tool,
 )
+from zniku.media.publication import checked_output_target
 from zniku.runtime import (
     FrameRange,
     ProducedOutput,
@@ -36,6 +37,7 @@ from zniku.runtime import (
     PythonAdapterResult,
     RunnerInput,
 )
+from zniku.runtime.process_window import background_creation_flags
 from zniku.runtime.runner import OutputTarget
 
 
@@ -409,6 +411,13 @@ def output_file(context: PythonAdapterContext) -> PythonAdapterResult:
     mode = _required_string(context.node.parameters, "mode")
     overwrite = _required_boolean(context.node.parameters, "overwrite")
     if mode == "reference":
+        if (
+            context.node.parameters.get("create_parent", False) is not False
+            or "output_root" in context.node.parameters
+        ):
+            raise MediaNodeError(
+                "E_MEDIA_OUTPUT_PARENT_INVALID", "reference 模式不允许目录创建权限"
+            )
         if overwrite:
             raise MediaNodeError(
                 "E_MEDIA_OUTPUT_REFERENCE_OVERWRITE",
@@ -432,19 +441,8 @@ def output_file(context: PythonAdapterContext) -> PythonAdapterResult:
         )
     if mode != "copy":
         raise MediaNodeError("E_MEDIA_OUTPUT_MODE_UNKNOWN", f"未知 mode {mode!r}")
-    target_value = _required_string(context.node.parameters, "target_path")
-    target = Path(target_value)
-    if not target.is_absolute():
-        raise MediaNodeError("E_MEDIA_OUTPUT_PATH_RELATIVE", "target_path 必须是绝对路径")
-    try:
-        parent = target.parent.resolve(strict=True)
-    except OSError as error:
-        raise MediaNodeError("E_MEDIA_OUTPUT_PARENT_INVALID", str(error)) from error
-    if not parent.is_dir():
-        raise MediaNodeError("E_MEDIA_OUTPUT_PARENT_INVALID", "目标父路径不是目录")
-    target = parent / target.name
-    if target.resolve(strict=False) == source:
-        raise MediaNodeError("E_MEDIA_OUTPUT_SAME_PATH", "OutputFile 不得覆盖上游 Artifact")
+    target = checked_output_target(context.node.parameters, source, allow_create=True)
+    parent = target.parent
     if target.exists() and not overwrite:
         raise MediaNodeError("E_MEDIA_OUTPUT_EXISTS", "目标已存在且 overwrite=false")
 
@@ -460,6 +458,8 @@ def output_file(context: PythonAdapterContext) -> PythonAdapterResult:
                 )
             shutil.copystat(source, temporary)
             require_media_kind(probe_media(temporary), source_kind)
+            if checked_output_target(context.node.parameters, source, allow_create=False) != target:
+                raise MediaNodeError("E_MEDIA_OUTPUT_PARENT_INVALID", "发布目标在复制期间改变")
             os.replace(temporary, target)
         except (ProgressError, ProgressInfrastructureError):
             raise
@@ -471,6 +471,8 @@ def output_file(context: PythonAdapterContext) -> PythonAdapterResult:
             ) from error
     else:
         try:
+            if checked_output_target(context.node.parameters, source, allow_create=False) != target:
+                raise MediaNodeError("E_MEDIA_OUTPUT_PARENT_INVALID", "发布目标在复制前改变")
             with source.open("rb") as source_stream, target.open("xb") as target_stream:
                 _copy_stream_with_progress(
                     context,
@@ -593,6 +595,7 @@ def _run_ffmpeg(
                     stdout=subprocess.PIPE,
                     stderr=stderr_stream,
                     shell=False,
+                    creationflags=background_creation_flags(),
                 )
             except (OSError, ValueError) as error:
                 raise MediaNodeError("E_MEDIA_FFMPEG_START_FAILED", str(error)) from error

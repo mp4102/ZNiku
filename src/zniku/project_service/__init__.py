@@ -59,6 +59,7 @@ from .models import (
     parse_project_service_command,
     parse_template_preview_request,
 )
+from .preview import MediaPreviewEnvelope, MediaPreviewRequest, PreviewCache
 from .service import ProjectServiceApplication, ProjectServiceError
 
 __all__ = [
@@ -96,11 +97,14 @@ __all__ = [
     "HostSystemArguments",
     "HostUserActionEnvelope",
     "HostUserActionRequest",
+    "MediaPreviewEnvelope",
+    "MediaPreviewRequest",
     "NodeLogEnvelope",
     "NodeLogProjection",
     "NodeProgressProjection",
     "PickerSelectionReference",
     "PresentationCatalogEnvelope",
+    "PreviewCache",
     "ProjectServiceApplication",
     "ProjectServiceEnvelope",
     "ProjectServiceError",

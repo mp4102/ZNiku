@@ -54,6 +54,18 @@ function props(overrides: Partial<GraphCanvasProps> = {}): GraphCanvasProps {
 }
 
 describe('Phase 3 自由画布', () => {
+  it('创作者只有一条已选历史时仍有显式记录入口，不依赖下拉框重复选中触发 change', async () => {
+    const onToggleSnapshot = vi.fn()
+    const current = props({ advanced: false, canToggleSnapshot: true, showingSnapshot: false, onToggleSnapshot })
+    const { rerender } = render(<GraphCanvas {...current} />)
+    await userEvent.click(screen.getByRole('button', { name: '查看处理记录' }))
+    expect(onToggleSnapshot).toHaveBeenCalledTimes(1)
+    rerender(<GraphCanvas {...current} editable={false} showingSnapshot modeLabel="本次处理的工作流" />)
+    await userEvent.click(screen.getByRole('button', { name: '编辑当前工作流' }))
+    expect(onToggleSnapshot).toHaveBeenCalledTimes(2)
+    expect(current.onNodesChange).not.toHaveBeenCalled()
+  })
+
   it('连接时只高亮可接端口；从输出拖到空白处建议并一次回传添加连接 intent', async () => {
     const onAddConnectedNodes = vi.fn()
     render(<GraphCanvas {...props({ onAddConnectedNodes })} />)

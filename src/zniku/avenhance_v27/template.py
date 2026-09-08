@@ -293,12 +293,13 @@ class ProgramEncodeDeclaration(Av27TemplateModel):
 
 
 class PublicationRequest(Av27TemplateModel):
-    """声明 canonical Jellyfin 发布根、标题、年份和显式覆盖选择。"""
+    """声明发布目录、可选片名子目录及显式覆盖；省略 layout 时直接写入所选目录。"""
 
     output_root: _LOCAL_PATH
     title: Annotated[str, StringConstraints(min_length=1, max_length=120)]
     year: Annotated[str, StringConstraints(min_length=4, max_length=4)]
     overwrite: bool
+    layout: Literal["direct", "title_subdirectory"] = "direct"
 
     @field_validator("output_root", "title", "year")
     @classmethod
@@ -495,6 +496,7 @@ class TemplatePlanSummary(Av27TemplateModel):
     chapters: tuple[ChapterPlanProjection, ...] = ()
     manual_stages: tuple[ManualStageSummary, ...] = ()
     output_target_path: str | None = None
+    output_directory_to_create: str | None = None
 
     @field_validator("effective_video_artifact_ids", "chapters", "manual_stages", mode="before")
     @classmethod
@@ -726,15 +728,8 @@ def chapter_plan_projection(
     return tuple(projected)
 
 
-def canonical_publication_target(
-    request: PublicationRequest,
-    *,
-    mr_mode: MrMode,
-    final_frame_rate: Fraction,
-    height: int,
-) -> Path:
-    """验证 Windows/Jellyfin 规则并返回已 containment-check 的 canonical target。"""
-
+def publication_directory(request: PublicationRequest) -> Path:
+    """只读检查输出位置；允许待创建的直属片名目录，不执行 mkdir 或媒体分析。"""
     title = unicodedata.normalize("NFC", request.title)
     if not 1 <= len(title) <= 120 or title.strip() != title or title.endswith((".", " ")):
         raise Av27TemplateError("E_AV27_NAMING_TITLE", "title 长度或边界字符无效")
@@ -747,32 +742,82 @@ def canonical_publication_target(
         raise Av27TemplateError("E_AV27_NAMING_RESERVED", "title 使用 Windows reserved stem")
     if _YEAR_PATTERN.fullmatch(request.year) is None:
         raise Av27TemplateError("E_AV27_NAMING_YEAR", "year 必须是 ASCII 四位数字")
+    root_raw = Path(request.output_root)
+    if not root_raw.is_absolute():
+        raise Av27TemplateError("E_AV27_NAMING_ROOT", "请选择输出文件夹，不能使用相对位置。")
+    try:
+        root = root_raw.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise Av27TemplateError(
+            "E_AV27_NAMING_ROOT", "输出目录不存在或无法访问，请重新选择。"
+        ) from error
+    if not root.is_dir():
+        raise Av27TemplateError(
+            "E_AV27_NAMING_ROOT", "所选输出位置不是文件夹，请重新选择一个已有文件夹。"
+        )
+    if request.layout == "direct":
+        return root
+    parent_raw = root / f"{title} ({request.year})"
+    if _is_reparse_or_symlink(parent_raw):
+        raise Av27TemplateError("E_AV27_NAMING_PARENT", "成片子文件夹不得是链接或 reparse point。")
+    try:
+        parent = parent_raw.resolve(strict=True)
+    except FileNotFoundError as error:
+        # 只有目录项确实缺失才允许将来的 OutputFile 创建；预览本身始终无副作用。
+        try:
+            parent_raw.lstat()
+        except FileNotFoundError:
+            return parent_raw
+        except OSError:
+            message = f"无法访问成片子文件夹：{parent_raw}。请检查权限或该位置的链接，再重试。"
+        else:
+            message = f"无法访问成片子文件夹：{parent_raw}。请检查该位置的失效链接，再重试。"
+        raise Av27TemplateError("E_AV27_NAMING_PARENT", message) from error
+    except (OSError, RuntimeError) as error:
+        raise Av27TemplateError(
+            "E_AV27_NAMING_PARENT",
+            f"无法访问成片子文件夹：{parent_raw}。请检查权限或该位置的链接，再重试。",
+        ) from error
+    try:
+        parent.relative_to(root)
+    except ValueError as error:
+        # 只显示用户所选根内的预期位置，不把解析后的根外链接目标泄露到诊断。
+        raise Av27TemplateError(
+            "E_AV27_NAMING_PARENT",
+            f"成片子文件夹越出所选输出根目录：{parent_raw}。"
+            "请检查该位置的链接，或选择其他输出根目录；未修改任何目录。",
+        ) from error
+    if not parent.is_dir():
+        raise Av27TemplateError(
+            "E_AV27_NAMING_PARENT",
+            f"成片位置不是文件夹：{parent_raw}。"
+            "请检查同名文件或选择其他输出根目录；未覆盖或删除现有内容。",
+        )
+    if parent == root:
+        raise Av27TemplateError(
+            "E_AV27_NAMING_PARENT",
+            f"成片位置不是输出根目录内的独立子文件夹：{parent_raw}。"
+            "请检查该位置的链接，或选择其他输出根目录。",
+        )
+    return parent
+
+
+def canonical_publication_target(
+    request: PublicationRequest,
+    *,
+    mr_mode: MrMode,
+    final_frame_rate: Fraction,
+    height: int,
+) -> Path:
+    """只读生成 canonical 文件名；目录布局不改变媒体命名，既有目标仍须显式覆盖。"""
+
+    parent = publication_directory(request)
+    title = unicodedata.normalize("NFC", request.title)
     if isinstance(height, bool) or not isinstance(height, int) or height <= 0:
         raise Av27TemplateError("E_AV27_NAMING_HEIGHT", "output height 必须是正整数")
     rate_label = _FINAL_RATE_LABELS.get(final_frame_rate)
     if rate_label is None:
         raise Av27TemplateError("E_AV27_NAMING_RATE", "最终 FPS 没有冻结的 rate label")
-
-    root_raw = Path(request.output_root)
-    if not root_raw.is_absolute():
-        raise Av27TemplateError("E_AV27_NAMING_ROOT", "output_root 必须是绝对路径")
-    try:
-        root = root_raw.resolve(strict=True)
-    except OSError as error:
-        raise Av27TemplateError("E_AV27_NAMING_ROOT", str(error)) from error
-    if not root.is_dir():
-        raise Av27TemplateError("E_AV27_NAMING_ROOT", "output_root 必须是现有目录")
-    parent_raw = root / f"{title} ({request.year})"
-    try:
-        parent = parent_raw.resolve(strict=True)
-        parent.relative_to(root)
-    except (OSError, ValueError) as error:
-        raise Av27TemplateError(
-            "E_AV27_NAMING_PARENT",
-            "canonical title 子目录必须已存在且位于 output_root 内",
-        ) from error
-    if not parent.is_dir() or parent == root:
-        raise Av27TemplateError("E_AV27_NAMING_PARENT", "canonical parent 必须是子目录")
 
     marker = "MR Enhanced" if mr_mode == "external" else "Enhanced"
     filename = f"{title} ({request.year}) - {marker} FI{rate_label} {height}p.mkv"
@@ -782,7 +827,7 @@ def canonical_publication_target(
             raise Av27TemplateError("E_AV27_NAMING_TARGET", "target 不得是 symlink/reparse point")
         try:
             resolved_target = target.resolve(strict=True)
-            resolved_target.relative_to(root)
+            resolved_target.relative_to(parent)
         except (OSError, ValueError) as error:
             raise Av27TemplateError("E_AV27_NAMING_TARGET", "target containment 无效") from error
         if not resolved_target.is_file():
@@ -1012,6 +1057,13 @@ def build_expanded(
         final_frame_rate=final_rate,
         height=cast(int, output_geometry["height"]),
     )
+    protected_paths = list(dict.fromkeys(str(source.source_artifact.path) for source in sources))
+    for protected in protected_paths:
+        protected_path = Path(protected)
+        if target == protected_path.resolve(strict=False) or (
+            target.exists() and protected_path.exists() and target.samefile(protected_path)
+        ):
+            raise Av27TemplateError("E_AV27_NAMING_SOURCE", "成品目标不得覆盖源媒体或其硬链接。")
 
     prep_nodes = list(current.project.graph.nodes)
     prep_edges = list(current.project.graph.edges)
@@ -1227,6 +1279,9 @@ def build_expanded(
             "mode": "copy",
             "target_path": str(target),
             "overwrite": request.publication.overwrite,
+            "output_root": str(Path(request.publication.output_root).resolve(strict=True)),
+            "create_parent": request.publication.layout == "title_subdirectory",
+            "protected_paths": cast(list[JsonValue], protected_paths),
         },
         ui_position=UiPosition(x=2620, y=80 + (len(chapters) - 1) * 110),
     )
@@ -1324,6 +1379,7 @@ def build_expanded(
                 ),
             ),
             output_target_path=str(target),
+            output_directory_to_create=str(target.parent) if not target.parent.exists() else None,
         ),
     )
 
@@ -1434,6 +1490,8 @@ def _is_reparse_or_symlink(path: Path) -> bool:
         return True
     try:
         attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    except FileNotFoundError:
+        return False
     except OSError:
         return True
     reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 1024)
@@ -1479,6 +1537,7 @@ __all__ = [
     "excel_chapter_label",
     "format_timecode",
     "parse_canonical_time",
+    "publication_directory",
     "resolve_chapter_plan",
     "validate_prepare_paths",
 ]

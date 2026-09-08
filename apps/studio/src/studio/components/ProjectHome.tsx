@@ -1,13 +1,16 @@
 /** 提供不暴露路径、ID 或 CLI 的创作者工程首页；所有副作用由上层显式回调执行。 */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RecentProject } from '../recent-projects'
+import { dialogFocusTargets } from './focus-management'
 
 export interface ProjectHomeProps {
+  readonly desktopControls?: ReactNode
   readonly open: boolean
   readonly loading: boolean
   readonly serviceUnavailable: boolean
   readonly serviceMessage: string | null
+  readonly serviceErrorDetails?: string | null
   readonly hostBridgeAvailable: boolean
   readonly busy: boolean
   readonly hasOpenProject: boolean
@@ -36,10 +39,12 @@ function fileName(path: string): string {
 }
 
 export function ProjectHome({
+  desktopControls,
   open,
   loading,
   serviceUnavailable,
   serviceMessage,
+  serviceErrorDetails,
   hostBridgeAvailable,
   busy,
   hasOpenProject,
@@ -54,6 +59,7 @@ export function ProjectHome({
   const wasOpen = useRef(false)
   const dialogRef = useRef<HTMLElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const blankButtonRef = useRef<HTMLButtonElement | null>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const [blankOpen, setBlankOpen] = useState(false)
   const [blankName, setBlankName] = useState('未命名视频工程')
@@ -92,6 +98,7 @@ export function ProjectHome({
   useEffect(() => {
     if (!open) return
     const handleKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
       if (event.key === 'Escape') {
         if (hasOpenProject && !busy) onClose()
         return
@@ -99,9 +106,7 @@ export function ProjectHome({
       if (event.key !== 'Tab') return
       const dialog = dialogRef.current
       if (!dialog) return
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-      ))
+      const focusable = dialogFocusTargets(dialog)
       if (focusable.length === 0) {
         event.preventDefault()
         return
@@ -137,13 +142,14 @@ export function ProjectHome({
             <div className="brand-mark">ZN</div>
             <div><span className="brand-name">ZNIKU</span><span className="brand-subtitle">Studio</span></div>
           </div>
+          {desktopControls}
           {hasOpenProject && (
             <button className="template-wizard-close" aria-label="关闭工程首页" disabled={busy} onClick={onClose} ref={closeButtonRef} type="button">×</button>
           )}
         </header>
 
         <div className="project-home-intro">
-          <span className="eyebrow">CREATE SOMETHING CLEAR</span>
+          <span className="eyebrow">从素材到作品</span>
           <h1>从视频开始，不从工程术语开始。</h1>
           <p>选择素材和处理目标，ZNIKU 会把它变成仍可自由编辑的普通节点工作流。</p>
         </div>
@@ -165,6 +171,7 @@ export function ProjectHome({
         ) : (
           <>
             {serviceMessage && <p className="project-home-inline-error" role="alert">{serviceMessage}</p>}
+            {serviceMessage && serviceErrorDetails && <details><summary>高级 → 选择窗口原始详情</summary><pre>{serviceErrorDetails}</pre></details>}
             {!hostBridgeAvailable && (
               <section className="project-home-host-recovery" aria-live="polite">
                 <span>桌面文件选择器暂时不可用；仍可查看当前工程。</span>
@@ -182,10 +189,10 @@ export function ProjectHome({
                 <strong>打开已有工程</strong>
                 <small>{hostBridgeAvailable ? '从本机选择 .zniku 文件' : '桌面文件选择器未连接'}</small>
               </button>
-              <button className="project-home-action" disabled={busy || !hostBridgeAvailable} onClick={() => setBlankOpen(true)} type="button">
+              <button className="project-home-action" disabled={busy || !hostBridgeAvailable} onClick={() => setBlankOpen(true)} ref={blankButtonRef} type="button">
                 <span className="project-home-action-icon">◇</span>
                 <strong>空白工作流</strong>
-                <small>从任意 Source、分支与汇合开始</small>
+                <small>自由添加素材、处理步骤、分支与汇合</small>
               </button>
             </div>
 
@@ -202,7 +209,7 @@ export function ProjectHome({
                   <input aria-label="空白工程名称" autoFocus disabled={busy} maxLength={200} onChange={(event) => setBlankName(event.target.value)} value={blankName} />
                 </label>
                 <div>
-                  <button className="button button--ghost" disabled={busy} onClick={() => setBlankOpen(false)} type="button">取消</button>
+                  <button className="button button--ghost" disabled={busy} onClick={() => { setBlankOpen(false); blankButtonRef.current?.focus() }} type="button">取消</button>
                   <button className="button button--primary" disabled={busy || !blankName.trim()} type="submit">选择保存位置</button>
                 </div>
               </form>

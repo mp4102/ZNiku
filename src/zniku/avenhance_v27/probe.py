@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from zniku.media.probe import MediaNodeError, resolve_media_tool
+from zniku.runtime.process_window import background_creation_flags
 
 AV27_NAMESPACE: Final = "zniku.avenhance.v27"
 _ALLOWED_STREAM_TYPES: Final = frozenset({"video", "audio"})
@@ -626,6 +627,7 @@ def _scan_timeline(
                 encoding="utf-8",
                 errors="replace",
                 shell=False,
+                creationflags=background_creation_flags(),
             )
             if process.stdout is None:
                 raise Av27MediaError("E_AV27_SOURCE_PROBE_FAILED", "FFprobe timeline pipe 未建立")
@@ -786,6 +788,7 @@ def _run_json_probe(argv: list[str], *, timeout: int) -> object:
             encoding="utf-8",
             errors="replace",
             shell=False,
+            creationflags=background_creation_flags(),
             check=False,
             timeout=timeout,
         )

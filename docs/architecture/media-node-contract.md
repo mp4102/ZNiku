@@ -3,6 +3,7 @@
 - 状态：Phase 4 已实现；Phase 5 清理后保留的媒体节点合同
 - 版本：`0.2.0`
 - 上位权威：[`graph-core-baseline.md`](graph-core-baseline.md)
+- 2026-09-05 已批准增量：OutputFile 可显式授权创建输出根下一个直属子目录；不自动改写旧工程。
 
 本文说明 `zniku.media` 首批内建节点的职责、typed ports、最小媒体校验和外部副作用边界。本文从属于
 `graph-core-baseline.md`；发生冲突时以上位基线为准，不在这里增加新的 Core 不变量、固定拓扑或第二份
@@ -70,13 +71,30 @@ scan、roundtrip、全局 profile 或 Evidence chain。
 `reference` 保留上游 Artifact 路径，不复制文件，也不允许 `overwrite=true`。它适合把现有 Artifact 作为
 该 Output sink 的发布结果记录下来。
 
-`copy` 要求绝对 `target_path` 且目标父目录已经存在：
+`copy` 要求绝对 `target_path`。未授权创建时，目标父目录仍须已经存在：
 
 - `overwrite=false` 使用排他创建，目标已存在即失败；
 - `overwrite=true` 先在目标目录创建唯一临时候选，完成复制与 probe 后再原子替换；
 - 目标不得等于上游路径，任何模式都不会移动或删除上游 Artifact；
 - 外部目标不属于 attempt 清理权限。复制失败时可能存在 partial 或临时候选，Runtime 不越权删除，错误会把
   具体路径交给操作者处理。
+
+新增可选普通参数 `output_root`、`create_parent`（默认 `false`）与 `protected_paths`：
+
+- 显式提供 `output_root` 时，必须解析为现有目录，目标必须位于该根；
+- `create_parent=true` 必须配合 `mode=copy` 与显式 `output_root`，仅允许准备根下一个直属子目录；
+  不递归创建，不创建输出根本身，不接受链接、同名文件或越界路径；
+- 只有 OutputFile 的实际 attempt 执行可以创建，保存 Graph、preview 或确认建图都没有此副作用；
+- 创建前、复制前和最终发布前复查路径与覆盖条件。预览通过不替代运行时检查；失败不登记 Artifact；
+- 外部空目录或 partial 不自动清理；不会为回滚而删除用户路径；
+- 旧工程缺少这些参数时沿用“现有父目录”的行为，不推测新的创建授权，不改历史 target、Run 或 Artifact。
+- `protected_paths` 是显式禁止覆盖的源文件路径，模板由 Python 写入全部原始 Source。发布前重验目标与
+  这些路径及直接上游是否同路径/同一文件（含硬链接），即使允许覆盖也不能改写受保护文件。
+
+旧/新 OutputFile definition 使用完整已知 shape 闭合识别；不以兼容为由允许任意 Schema/executor 漂移。
+旧 definition 留在原 Project，新增可选参数不通过读取工程自动注入。
+
+这些能力属于通用输出节点，不能在 Scheduler/Runner 新增片名、Jellyfin 或 AVEnhanceFlow 分支。
 
 OutputFile 的 `published` port 登记一个同 kind external Artifact：`copy` 指向目标路径，`reference` 指向原
 上游路径。这样 Studio 可以直接显示发布路径，Runtime 也能用普通 quick probe 判断结果是否仍可复用；

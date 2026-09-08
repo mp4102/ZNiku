@@ -1,11 +1,28 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ArtifactMediaSummary, HandoffContract, ReadinessMessages } from './HandoffContract'
+import { ArtifactMediaSummary, formatHandoffValidationMessage, HandoffContract, HandoffPrecheckFailure, ReadinessMessages } from './HandoffContract'
 import { handoffDetailEnvelope, handoffReadinessEnvelope } from './test-fixtures'
 
 afterEach(cleanup)
 
 describe('只读人工交付说明', () => {
+  it('直接显示服务器的预期与实际帧数，历史失败仍标记为上次记录', () => {
+    const readiness = handoffReadinessEnvelope('probe_failed', true)
+    const message = 'E_RUNNER_VALIDATION_REJECTED: E_AV27_ENHANCEMENT_FRAME_COUNT: 增强结果帧数不符：预期 902 帧，实际 899 帧。请确认是否选错分段。'
+    const failure = { ...readiness, targets: readiness.targets.map((target) => ({ ...target, message })) }
+    render(<><ReadinessMessages readiness={failure} /><HandoffPrecheckFailure failure={failure} resolved /></>)
+    expect(screen.getByRole('status')).toHaveTextContent('预期 902 帧，实际 899 帧')
+    expect(screen.getByRole('status')).not.toHaveTextContent('E_RUNNER')
+    expect(screen.getByText(/上次原因：增强结果/)).toBeVisible()
+    expect(screen.getByText(/新的完整检查已通过/)).toBeVisible()
+  })
+
+  it('旧错误提供可操作解释，未知错误与缺失错误不臆造帧数', () => {
+    expect(formatHandoffValidationMessage('E_AV27_ENHANCEMENT_FRAME_COUNT: Enhancement 输出不满足 N -> N')).toContain('确认文件是否对应这个分段')
+    expect(formatHandoffValidationMessage('E_OTHER: 任意文件路径')).toBeNull()
+    expect(formatHandoffValidationMessage(null)).toBeNull()
+    expect(formatHandoffValidationMessage('prefix E_AV27_ENHANCEMENT_FRAME_COUNT: arbitrary')).toBeNull()
+  })
   it('原样展示 Python 合同数值，不从 N 派生输出或替换服务器文本', () => {
     render(<HandoffContract contract={{
       node_run_id: 'node-run', handoff_id: 'handoff', input_artifact_id: 'input',

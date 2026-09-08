@@ -449,7 +449,11 @@ def _validate_enhancement(context: NodeValidatorContext) -> _Validation:
             raise Av27MediaError("E_AV27_ENHANCEMENT_SCALE", "实际整数缩放与声明不一致")
     count, authority = _external_frame_count(media)
     if count != expected_count:
-        raise Av27MediaError("E_AV27_ENHANCEMENT_FRAME_COUNT", "Enhancement 输出不满足 N -> N")
+        raise Av27MediaError(
+            "E_AV27_ENHANCEMENT_FRAME_COUNT",
+            f"增强结果帧数不符：预期 {expected_count} 帧，实际 {count} 帧。"
+            "请确认是否选错分段，或外部工具是否改变了帧数。",
+        )
     namespace = _output_namespace(
         media,
         count,

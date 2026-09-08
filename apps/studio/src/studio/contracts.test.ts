@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   parseAvEnhanceV27TemplatePreviewEnvelope,
   parseAvEnhanceV27TemplatePreviewRequest,
+  parseAvEnhanceV27PublicationPreviewRequest,
+  parseAvEnhanceV27PublicationPreviewEnvelope,
   parseExternalHandoffReadiness,
   parseNodeLogEnvelope,
   parsePresentationCatalogEnvelope,
@@ -208,6 +210,7 @@ describe('Studio Project Service 0.3.0 contract', () => {
         chapters: [],
         manual_stages: [],
         output_target_path: null,
+        output_directory_to_create: null,
       },
       creator: {
         analyzed: false,
@@ -304,6 +307,23 @@ describe('Studio Project Service 0.3.0 contract', () => {
         sources: [{ ...sourceSummary, display_name: '.' }],
       },
     })).toThrow(/creator 跨字段语义不一致/)
+  })
+
+  it('输出检查使用严格 Python DTO，拒绝未知整理方式、目录创建伪声明及额外字段', () => {
+    const request = { contract_version: '0.3.0', request: { output_root: 'D:\\Library', title: 'Movie', year: '2026', overwrite: false, layout: 'direct' } }
+    expect(parseAvEnhanceV27PublicationPreviewRequest(request)).toEqual(request)
+    for (const invalid of [
+      { ...request, mkdir: true },
+      { ...request, request: { ...request.request, layout: 'automatic' } },
+      { ...request, request: { ...request.request, output_directory: 'D:\\Escape' } },
+      { ...request, request: { ...request.request, year: 2026 } },
+    ]) expect(() => parseAvEnhanceV27PublicationPreviewRequest(invalid)).toThrow(StudioContractError)
+    const result = { contract_version: '0.3.0', layout: 'direct', resolved_output_root: 'D:\\Library', output_directory: 'D:\\Library', will_create_directory: false }
+    expect(parseAvEnhanceV27PublicationPreviewEnvelope(result)).toEqual(result)
+    for (const invalid of [
+      { ...result, will_create_directory: true }, { ...result, output_directory: 'D:\\Other' },
+      { ...result, shell: 'mkdir' }, { ...result, contract_version: '0.2.0' },
+    ]) expect(() => parseAvEnhanceV27PublicationPreviewEnvelope(invalid)).toThrow(StudioContractError)
   })
 
   it.each(['missing', 'empty', 'present', 'probe_passed', 'probe_failed'] as const)(

@@ -41,6 +41,7 @@ from zniku.media import (
     source_media_definition,
     split_video_definition,
 )
+from zniku.media.definitions import legacy_output_file_definition
 from zniku.project import Project, ProjectStore
 from zniku.runtime import (
     Artifact,
@@ -320,6 +321,7 @@ def test_probe_falls_back_from_zero_avg_rate_and_uses_shell_false(
             "encoding": "utf-8",
             "errors": "replace",
             "shell": False,
+            "creationflags": 0x08000000 if sys.platform == "win32" else 0,
             "check": False,
             "timeout": 60,
         }
@@ -861,16 +863,18 @@ def test_output_reference_and_explicit_overwrite_contract(
     assert probe_media(target).video_streams
 
 
+@pytest.mark.parametrize("legacy", [False, True])
 def test_deleted_published_artifact_invalidates_output_reuse(
     tmp_path: Path,
     synthetic_media: tuple[Path, Path],
+    legacy: bool,
 ) -> None:
     """发布结果是普通 Artifact；文件缺失时不得真空复用旧 OutputFile。"""
 
     source_video, _source_audio = synthetic_media
     target = tmp_path / "published-for-reuse.mkv"
     source_definition = source_media_definition("VideoFile")
-    output_definition = output_file_definition("VideoFile")
+    output_definition = legacy_output_file_definition() if legacy else output_file_definition()
     graph = Graph(
         nodes=(
             NodeInstance(
@@ -904,8 +908,10 @@ def test_deleted_published_artifact_invalidates_output_reuse(
         Project(project_id="test.media-reuse", name="媒体发布复用", graph=graph),
         (source_definition, output_definition),
     )
+    reopened = ProjectStore.open(store.path)
+    assert reopened.load() == store.load()
     service = RuntimeService(
-        store,
+        reopened,
         tmp_path / "reuse-work",
         python_adapters=media_python_adapters(),
         validators=media_validators(),
@@ -915,6 +921,8 @@ def test_deleted_published_artifact_invalidates_output_reuse(
     first = service.run_until_blocked(service.create_run().run_id)
     first_output = next(item for item in first.node_runs if item.node_id == "output")
     assert target.is_file()
+    reusable = service.run_until_blocked(service.create_run().run_id)
+    assert all(item.reused_from_result_id is not None for item in reusable.node_runs)
     target.unlink()
 
     second = service.run_until_blocked(service.create_run().run_id)

@@ -6,6 +6,8 @@
  */
 
 import {
+  parseAvEnhanceV27PublicationPreviewEnvelope,
+  parseAvEnhanceV27PublicationPreviewRequest,
   parseAvEnhanceV27TemplatePreviewEnvelope,
   parseAvEnhanceV27TemplatePreviewRequest,
   parseExternalHandoffReadiness,
@@ -20,6 +22,8 @@ import {
   type ExternalHandoffReadiness,
   type AvEnhanceV27TemplatePreviewEnvelope,
   type AvEnhanceV27TemplatePreviewRequestWire,
+  type AvEnhanceV27PublicationPreviewEnvelope,
+  type AvEnhanceV27PublicationPreviewRequestWire,
   type NodeLogEnvelope,
   type PresentationCatalogEnvelopeWire,
   type RerunPreviewEnvelope,
@@ -32,6 +36,8 @@ import {
 } from './contracts'
 
 export interface StudioGateway {
+  /** 正式 gateway 必须提供无媒体 I/O 的输出检查；缺失的旧测试 double/服务不能绕过该检查。 */
+  previewAvEnhanceV27Publication?(request: AvEnhanceV27PublicationPreviewRequestWire): Promise<AvEnhanceV27PublicationPreviewEnvelope>
   /** 可选仅用于兼容测试 double；正式 Fetch gateway 始终实现独立展示目录读取。 */
   inspectPresentations?(): Promise<PresentationCatalogEnvelopeWire>
   inspect(viewRunId?: string | null): Promise<StatusEnvelope>
@@ -52,6 +58,8 @@ export interface StudioGateway {
 
 export class StudioGatewayError extends Error {
   readonly code: string | null
+  /** Python 的原始 message，仅作纯文本说明，不解析成路径或动作权限。 */
+  readonly serviceMessage: string | null
   readonly relatedRunIds: ReadonlyArray<string>
   readonly httpStatus: number | null
 
@@ -59,6 +67,7 @@ export class StudioGatewayError extends Error {
     message: string,
     options: {
       readonly code?: string | null
+      readonly serviceMessage?: string | null
       readonly relatedRunIds?: ReadonlyArray<string>
       readonly httpStatus?: number | null
     } = {},
@@ -66,6 +75,7 @@ export class StudioGatewayError extends Error {
     super(message)
     this.name = 'StudioGatewayError'
     this.code = options.code ?? null
+    this.serviceMessage = options.serviceMessage ?? null
     this.relatedRunIds = options.relatedRunIds ?? []
     this.httpStatus = options.httpStatus ?? null
   }
@@ -232,6 +242,19 @@ export class FetchStudioGateway implements StudioGateway {
     return preview
   }
 
+  async previewAvEnhanceV27Publication(request: AvEnhanceV27PublicationPreviewRequestWire): Promise<AvEnhanceV27PublicationPreviewEnvelope> {
+    const payload = parseAvEnhanceV27PublicationPreviewRequest(request)
+    const preview = await this.request(
+      '/api/studio/templates/av-enhance-v27/publication-preview',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+      parseAvEnhanceV27PublicationPreviewEnvelope,
+    )
+    if (preview.layout !== (payload.request.layout ?? 'direct')) {
+      throw new StudioContractError('输出检查的 layout 与当前请求不一致')
+    }
+    return preview
+  }
+
   async command(command: StudioCommand): Promise<StatusEnvelope> {
     const payload = parseStudioCommand(command)
     return this.request(
@@ -268,6 +291,7 @@ export class FetchStudioGateway implements StudioGateway {
       const error = parseErrorEnvelope(value)
       throw new StudioGatewayError(`Project Service command 失败：${error.code}: ${error.message}`, {
         code: error.code,
+        serviceMessage: error.message,
         relatedRunIds: error.related_run_ids,
         httpStatus: response.status,
       })

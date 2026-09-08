@@ -41,7 +41,16 @@ function setup(initial = handoffEnvelope(), initialDetail = handoffDetailEnvelop
     offline: () => { inspectFailure = true } }
 }
 async function assistant() {
-  const section = await screen.findByRole('region', { name: '外部处理助手' })
+  // 未选节点只显示任务导航；先明确选择本次交接，后续动作才有唯一目标。
+  if (!screen.queryByRole('region', { name: '外部处理助手' })) {
+    const task = screen.queryByRole('button', { name: '查看外部任务：外部画质增强' })
+      ?? await screen.findByRole('button', { name: '查看外部任务：外部画质增强' })
+    const home = screen.queryByRole('button', { name: '关闭工程首页' })
+    if (home) await act(async () => { fireEvent.click(home) })
+    await act(async () => { fireEvent.click(task) })
+  }
+  const section = screen.queryByRole('region', { name: '外部处理助手' })
+    ?? await screen.findByRole('region', { name: '外部处理助手' })
   await waitFor(() => expect(within(section).getByRole('button', { name: '检查输出' })).toBeEnabled())
   return within(section)
 }

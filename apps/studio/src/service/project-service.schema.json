@@ -6,6 +6,7 @@
         "run_to",
         "rerun_from_here",
         "submit_external",
+        "import_external",
         "abandon_run"
       ],
       "type": "string"
@@ -113,6 +114,38 @@
         "mtime_ns"
       ],
       "title": "Artifact",
+      "type": "object"
+    },
+    "ArtifactPathReference": {
+      "additionalProperties": false,
+      "description": "引用 Project Service 已投影到明确 Run 闭包中的 Artifact。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "artifact",
+          "title": "Kind",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "artifact_id"
+      ],
+      "title": "ArtifactPathReference",
       "type": "object"
     },
     "AuthoringDiagnostic": {
@@ -1143,8 +1176,17 @@
     },
     "Command_PublicationRequest": {
       "additionalProperties": false,
-      "description": "声明 canonical Jellyfin 发布根、标题、年份和显式覆盖选择。",
+      "description": "声明发布目录、可选片名子目录及显式覆盖；省略 layout 时直接写入所选目录。",
       "properties": {
+        "layout": {
+          "default": "direct",
+          "enum": [
+            "direct",
+            "title_subdirectory"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
         "output_root": {
           "maxLength": 32767,
           "minLength": 1,
@@ -1743,6 +1785,221 @@
       "title": "CreatorTemplateSummary",
       "type": "object"
     },
+    "DesktopCloseEnvelope": {
+      "additionalProperties": false,
+      "description": "表示已经原子封闭后续修改准入并开始关闭 listener。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Instance Id",
+          "type": "string"
+        },
+        "status": {
+          "const": "closing",
+          "default": "closing",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "instance_id",
+        "status"
+      ],
+      "title": "DesktopCloseEnvelope",
+      "type": "object"
+    },
+    "DesktopCloseRequest": {
+      "additionalProperties": false,
+      "description": "要求显式确认并精确绑定当前启动实例。",
+      "properties": {
+        "confirm": {
+          "const": true,
+          "title": "Confirm",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Instance Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "instance_id",
+        "confirm"
+      ],
+      "title": "DesktopCloseRequest",
+      "type": "object"
+    },
+    "DesktopPreferencesEnvelope": {
+      "additionalProperties": false,
+      "description": "把偏好严格绑定到当前桌面 session。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "density": {
+          "default": "creator",
+          "enum": [
+            "creator",
+            "advanced"
+          ],
+          "title": "Density",
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Instance Id",
+          "type": "string"
+        },
+        "recent_projects": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DesktopRecentProject"
+          },
+          "maxItems": 8,
+          "title": "Recent Projects",
+          "type": "array"
+        }
+      },
+      "required": [
+        "density",
+        "recent_projects",
+        "contract_version",
+        "instance_id"
+      ],
+      "title": "DesktopPreferencesEnvelope",
+      "type": "object"
+    },
+    "DesktopPreferencesRequest": {
+      "additionalProperties": false,
+      "description": "原子更新纯 UI 偏好；未知字段失败关闭且保留原偏好文件。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "density": {
+          "enum": [
+            "creator",
+            "advanced"
+          ],
+          "title": "Density",
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Instance Id",
+          "type": "string"
+        },
+        "recent_projects": {
+          "items": {
+            "$ref": "#/$defs/Host_DesktopPreferencesRequest_DesktopRecentProject"
+          },
+          "maxItems": 8,
+          "title": "Recent Projects",
+          "type": "array"
+        }
+      },
+      "required": [
+        "density",
+        "recent_projects",
+        "contract_version",
+        "instance_id"
+      ],
+      "title": "DesktopPreferencesRequest",
+      "type": "object"
+    },
+    "DesktopRecentProject": {
+      "additionalProperties": false,
+      "description": "最近工程只保存工程路径/名字/时间，不携带运行或媒体身份。",
+      "properties": {
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "opened_at": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Opened At",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "name",
+        "opened_at"
+      ],
+      "title": "DesktopRecentProject",
+      "type": "object"
+    },
+    "DesktopSessionEnvelope": {
+      "additionalProperties": false,
+      "description": "返回当前启动实例与只读关闭条件。",
+      "properties": {
+        "busy": {
+          "title": "Busy",
+          "type": "boolean"
+        },
+        "closing": {
+          "title": "Closing",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "instance_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Instance Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "instance_id",
+        "busy",
+        "closing"
+      ],
+      "title": "DesktopSessionEnvelope",
+      "type": "object"
+    },
     "Edge": {
       "additionalProperties": false,
       "description": "连接一个已声明 output 与一个已声明 input。",
@@ -2304,6 +2561,476 @@
       "title": "HandoffContractField",
       "type": "object"
     },
+    "HandoffImportConfirmEnvelope": {
+      "additionalProperties": false,
+      "description": "只证明本次复制已完成；Runtime 仍 waiting，用户须另行检查与提交。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "import_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Import Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "source_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Source Name",
+          "type": "string"
+        },
+        "source_size": {
+          "exclusiveMinimum": 0,
+          "title": "Source Size",
+          "type": "integer"
+        },
+        "status": {
+          "const": "imported",
+          "default": "imported",
+          "title": "Status",
+          "type": "string"
+        },
+        "target_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Target Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "port_id",
+        "ordinal",
+        "import_id",
+        "source_name",
+        "source_size",
+        "target_path",
+        "status"
+      ],
+      "title": "HandoffImportConfirmEnvelope",
+      "type": "object"
+    },
+    "HandoffImportConfirmRequest": {
+      "additionalProperties": false,
+      "description": "确认消费一次性预览；已有目标只有显式 overwrite=true 才可替换。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "import_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Import Id",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "import_id",
+        "overwrite"
+      ],
+      "title": "HandoffImportConfirmRequest",
+      "type": "object"
+    },
+    "HandoffImportPreviewEnvelope": {
+      "additionalProperties": false,
+      "description": "返回明确的源文件摘要、目标和覆盖提示；预览不会创建目录或文件。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expires_in_seconds": {
+          "const": 300,
+          "default": 300,
+          "title": "Expires In Seconds",
+          "type": "integer"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "import_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Import Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "replace_existing": {
+          "title": "Replace Existing",
+          "type": "boolean"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "selection_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Selection Handle",
+          "type": "string"
+        },
+        "source_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Source Name",
+          "type": "string"
+        },
+        "source_size": {
+          "exclusiveMinimum": 0,
+          "title": "Source Size",
+          "type": "integer"
+        },
+        "target_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Target Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "port_id",
+        "ordinal",
+        "selection_handle",
+        "import_id",
+        "source_name",
+        "source_size",
+        "target_path",
+        "replace_existing",
+        "expires_in_seconds"
+      ],
+      "title": "HandoffImportPreviewEnvelope",
+      "type": "object"
+    },
+    "HandoffImportPreviewRequest": {
+      "additionalProperties": false,
+      "description": "浏览器不能提交源或目标路径，只能使用此次原生选择的句柄。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "selection_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Selection Handle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "port_id",
+        "ordinal",
+        "selection_handle"
+      ],
+      "title": "HandoffImportPreviewRequest",
+      "type": "object"
+    },
+    "HandoffInputArtifactSelector": {
+      "additionalProperties": false,
+      "description": "选择 handoff 明确绑定的一个输入 Artifact。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "input_artifact",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "artifact_id"
+      ],
+      "title": "HandoffInputArtifactSelector",
+      "type": "object"
+    },
+    "HandoffOutputTargetSelector": {
+      "additionalProperties": false,
+      "description": "选择 handoff server-declared 的一个输出目标。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "output_target",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "port_id",
+        "ordinal"
+      ],
+      "title": "HandoffOutputTargetSelector",
+      "type": "object"
+    },
+    "HandoffPathReference": {
+      "additionalProperties": false,
+      "description": "引用最新 waiting NodeRun 的精确 handoff identity 与路径角色。",
+      "properties": {
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "handoff",
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/$defs/HandoffPathSelector"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "selector"
+      ],
+      "title": "HandoffPathReference",
+      "type": "object"
+    },
+    "HandoffPathSelector": {
+      "discriminator": {
+        "mapping": {
+          "input_artifact": "#/$defs/HandoffInputArtifactSelector",
+          "output_target": "#/$defs/HandoffOutputTargetSelector",
+          "work_directory": "#/$defs/HandoffWorkDirectorySelector"
+        },
+        "propertyName": "role"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/HandoffWorkDirectorySelector"
+        },
+        {
+          "$ref": "#/$defs/HandoffInputArtifactSelector"
+        },
+        {
+          "$ref": "#/$defs/HandoffOutputTargetSelector"
+        }
+      ]
+    },
+    "HandoffWorkDirectorySelector": {
+      "additionalProperties": false,
+      "description": "选择 waiting attempt 的受控工作目录。",
+      "properties": {
+        "role": {
+          "const": "work_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "HandoffWorkDirectorySelector",
+      "type": "object"
+    },
     "HostCapabilitiesEnvelope": {
       "additionalProperties": false,
       "description": "返回固定顺序的完整 capability 闭集。",
@@ -2599,6 +3326,37 @@
       "title": "HostUserActionRequest",
       "type": "object"
     },
+    "Host_DesktopPreferencesRequest_DesktopRecentProject": {
+      "additionalProperties": false,
+      "description": "最近工程只保存工程路径/名字/时间，不携带运行或媒体身份。",
+      "properties": {
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "opened_at": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Opened At",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "name",
+        "opened_at"
+      ],
+      "title": "DesktopRecentProject",
+      "type": "object"
+    },
     "Host_HostInvokeRequest_HostCapability": {
       "enum": [
         "open_file",
@@ -2839,6 +3597,270 @@
         "open_with_system_player"
       ],
       "type": "string"
+    },
+    "Host_MediaPreviewRequest_ArtifactPathReference": {
+      "additionalProperties": false,
+      "description": "引用 Project Service 已投影到明确 Run 闭包中的 Artifact。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "artifact",
+          "title": "Kind",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "artifact_id"
+      ],
+      "title": "ArtifactPathReference",
+      "type": "object"
+    },
+    "Host_MediaPreviewRequest_HandoffInputArtifactSelector": {
+      "additionalProperties": false,
+      "description": "选择 handoff 明确绑定的一个输入 Artifact。",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "input_artifact",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "artifact_id"
+      ],
+      "title": "HandoffInputArtifactSelector",
+      "type": "object"
+    },
+    "Host_MediaPreviewRequest_HandoffOutputTargetSelector": {
+      "additionalProperties": false,
+      "description": "选择 handoff server-declared 的一个输出目标。",
+      "properties": {
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "output_target",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "port_id"
+      ],
+      "title": "HandoffOutputTargetSelector",
+      "type": "object"
+    },
+    "Host_MediaPreviewRequest_HandoffPathReference": {
+      "additionalProperties": false,
+      "description": "引用最新 waiting NodeRun 的精确 handoff identity 与路径角色。",
+      "properties": {
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "handoff",
+          "title": "Kind",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffPathSelector"
+        }
+      },
+      "required": [
+        "kind",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "selector"
+      ],
+      "title": "HandoffPathReference",
+      "type": "object"
+    },
+    "Host_MediaPreviewRequest_HandoffPathSelector": {
+      "discriminator": {
+        "mapping": {
+          "input_artifact": "#/$defs/Host_MediaPreviewRequest_HandoffInputArtifactSelector",
+          "output_target": "#/$defs/Host_MediaPreviewRequest_HandoffOutputTargetSelector",
+          "work_directory": "#/$defs/Host_MediaPreviewRequest_HandoffWorkDirectorySelector"
+        },
+        "propertyName": "role"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffWorkDirectorySelector"
+        },
+        {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffInputArtifactSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffOutputTargetSelector"
+        }
+      ]
+    },
+    "Host_MediaPreviewRequest_HandoffWorkDirectorySelector": {
+      "additionalProperties": false,
+      "description": "选择 waiting attempt 的受控工作目录。",
+      "properties": {
+        "role": {
+          "const": "work_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "HandoffWorkDirectorySelector",
+      "type": "object"
+    },
+    "Host_MediaPreviewRequest_HostPathReference": {
+      "discriminator": {
+        "mapping": {
+          "artifact": "#/$defs/Host_MediaPreviewRequest_ArtifactPathReference",
+          "handoff": "#/$defs/Host_MediaPreviewRequest_HandoffPathReference",
+          "picker_selection": "#/$defs/Host_MediaPreviewRequest_PickerSelectionReference"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_PickerSelectionReference"
+        },
+        {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_ArtifactPathReference"
+        },
+        {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffPathReference"
+        }
+      ]
+    },
+    "Host_MediaPreviewRequest_PickerSelectionReference": {
+      "additionalProperties": false,
+      "description": "引用当前 launcher session 中一次 picker 明确返回的路径。",
+      "properties": {
+        "kind": {
+          "const": "picker_selection",
+          "title": "Kind",
+          "type": "string"
+        },
+        "selection_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Selection Handle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "selection_handle"
+      ],
+      "title": "PickerSelectionReference",
+      "type": "object"
+    },
+    "Host_PublicationPreviewRequest_PublicationRequest": {
+      "additionalProperties": false,
+      "description": "声明发布目录、可选片名子目录及显式覆盖；省略 layout 时直接写入所选目录。",
+      "properties": {
+        "layout": {
+          "default": "direct",
+          "enum": [
+            "direct",
+            "title_subdirectory"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "output_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Output Root",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 4,
+          "minLength": 4,
+          "title": "Year",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_root",
+        "title",
+        "year",
+        "overwrite"
+      ],
+      "title": "PublicationRequest",
+      "type": "object"
     },
     "Host_Reference_ArtifactPathReference": {
       "additionalProperties": false,
@@ -3239,6 +4261,103 @@
         "output_container"
       ],
       "title": "ManualStageSummary",
+      "type": "object"
+    },
+    "MediaPreviewEnvelope": {
+      "additionalProperties": false,
+      "description": "返回精确原请求绑定与有限 PNG；浏览器据此隔离迟到或跨工程响应。",
+      "properties": {
+        "cache_hit": {
+          "title": "Cache Hit",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "height": {
+          "maximum": 360,
+          "minimum": 1,
+          "title": "Height",
+          "type": "integer"
+        },
+        "image_data_url": {
+          "maxLength": 2796226,
+          "minLength": 1,
+          "pattern": "^data:image/png;base64,[A-Za-z0-9+/]+={0,2}$",
+          "title": "Image Data Url",
+          "type": "string"
+        },
+        "project_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Project Session Id"
+        },
+        "reference": {
+          "$ref": "#/$defs/HostPathReference"
+        },
+        "width": {
+          "maximum": 640,
+          "minimum": 1,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "reference",
+        "image_data_url",
+        "width",
+        "height",
+        "cache_hit"
+      ],
+      "title": "MediaPreviewEnvelope",
+      "type": "object"
+    },
+    "MediaPreviewRequest": {
+      "additionalProperties": false,
+      "description": "只接收当前会话与已授权路径引用；不接收路径、时间、命令或编码参数。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "project_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Project Session Id"
+        },
+        "reference": {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_HostPathReference"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "reference"
+      ],
+      "title": "MediaPreviewRequest",
       "type": "object"
     },
     "MrMode": {
@@ -4081,6 +5200,30 @@
       "title": "PickerPresentation",
       "type": "object"
     },
+    "PickerSelectionReference": {
+      "additionalProperties": false,
+      "description": "引用当前 launcher session 中一次 picker 明确返回的路径。",
+      "properties": {
+        "kind": {
+          "const": "picker_selection",
+          "title": "Kind",
+          "type": "string"
+        },
+        "selection_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Selection Handle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "selection_handle"
+      ],
+      "title": "PickerSelectionReference",
+      "type": "object"
+    },
     "PortPresentation": {
       "additionalProperties": false,
       "description": "为正式 input/output port 提供文案，不重复 data type、required 或 cardinality。",
@@ -4664,8 +5807,17 @@
     },
     "Preview_PublicationRequest": {
       "additionalProperties": false,
-      "description": "声明 canonical Jellyfin 发布根、标题、年份和显式覆盖选择。",
+      "description": "声明发布目录、可选片名子目录及显式覆盖；省略 layout 时直接写入所选目录。",
       "properties": {
+        "layout": {
+          "default": "direct",
+          "enum": [
+            "direct",
+            "title_subdirectory"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
         "output_root": {
           "maxLength": 32767,
           "minLength": 1,
@@ -4891,6 +6043,71 @@
         "definitions"
       ],
       "title": "ProjectSnapshot",
+      "type": "object"
+    },
+    "PublicationPreviewEnvelope": {
+      "additionalProperties": false,
+      "description": "投影 Python 唯一计算的输出位置及将来的目录创建需求。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "layout": {
+          "enum": [
+            "direct",
+            "title_subdirectory"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "output_directory": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Output Directory",
+          "type": "string"
+        },
+        "resolved_output_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Resolved Output Root",
+          "type": "string"
+        },
+        "will_create_directory": {
+          "title": "Will Create Directory",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "layout",
+        "resolved_output_root",
+        "output_directory",
+        "will_create_directory"
+      ],
+      "title": "PublicationPreviewEnvelope",
+      "type": "object"
+    },
+    "PublicationPreviewRequest": {
+      "additionalProperties": false,
+      "description": "在媒体分析前只读检查输出设置；不授予创建目录或发布权限。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/Host_PublicationPreviewRequest_PublicationRequest"
+        }
+      },
+      "required": [
+        "contract_version",
+        "request"
+      ],
+      "title": "PublicationPreviewRequest",
       "type": "object"
     },
     "PythonExecutorSpec": {
@@ -5739,6 +6956,18 @@
         "mr_mode": {
           "$ref": "#/$defs/MrMode"
         },
+        "output_directory_to_create": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Directory To Create"
+        },
         "output_target_path": {
           "anyOf": [
             {
@@ -5780,7 +7009,8 @@
         "effective_video_artifact_ids",
         "chapters",
         "manual_stages",
-        "output_target_path"
+        "output_target_path",
+        "output_directory_to_create"
       ],
       "title": "TemplatePlanSummary",
       "type": "object"

@@ -342,6 +342,22 @@ def output_file_definition(kind: MediaKind = "VideoFile") -> NodeDefinition:
                 "default": False,
                 "description": "必须显式为 true 才允许覆盖已有文件。",
             },
+            "output_root": {
+                "type": "string",
+                "minLength": 1,
+                "description": "可选发布边界：必须是现有绝对目录，目标只能位于本目录或直属子目录。",
+            },
+            "create_parent": {
+                "type": "boolean",
+                "default": False,
+                "description": "显式允许发布时创建 output_root 内一个直属父目录；不递归创建。",
+            },
+            "protected_paths": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": True,
+                "description": "不能被目标覆盖的额外绝对源路径；包括同路径与硬链接。",
+            },
         },
         required=("mode", "overwrite"),
     )
@@ -349,7 +365,18 @@ def output_file_definition(kind: MediaKind = "VideoFile") -> NodeDefinition:
         {
             "if": {"properties": {"mode": {"const": "copy"}}, "required": ["mode"]},
             "then": {"required": ["target_path"]},
-        }
+        },
+        {
+            "if": {"properties": {"create_parent": {"const": True}}, "required": ["create_parent"]},
+            "then": {"required": ["output_root"], "properties": {"mode": {"const": "copy"}}},
+        },
+        {
+            "if": {"properties": {"mode": {"const": "reference"}}, "required": ["mode"]},
+            "then": {
+                "properties": {"create_parent": {"const": False}},
+                "not": {"required": ["output_root"]},
+            },
+        },
     ]
     return NodeDefinition(
         type_id=f"zniku.media.output_file.{suffix}",
@@ -359,6 +386,27 @@ def output_file_definition(kind: MediaKind = "VideoFile") -> NodeDefinition:
         parameter_schema=parameter_schema,
         execution_mode=ExecutionMode.AUTOMATIC,
         executor=PythonExecutorSpec(adapter=OUTPUT_ADAPTER),
+    )
+
+
+def legacy_output_file_definition(kind: MediaKind = "VideoFile") -> NodeDefinition:
+    """构造已发布旧 shape 的闭合兼容定义；只供识别，不改写持久工程。"""
+
+    document = output_file_definition(kind).model_dump(mode="python")
+    schema = document["parameter_schema"]
+    for key in ("output_root", "create_parent", "protected_paths"):
+        del schema["properties"][key]
+    schema["allOf"] = schema["allOf"][:1]
+    return NodeDefinition.model_validate(document, strict=True)
+
+
+def is_supported_output_file_definition(definition: NodeDefinition) -> bool:
+    """仅接受当前与已发布旧 OutputFile 的完整精确 shape，不容忍任意 Schema 漂移。"""
+
+    kinds: tuple[MediaKind, ...] = ("MediaFile", "VideoFile", "AudioFile")
+    return any(
+        definition in (output_file_definition(kind), legacy_output_file_definition(kind))
+        for kind in kinds
     )
 
 

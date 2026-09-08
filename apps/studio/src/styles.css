@@ -10,8 +10,8 @@
   --border: #233143;
   --border-soft: #192534;
   --text: #e8edf3;
-  --muted: #8090a4;
-  --quiet: #56667a;
+  --muted: #a6b6c9;
+  --quiet: #a1b2c5;
   --amber: #e1a44f;
   --amber-soft: #2c2217;
   --cyan: #5ba9c9;
@@ -110,7 +110,7 @@ button {
 .brand-subtitle {
   margin-top: 2px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -134,12 +134,12 @@ button {
 .identity-meta {
   margin-top: 2px;
   color: var(--muted);
-  font: 10px/1.2 'IBM Plex Mono', monospace;
+  font: 12px/1.2 'IBM Plex Mono', monospace;
 }
 
 .eyebrow {
   color: var(--amber);
-  font: 600 9px/1.4 'IBM Plex Mono', monospace;
+  font: 600 12px/1.4 'IBM Plex Mono', monospace;
   letter-spacing: 0.14em;
 }
 
@@ -156,7 +156,7 @@ button {
   border-radius: 5px;
   background: #241b12;
   color: #e8b86f;
-  font: 600 9px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
   letter-spacing: 0.06em;
 }
 
@@ -195,7 +195,7 @@ button {
   border-radius: 6px;
   background: #0a1119;
   color: var(--text);
-  font: 11px/1.5 'IBM Plex Mono', monospace;
+  font: 12px/1.5 'IBM Plex Mono', monospace;
 }
 
 .inspector-content textarea {
@@ -214,13 +214,13 @@ button {
   border-radius: 6px;
   background: #261f14;
   color: #e5bd7b;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .diagnostic-empty {
   padding: 12px 16px;
   color: var(--green);
-  font: 11px/1.4 'IBM Plex Mono', monospace;
+  font: 12px/1.4 'IBM Plex Mono', monospace;
 }
 
 .button {
@@ -228,7 +228,7 @@ button {
   padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -296,7 +296,7 @@ button {
   gap: 6px;
   margin-top: 8px;
   color: var(--muted);
-  font: 10px/1.2 'IBM Plex Mono', monospace;
+  font: 12px/1.2 'IBM Plex Mono', monospace;
 }
 
 .registry-state i {
@@ -330,7 +330,7 @@ button {
   outline: 0;
   background: transparent;
   color: var(--text);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .palette-list {
@@ -359,18 +359,18 @@ button {
 
 .palette-group > header strong {
   color: #d6dee8;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .palette-group > header small {
   margin-top: 2px;
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .palette-group > header em {
   color: var(--amber);
-  font: normal 9px/1.2 'IBM Plex Mono', monospace;
+  font: normal 12px/1.2 'IBM Plex Mono', monospace;
 }
 
 .palette-empty {
@@ -378,7 +378,7 @@ button {
   padding: 14px 10px;
   border: 1px dashed #2b3949;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -415,7 +415,7 @@ button {
   border-radius: 7px;
   background: #232b36;
   color: #cdd6e1;
-  font: 600 10px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
 }
 
 .palette-item strong,
@@ -424,19 +424,19 @@ button {
 }
 
 .palette-item strong {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .palette-item small {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.35;
 }
 
 .palette-item em {
   color: var(--quiet);
-  font: normal 8px/1 'IBM Plex Mono', monospace;
+  font: normal 12px/1 'IBM Plex Mono', monospace;
 }
 
 .palette-note {
@@ -448,14 +448,14 @@ button {
 
 .palette-note span {
   color: #c99b5e;
-  font: 600 9px/1.2 'IBM Plex Mono', monospace;
+  font: 600 12px/1.2 'IBM Plex Mono', monospace;
   text-transform: uppercase;
 }
 
 .palette-note p {
   margin: 6px 0 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -491,12 +491,12 @@ button {
 
 .context-mode {
   color: var(--amber);
-  font: 600 9px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
   text-transform: uppercase;
 }
 
 .canvas-context strong {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .canvas-legend {
@@ -507,7 +507,7 @@ button {
   border-radius: 7px;
   background: rgba(9, 15, 23, 0.82);
   color: var(--muted);
-  font: 9px/1 'IBM Plex Mono', monospace;
+  font: 12px/1 'IBM Plex Mono', monospace;
   backdrop-filter: blur(10px);
 }
 
@@ -550,7 +550,7 @@ button {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font: 600 8px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
   letter-spacing: 0.08em;
 }
 
@@ -561,7 +561,7 @@ button {
   height: 22px;
   border-radius: 5px;
   background: color-mix(in srgb, var(--node-accent) 15%, #111923);
-  color: var(--node-accent);
+  color: #d8e8f2;
   letter-spacing: 0;
 }
 
@@ -585,7 +585,7 @@ button {
   display: block;
   margin-top: 5px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .multi-port-summary {
@@ -599,7 +599,7 @@ button {
 .multi-port-summary span {
   overflow: hidden;
   color: #8495a9;
-  font: 8px/1.2 'IBM Plex Mono', monospace;
+  font: 12px/1.2 'IBM Plex Mono', monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -609,7 +609,7 @@ button {
   margin-top: 8px;
   padding: 3px 6px;
   border-radius: 4px;
-  font: 600 8px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
 }
 
 .run-chip {
@@ -636,7 +636,7 @@ button {
 
 .react-flow__edge-text {
   fill: #9cabbc;
-  font: 8px 'IBM Plex Mono', monospace;
+  font: 12px 'IBM Plex Mono', monospace;
 }
 
 .react-flow__edge-textbg {
@@ -666,7 +666,7 @@ button {
   display: block;
   margin-top: 7px;
   color: var(--quiet);
-  font: 9px/1.3 'IBM Plex Mono', monospace;
+  font: 12px/1.3 'IBM Plex Mono', monospace;
 }
 
 .inspector-content {
@@ -681,7 +681,7 @@ button {
 .inspector-content h3 {
   margin: 0 0 11px;
   color: #a8b4c3;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -689,7 +689,7 @@ button {
 .inspector-content p {
   margin: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.65;
 }
 
@@ -716,7 +716,7 @@ button {
   align-items: center;
   gap: 6px;
   color: #8596aa;
-  font: 600 8px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -725,19 +725,19 @@ button {
   padding: 8px 0;
   border-bottom: 1px solid #172331;
   color: var(--quiet);
-  font: 9px/1.2 'IBM Plex Mono', monospace;
+  font: 12px/1.2 'IBM Plex Mono', monospace;
 }
 
 .property-list dt,
 .port-summary span {
   color: var(--quiet);
-  font: 9px/1.2 'IBM Plex Mono', monospace;
+  font: 12px/1.2 'IBM Plex Mono', monospace;
 }
 
 .property-list dd {
   margin: 0;
   color: #c2ccd7;
-  font-size: 10px;
+  font-size: 12px;
   text-align: right;
 }
 
@@ -749,7 +749,7 @@ button {
 
 .port-summary code {
   color: #abb8c7;
-  font: 9px/1 'IBM Plex Mono', monospace;
+  font: 12px/1 'IBM Plex Mono', monospace;
 }
 
 .runtime-status {
@@ -757,7 +757,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: #0a1119;
-  font: 600 10px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
   text-transform: uppercase;
 }
 
@@ -766,7 +766,7 @@ button {
 .empty-inspector {
   padding: 20px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .bottom-drawer {
@@ -791,7 +791,7 @@ button {
 }
 
 .drawer-toggle span {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -803,13 +803,13 @@ button {
   border-radius: 5px;
   background: #202c3b;
   color: #b8c3d0;
-  font: 600 9px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
 }
 
 .drawer-toggle i {
   margin-left: auto;
   color: var(--quiet);
-  font: normal 9px/1 'IBM Plex Mono', monospace;
+  font: normal 12px/1 'IBM Plex Mono', monospace;
 }
 
 .diagnostic-list {
@@ -839,7 +839,7 @@ button {
   border-radius: 50%;
   background: #1e2a38;
   color: #aab6c4;
-  font: 600 10px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
 }
 
 .diagnostic--warning .diagnostic-icon {
@@ -854,25 +854,25 @@ button {
 
 .diagnostic-code {
   color: var(--quiet);
-  font: 8px/1.2 'IBM Plex Mono', monospace;
+  font: 12px/1.2 'IBM Plex Mono', monospace;
 }
 
 .diagnostic strong {
   margin-top: 3px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .diagnostic p {
   margin: 3px 0 0;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .diagnostic button {
   border: 0;
   background: transparent;
   color: var(--cyan);
-  font-size: 9px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -906,7 +906,7 @@ button {
   gap: 3px;
   min-width: 190px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
@@ -918,7 +918,7 @@ button {
   border-radius: 5px;
   background: #0d151f;
   color: var(--text);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .canvas-context-actions {
@@ -926,8 +926,11 @@ button {
   align-items: center;
   gap: 9px;
   color: #d7a85d;
-  font-size: 11px;
+  font-size: 12px;
 }
+
+/* 上层状态文案允许点击穿透以拖动画布；其中的真实操作必须单独恢复命中。 */
+.canvas-context-actions button { pointer-events: auto; }
 
 .canvas-context-actions button,
 .next-action-banner button,
@@ -953,7 +956,7 @@ button {
   border-radius: 5px;
   background: rgba(10, 17, 25, .9);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   pointer-events: none;
 }
 
@@ -993,7 +996,7 @@ button {
 .next-action-copy code {
   overflow: hidden;
   color: #d7bd91;
-  font-size: 9px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1011,13 +1014,13 @@ button {
 .handoff-path button {
   justify-self: start;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .readiness-state {
   margin: 8px 0;
   color: #efc47f;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .handoff-queue {
@@ -1060,7 +1063,7 @@ button {
 .handoff-queue article span,
 .handoff-queue article em {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   font-style: normal;
 }
 
@@ -1071,13 +1074,13 @@ button {
 .handoff-queue article p {
   margin: 0;
   color: #a8b5c4;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .handoff-queue .handoff-queue-label {
   margin-top: 3px;
   color: #b7c3d2;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -1129,7 +1132,7 @@ button {
   outline: 0;
   background: #091019;
   color: var(--text);
-  font: 10px/1 'IBM Plex Mono', monospace;
+  font: 12px/1 'IBM Plex Mono', monospace;
 }
 
 .project-location input:focus,
@@ -1179,7 +1182,7 @@ button {
   display: grid;
   gap: 5px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .project-fields input {
@@ -1211,7 +1214,7 @@ button {
   float: right;
   margin-top: 10px;
   color: var(--cyan);
-  font: 600 8px/1 'IBM Plex Mono', monospace;
+  font: 600 12px/1 'IBM Plex Mono', monospace;
 }
 
 .node-progress--indeterminate {
@@ -1245,7 +1248,7 @@ button {
   gap: 10px;
   margin-top: 7px;
   color: var(--muted);
-  font: 500 9px/1.4 'IBM Plex Mono', monospace;
+  font: 500 12px/1.4 'IBM Plex Mono', monospace;
 }
 
 @keyframes zniku-progress-spin {
@@ -1259,7 +1262,7 @@ button {
 .inspector-content details {
   margin-top: 12px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .node-presentation-description {
@@ -1286,7 +1289,7 @@ button {
 .schema-parameter-form .parameter-subgroup h5 {
   margin: 0;
   color: #b8c6d5;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: .035em;
 }
 
@@ -1294,7 +1297,7 @@ button {
 .parameter-generic-note {
   margin-top: 4px;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .parameter-field,
@@ -1322,7 +1325,7 @@ button {
 .parameter-object > legend,
 .parameter-array > legend {
   color: #c4cfdb;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -1331,7 +1334,7 @@ button {
 .parameter-array legend em {
   margin-left: 5px;
   color: #d6a45d;
-  font-size: 8px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 500;
 }
@@ -1348,7 +1351,7 @@ button {
   outline: 0;
   background: #091019;
   color: var(--text);
-  font: 10px/1 'IBM Plex Mono', monospace;
+  font: 12px/1 'IBM Plex Mono', monospace;
 }
 
 .parameter-field textarea {
@@ -1378,7 +1381,7 @@ button {
 .parameter-empty-object,
 .parameter-empty-array {
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -1391,7 +1394,7 @@ button {
   display: grid;
   gap: 3px;
   color: #f09aa0;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.4;
 }
 
@@ -1404,7 +1407,7 @@ button {
   border-radius: 5px;
   background: #1c1518;
   color: #d99aa0;
-  font-size: 8px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -1423,20 +1426,20 @@ button {
   height: 28px;
   margin: 0;
   padding: 0 9px;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .parameter-const {
   overflow-wrap: anywhere;
   color: #91c5d9;
-  font: 9px/1.45 'IBM Plex Mono', monospace;
+  font: 12px/1.45 'IBM Plex Mono', monospace;
 }
 
 .parameter-branch-selector {
   display: grid;
   gap: 5px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .parameter-array-item {
@@ -1454,7 +1457,7 @@ button {
   justify-content: space-between;
   gap: 8px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .parameter-unknown-field,
@@ -1466,7 +1469,7 @@ button {
   border-radius: 6px;
   background: #241d13;
   color: #d8b174;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -1489,7 +1492,7 @@ button {
 .node-binding-details > summary {
   cursor: pointer;
   color: #aab9c9;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -1518,7 +1521,7 @@ button {
 
 .parameter-draft-actions > span {
   grid-column: 1 / -1;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .parameter-draft-actions .is-valid { color: var(--green); }
@@ -1533,7 +1536,7 @@ button {
   border-radius: 6px;
   background: #080e15;
   color: #a9bacb;
-  font: 9px/1.5 'IBM Plex Mono', monospace;
+  font: 12px/1.5 'IBM Plex Mono', monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1564,7 +1567,7 @@ button {
   display: block;
   margin-top: 10px;
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -1572,7 +1575,7 @@ button {
 .handoff-panel code,
 .node-logs > code {
   color: #8dbed1;
-  font: 8px/1.45 'IBM Plex Mono', monospace;
+  font: 12px/1.45 'IBM Plex Mono', monospace;
 }
 
 .handoff-panel {
@@ -1586,7 +1589,7 @@ button {
 .node-logs h4 {
   margin: 12px 0 5px;
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -1631,7 +1634,7 @@ button {
   margin-top: 3px;
   overflow: hidden;
   color: var(--muted);
-  font: 9px/1.2 'IBM Plex Mono', monospace;
+  font: 12px/1.2 'IBM Plex Mono', monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1722,7 +1725,7 @@ button {
   border-radius: 8px;
   background: #0d1621;
   color: var(--muted);
-  font: 600 10px/1.2 'IBM Plex Mono', monospace;
+  font: 600 12px/1.2 'IBM Plex Mono', monospace;
   cursor: pointer;
 }
 
@@ -1772,7 +1775,7 @@ button {
 .template-field-note {
   margin: 5px 0 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1789,7 +1792,7 @@ button {
 .template-form legend {
   padding: 0 6px;
   color: #bec9d6;
-  font: 600 10px/1.2 'IBM Plex Mono', monospace;
+  font: 600 12px/1.2 'IBM Plex Mono', monospace;
   letter-spacing: 0.04em;
 }
 
@@ -1797,7 +1800,7 @@ button {
   display: grid;
   gap: 5px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .template-form input,
@@ -1811,7 +1814,7 @@ button {
   outline: 0;
   background: #080f17;
   color: var(--text);
-  font: 10px/1.4 'IBM Plex Mono', monospace;
+  font: 12px/1.4 'IBM Plex Mono', monospace;
 }
 
 .template-form input:focus,
@@ -1849,14 +1852,14 @@ button {
 .template-source-list article > header code {
   margin-right: auto;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .template-source-list article > header button {
   border: 0;
   background: transparent;
   color: var(--red);
-  font-size: 10px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -1898,7 +1901,7 @@ button {
 
 .template-preview-empty p {
   margin: 5px 0 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .template-profile-badge {
@@ -1928,7 +1931,7 @@ button {
 .template-profile-badge span,
 .template-profile-badge em {
   color: var(--muted);
-  font: 9px/1.2 'IBM Plex Mono', monospace;
+  font: 12px/1.2 'IBM Plex Mono', monospace;
 }
 
 .template-profile-badge em {
@@ -1952,14 +1955,14 @@ button {
 
 .template-preview-counts dt {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
 .template-preview-counts dd {
   margin: 4px 0 0;
   color: #dfe7f0;
-  font: 10px/1.3 'IBM Plex Mono', monospace;
+  font: 12px/1.3 'IBM Plex Mono', monospace;
 }
 
 .template-manual-summary,
@@ -1981,7 +1984,7 @@ button {
 .template-diagnostics h4 {
   margin-bottom: 9px;
   color: #c8d3df;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .template-planning-source {
@@ -1991,18 +1994,18 @@ button {
 
 .template-planning-source strong {
   color: #c8d3df;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .template-planning-source p {
   margin: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .template-planning-source code {
   color: #8ec7df;
-  font: 9px/1.4 'IBM Plex Mono', monospace;
+  font: 12px/1.4 'IBM Plex Mono', monospace;
 }
 
 .template-manual-summary > div {
@@ -2011,7 +2014,7 @@ button {
   gap: 9px;
   padding: 6px 0;
   border-top: 1px solid var(--border-soft);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .template-manual-summary span {
@@ -2024,7 +2027,7 @@ button {
 .template-plan code,
 .template-diagnostics code {
   color: #8ec7df;
-  font: 9px/1.4 'IBM Plex Mono', monospace;
+  font: 12px/1.4 'IBM Plex Mono', monospace;
 }
 
 .template-target-path {
@@ -2034,7 +2037,7 @@ button {
 
 .template-target-path span {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -2049,13 +2052,13 @@ button {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .template-plan > article > header span,
 .template-plan > article > p {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .template-plan > article > p {
@@ -2075,7 +2078,7 @@ button {
   padding: 7px;
   border-radius: 6px;
   background: #101b27;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .template-leaf-list span {
@@ -2104,14 +2107,14 @@ button {
 
 .template-diagnostics article > span {
   color: var(--red);
-  font: 600 9px/1.4 'IBM Plex Mono', monospace;
+  font: 600 12px/1.4 'IBM Plex Mono', monospace;
 }
 
 .template-diagnostics article p {
   grid-column: 1 / 3;
   margin: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .template-diagnostics article button {
@@ -2121,7 +2124,7 @@ button {
   border-radius: 6px;
   background: #111c28;
   color: #aab9c9;
-  font-size: 9px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -2140,7 +2143,7 @@ button {
 .template-local-error {
   margin: 0;
   color: #c9a668;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .template-wizard-footer .template-local-error {
@@ -2150,7 +2153,11 @@ button {
 .template-error-stack {
   display: grid;
   gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+
+.template-error-stack pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .handoff-contract,
 .artifact-media-summary {
@@ -2171,7 +2178,7 @@ button {
 .handoff-contract dt,
 .artifact-media-summary dt {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .handoff-contract dl,
@@ -2184,7 +2191,7 @@ button {
 .handoff-contract dd,
 .artifact-media-summary dd {
   margin: 3px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -2383,7 +2390,7 @@ button {
   flex: 1;
   gap: 7px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .project-home-blank input,
@@ -2426,7 +2433,7 @@ button {
 .project-home-recent header span,
 .project-home-recent time {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .project-home-recent-list {
@@ -2479,7 +2486,7 @@ button {
   align-items: center;
   gap: 8px;
   color: var(--quiet);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .creator-wizard-steps li::after {
@@ -2537,7 +2544,7 @@ button {
 
 .creator-step > header > span {
   color: var(--amber);
-  font: 600 11px/1.5 'IBM Plex Mono', monospace;
+  font: 600 12px/1.5 'IBM Plex Mono', monospace;
 }
 
 .creator-step h3,
@@ -2566,7 +2573,7 @@ button {
   display: grid;
   gap: 6px;
   color: #b8c4d0;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .creator-picker,
@@ -2640,13 +2647,40 @@ button {
 .creator-output-picker span {
   align-self: center;
   color: var(--green);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .creator-output-picker {
-  display: flex;
-  align-items: center;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 10px;
+}
+
+.creator-output-picker > button {
+  justify-self: start;
+  max-width: 100%;
+}
+
+.creator-output-picker > span,
+.creator-output-picker > small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.creator-output-picker > .template-check {
+  align-items: start;
+  line-height: 1.5;
+}
+
+.creator-step .template-check input[type='checkbox'] {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin: 0;
 }
 
 .creator-advanced-entry,
@@ -2666,7 +2700,7 @@ button {
 .project-fields--advanced summary,
 .creator-media-summary summary {
   color: #9eafc0;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -2690,7 +2724,7 @@ button {
   top: 14px;
   right: 14px;
   color: var(--amber);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .creator-plan-card ul {
@@ -2755,13 +2789,13 @@ button {
 
 .creator-media-summary dt {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .creator-media-summary dd {
   margin: 3px 0 0;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .creator-workflow-summary > div {
@@ -2809,6 +2843,8 @@ button {
 .creator-footer-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .project-location {
@@ -2845,7 +2881,7 @@ button {
   display: grid;
   gap: 4px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .project-developer-entry > div,
@@ -2857,7 +2893,7 @@ button {
 .project-fields--advanced code {
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .artifact-host-actions button {
@@ -2865,7 +2901,7 @@ button {
   border-radius: 6px;
   background: #111c28;
   color: #aab9c9;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .project-home-host-recovery {
@@ -2879,7 +2915,7 @@ button {
   border-radius: 8px;
   background: rgba(225, 164, 79, 0.08);
   color: #c9b18e;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .project-home :is(button, input, select, textarea, summary):focus-visible,
@@ -2919,6 +2955,8 @@ button {
 }
 
 @media (max-width: 900px) {
+  .creator-wizard-footer { grid-template-columns: minmax(0, 1fr); }
+
   .project-home-actions,
   .creator-project-fields,
   .creator-basic-settings,
@@ -3148,7 +3186,7 @@ button {
 .studio-workspace .brand-lockup { grid-column: 1; grid-row: 1; min-width: 0; height: 100%; padding: 12px; gap: 9px; }
 .studio-workspace .brand-mark { flex: 0 0 32px; width: 32px; height: 32px; }
 .studio-workspace .workflow-identity { grid-column: 2; grid-row: 1; min-width: 0; height: auto; padding: 10px 14px; }
-.studio-workspace .identity-meta { line-height: 1.4; font-size: 11px; }
+.studio-workspace .identity-meta { line-height: 1.4; font-size: 12px; }
 .studio-workspace .project-location {
   grid-column: 3;
   grid-row: 1;
@@ -3216,7 +3254,7 @@ button {
 .canvas-run-overlays .next-action-banner { position: static; display: flex; flex-wrap: wrap; gap: 8px; padding: 11px; font-size: 13px; line-height: 1.5; }
 .canvas-run-overlays .next-action-copy { flex: 1 1 180px; }
 .canvas-run-overlays .next-action-copy small { font-size: 12px; white-space: normal; }
-.canvas-run-overlays .next-action-copy code { font-size: 11px; overflow-wrap: anywhere; white-space: normal; }
+.canvas-run-overlays .next-action-copy code { font-size: 12px; overflow-wrap: anywhere; white-space: normal; }
 .canvas-run-overlays button { pointer-events: auto; }
 .run-chip--reused { border-color: #498664; background: #183a2c; color: #b5efcd; }
 .workflow-node .node-parameter-summary { display: grid; gap: 4px; margin-top: 8px; }
@@ -3274,6 +3312,19 @@ button {
 .handoff-queue .handoff-contract dd { min-width: 0; margin: 0; color: #e1ebf5; font-size: 13px; line-height: 1.5; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .handoff-queue .handoff-advanced { min-width: 0; overflow-wrap: anywhere; }
 .handoff-queue .handoff-advanced dd { margin-left: 0; }
+.handoff-task-list { margin: 12px 8px; padding: 10px; border: 1px solid #42586f; border-radius: 8px; }
+.handoff-task-list > p { color: #c5d1df; font-size: 13px; line-height: 1.6; }
+.handoff-task-summary { display: grid; gap: 6px; width: 100%; margin-top: 10px; padding: 12px; text-align: left; color: #e1ebf5; background: #172d43; border: 1px solid #577690; border-radius: 7px; overflow-wrap: anywhere; }
+.handoff-task-summary span { font-size: 13px; line-height: 1.5; }
+.handoff-task-identity { display: grid; gap: 7px; margin: 10px 0; padding: 10px; border-left: 3px solid #83c9e9; background: #162d41; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.handoff-target-path { display: block; margin: 7px 0; color: #e1ebf5; font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+.handoff-import-review { display: grid; gap: 10px; }
+.handoff-import-review > div { min-width: 0; }
+.handoff-import-review dt { color: #aac5db; font-size: 13px; }
+.handoff-import-review dd { margin: 5px 0 0; white-space: normal; overflow-wrap: anywhere; }
+.handoff-import-overwrite { display: flex; gap: 8px; align-items: flex-start; padding: 12px 0; line-height: 1.5; }
+.handoff-import-error { padding: 10px; border: 1px solid #e6a09f; color: #ffd7d5; border-radius: 6px; }
+.handoff-task-summary:focus-visible { outline: 3px solid #91dafa; outline-offset: 3px; }
 .runtime-user-status { margin: 12px 0; padding: 10px 12px; border: 1px solid #49627a; border-radius: 8px; background: #132738; color: #dfedf9; font-size: 14px; line-height: 1.6; }
 .runtime-preserved { color: #c5d6e1; font-size: 13px; line-height: 1.6; }
 .runtime-problem, .handoff-problem { margin: 12px 0; padding: 11px; border: 1px solid #866055; border-radius: 8px; background: #302326; color: #ead4ca; font-size: 13px; line-height: 1.6; }
@@ -3290,4 +3341,89 @@ button {
   .creator-run-action { flex: 1 1 300px; }
   .canvas-run-overlays { left: 10px; right: 10px; bottom: 60px; }
   .canvas-run-overlays .run-summary-strip { font-size: 12px; }
+}
+
+/* Phase 5：文字、键盘与缩放只改变呈现，不改变 Graph、验证或执行资格。 */
+:root { font-size: 14px; color-scheme: dark; }
+button, input, select, textarea { font-family: inherit; }
+:is(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid #91dafa;
+  outline-offset: 3px;
+}
+:is(input, select, textarea)[aria-invalid="true"] { border-color: #f19999; }
+.button { min-height: 36px; height: auto; padding-top: 7px; padding-bottom: 7px; }
+.button:disabled, .palette-item:disabled { opacity: 1; color: #a6b6c9; background: #17212d; }
+.palette-item { grid-template-columns: 34px minmax(0, 1fr) auto; }
+.palette-item strong, .panel-heading h3, .inspector-content h3 { font-size: 14px; line-height: 1.5; }
+.palette-item small, .palette-group > header small, .palette-note p,
+.inspector-content p, .parameter-field-help, .parameter-field-errors, .client-hint,
+.schema-parameter-form .parameter-subgroup > header p, .parameter-generic-note { font-size: 13px; line-height: 1.6; }
+.parameter-field-label, .parameter-object > legend, .parameter-array > legend { font-size: 14px; line-height: 1.5; }
+.schema-parameter-form :is(input:not([type="checkbox"]), select, textarea) { min-height: 36px; font-size: 14px; line-height: 1.4; }
+.schema-parameter-form :is(button, summary) { min-height: 32px; font-size: 13px; line-height: 1.5; }
+.schema-parameter-form .parameter-field-help[hidden] { display: none; }
+.workflow-node { width: 216px; }
+.workflow-node > strong { font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+.node-kicker, .run-chip, .multi-port-summary span { line-height: 1.4; }
+.node-version { color: #acbed1; }
+.node-icon { min-width: 30px; height: 26px; }
+.multi-port-summary span { white-space: normal; overflow-wrap: anywhere; }
+.run-chip { padding: 4px 7px; }
+.react-flow__node:focus-visible { outline: 3px solid #91dafa; outline-offset: 5px; }
+.typed-handle { min-width: 12px; min-height: 12px; }
+.react-flow__edge-text { font-size: 12px; }
+.canvas-dialog-backdrop { position: fixed; z-index: 100; }
+.canvas-dialog { max-height: calc(100dvh - 32px); }
+.studio-skip-links { position: fixed; top: 8px; left: 8px; z-index: 200; display: flex; gap: 8px; }
+.studio-skip-links a { position: absolute; transform: translateY(-200%); white-space: nowrap; background: #172d43; color: #edf6ff; padding: 10px 14px; border-radius: 6px; }
+.studio-skip-links a:focus { position: static; transform: none; }
+.project-home, .creator-wizard, .canvas-dialog { overflow-wrap: anywhere; }
+.desktop-exit { flex: 0 0 auto; }
+.project-home-header .desktop-exit { margin-left: auto; }
+.desktop-exit button { min-height: 36px; padding: 7px 10px; border: 1px solid #486078; border-radius: 6px; color: #edf3fa; background: #182a3c; font-size: 13px; cursor: pointer; }
+.desktop-exit .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.media-preview { margin: 12px; padding: 12px; min-width: 0; border: 1px solid #405d75; border-radius: 9px; background: #101f2e; font-size: 13px; line-height: 1.6; }
+.media-preview summary { min-height: 34px; font-size: 14px; cursor: pointer; }
+.media-preview p { color: #c5d6e7; overflow-wrap: anywhere; }
+.preview-selectors { display: grid; gap: 10px; margin: 12px 0; }
+.preview-selectors label { min-width: 0; display: grid; gap: 6px; }
+.preview-selectors select { width: 100%; min-width: 0; min-height: 36px; padding: 6px; font-size: 13px; color: #edf3fa; background: #0d1823; border: 1px solid #55728c; border-radius: 6px; }
+.preview-frames { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 12px; }
+.preview-frames figure { min-width: 0; margin: 0; }
+.preview-frames img { display: block; width: 100%; max-width: 100%; height: auto; object-fit: contain; border: 1px solid #506d87; background: #080d13; }
+.preview-frames figcaption { padding-top: 6px; color: #d2e4f4; overflow-wrap: anywhere; }
+
+/* 200% 页面缩放按窄视口布局，面板顺序仍与 DOM/键盘一致，不把操作裁切到屏幕之外。 */
+@media (max-width: 1050px) {
+  html, body, #root { height: auto; min-height: 100%; overflow: visible; }
+  .studio-workspace, .studio-workspace.has-bottom-drawer {
+    height: auto;
+    min-height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(560px, 75dvh) auto auto;
+    overflow: visible;
+  }
+  .studio-workspace .topbar { grid-row: 1; grid-template-columns: 120px minmax(0, 1fr); grid-template-rows: auto auto auto; }
+  .studio-workspace .project-location { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; padding: 10px 12px; }
+  .studio-workspace .top-actions { grid-row: 3; }
+  .studio-workspace .palette-panel { grid-column: 1; grid-row: 2; max-height: 330px; border-bottom: 1px solid var(--border); }
+  .studio-workspace .palette-list { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); }
+  .studio-workspace .canvas-panel { grid-column: 1; grid-row: 3; min-height: 560px; }
+  .studio-workspace .inspector-panel { grid-column: 1; grid-row: 4; min-width: 0; overflow: visible; border-top: 1px solid var(--border); }
+  .studio-workspace .bottom-drawer { grid-column: 1; grid-row: 5; min-height: 48px; max-height: none; }
+  .studio-workspace .creator-problems .diagnostic-list { max-height: 420px; }
+  .canvas-context { align-items: flex-start; flex-wrap: wrap; gap: 5px; }
+  .canvas-context > div:first-child { max-width: 100%; flex-wrap: wrap; }
+  .canvas-group-strip { top: 210px; }
+  .canvas-run-overlays .next-action-banner { max-height: 180px; overflow: auto; }
+  .exact-run-actions { grid-template-columns: 1fr; }
+  .project-home-intro, .project-home-actions, .project-home-recent { padding-left: 20px; padding-right: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .palette-item:hover:not(:disabled) { transform: none; }
+}
+@media (forced-colors: active) {
+  .workflow-node, .run-chip, .parameter-field, .button { border: 1px solid CanvasText; }
+  :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline-color: Highlight; }
 }

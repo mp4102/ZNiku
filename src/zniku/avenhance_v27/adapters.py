@@ -51,6 +51,7 @@ from zniku.runtime import (
     PythonAdapterResult,
     RunnerInput,
 )
+from zniku.runtime.process_window import background_creation_flags
 from zniku.runtime.runner import OutputTarget
 
 _MIB: Final = 1024 * 1024
@@ -848,6 +849,7 @@ def _probe_encoder_capability(context: PythonAdapterContext, encoder: str) -> No
                 stdout=subprocess.DEVNULL,
                 stderr=stderr,
                 shell=False,
+                creationflags=background_creation_flags(),
                 check=False,
             )
     except OSError as error:
@@ -894,6 +896,7 @@ def _run_ffmpeg(
                 stdout=subprocess.PIPE,
                 stderr=stderr_log,
                 shell=False,
+                creationflags=background_creation_flags(),
             )
             if process.stdout is None:
                 raise Av27MediaError("E_AV27_FFMPEG_PROGRESS", "FFmpeg progress pipe 未建立")

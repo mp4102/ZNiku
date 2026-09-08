@@ -1,6 +1,7 @@
 /** 在同一张 Designer 图上显示节点定义、typed ports 与真实 Runtime overlay。 */
 
 import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { memo } from 'react'
 import type { WorkflowNode } from '../model'
 import { creatorElapsedLabel, nodeStateLabel } from '../studio/run-presentation'
 
@@ -17,7 +18,7 @@ const iconLabels: Readonly<Record<string, string>> = {
   split: '切分', merge: '合并', encode: '编码', mux: '封装', output: '输出', check: '检查',
 }
 
-export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
+export const WorkflowNodeCard = memo(function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
   const portTop = (index: number, total: number) => `${58 + (index - (total - 1) / 2) * 22}%`
   const stale = data.latestResult?.stale === true
   const state = data.nodeRun?.state
@@ -42,7 +43,7 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
           position={Position.Left}
           className={`typed-handle typed-handle--input ${data.connecting ? data.compatibleInputPortIds?.includes(port.port_id) ? 'is-compatible' : 'is-incompatible' : ''}`}
           style={{ top: portTop(index, data.inputs.length) }}
-          aria-label={`输入 ${inputLabel(port.port_id)}${advanced ? ` ${port.data_type}` : ''}`}
+          aria-hidden="true"
           title={`${inputLabel(port.port_id)}${data.compatibleInputPortIds?.includes(port.port_id) ? ' · 可以连接' : ''}`}
         />
       ))}
@@ -55,6 +56,8 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
         {advanced && <><span>{data.executorKind.replace('_', ' ')}</span><span className="node-version">{data.definitionVersion}</span></>}
       </div>
       <strong>{data.label}</strong>
+      {/* 拖线圆点不伪装为键盘按钮；端口文字可读，完整键盘连接由“连接节点”对话框提供。 */}
+      <span className="canvas-live-message">输入：{data.inputs.map((port) => `${inputLabel(port.port_id)}${advanced ? ` ${port.data_type}` : ''}`).join('、') || '无'}。输出：{data.outputs.map((port) => `${outputLabel(port.port_id)}${advanced ? ` ${port.data_type}` : ''}`).join('、') || '无'}。</span>
       {advanced && <span className="node-subtitle">{data.typeId}</span>}
       {!data.collapsed && data.summaries.length > 0 && <div className="node-parameter-summary" role="list" aria-label="关键设置">{data.summaries.map((summary, index) => <span role="listitem" key={`${index}-${summary}`}>{summary}</span>)}</div>}
       {!data.collapsed && (data.inputs.length > 1 || data.outputs.length > 1) && (
@@ -94,10 +97,10 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowNode>) {
           position={Position.Right}
           className={`typed-handle typed-handle--output ${data.connecting ? data.compatibleOutputPortIds?.includes(port.port_id) ? 'is-compatible' : 'is-incompatible' : ''}`}
           style={{ top: portTop(index, data.outputs.length) }}
-          aria-label={`输出 ${outputLabel(port.port_id)}${advanced ? ` ${port.data_type}` : ''}`}
+          aria-hidden="true"
           title={`${outputLabel(port.port_id)}${data.compatibleOutputPortIds?.includes(port.port_id) ? ' · 可以连接' : ''}`}
         />
       ))}
     </article>
   )
-}
+}, (previous, next) => previous.data === next.data && previous.selected === next.selected)

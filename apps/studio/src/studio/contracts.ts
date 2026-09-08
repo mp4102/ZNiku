@@ -220,6 +220,27 @@ export type AvEnhanceV27ChapterSelectorWire =
   | { readonly mode: 'exact_frames'; readonly frames: ReadonlyArray<number> }
   | { readonly mode: 'exact_times'; readonly times: ReadonlyArray<string> }
 
+export interface AvEnhanceV27PublicationRequestWire {
+  readonly output_root: string
+  readonly title: string
+  readonly year: string
+  readonly overwrite: boolean
+  readonly layout?: 'direct' | 'title_subdirectory'
+}
+
+export interface AvEnhanceV27PublicationPreviewRequestWire {
+  readonly contract_version: '0.3.0'
+  readonly request: AvEnhanceV27PublicationRequestWire
+}
+
+export interface AvEnhanceV27PublicationPreviewEnvelope {
+  readonly contract_version: '0.3.0'
+  readonly layout: 'direct' | 'title_subdirectory'
+  readonly resolved_output_root: string
+  readonly output_directory: string
+  readonly will_create_directory: boolean
+}
+
 export interface AvEnhanceV27ExpandRequestWire {
   readonly profile_version: '2.7.0'
   readonly preparation_run_id: string
@@ -235,12 +256,7 @@ export interface AvEnhanceV27ExpandRequestWire {
     readonly model_version?: string
   }
   readonly program_encode: { readonly encoder: 'gpu' | 'cpu' }
-  readonly publication: {
-    readonly output_root: string
-    readonly title: string
-    readonly year: string
-    readonly overwrite: boolean
-  }
+  readonly publication: AvEnhanceV27PublicationRequestWire
 }
 
 export type AvEnhanceV27TemplatePreviewRequestWire =
@@ -350,6 +366,7 @@ export interface AvEnhanceV27TemplatePreviewEnvelope {
       readonly output_container: '.mkv' | '.mov'
     }>
     readonly output_target_path: string | null
+    readonly output_directory_to_create: string | null
   }
   readonly creator: CreatorTemplateSummaryWire
 }
@@ -492,6 +509,7 @@ export type ActiveStudioOperation =
   | 'run_to'
   | 'rerun_from_here'
   | 'submit_external'
+  | 'import_external'
   | 'abandon_run'
 
 export interface StatusEnvelope {
@@ -629,7 +647,7 @@ export type StudioOperation =
   | 'create_av_enhance_v27'
   | 'expand_av_enhance_v27'
   | 'abandon_run'
-  | ActiveStudioOperation
+  | Exclude<ActiveStudioOperation, 'import_external'>
 
 export type StudioCommand =
   | {
@@ -687,6 +705,8 @@ const validateNodeLog = compileDefinition('NodeLogEnvelope')
 const validateExternalReadiness = compileDefinition('ExternalHandoffReadiness')
 const validateTemplatePreviewRequest = compileDefinition('TemplatePreviewRequest')
 const validateTemplatePreviewEnvelope = compileDefinition('TemplatePreviewEnvelope')
+const validatePublicationPreviewRequest = compileDefinition('PublicationPreviewRequest')
+const validatePublicationPreviewEnvelope = compileDefinition('PublicationPreviewEnvelope')
 const validateCommand = compileDefinition('ProjectServiceCommand')
 const validatePresentationCatalog = compileDefinition('PresentationCatalogEnvelope')
 const validateRerunPreview = compileDefinition('RerunPreviewEnvelope')
@@ -757,6 +777,18 @@ export function parsePresentationCatalogEnvelope(
   value: unknown,
 ): PresentationCatalogEnvelopeWire {
   return parseWith(value, validatePresentationCatalog, 'Studio Presentation catalog')
+}
+
+export function parseAvEnhanceV27PublicationPreviewRequest(value: unknown): AvEnhanceV27PublicationPreviewRequestWire {
+  return parseWith(value, validatePublicationPreviewRequest, 'AVEnhanceFlow v2.7 publication preview request')
+}
+
+export function parseAvEnhanceV27PublicationPreviewEnvelope(value: unknown): AvEnhanceV27PublicationPreviewEnvelope {
+  const preview = parseWith<AvEnhanceV27PublicationPreviewEnvelope>(value, validatePublicationPreviewEnvelope, 'AVEnhanceFlow v2.7 publication preview response')
+  if (preview.layout === 'direct' && (preview.will_create_directory || preview.output_directory !== preview.resolved_output_root)) {
+    throw new StudioContractError('direct 输出检查不能声明创建目录或改变所选位置')
+  }
+  return preview
 }
 
 export function parseRunSummaryPageEnvelope(value: unknown): RunSummaryPageEnvelope {

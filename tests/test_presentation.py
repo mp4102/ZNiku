@@ -19,6 +19,7 @@ from zniku.graph import (
     PythonExecutorSpec,
 )
 from zniku.media import built_in_media_definitions
+from zniku.media.definitions import legacy_output_file_definition, output_file_definition
 from zniku.presentation import (
     CategoryPresentation,
     ControlHint,
@@ -232,6 +233,35 @@ def test_builtin_definition_shape_drift_fails_closed() -> None:
     payload["parameter_schema"]["properties"]["drift"] = {"type": "string"}
     drifted = NodeDefinition.model_validate(payload, strict=True)
 
+    with pytest.raises(PresentationCatalogError, match="E_PRESENTATION_BUILTIN_DEFINITION_DRIFT"):
+        build_builtin_presentation_catalog((drifted,))
+
+
+def test_output_directory_controls_and_legacy_presentation_preserve_definition() -> None:
+    """旧工程只显示已有参数；新目录能力有中文控件，展示本身不注入创建授权。"""
+
+    for definition in (legacy_output_file_definition(), output_file_definition()):
+        original = definition.model_dump(mode="json")
+        presentation = build_builtin_presentation_catalog((definition,)).nodes[0]
+        by_pointer = {item.parameter_pointer: item for item in presentation.parameters}
+        validate_node_presentation(presentation, definition, require_complete=True)
+        assert definition.model_dump(mode="json") == original
+        if "output_root" in original["parameter_schema"]["properties"]:
+            assert by_pointer["/output_root"].label == "输出根目录"
+            assert by_pointer["/output_root"].control_hint is ControlHint.DIRECTORY_PATH
+            assert by_pointer["/output_root"].picker is not None
+            assert by_pointer["/create_parent"].label == "输出时创建子文件夹"
+            assert by_pointer["/protected_paths"].label == "禁止覆盖的源文件"
+        else:
+            assert set(by_pointer) == {"/target_path", "/mode", "/overwrite"}
+
+
+@pytest.mark.parametrize("legacy", (False, True))
+def test_output_legacy_allowlist_does_not_admit_changed_constraints(legacy: bool) -> None:
+    definition = legacy_output_file_definition() if legacy else output_file_definition()
+    document = definition.model_dump(mode="python")
+    document["parameter_schema"]["properties"]["overwrite"]["default"] = True
+    drifted = NodeDefinition.model_validate(document, strict=True)
     with pytest.raises(PresentationCatalogError, match="E_PRESENTATION_BUILTIN_DEFINITION_DRIFT"):
         build_builtin_presentation_catalog((drifted,))
 

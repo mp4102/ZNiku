@@ -30,6 +30,7 @@ from zniku.avenhance_v27 import (
 )
 from zniku.graph import NodeDefinition, PortSpec
 from zniku.media import built_in_media_definitions
+from zniku.media.definitions import is_supported_output_file_definition
 
 from .models import (
     PRESENTATION_CONTRACT_VERSION,
@@ -320,6 +321,7 @@ _PARAMETER_LABELS: dict[str, str] = {
     "chapters": "章节计划",
     "codec": "视频编码器",
     "crf": "质量系数 CRF",
+    "create_parent": "输出时创建子文件夹",
     "encoder": "编码设备",
     "expected_fps": "预期帧率",
     "expected_frame_rate": "预期帧率",
@@ -346,11 +348,13 @@ _PARAMETER_LABELS: dict[str, str] = {
     "model_version": "模型版本",
     "mr_mode": "马赛克修复方式",
     "operation": "转换方式",
+    "output_root": "输出根目录",
     "overwrite": "允许覆盖",
     "pixel_format": "像素格式",
     "planned_admission_artifact_id": "准入结果标识",
     "planned_effective_video_artifact_ids": "有效视频标识",
     "preset": "编码速度",
+    "protected_paths": "禁止覆盖的源文件",
     "require_frame_count_equal": "保持帧数不变",
     "segments": "分段范围",
     "source_fps": "源帧率",
@@ -438,6 +442,8 @@ _GROUP_METADATA = {
     "binding": ("高级绑定", 30),
 }
 _ADVANCED_PARAMETERS = _BINDING_PARAMETERS | {
+    "output_root",
+    "protected_paths",
     "expected_frames",
     "expected_input_frames",
     "expected_output_frames",
@@ -450,7 +456,11 @@ def _builtin_metadata(definition: NodeDefinition) -> _NodeMetadata:
     key = (definition.type_id, definition.version)
     if definition.type_id.startswith("zniku.media."):
         expected = _GENERIC_DEFINITIONS.get(key)
-        if expected is None or expected != definition:
+        # 历史工程仍持有原始 OutputFile definition；只接受已冻结的旧/新完整 shape，
+        # 不能为了显示兼容而替换旧 Schema，或容忍任意 executor/参数约束漂移。
+        if expected is None or (
+            expected != definition and not is_supported_output_file_definition(definition)
+        ):
             raise PresentationCatalogError(
                 "E_PRESENTATION_BUILTIN_DEFINITION_DRIFT",
                 "generic media definition 与正式内建结构不一致："
@@ -514,6 +524,8 @@ def _control_hint(name: str, schema: Mapping[str, object]) -> ControlHint:
         return ControlHint.FILE_PATH
     if name == "target_path":
         return ControlHint.SAVE_FILE
+    if name == "output_root":
+        return ControlHint.DIRECTORY_PATH
     if isinstance(schema.get("enum"), Sequence) and not isinstance(schema.get("enum"), str | bytes):
         return ControlHint.SELECT
     schema_type = schema.get("type")
@@ -577,6 +589,8 @@ def _parameter_presentations(
             )
         elif control_hint is ControlHint.SAVE_FILE:
             picker = PickerPresentation(extensions=(".mkv", ".mp4", ".mov", ".wav", ".flac"))
+        elif control_hint is ControlHint.DIRECTORY_PATH:
+            picker = PickerPresentation()
         parameters.append(
             ParameterPresentation(
                 parameter_pointer=f"/{name.replace('~', '~0').replace('/', '~1')}",

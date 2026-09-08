@@ -403,7 +403,10 @@ def _assert_config_stale(application: ProjectServiceApplication, completed: Run)
 
 
 def run_smoke(
-    root: Path, *, stop_at: Literal["completed", "enhancement"] = "completed"
+    root: Path,
+    *,
+    stop_at: Literal["completed", "enhancement"] = "completed",
+    publication_layout: Literal["direct", "title_subdirectory"] = "direct",
 ) -> dict[str, object]:
     """在调用方新建的空目录执行一次烟测；所有 retained 路径只指向合成工程。"""
 
@@ -416,7 +419,8 @@ def run_smoke(
     _generate_source(ffmpeg, source_path)
     source_stat = source_path.stat()
     output_root = root / "published"
-    (output_root / "Synthetic AV27 (2026)").mkdir(parents=True)
+    output_root.mkdir()
+    title_directory = output_root / "Synthetic AV27 (2026)"
     application = _application(root / "attempts")
     project_path = root / "synthetic-av27.zniku"
     prepare = {
@@ -456,13 +460,16 @@ def run_smoke(
             "title": "Synthetic AV27",
             "year": "2026",
             "overwrite": False,
+            "layout": publication_layout,
         },
     }
     expanded = application.preview_av_enhance_v27({"action": "expand", "request": expand})
     assert expanded.profile.status == "expanded-compatible"
     assert expanded.plan.effective_video_artifact_ids == (mr.artifact_id,)
     assert expanded.plan.chapter_count == expanded.plan.leaf_count == 2
+    assert not title_directory.exists()
     _authoring_command(application, {"operation": "expand_av_enhance_v27", "request": expand})
+    assert not title_directory.exists(), "确认建图不得提前创建输出子目录"
 
     # 只记录真实 producer 调用，原函数与进程、validator、登记路径都不替换。
     real_run_ffmpeg = av27_adapters._run_ffmpeg
@@ -487,6 +494,7 @@ def run_smoke(
             for item in _latest(production.run).values()
             if item.state is NodeRunState.WAITING_EXTERNAL
         } == {"enhance.A.001", "enhance.B.001"}
+        assert not title_directory.exists(), "进入人工处理不代表已经发布成品"
         if stop_at == "enhancement":
             return {
                 "evidence_kind": "synthetic_only",
@@ -561,6 +569,9 @@ def run_smoke(
     assert Path(expanded.plan.output_target_path).is_file()
     output = _artifact(production, "output", "published")
     assert output.path == expanded.plan.output_target_path
+    expected_parent = title_directory if publication_layout == "title_subdirectory" else output_root
+    assert Path(output.path).parent == expected_parent
+    assert title_directory.is_dir() == (publication_layout == "title_subdirectory")
     assert source_path.stat().st_size == source_stat.st_size
     assert source_path.stat().st_mtime_ns == source_stat.st_mtime_ns
     for node_id in ("split.atomic", "merge.A", "merge.B", "program", "final"):
@@ -579,6 +590,7 @@ def run_smoke(
     return {
         "evidence_kind": "synthetic_only",
         "state": "completed",
+        "publication_layout": publication_layout,
         "source_frame_count": _SOURCE_FRAMES,
         "source_fps": canonical_fraction(_SOURCE_RATE),
         "chapter_count": 2,
@@ -611,21 +623,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="运行 AV27 Project Service 合成媒体 E2E")
     parser.add_argument("--keep-root", type=Path, help="保留合成工程的绝对新目录；必须不存在")
     parser.add_argument("--stop-at", choices=("completed", "enhancement"), default="completed")
+    parser.add_argument(
+        "--publication-layout", choices=("direct", "title_subdirectory"), default="direct"
+    )
     arguments = parser.parse_args()
     stop_at: Literal["completed", "enhancement"] = arguments.stop_at
+    publication_layout: Literal["direct", "title_subdirectory"] = arguments.publication_layout
     if arguments.keep_root is not None:
         root: Path = arguments.keep_root
         if not root.is_absolute() or root.exists():
             parser.error("--keep-root 必须是不存在的绝对目录")
         root = root.parent.resolve(strict=True) / root.name
         root.mkdir()
-        summary = run_smoke(root, stop_at=stop_at)
+        summary = run_smoke(root, stop_at=stop_at, publication_layout=publication_layout)
     else:
         if stop_at != "completed":
             parser.error("--stop-at enhancement 必须同时指定 --keep-root")
         root = Path(tempfile.mkdtemp(prefix="zniku-av27-smoke-")).resolve(strict=True)
         try:
-            summary = run_smoke(root)
+            summary = run_smoke(root, publication_layout=publication_layout)
         except BaseException:
             # 失败或中断可能仍有自动进程；保留自己创建的完整诊断目录，不与 producer 竞争删除。
             print(f"合成烟测未完成，诊断目录保留：{root}", file=sys.stderr, flush=True)

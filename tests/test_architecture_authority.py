@@ -163,6 +163,7 @@ def test_legacy_python_implementation_is_not_shipped_as_product_code() -> None:
         assert not tuple((package_root / package_name).glob("*.py"))
 
     assert {init_file.parent.name for init_file in package_root.glob("*/__init__.py")} == {
+        "desktop",
         "graph",
         "avenhance_v27",
         "media",

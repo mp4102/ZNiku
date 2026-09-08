@@ -9,6 +9,8 @@
 - 流程参考权威：`AVEnhanceFlow main@5c2e055` 的
   `docs/v2.7.0-phase-0-baseline.md` 与 `docs/v2.7.0-lightweight-node-runtime-redesign.md`
 - 日期：2026-09-01
+- 输出体验修订：2026-09-05，经操作者批准；默认直接输出，可选按片名整理。只修订发布参数与路径准备，
+  不改变媒体配方、两段 authoring、Graph Core 或 Runtime。
 
 ## 1. 文档定位
 
@@ -336,6 +338,7 @@ ExpandRequest
 └─ publication
    ├─ output_root                     (absolute existing directory)
    ├─ title / year
+   ├─ layout: direct | title_subdirectory (default: direct)
    └─ overwrite                       (explicit boolean)
 ```
 
@@ -398,17 +401,27 @@ planner 不属于 v0.2.1。
 
 ### 5.4 Project Service endpoints 与 commands
 
-所有请求/响应使用 exact Project Service wire `0.2.1`：
+本节原 v0.2.1 请求现由 Studio 的 exact Project Service wire `0.3.0` 包装，媒体 profile 仍为 `2.7.0`：
 
 | HTTP 边界 | 语义 |
 | --- | --- |
 | `POST /api/studio/templates/av-enhance-v27/preview` | `action=prepare|expand` 的只读 server-side preview |
+| `POST /api/studio/templates/av-enhance-v27/publication-preview` | 不依赖媒体分析的只读输出位置检查 |
 | `POST /api/studio/command` + `operation=create_av_enhance_v27` | 原子创建 preparation Project |
 | `POST /api/studio/command` + `operation=expand_av_enhance_v27` | 原子追加或重建 expanded 子图 |
 
 preview 返回 `phase`、Python 生成的 Graph/definitions/layout 和 profile diagnostics，但不创建 Project、Run、目录
 或 Artifact。Studio 只能展示响应；mutation command 只接受严格 PrepareRequest/ExpandRequest，明确拒绝客户端
 回传 `definitions`、动态 ports、`output_paths`、Graph 或 preflight pass 标志。
+
+`publication-preview` 的严格输入为 `{contract_version: "0.3.0", request: PublicationRequest}`，返回
+`layout`、`resolved_output_root`、`output_directory` 与 `will_create_directory`。它不做 probe、不用临时写入
+测试权限、不要求已有工程，也不提供 mkdir 权限。未知字段、非法枚举、无效目录和文件/链接冲突失败关闭。
+实际写入权限与未来路径状态仍在 OutputFile 执行时验证。
+
+完整 expanded preview 的 `plan.output_target_path` 与 `plan.output_directory_to_create` 用于显示成品全路径
+及当前缺失的待建目录；后者为 `null` 表示当前不需要创建。它们只是 Python 展示投影，不替代普通节点参数，
+不作为下一次 mutation 的授权票据。
 
 create 满足：
 
@@ -718,7 +731,7 @@ diagnostic MR mode；不接受用户 argv 或输出文件名。
   与 [FFmpeg Matroska demuxer](https://www.ffmpeg.org/doxygen/8.0/matroskadec_8c_source.html#l03009)。
 - FinalMux 失败只重跑 staging+mux，不重做 completed ProgramEncode。
 
-### 7.10 OutputFile 与 canonical Jellyfin naming
+### 7.10 OutputFile、直接输出与可选 Jellyfin 整理
 
 模板在 FinalMux 后使用通用 `zniku.media.output_file.media@0.2.0`：
 
@@ -726,32 +739,42 @@ diagnostic MR mode；不接受用户 argv 或输出文件名。
 FinalMux.media → OutputFile.in
 ```
 
-FinalMux 只在 attempt 内产生 `final.mkv`；OutputFile 以显式 `mode=copy`、canonical `target_path` 和
-`overwrite` 发布。Output 失败不回滚 Final。
+FinalMux 只在 attempt 内产生 `final.mkv`；OutputFile 以显式 `mode=copy`、canonical `target_path`、
+`output_root`、`create_parent` 和 `overwrite` 发布。Output 失败不回滚 Final。目录创建授权保存在普通
+OutputFile 参数中，不引入新的 Runtime 状态或 HostBridge 能力。
 
 因此 Phase 3 的“最终名称与 overwrite 由显式参数决定”精确落在后续通用 OutputFile，而不进入 FinalMux
 参数；Phase 4 的 Python builder 负责生成 canonical `target_path`。FinalMux 本身没有外部发布权限。
 
-canonical path：
+文件名仍由 Python 唯一生成：
 
 ```text
 MR off:
-<Title> (<Year>)/<Title> (<Year>) - Enhanced FI<rate-label> <height>p.mkv
+<Title> (<Year>) - Enhanced FI<rate-label> <height>p.mkv
 
 external MR:
-<Title> (<Year>)/<Title> (<Year>) - MR Enhanced FI<rate-label> <height>p.mkv
+<Title> (<Year>) - MR Enhanced FI<rate-label> <height>p.mkv
 ```
 
-Windows path 规则冻结为：
+`layout=direct` 是新请求的默认值：文件直接放进所选 `output_root`，`create_parent=false`。
+`layout=title_subdirectory` 是显式可选整理方式：放进 `output_root/<Title> (<Year>)`，
+`create_parent=true`。缺少该直属子目录不是 preview/expand 错误；不要求用户手动创建。
+已保存工程的 `target_path` 不自动改写，历史 Run snapshot 和 Artifact 不迁移。
+
+路径与副作用规则：
 
 - `title` 先做 Unicode NFC，长度 1..120，不得有前后 whitespace、末尾 dot/space 或路径分隔符；
 - 拒绝 ASCII control、`< > : " / \\ | ? *`、`.`、`..`；title 在第一个 dot 前的 stem 也不得大小写不敏感地
   等于 CON/PRN/AUX/NUL/COM1..9/LPT1..9；
 - `year` 必须是未转换的 ASCII `[0-9]{4}` string；
-- `output_root` 必须 resolved strict 为现有目录；canonical `<Title> (<Year>)` 子目录必须预先存在且为目录；
-- canonical parent 使用 strict resolve 并必须严格 contained in resolved output_root；不存在的 target 只在这个
-  strict parent 下做 non-strict candidate resolution，已存在 target 的 symlink/reparse-point 或 containment 逃逸失败；
-- preview、create、expand、FinalMux 和 OutputFile 都不得隐式 `mkdir` canonical title 子目录；
+- `output_root` 必须 resolved strict 为现有目录；直接输出的父目录就是该根，可选整理的父目录只能是其
+  一个直属子目录，不递归准备任意路径；同名文件、失效链接、symlink/reparse-point 和 containment 逃逸失败；
+- 设置步骤先调用无媒体 I/O 的 Python 只读输出位置检查，返回实际目录与是否将在输出时创建；完整 preview
+  再按 admitted 媒体生成最终文件名并检查目标，expand 与实际发布也必须重新检查；预检查不是未来写入保证；
+- picker、preview、create、expand、取消和 FinalMux 均不创建外部输出目录。只有用户确认工作流并开始处理后，
+  OutputFile 执行到发布步骤时，才可按显式参数在验证过的 root 下创建一个缺失的直属子目录；
+- 创建或发布遇到权限、目录替换或文件冲突时当前 Output attempt 失败，不登记 Artifact，不删除外部目录或
+  partial；已完成分析、Program 和 Final 继续按通用规则复用；
 - target 存在时只有显式 `overwrite=true` 可发布；模板不得自动改名。
 
 rate label 只接受：
@@ -829,7 +852,7 @@ preflight 分别识别 `preparation-compatible` 与 `expanded-compatible`，至�
 - Source original media 只进入 Admission 与 Final；
 - Enhancement scale/geometry 和 stage declaration 全节目一致；
 - 所有局部 N 满足 `N`、`2N-1`、`2N`；
-- publication rate label、严格 Windows title/year、existing canonical parent、containment 与 overwrite；
+- publication rate label、严格 Windows title/year、direct/可选子目录、显式创建权限、containment 与 overwrite；
 - definitions/parameters 不含 executable、argv、shell、code 或客户端注入 output path。
 
 preflight 失败只表示不符合 template profile。若 Graph 仍符合 Core，它仍是合法自由图；Studio 不得混淆 profile
@@ -990,7 +1013,8 @@ ZBaton 可在 OutputFile 后作为普通可选 Export；失败不回滚 Final/Ou
 - Split 按 source 组闭合重复的 producer total；Merge/Program/Final 分别要求
   `producer_metadata["video"|"media"]["output_frames"]` 与 expected N 闭合；所有媒体 Artifact 只向
   `media_info["zniku.avenhance.v27"]["frame_count"]` 写规范 exact N；
-- canonical naming 覆盖四个 rate、Windows reserved/escape、4 位 year、missing title directory 与 overwrite。
+- canonical naming 覆盖四个 rate、Windows reserved/escape、4 位 year、默认直接输出、可选缺失子目录的
+  无副作用 preview/expand、仅在发布时创建、同名文件/链接/权限失败与 overwrite。
 
 ### 14.4 Runtime 回归
 

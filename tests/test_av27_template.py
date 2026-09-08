@@ -255,6 +255,7 @@ def _publication(tmp_path: Path, *, title: str = "Example") -> dict[str, Any]:
         "title": title,
         "year": "2026",
         "overwrite": False,
+        "layout": "title_subdirectory",
     }
 
 
@@ -545,7 +546,7 @@ def test_canonical_naming_supports_four_frozen_rates(
     assert target.name == f"Example (2026) - Enhanced FI{label} 1080p.mkv"
 
 
-def test_canonical_naming_rejects_reserved_missing_parent_and_requires_overwrite(
+def test_canonical_naming_rejects_reserved_allows_direct_and_requires_overwrite(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "root"
@@ -570,13 +571,12 @@ def test_canonical_naming_rejects_reserved_missing_parent_and_requires_overwrite
         year="2026",
         overwrite=False,
     )
-    with pytest.raises(Av27TemplateError, match="E_AV27_NAMING_PARENT"):
+    assert (
         canonical_publication_target(
-            missing,
-            mr_mode="off",
-            final_frame_rate=Fraction(60, 1),
-            height=1080,
-        )
+            missing, mr_mode="off", final_frame_rate=Fraction(60, 1), height=1080
+        ).parent
+        == root
+    )
 
     parent = root / "Example (2026)"
     parent.mkdir()
@@ -587,6 +587,7 @@ def test_canonical_naming_rejects_reserved_missing_parent_and_requires_overwrite
         title="Example",
         year="2026",
         overwrite=False,
+        layout="title_subdirectory",
     )
     with pytest.raises(Av27TemplateError, match="E_AV27_NAMING_EXISTS"):
         canonical_publication_target(
@@ -605,6 +606,99 @@ def test_canonical_naming_rejects_reserved_missing_parent_and_requires_overwrite
         )
         == target.resolve()
     )
+
+
+def test_missing_canonical_parent_uses_python_nfc_name_without_creating(
+    tmp_path: Path,
+) -> None:
+    """缺目录时只生成唯一规范路径，预览不创建目录或替换 output_root。"""
+
+    root = tmp_path / "published"
+    root.mkdir()
+    request = PublicationRequest(
+        output_root=str(root.resolve()),
+        title="Cafe\u0301",
+        year="2026",
+        overwrite=False,
+        layout="title_subdirectory",
+    )
+    expected_parent = root / "Café (2026)"
+    target = canonical_publication_target(
+        request, mr_mode="off", final_frame_rate=Fraction(60, 1), height=1080
+    )
+    assert target.parent == expected_parent
+    assert tuple(root.iterdir()) == ()
+
+
+def test_existing_canonical_parent_file_is_not_reported_as_missing(tmp_path: Path) -> None:
+    """同名文件属于冲突，不得建议覆盖、删除或把它误报为缺失目录。"""
+
+    root = tmp_path / "published"
+    root.mkdir()
+    parent = root / "Example (2026)"
+    parent.write_bytes(b"operator owned")
+    request = PublicationRequest(
+        output_root=str(root.resolve()),
+        title="Example",
+        year="2026",
+        overwrite=False,
+        layout="title_subdirectory",
+    )
+    with pytest.raises(Av27TemplateError) as captured:
+        canonical_publication_target(
+            request, mr_mode="off", final_frame_rate=Fraction(60, 1), height=1080
+        )
+    assert captured.value.code == "E_AV27_NAMING_PARENT"
+    assert "不是文件夹" in captured.value.message
+    assert "手动创建" not in captured.value.message
+    assert str(parent) in captured.value.message
+    assert parent.read_bytes() == b"operator owned"
+
+
+@pytest.mark.parametrize("failure", ["outside", "root", "inaccessible", "broken_link"])
+def test_canonical_parent_unsafe_resolution_remains_closed_without_target_disclosure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """只模拟路径解析结果，跨平台锁定链接逃逸、失效与权限失败的诊断边界。"""
+
+    root = tmp_path / "published"
+    root.mkdir()
+    parent = root / "Example (2026)"
+    parent.mkdir()
+    outside = tmp_path / "private-outside-target"
+    outside.mkdir()
+    original_resolve = Path.resolve
+
+    def resolve(path: Path, strict: bool = False) -> Path:
+        if path != parent:
+            return original_resolve(path, strict=strict)
+        assert strict is True
+        if failure == "outside":
+            return outside
+        if failure == "root":
+            return root
+        if failure == "broken_link":
+            raise FileNotFoundError(str(outside))
+        raise PermissionError(str(outside))
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    request = PublicationRequest(
+        output_root=str(root),
+        title="Example",
+        year="2026",
+        overwrite=False,
+        layout="title_subdirectory",
+    )
+    with pytest.raises(Av27TemplateError) as captured:
+        canonical_publication_target(
+            request, mr_mode="off", final_frame_rate=Fraction(60, 1), height=1080
+        )
+    assert captured.value.code == "E_AV27_NAMING_PARENT"
+    assert str(parent) in captured.value.message
+    assert str(outside) not in captured.value.message
+    assert "手动创建" not in captured.value.message
+    assert tuple(parent.iterdir()) == ()
+    assert tuple(outside.iterdir()) == ()
 
 
 @pytest.mark.parametrize(

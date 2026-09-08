@@ -5,7 +5,7 @@
  * 回退到“高级 → 原始参数”，不会按节点类型猜测值、条件或媒体业务规则。
  */
 
-import { useMemo, useRef, type ChangeEvent, type ReactNode } from 'react'
+import { useId, useMemo, useRef, type ChangeEvent, type ReactNode } from 'react'
 import type {
   JsonObject,
   JsonValue,
@@ -88,11 +88,11 @@ function fieldLabel(name: string, presentation: ParameterPresentationWire | unde
   return presentation?.label ?? name
 }
 
-function FieldErrors({ errors }: { readonly errors: ReadonlyArray<ParameterFieldError> }) {
+function FieldErrors({ errors, id }: { readonly errors: ReadonlyArray<ParameterFieldError>; readonly id?: string }) {
   const messages = [...new Set(errors.map((error) => error.message))]
   if (messages.length === 0) return null
   return (
-    <div className="parameter-field-errors" role="alert">
+    <div id={id} className="parameter-field-errors" role="alert">
       {messages.map((message) => <span key={message}>{message}</span>)}
     </div>
   )
@@ -123,9 +123,11 @@ function OptionalClear({
 function FieldHelp({
   schema,
   presentation,
+  id,
 }: {
   readonly schema: ParameterSchema
   readonly presentation: ParameterPresentationWire | undefined
+  readonly id?: string
 }) {
   const constraints = [
     schema.minimum === undefined ? null : `最小 ${schema.minimum}`,
@@ -135,9 +137,9 @@ function FieldHelp({
     schema.pattern === undefined ? null : `格式 ${schema.pattern}`,
     presentation?.unit ?? null,
   ].filter((item): item is string => item !== null)
-  if (!presentation?.description && !schema.description && constraints.length === 0) return null
+  if (!presentation?.description && !schema.description && constraints.length === 0) return id ? <small id={id} hidden /> : null
   return (
-    <small className="parameter-field-help">
+    <small id={id} className="parameter-field-help">
       {presentation?.description ?? schema.description}
       {constraints.length > 0 && <span>{constraints.join(' · ')}</span>}
     </small>
@@ -196,6 +198,7 @@ function UnsupportedField({ pointer, reason }: { readonly pointer: string; reado
 }
 
 function ScalarField(props: FieldProps) {
+  const fieldId = useId()
   const { pointer, name, schema, required, root, errors, readOnly, presentations } = props
   const presentation = presentations.get(pointer)
   const value = getPointer(root, pointer)
@@ -203,6 +206,12 @@ function ScalarField(props: FieldProps) {
   const label = fieldLabel(name, presentation)
   const labelled = `${label}${required ? '（必填）' : ''}`
   const hint = presentation?.control_hint ?? 'auto'
+  // 关联当前 Python/Schema 错误；aria 属性只解释现有结论，不增加浏览器业务约束。
+  const accessibility = {
+    'aria-invalid': ownErrors.length > 0,
+    'aria-required': required,
+    'aria-describedby': `${fieldId}-help${ownErrors.length ? ` ${fieldId}-errors` : ''}`,
+  }
 
   if ('const' in schema && schema.const !== undefined) {
     return (
@@ -220,8 +229,8 @@ function ScalarField(props: FieldProps) {
           </button>
         )}
         {!required && <OptionalClear context={props} pointer={pointer} present={value !== undefined} />}
-        <FieldHelp schema={schema} presentation={presentation} />
-        <FieldErrors errors={ownErrors} />
+        <FieldHelp id={`${fieldId}-help`} schema={schema} presentation={presentation} />
+        <FieldErrors id={`${fieldId}-errors`} errors={ownErrors} />
       </div>
     )
   }
@@ -236,6 +245,7 @@ function ScalarField(props: FieldProps) {
         <span className="parameter-field-label">{label}{required && <em>必填</em>}</span>
         <select
           aria-label={labelled}
+          {...accessibility}
           disabled={readOnly}
           value={selected < 0 ? '' : String(selected)}
           onChange={(event) => {
@@ -253,8 +263,8 @@ function ScalarField(props: FieldProps) {
         </select>
         <ExplicitDefault props={props} value={value} label={label} />
         {!required && <OptionalClear context={props} pointer={pointer} present={value !== undefined} />}
-        <FieldHelp schema={schema} presentation={presentation} />
-        <FieldErrors errors={ownErrors} />
+        <FieldHelp id={`${fieldId}-help`} schema={schema} presentation={presentation} />
+        <FieldErrors id={`${fieldId}-errors`} errors={ownErrors} />
       </label>
     )
   }
@@ -266,6 +276,7 @@ function ScalarField(props: FieldProps) {
           <span className="parameter-field-label">{label}{required && <em>必填</em>}</span>
           <select
             aria-label={labelled}
+          {...accessibility}
             disabled={readOnly}
             value=""
             onChange={(event) => updateAtPointer(props, pointer, event.target.value === 'true')}
@@ -275,8 +286,8 @@ function ScalarField(props: FieldProps) {
             <option value="false">否</option>
           </select>
           <ExplicitDefault props={props} value={value} label={label} />
-          <FieldHelp schema={schema} presentation={presentation} />
-          <FieldErrors errors={ownErrors} />
+          <FieldHelp id={`${fieldId}-help`} schema={schema} presentation={presentation} />
+          <FieldErrors id={`${fieldId}-errors`} errors={ownErrors} />
         </label>
       )
     }
@@ -285,14 +296,15 @@ function ScalarField(props: FieldProps) {
         <span className="parameter-field-label">{label}{required && <em>必填</em>}</span>
         <input
           aria-label={labelled}
+          {...accessibility}
           checked={value === true}
           disabled={readOnly}
           type="checkbox"
           onChange={(event) => updateAtPointer(props, pointer, event.target.checked)}
         />
         {!required && <OptionalClear context={props} pointer={pointer} present />}
-        <FieldHelp schema={schema} presentation={presentation} />
-        <FieldErrors errors={ownErrors} />
+        <FieldHelp id={`${fieldId}-help`} schema={schema} presentation={presentation} />
+        <FieldErrors id={`${fieldId}-errors`} errors={ownErrors} />
       </label>
     )
   }
@@ -306,6 +318,7 @@ function ScalarField(props: FieldProps) {
         <span className="parameter-field-label">{label}{required && <em>必填</em>}</span>
         <input
           aria-label={labelled}
+          {...accessibility}
           disabled={readOnly}
           max={schema.maximum}
           min={schema.minimum}
@@ -324,8 +337,8 @@ function ScalarField(props: FieldProps) {
         <ExplicitDefault props={props} value={value} label={label} />
         {!required && <OptionalClear context={props} pointer={pointer} present={value !== undefined} />}
         {slider && <output>{numeric || '—'}</output>}
-        <FieldHelp schema={schema} presentation={presentation} />
-        <FieldErrors errors={ownErrors} />
+        <FieldHelp id={`${fieldId}-help`} schema={schema} presentation={presentation} />
+        <FieldErrors id={`${fieldId}-errors`} errors={ownErrors} />
       </label>
     )
   }
@@ -344,6 +357,7 @@ function ScalarField(props: FieldProps) {
           : null
     const common = {
       'aria-label': labelled,
+      ...accessibility,
       disabled: readOnly,
       maxLength: schema.maxLength,
       minLength: schema.minLength,
@@ -381,9 +395,9 @@ function ScalarField(props: FieldProps) {
         )}
         <ExplicitDefault props={props} value={value} label={label} />
         {!required && <OptionalClear context={props} pointer={pointer} present={value !== undefined} />}
-        {pickerKind && <small className="parameter-picker-hint">选择只更新当前未应用设置；Python 仍会在应用和运行时验证路径。</small>}
-        <FieldHelp schema={schema} presentation={presentation} />
-        <FieldErrors errors={ownErrors} />
+        {pickerKind && <small className="parameter-picker-hint">选择只更新当前未应用设置；应用和运行时仍会验证路径。</small>}
+        <FieldHelp id={`${fieldId}-help`} schema={schema} presentation={presentation} />
+        <FieldErrors id={`${fieldId}-errors`} errors={ownErrors} />
       </label>
     )
   }
@@ -392,6 +406,7 @@ function ScalarField(props: FieldProps) {
 }
 
 function OneOfField(props: FieldProps) {
+  const fieldId = useId()
   const branches = props.schema.oneOf ?? []
   const value = getPointer(props.root, props.pointer)
   const selected = selectedOneOfIndex(branches, value)
@@ -405,6 +420,9 @@ function OneOfField(props: FieldProps) {
         <span>结构</span>
         <select
           aria-label={`${fieldLabel(props.name, presentation)}结构`}
+          aria-required={props.required}
+          aria-invalid={ownErrors.length > 0}
+          aria-describedby={`${fieldId}-help${ownErrors.length ? ` ${fieldId}-errors` : ''}`}
           disabled={props.readOnly}
           value={selected === null ? '' : String(selected)}
           onChange={(event) => {
@@ -422,8 +440,8 @@ function OneOfField(props: FieldProps) {
       {selected !== null && (
         <SchemaField {...props} schema={branches[selected]!} name={props.name} required={props.required} />
       )}
-      <FieldHelp schema={props.schema} presentation={presentation} />
-      <FieldErrors errors={ownErrors} />
+      <FieldHelp id={`${fieldId}-help`} schema={props.schema} presentation={presentation} />
+      <FieldErrors id={`${fieldId}-errors`} errors={ownErrors} />
     </fieldset>
   )
 }

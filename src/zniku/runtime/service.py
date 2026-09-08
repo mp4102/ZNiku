@@ -462,6 +462,25 @@ class RuntimeService:
         handoff = self._runner_handoff(run, node_run, request.inputs)
         return self._runner.inspect_manual_outputs(request, handoff)
 
+    def inspect_external_import_candidate(
+        self,
+        run_id: str,
+        node_run_id: str,
+        *,
+        handoff_id: str,
+        port_id: str,
+        candidate: Path,
+    ) -> tuple[ValidatedOutput, ...]:
+        """只读验证宿主 staging 中的人工候选；目标发布与显式 Submit 保持独立。"""
+
+        node_run = self.inspect_external_handoff(run_id, node_run_id, handoff_id=handoff_id)
+        run = self._repository.get_run(run_id)
+        request = self._execution_request(run, node_run)
+        handoff = self._runner_handoff(run, node_run, request.inputs)
+        return self._runner.inspect_manual_candidate(
+            request, handoff, port_id=port_id, candidate=candidate
+        )
+
     def rerun_from_start(
         self, run_id: str, node_id: str, *, expected_storage_revision: int | None = None
     ) -> Run:

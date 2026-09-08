@@ -31,6 +31,7 @@ from zniku.graph import (
 )
 from zniku.runtime.models import FrameRange
 
+from .process_window import background_creation_flags
 from .progress import ProgressError, ProgressInfrastructureError, ProgressReporter
 
 _MEDIA_TYPES = frozenset({"MediaFile", "VideoFile", "AudioFile"})
@@ -721,6 +722,55 @@ class NodeRunner:
         )
         return validated
 
+    def inspect_manual_candidate(
+        self,
+        request: NodeExecutionRequest,
+        handoff: ManualHandoff,
+        *,
+        port_id: str,
+        candidate: Path,
+    ) -> tuple[ValidatedOutput, ...]:
+        """验证已绑定人工交接的 attempt 内候选文件，不覆盖目标、不构造任何结果。
+
+        候选保留声明的文件名，但位于宿主创建的独立 staging 子目录。只替换一个声明输出的
+        本次只读验证路径，其余输出仍使用原目标；全部输出必须通过同一个媒体和节点 validator。
+        该入口不接收前端任意路径，Project Service 必须先完成选择句柄、目标及文件变化检查。
+        """
+
+        ordered_inputs = self._validate_request(request)
+        executor = request.definition.executor
+        if request.definition.execution_mode is not ExecutionMode.MANUAL_EXTERNAL or not isinstance(
+            executor, ManualExternalExecutorSpec
+        ):
+            raise self._configuration_error("E_RUNNER_MODE_INVALID", "节点不是 manual_external")
+        layout = self._existing_layout(request.node_run_id)
+        targets = self._output_targets(request, layout)
+        self._assert_handoff_matches(
+            request, handoff, layout, targets, ordered_inputs, executor.instructions
+        )
+        matched = [target for target in targets if target.port_id == port_id]
+        if len(matched) != 1:
+            raise self._configuration_error("E_RUNNER_OUTPUT_PORT_UNKNOWN", "候选输出端口不存在")
+        resolved = candidate.resolve(strict=True)
+        try:
+            resolved.relative_to(layout.work_dir.resolve(strict=True))
+        except ValueError as error:
+            raise self._configuration_error(
+                "E_RUNNER_PATH_ESCAPE", "候选输出必须位于已绑定 attempt 内"
+            ) from error
+        if resolved.name != matched[0].path.name or resolved == matched[0].path:
+            raise self._configuration_error(
+                "E_RUNNER_CANDIDATE_PATH", "候选必须保留声明文件名且不得替代正式目标路径"
+            )
+        produced = tuple(
+            replace(target, path=resolved) if target.port_id == port_id else target
+            for target in targets
+        )
+        validated, _ = self._validate_outputs(
+            request, layout, produced, exit_code=None, producer_metadata={}
+        )
+        return validated
+
     def _validate_request(self, request: NodeExecutionRequest) -> tuple[RunnerInput, ...]:
         if request.attempt < 1:
             raise self._configuration_error("E_RUNNER_ATTEMPT_INVALID", "attempt 必须从 1 开始")
@@ -1150,6 +1200,7 @@ class NodeRunner:
                     stdout=stdout_stream,
                     stderr=stderr_stream,
                     shell=False,
+                    creationflags=background_creation_flags(),
                     check=False,
                 )
         except (KeyboardInterrupt, asyncio.CancelledError):
@@ -1738,6 +1789,7 @@ class NodeRunner:
                     capture_output=True,
                     text=True,
                     shell=False,
+                    creationflags=background_creation_flags(),
                     check=False,
                     timeout=30,
                 )

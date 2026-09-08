@@ -740,17 +740,22 @@
           "features": {
             "control_shapes": [
               "all_of_rules",
+              "array_editor",
               "boolean_schema",
               "boolean_toggle",
               "conditional_branch",
               "constant_value",
               "declared_default",
               "enum_choice",
+              "homogeneous_array",
+              "negative_rule",
               "object_group",
               "string_input",
-              "text_length_bounds"
+              "text_length_bounds",
+              "unique_array"
             ],
             "json_types": [
+              "array",
               "boolean",
               "object",
               "string"
@@ -764,11 +769,14 @@
               "description",
               "enum",
               "if",
+              "items",
               "minLength",
+              "not",
               "properties",
               "required",
               "then",
-              "type"
+              "type",
+              "uniqueItems"
             ]
           },
           "identity": {
@@ -795,9 +803,60 @@
                     "target_path"
                   ]
                 }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "create_parent": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "create_parent"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "mode": {
+                      "const": "copy"
+                    }
+                  },
+                  "required": [
+                    "output_root"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "reference"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ]
+                },
+                "then": {
+                  "not": {
+                    "required": [
+                      "output_root"
+                    ]
+                  },
+                  "properties": {
+                    "create_parent": {
+                      "const": false
+                    }
+                  }
+                }
               }
             ],
             "properties": {
+              "create_parent": {
+                "default": false,
+                "description": "显式允许发布时创建 output_root 内一个直属父目录；不递归创建。",
+                "type": "boolean"
+              },
               "mode": {
                 "default": "copy",
                 "description": "copy 发布到 target_path；reference 保留上游路径。",
@@ -807,10 +866,24 @@
                 ],
                 "type": "string"
               },
+              "output_root": {
+                "description": "可选发布边界：必须是现有绝对目录，目标只能位于本目录或直属子目录。",
+                "minLength": 1,
+                "type": "string"
+              },
               "overwrite": {
                 "default": false,
                 "description": "必须显式为 true 才允许覆盖已有文件。",
                 "type": "boolean"
+              },
+              "protected_paths": {
+                "description": "不能被目标覆盖的额外绝对源路径；包括同路径与硬链接。",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
               },
               "target_path": {
                 "description": "copy 模式明确选择的本地绝对输出路径。",
@@ -829,17 +902,22 @@
           "features": {
             "control_shapes": [
               "all_of_rules",
+              "array_editor",
               "boolean_schema",
               "boolean_toggle",
               "conditional_branch",
               "constant_value",
               "declared_default",
               "enum_choice",
+              "homogeneous_array",
+              "negative_rule",
               "object_group",
               "string_input",
-              "text_length_bounds"
+              "text_length_bounds",
+              "unique_array"
             ],
             "json_types": [
+              "array",
               "boolean",
               "object",
               "string"
@@ -853,11 +931,14 @@
               "description",
               "enum",
               "if",
+              "items",
               "minLength",
+              "not",
               "properties",
               "required",
               "then",
-              "type"
+              "type",
+              "uniqueItems"
             ]
           },
           "identity": {
@@ -884,9 +965,60 @@
                     "target_path"
                   ]
                 }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "create_parent": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "create_parent"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "mode": {
+                      "const": "copy"
+                    }
+                  },
+                  "required": [
+                    "output_root"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "reference"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ]
+                },
+                "then": {
+                  "not": {
+                    "required": [
+                      "output_root"
+                    ]
+                  },
+                  "properties": {
+                    "create_parent": {
+                      "const": false
+                    }
+                  }
+                }
               }
             ],
             "properties": {
+              "create_parent": {
+                "default": false,
+                "description": "显式允许发布时创建 output_root 内一个直属父目录；不递归创建。",
+                "type": "boolean"
+              },
               "mode": {
                 "default": "copy",
                 "description": "copy 发布到 target_path；reference 保留上游路径。",
@@ -896,10 +1028,24 @@
                 ],
                 "type": "string"
               },
+              "output_root": {
+                "description": "可选发布边界：必须是现有绝对目录，目标只能位于本目录或直属子目录。",
+                "minLength": 1,
+                "type": "string"
+              },
               "overwrite": {
                 "default": false,
                 "description": "必须显式为 true 才允许覆盖已有文件。",
                 "type": "boolean"
+              },
+              "protected_paths": {
+                "description": "不能被目标覆盖的额外绝对源路径；包括同路径与硬链接。",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
               },
               "target_path": {
                 "description": "copy 模式明确选择的本地绝对输出路径。",
@@ -918,17 +1064,22 @@
           "features": {
             "control_shapes": [
               "all_of_rules",
+              "array_editor",
               "boolean_schema",
               "boolean_toggle",
               "conditional_branch",
               "constant_value",
               "declared_default",
               "enum_choice",
+              "homogeneous_array",
+              "negative_rule",
               "object_group",
               "string_input",
-              "text_length_bounds"
+              "text_length_bounds",
+              "unique_array"
             ],
             "json_types": [
+              "array",
               "boolean",
               "object",
               "string"
@@ -942,11 +1093,14 @@
               "description",
               "enum",
               "if",
+              "items",
               "minLength",
+              "not",
               "properties",
               "required",
               "then",
-              "type"
+              "type",
+              "uniqueItems"
             ]
           },
           "identity": {
@@ -973,9 +1127,60 @@
                     "target_path"
                   ]
                 }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "create_parent": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "create_parent"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "mode": {
+                      "const": "copy"
+                    }
+                  },
+                  "required": [
+                    "output_root"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "reference"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ]
+                },
+                "then": {
+                  "not": {
+                    "required": [
+                      "output_root"
+                    ]
+                  },
+                  "properties": {
+                    "create_parent": {
+                      "const": false
+                    }
+                  }
+                }
               }
             ],
             "properties": {
+              "create_parent": {
+                "default": false,
+                "description": "显式允许发布时创建 output_root 内一个直属父目录；不递归创建。",
+                "type": "boolean"
+              },
               "mode": {
                 "default": "copy",
                 "description": "copy 发布到 target_path；reference 保留上游路径。",
@@ -985,10 +1190,24 @@
                 ],
                 "type": "string"
               },
+              "output_root": {
+                "description": "可选发布边界：必须是现有绝对目录，目标只能位于本目录或直属子目录。",
+                "minLength": 1,
+                "type": "string"
+              },
               "overwrite": {
                 "default": false,
                 "description": "必须显式为 true 才允许覆盖已有文件。",
                 "type": "boolean"
+              },
+              "protected_paths": {
+                "description": "不能被目标覆盖的额外绝对源路径；包括同路径与硬链接。",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
               },
               "target_path": {
                 "description": "copy 模式明确选择的本地绝对输出路径。",

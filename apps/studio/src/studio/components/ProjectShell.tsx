@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 
 export interface ProjectShellProps {
+  readonly desktopControls?: ReactNode
   readonly projectName: string | null
   readonly projectId: string | null
   readonly nodeCount: number
@@ -37,6 +38,7 @@ export interface ProjectShellProps {
   readonly onSaveProject: () => void
 }
 export function ProjectShell({
+  desktopControls,
   projectName,
   projectId,
   nodeCount,
@@ -77,9 +79,9 @@ export function ProjectShell({
         <div><span className="brand-name">ZNIKU</span><span className="brand-subtitle">Studio</span></div>
       </div>
       <div className="workflow-identity">
-        <span className="eyebrow">PROJECT GRAPH</span>
+        <span className="eyebrow">{advanced ? 'PROJECT GRAPH' : '当前工程'}</span>
         <strong>{projectName ?? '打开或新建 .zniku 工程'}</strong>
-        <span className="identity-meta">
+        <span className="identity-meta" role="status" aria-label="工程保存状态" aria-live="polite" aria-atomic="true">
           {projectId ? `${nodeCount} 个节点 · ${saveError ? '保存未完成' : saving ? '正在保存…' : dirty ? '有未保存更改' : draftBlocked ? '已保存，但暂不可运行' : '已保存'}` : '选择已有工程，或创建新的工作流'}
         </span>
         {saveError && <div className="authoring-save-error" role="alert"><span>{saveError}</span><button onClick={onReloadProject} type="button">重新载入磁盘版本</button></div>}
@@ -94,6 +96,7 @@ export function ProjectShell({
         )}
       </div>
       <div className="project-location">
+        {desktopControls}
         <div className="edit-history-actions"><button aria-label="撤销" title="撤销 Ctrl+Z" type="button" disabled={serviceBusy || !canUndo} onClick={onUndo}>撤销</button><button aria-label="重做" title="重做 Ctrl+Shift+Z" type="button" disabled={serviceBusy || !canRedo} onClick={onRedo}>重做</button></div>
         <button type="button" className="button button--ghost" aria-pressed={advanced} onClick={onToggleAdvanced}>{advanced ? '返回创作者模式' : '高级节点图'}</button>
         <button className="button button--ghost" disabled={serviceBusy} onClick={onHome} type="button">工程首页</button>

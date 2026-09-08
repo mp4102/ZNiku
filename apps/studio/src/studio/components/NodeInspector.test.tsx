@@ -46,13 +46,13 @@ describe('创作者节点 Inspector', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ strength: 5 })
   })
 
-  it.each(['running', 'failed', 'completed'] as const)('%s 状态优先于编辑表单，不把全局助手重复插入', (state) => {
+  it.each(['running', 'failed', 'completed'] as const)('%s 状态只展示所选步骤，不嵌入其他任务助手', (state) => {
     render(<NodeInspector {...props({ selectedNodeRun: { ...waiting, state, external_handoff: null }, handoffCenter: <section aria-label="其他交接任务">其他等待任务</section> })} />)
     const status = screen.getByLabelText('步骤处理状态')
     const settings = screen.getByRole('heading', { name: '设置' })
     expect(status.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getAllByLabelText('步骤处理状态')).toHaveLength(1)
-    expect(screen.getAllByLabelText('其他交接任务')).toHaveLength(1)
+    expect(screen.queryByLabelText('其他交接任务')).not.toBeInTheDocument()
   })
 
   it('默认不挂载运行身份或日志，原始失败只在显式高级详情显示', () => {

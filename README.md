@@ -12,7 +12,7 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - 已交付基线：`ZNIKU Studio 0.2.0` Phase 0–5，Core 已完成 legacy 清理与最小自动化验收
 - 已验收增量：`v0.2.1` Phase 0–5 已完成，真实 MR-off GUI 闭环与操作者验收通过；external MR 仍是未验证范围
 - 当前开发分支：`v0.3.0`
-- 当前增量阶段：**v0.3.0 Phase 0–4 已完成；Phase 5–6 尚未实施**
+- 当前增量阶段：**v0.3.0 Phase 0–4 已完成；Phase 5 已实施，原生窗口验收待完成；Phase 6 未开始**
 - Graph／Runtime 上位架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
 - Studio UX 下位设计：[创作者体验基线](docs/architecture/studio-ux-baseline.md)
 - 分阶段计划：[v0.3.0 创作者体验重构执行方案](docs/v0.3.0-execution-plan.md)
@@ -21,8 +21,10 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - Phase 2 证据：[v0.3.0 Phase 2 验收记录](docs/v0.3.0-phase2-acceptance.md)
 - Phase 3 证据：[v0.3.0 Phase 3 验收记录](docs/v0.3.0-phase3-acceptance.md)
 - Phase 4 证据：[v0.3.0 Phase 4 验收记录](docs/v0.3.0-phase4-acceptance.md)
+- Phase 5 证据：[v0.3.0 Phase 5 验收记录](docs/v0.3.0-phase5-acceptance.md)
+- Windows 桌面入口：[启动、退出和构建说明](docs/studio-desktop.md)
 - 当前实现版本：`0.2.0`；package/product 版本按计划保持不变，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
-  `zniku.project_service`、`zniku.presentation`、`zniku.media` 与 `zniku.avenhance_v27`
+  `zniku.project_service`、`zniku.presentation`、`zniku.media`、`zniku.avenhance_v27` 与 `zniku.desktop`
 - 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
 
 Phase 1 已建立 Graph Core 与 `.zniku` Store，Phase 2 已用新的最小 Run、NodeRun、Artifact 与 NodeResult
@@ -59,6 +61,11 @@ v0.3.0 Phase 4 已实现创作者运行中心、中文问题卡片、任务式�
 进入高级层。外部输出必须先检查再显式提交，提交时仍由 Python 完整重验。重跑前展示 Python 的只读影响清单，
 确认后才执行正式命令；状态历史读取改为 SQL 有界窗口，OutputFile 字节采样不再每 MiB 触发回调。Python
 完整门禁与正式服务合成浏览器闭环已通过，详见 Phase 4 验收记录；这不代表 Phase 5／6 已完成。
+
+v0.3.0 Phase 5 已实现 Windows one-folder 双击候选、同源 production 服务、随机端口、单实例、安全退出、
+跨启动本机偏好，以及代表帧/A-B 静帧预览。缓存仅在有界内存中，不进入工程或 Artifact。中文、键盘焦点、
+响应式布局与自动化无障碍已收敛，并加入 50／200 节点、1000 条历史及频繁进度投影门禁。真实原生 picker、
+文件管理器与播放器窗口点击尚待验收，**Phase 5 尚不能关闭**，不以模拟窗口或自动测试替代该退出条件。
 
 ## 产品核心
 

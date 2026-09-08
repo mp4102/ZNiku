@@ -8,6 +8,15 @@ export function fileName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 }
 
+/** 只展示已知校验器的说明；不解析数值、不推导 N，也不决定是否可提交。 */
+export function formatHandoffValidationMessage(message: string | null): string | null {
+  const match = message?.match(/^(?:E_[A-Z0-9_]+: )*E_AV27_ENHANCEMENT_FRAME_COUNT: (.+)$/u)
+  if (!match) return null
+  return match[1] === 'Enhancement 输出不满足 N -> N'
+    ? '增强结果与所选任务要求的帧数不一致。请确认文件是否对应这个分段，再重新检查。'
+    : match[1]!
+}
+
 const contractLabels: Readonly<Record<string, string>> = {
   'Model name(操作者声明)': '使用模型（你声明的名称）',
   'Model version(操作者声明)': '模型版本（你声明的版本）',
@@ -37,7 +46,7 @@ export function HandoffContract({ contract }: { readonly contract: ExternalHando
 export function ReadinessMessages({ readiness }: { readonly readiness: ExternalHandoffReadiness | null }) {
   return <>{readiness?.targets.filter((target) => target.message !== null).map((target) => (
     <section className="handoff-problem" key={`${target.port_id}-${target.ordinal ?? 'one'}`}>
-      <p className="runtime-error" role="status">{fileName(target.path)}：{failurePresentation('external_submission_invalid').cause}</p>
+      <p className="runtime-error" role="status">{fileName(target.path)}：{formatHandoffValidationMessage(target.message) ?? failurePresentation('external_submission_invalid').cause}</p>
       <p>上游结果和已有文件仍然保留。请按处理要求修正输出，再重新检查。</p>
       <details><summary>高级 → 检测原始详情</summary><pre>{target.port_id} · {target.message}</pre></details>
     </section>
@@ -51,6 +60,9 @@ export function HandoffPrecheckFailure({ failure, resolved = false }: { readonly
       <h4>上次完整预检失败</h4>
       <p>{resolved ? '新的完整检查已通过；以下仅保留上次失败记录，不影响本次提交。' : '上次输出未通过完整检查，未登记为可用结果。替换文件后，请重新检查输出，再提交并继续。'}</p>
       <small>已完成的上游结果仍然保留；这是上次检查记录，不代表当前文件仍然失败。</small>
+      {failure.targets.filter((target) => target.state !== 'probe_passed' && formatHandoffValidationMessage(target.message)).map((target) => (
+        <p key={`${target.port_id}-${target.ordinal ?? 'one'}`}>上次原因：{formatHandoffValidationMessage(target.message)}</p>
+      ))}
       <details><summary>高级 → 上次检查原始详情</summary>
         <time dateTime={failure.checked_at}>{failure.checked_at}</time>
         {failure.targets.filter((target) => target.state !== 'probe_passed').map((target) => (

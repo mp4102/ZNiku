@@ -9,6 +9,19 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from zniku.avenhance_v27.template import TemplatePreviewRequest
+from zniku.desktop.contracts import (
+    DesktopCloseEnvelope,
+    DesktopCloseRequest,
+    DesktopPreferencesEnvelope,
+    DesktopPreferencesRequest,
+    DesktopSessionEnvelope,
+)
+from zniku.project_service.handoff_import import (
+    HandoffImportConfirmEnvelope,
+    HandoffImportConfirmRequest,
+    HandoffImportPreviewEnvelope,
+    HandoffImportPreviewRequest,
+)
 from zniku.project_service.host_bridge import (
     HOST_PATH_REFERENCE_ADAPTER,
     HostCapabilitiesEnvelope,
@@ -24,12 +37,15 @@ from zniku.project_service.models import (
     NodeLogEnvelope,
     PresentationCatalogEnvelope,
     ProjectServiceCommand,
+    PublicationPreviewEnvelope,
+    PublicationPreviewRequest,
     RerunPreviewEnvelope,
     RunDetailEnvelope,
     RunSummaryPageEnvelope,
     StatusEnvelope,
     TemplatePreviewEnvelope,
 )
+from zniku.project_service.preview import MediaPreviewEnvelope, MediaPreviewRequest
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "apps" / "studio" / "src" / "service" / "project-service.schema.json"
@@ -113,9 +129,16 @@ def render_schema() -> str:
         ExternalHandoffReadiness,
         PresentationCatalogEnvelope,
         TemplatePreviewEnvelope,
+        PublicationPreviewEnvelope,
         HostCapabilitiesEnvelope,
         HostUserActionEnvelope,
         HostInvokeEnvelope,
+        HandoffImportPreviewEnvelope,
+        HandoffImportConfirmEnvelope,
+        MediaPreviewEnvelope,
+        DesktopSessionEnvelope,
+        DesktopCloseEnvelope,
+        DesktopPreferencesEnvelope,
     )
     envelope_schema: dict[str, object] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -152,10 +175,16 @@ def render_schema() -> str:
     envelope_definitions["TemplatePreviewRequest"] = preview_schema
 
     host_request_models = (
+        PublicationPreviewRequest,
         HostUserActionRequest,
         HostInvokeRequest,
         HostDialogArguments,
         HostSystemArguments,
+        MediaPreviewRequest,
+        HandoffImportPreviewRequest,
+        HandoffImportConfirmRequest,
+        DesktopCloseRequest,
+        DesktopPreferencesRequest,
     )
     for host_model in host_request_models:
         host_schema = host_model.model_json_schema()

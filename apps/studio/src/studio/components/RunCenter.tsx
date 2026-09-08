@@ -59,6 +59,7 @@ export function RunCenter({ health, status, summaries, viewRunId, runBlocked, ru
       {onRecoverService && !primaryAction ? <button type="button" onClick={onRecoverService}>重新连接</button> : <small>请确认本机服务仍在运行，连接恢复后再操作。</small>}
     </div>}
     {!health.status.stale && health.detail.stale && <div className="run-service-warning" role="status"><span>步骤详情暂未更新，仍保留上次可信状态。操作前请等待详情恢复。</span></div>}
+    {status?.active_operation === 'import_external' && <p role="status">正在导入外部文件…请等待复制和验证完成。</p>}
     <label className="run-selector">
       <span>{advanced ? '查看 Run' : '处理记录'}</span>
       <select aria-label={advanced ? '查看 Run' : '处理记录'} value={viewRunId ?? ''}
@@ -119,7 +120,7 @@ export function RunCanvasOverlays({ viewedSummary, firstWaiting, firstWaitingInp
       {advanced && <span>{viewedSummary.state}</span>}
     </div>}
     {firstWaiting && <div className="next-action-banner" role="status">
-      <span className="eyebrow">下一步</span><div className="next-action-copy">
+      <span className="eyebrow">流程下一项</span><div className="next-action-copy">
         <strong>{nodeLabel?.(firstWaiting.node_id) ?? '当前步骤'} · 等待外部处理</strong>
         <small>在外部工具完成处理后，返回此处检查输出并显式提交。</small>
         {advanced && <code>{firstWaiting.node_id} · {firstWaitingInputPaths.join(', ')} → {firstWaiting.external_handoff?.output_targets.map((target) => target.path).join(', ')}</code>}

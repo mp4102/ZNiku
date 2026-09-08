@@ -12,7 +12,9 @@ Graph 与 Runtime 的唯一上位架构权威是
 当前产品代码仍保持 `0.2.0` package 版本。v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
 创作者建项、HostBridge、Undo/Redo、兼容连接、纯展示分组与 CAS 自动保存。Phase 4 已实现创作者运行中心、
 外部处理助手与只读重跑影响预览，完整门禁与合成浏览器闭环已通过，见 [Phase 4 验收记录](../../docs/v0.3.0-phase4-acceptance.md)。
-双击交付、媒体预览和新用户真实验收仍属于尚未开始的 Phase 5–6。
+Phase 5 已加入双击桌面候选、轻量预览、无障碍与有界性能门禁；原生窗口点击验收仍待完成，不能宣称阶段关闭。
+详见 [Phase 5 验收记录](../../docs/v0.3.0-phase5-acceptance.md) 和 [Windows 桌面说明](../../docs/studio-desktop.md)。
+首次用户真实验收属于尚未开始的 Phase 6。
 
 当前 0.2.0 Phase 1–5 与 v0.2.1 Phase 1–5 已实现产品面：
 
@@ -31,7 +33,12 @@ Graph 与 Runtime 的唯一上位架构权威是
 Studio 不实现 Compiler、Freeze、ExecutionPlan、scope、唯一 Final、固定 AVEnhanceFlow 拓扑或浏览器 mock
 Runtime。Project Service 不可用或响应不符合 Python 生成 Schema 时失败关闭。
 
-## 本地运行
+## 创作者启动
+
+完整解压本地 Windows 候选目录，双击 `ZNIKU Studio.exe`，无需安装 Python/npm。选择工程和素材使用原生
+选择器；退出使用界面“退出应用”，只关浏览器标签页不会停止服务。包的构建、来源与当前验收边界见桌面说明。
+
+## 开发运行
 
 确保 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。先在仓库根目录启动 loopback Project
 Service（默认 `127.0.0.1:18765`），再启动 Vite：

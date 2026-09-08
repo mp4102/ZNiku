@@ -29,6 +29,7 @@ import { OrderedInputList } from './OrderedInputList'
 export interface NodeInspectorProps {
   readonly advanced?: boolean
   readonly authoringPanel?: ReactNode
+  readonly mediaPreview?: ReactNode
   readonly orderedInputs?: ReadonlyArray<{ readonly label: string; readonly edges: ReadonlyArray<EdgeWire> }>
   readonly nodeLabel?: (nodeId: string) => string
   readonly sourcePortLabel?: (nodeId: string, portId: string) => string
@@ -88,14 +89,15 @@ export function NodeInspector(props: NodeInspectorProps) {
   // 运行任务优先于编辑表单；只调整同一投影的位置，不另建参数或交接状态。
   const handoffFirst = selectedNode !== null && props.selectedNodeRun?.state === 'waiting_external'
   return (
-    <aside className="inspector-panel">
+    <aside className="inspector-panel" aria-label="步骤设置与输出" id="node-inspector" tabIndex={-1}>
       <div className="panel-heading inspector-heading">
-        <span className="eyebrow">INSPECTOR</span>
-        <h2>{selectedNode ? props.nodeLabel?.(selectedNode.node_id) ?? selectedPresentation?.title ?? selectedNode.node_id : selectedEdge ? '连接设置' : '未选择实体'}</h2>
+        <span className="eyebrow">{props.advanced ? 'INSPECTOR' : '步骤详情'}</span>
+        <h2>{selectedNode ? props.nodeLabel?.(selectedNode.node_id) ?? selectedPresentation?.title ?? selectedNode.node_id : selectedEdge ? '连接设置' : '请选择步骤'}</h2>
         {props.advanced && (selectedNode || selectedEdge) && <code>{selectedNode ? `${selectedNode.type_id}@${selectedNode.definition_version}` : edgeId(selectedEdge!)}</code>}
       </div>
       {selectedNode && <NodeRuntime {...props} />}
       {handoffFirst && handoffCenter}
+      {props.mediaPreview}
       {props.authoringPanel}
       {props.orderedInputs?.map((input) => <section className="inspector-ordered-inputs" key={input.label}><h3>{input.label}</h3><OrderedInputList edges={input.edges} nodeLabel={props.nodeLabel ?? ((id) => id)} portLabel={props.sourcePortLabel ?? ((_nodeId, portId) => portId)} disabled={busy || !graphEditable} onReorder={props.onReorderEdge} /></section>)}
       {selectedNode && selectedDefinition && parameterValidation ? (
@@ -122,8 +124,8 @@ export function NodeInspector(props: NodeInspectorProps) {
             </div>
             <details className="parameter-raw-json">
               <summary>高级 → 原始参数</summary>
-              <textarea aria-label="节点参数 JSON" value={parameterText} onChange={(event) => props.onParameterTextChange(event.target.value)} rows={10} readOnly={!graphEditable || busy} />
-              {parameterRawError && <p role="alert">{parameterRawError}</p>}
+              <textarea aria-label="节点参数 JSON" aria-invalid={!!parameterRawError} aria-describedby={parameterRawError ? 'parameter-raw-error' : undefined} value={parameterText} onChange={(event) => props.onParameterTextChange(event.target.value)} rows={10} readOnly={!graphEditable || busy} />
+              {parameterRawError && <p id="parameter-raw-error" role="alert">{parameterRawError}</p>}
             </details>
             <details><summary>高级 → parameter_schema</summary><pre>{JSON.stringify(selectedDefinition.parameter_schema, null, 2)}</pre></details>
           </section>
@@ -136,9 +138,9 @@ export function NodeInspector(props: NodeInspectorProps) {
       ) : selectedEdge ? (
         <div className="inspector-content"><section><h3>连接</h3><p>{props.nodeLabel?.(selectedEdge.source_node_id) ?? selectedEdge.source_node_id} → {props.nodeLabel?.(selectedEdge.target_node_id) ?? selectedEdge.target_node_id}</p>{props.advanced && selectedEdge.ordinal !== null && <label className="ordinal-editor">Ordinal<input aria-label="Edge ordinal" type="number" min={0} value={selectedEdge.ordinal} disabled={!graphEditable} onChange={(event) => props.onReorderEdge(edgeId(selectedEdge), Number(event.target.value))} /></label>}<button className="button button--danger inspector-action" type="button" disabled={busy || !graphEditable} onClick={props.onDeleteEdge}>删除所选连接</button></section></div>
       ) : <div className="empty-inspector">选择一个步骤或连接，查看设置、处理状态和输出。</div>}
-      {!handoffFirst && handoffCenter}
+      {!handoffFirst && selectedNode === null && handoffCenter}
       {actionableRun && <details className="inspector-run-actions"><summary>高级 → 放弃本次处理</summary><p>放弃本次运行不会删除已有媒体。正在运行时不可放弃，请先等待当前步骤停止。</p><button className="button button--danger abandon-run" type="button" disabled={mutationBlocked || actionableRunIsRunning} onClick={props.onAbandonRun}>Abandon Run</button>{mutationBlocked && <p>请先恢复连接并解决当前阻塞提示。</p>}</details>}
-      {clientHint && <p className="client-hint" role="status">{clientHint}</p>}
+      {clientHint && <p className="client-hint" role="status" aria-label="操作提示">{clientHint}</p>}
       {boundaryError && <section className="client-hint client-hint--error"><p role="alert">这次操作未能完成。当前工作与已有文件仍然保留，请处理运行中心的提示后重试。</p><details><summary>高级 → 操作原始详情</summary><pre>{boundaryError}</pre></details></section>}
     </aside>
   )
@@ -168,7 +170,7 @@ function NodeRuntime(props: NodeInspectorProps) {
     {props.selectedOutputs.length > 0 && <section className="inspector-artifacts"><h4>可用输出</h4>{props.selectedOutputs.map((artifact) => <div className="output-path" key={artifact.artifact_id}>
       <strong>{fileName(artifact.path)}</strong>
       <div className="artifact-host-actions"><button disabled={!props.canRevealArtifact} onClick={() => props.onRevealArtifact(artifact.artifact_id)} type="button">在文件夹中显示</button><button disabled={!props.canOpenArtifact} onClick={() => props.onOpenArtifact(artifact.artifact_id)} type="button">播放</button><button onClick={() => props.onCopyPath(artifact.path)} type="button">复制输出路径</button></div>
-      {(!props.canRevealArtifact || !props.canOpenArtifact) && <p>本机打开能力未连接，可复制输出路径；使用 ZNIKU launcher 启动可恢复本机能力。</p>}
+      {(!props.canRevealArtifact || !props.canOpenArtifact) && <p>本机打开能力未连接。请从 ZNIKU Studio 桌面入口启动后重试；高级操作仍可复制输出路径。</p>}
       <ArtifactMediaSummary artifact={artifact} />
     </div>)}</section>}
     <details className="inspector-runtime-details" open={props.advancedDetailsOpen ?? props.advanced ?? false} onToggle={(event) => props.onToggleDiagnostics?.(event.currentTarget.open)}>

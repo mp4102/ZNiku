@@ -44,6 +44,53 @@ def _id() -> str:
     return str(uuid4())
 
 
+@pytest.mark.parametrize("layout", [None, "direct", "title_subdirectory"])
+def test_output_settings_are_checked_before_analysis_without_writes(
+    tmp_path: Path, layout: str | None
+) -> None:
+    application, _ = _create_application(tmp_path)
+    root = tmp_path / "test123"
+    root.mkdir()
+    request: dict[str, object] = {
+        "output_root": str(root),
+        "title": "Example",
+        "year": "2026",
+        "overwrite": False,
+    }
+    if layout is not None:
+        request["layout"] = layout
+    before = application.inspect()
+    preview = application.preview_av27_publication(
+        {"contract_version": "0.3.0", "request": request}
+    )
+    assert preview.layout == (layout or "direct")
+    assert preview.will_create_directory == (layout == "title_subdirectory")
+    expected = root / "Example (2026)" if layout == "title_subdirectory" else root
+    assert preview.output_directory == str(expected)
+    assert preview.resolved_output_root == str(root)
+    assert application.inspect() == before
+    assert tuple(root.iterdir()) == ()
+
+
+def test_output_settings_reject_unknown_layout_and_missing_root_without_analysis(
+    tmp_path: Path,
+) -> None:
+    application, _ = _create_application(tmp_path)
+    request = {
+        "output_root": str(tmp_path / "missing"),
+        "title": "Example",
+        "year": "2026",
+        "overwrite": False,
+    }
+    with pytest.raises(ProjectServiceError, match="E_AV27_NAMING_ROOT"):
+        application.preview_av27_publication({"contract_version": "0.3.0", "request": request})
+    with pytest.raises(ProjectServiceError, match="E_AV27_TEMPLATE_REQUEST_INVALID"):
+        application.preview_av27_publication(
+            {"contract_version": "0.3.0", "request": {**request, "layout": "auto"}}
+        )
+    assert not (tmp_path / "missing").exists()
+
+
 @pytest.mark.parametrize(
     "display_name",
     [
@@ -439,6 +486,55 @@ def test_expand_rechecks_publication_target_after_preview_without_mutation(
     assert captured.value.code == "E_AV27_NAMING_EXISTS"
     assert target.read_bytes() == b"operator-owned publication"
     assert ProjectStore.open(path).load() == before
+
+
+def test_missing_publication_parent_previews_and_expands_without_mkdir_or_new_analysis(
+    tmp_path: Path,
+) -> None:
+    """可选子目录缺失不阻断预览，确认建图也不 mkdir；分析绑定与产物保持不变。"""
+
+    application, prepare = _create_application(tmp_path)
+    path = Path(cast(str, prepare["project_path"]))
+    run_id, (_, video_id) = _seed_completed_preparation(path, tmp_path)
+    request = _expand_payload(tmp_path, run_id)
+    request["publication"]["title"] = "Operator choice"
+    request["publication"]["layout"] = "title_subdirectory"
+    root = Path(request["publication"]["output_root"])
+    parent = root / "Operator choice (2026)"
+    source = Path(cast(str, prepare["sources"][0]["source_path"]))
+    repository = RuntimeRepository.open(path)
+    before_project = ProjectStore.open(path).load()
+    before_bytes = path.read_bytes()
+    before_source = (source.read_bytes(), source.stat().st_mtime_ns)
+    before_runs = repository.list_runs()
+    before_attempts = repository.list_node_runs(run_id)
+    before_latest = repository.list_latest()
+    before_results = tuple(repository.get_result(item.result_id) for item in before_latest)
+
+    for _ in range(2):
+        preview = application.preview_av_enhance_v27({"action": "expand", "request": request})
+        assert preview.profile.compatible
+        assert preview.plan.output_directory_to_create == str(parent)
+        assert not parent.exists()
+        assert path.read_bytes() == before_bytes
+        assert ProjectStore.open(path).load() == before_project
+
+    preview = application.preview_av_enhance_v27({"action": "expand", "request": request})
+    assert preview.profile.status == "expanded-compatible"
+    assert preview.plan.preparation_run_id == run_id
+    assert preview.plan.effective_video_artifact_ids == (video_id,)
+    assert Path(cast(str, preview.plan.output_target_path)).parent == parent
+    assert path.read_bytes() == before_bytes
+    assert ProjectStore.open(path).load() == before_project
+    assert repository.list_runs() == before_runs
+    assert repository.list_node_runs(run_id) == before_attempts
+    assert repository.list_latest() == before_latest
+    assert tuple(repository.get_result(item.result_id) for item in before_latest) == before_results
+    assert (source.read_bytes(), source.stat().st_mtime_ns) == before_source
+    authoring_command(application, {"operation": "expand_av_enhance_v27", "request": request})
+    assert not parent.exists()
+    assert repository.list_runs() == before_runs
+    assert repository.list_node_runs(run_id) == before_attempts
 
 
 def test_reexpand_rejects_freely_edited_graph_without_partial_save(tmp_path: Path) -> None:

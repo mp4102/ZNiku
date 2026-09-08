@@ -34,10 +34,34 @@ from zniku.avenhance_v27.preflight import (
 )
 from zniku.graph import Edge, Graph, NodeDefinition, NodeInstance, PythonExecutorSpec
 from zniku.media import output_file_definition
+from zniku.media.definitions import legacy_output_file_definition
 from zniku.project import Project, ProjectSnapshot
 
 SourceMode = Literal["program", "pre_chaptered"]
 MrMode = Literal["off", "external"]
+
+
+def test_existing_title_layout_with_legacy_output_definition_remains_compatible() -> None:
+    snapshot = _expanded_snapshot()
+    snapshot = snapshot.model_copy(
+        update={
+            "definitions": tuple(
+                legacy_output_file_definition("MediaFile")
+                if definition.type_id == "zniku.media.output_file.media"
+                else definition
+                for definition in snapshot.definitions
+            )
+        }
+    )
+    before = snapshot.model_dump_json()
+    result = preflight_av27_profile(
+        snapshot,
+        binding_facts=_current_binding_facts(snapshot),
+        publication_facts=_current_publication_facts(snapshot),
+    )
+    assert result.compatible, result.diagnostics
+    assert snapshot.model_dump_json() == before
+
 
 _FPS = "30/1"
 _SIGNAL: dict[str, Any] = {

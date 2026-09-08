@@ -4,6 +4,7 @@ import {
   type AvEnhanceV27TemplatePreviewEnvelope,
   type PresentationCatalogEnvelopeWire,
   type AvEnhanceV27TemplatePreviewRequestWire,
+  type AvEnhanceV27PublicationPreviewRequestWire,
   type StudioCommand,
   type RerunPreviewRequest,
 } from './contracts'
@@ -32,6 +33,22 @@ function response(value: unknown, ok = true, status = 200): Response {
 }
 
 describe('FetchStudioGateway 0.3.0', () => {
+  it('输出位置检查走独立只读 POST，响应必须绑定整理方式且非法请求不发送', async () => {
+    const request: AvEnhanceV27PublicationPreviewRequestWire = { contract_version: '0.3.0', request: {
+      output_root: 'D:\\Library', title: 'Movie', year: '2026', layout: 'direct', overwrite: false,
+    } }
+    const result = { contract_version: '0.3.0', layout: 'direct', resolved_output_root: 'D:\\Library', output_directory: 'D:\\Library', will_create_directory: false }
+    const fetchMock = vi.fn().mockResolvedValue(response(result))
+    vi.stubGlobal('fetch', fetchMock)
+    const gateway = new FetchStudioGateway('http://loopback.test')
+    expect(await gateway.previewAvEnhanceV27Publication(request)).toEqual(result)
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('http://loopback.test/api/studio/templates/av-enhance-v27/publication-preview', expect.objectContaining({ method: 'POST', body: JSON.stringify(request) }))
+    fetchMock.mockResolvedValueOnce(response({ ...result, layout: 'title_subdirectory' }))
+    await expect(gateway.previewAvEnhanceV27Publication(request)).rejects.toThrow(StudioContractError)
+    const callsBefore = fetchMock.mock.calls.length
+    await expect(gateway.previewAvEnhanceV27Publication({ ...request, request: { ...request.request, layout: 'guess' } } as unknown as AvEnhanceV27PublicationPreviewRequestWire)).rejects.toThrow(StudioContractError)
+    expect(fetchMock).toHaveBeenCalledTimes(callsBefore)
+  })
   it('只读重跑预览严格绑定请求，不接受未知字段和其他工程或 Run 回执', async () => {
     const request: RerunPreviewRequest = { operation: 'rerun_from_here', run_id: handoffFixtureIds.run,
       node_id: 'transform', project_session_id: projectSessionId, expected_storage_revision: 0 }
@@ -90,6 +107,7 @@ describe('FetchStudioGateway 0.3.0', () => {
         chapters: [],
         manual_stages: [],
         output_target_path: null,
+        output_directory_to_create: null,
       },
       creator: {
         analyzed: false,
@@ -172,6 +190,7 @@ describe('FetchStudioGateway 0.3.0', () => {
       expect.objectContaining<Partial<StudioGatewayError>>({
         name: 'StudioGatewayError',
         code: 'E_PROJECT_SERVICE_RUN_CONFLICT',
+        serviceMessage: '已有非终态 Run',
         relatedRunIds: [handoffFixtureIds.run],
         httpStatus: 409,
       }),

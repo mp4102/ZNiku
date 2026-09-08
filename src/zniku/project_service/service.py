@@ -12,7 +12,8 @@ import json
 import math
 import stat
 import threading
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from datetime import datetime
 from fractions import Fraction
 from pathlib import Path
@@ -95,6 +96,7 @@ from zniku.runtime.progress import MonotonicClock, WallClock
 from zniku.runtime.runner import MediaProbe, NodeValidator
 
 from .handoff import project_handoff_contracts
+from .handoff_import import HandoffImportBinding, ImportAuthority
 from .models import (
     AbandonRunCommand,
     ActiveProjectOperation,
@@ -113,6 +115,8 @@ from .models import (
     OpenProjectCommand,
     PresentationCatalogEnvelope,
     ProjectServiceFailure,
+    PublicationPreviewEnvelope,
+    PublicationPreviewRequest,
     RerunFromHereCommand,
     RerunPreviewEnvelope,
     RunAllCommand,
@@ -232,12 +236,82 @@ class ProjectServiceApplication:
         self._active_operation: ActiveProjectOperation | None = None
         self._worker: threading.Thread | None = None
         self._last_error: ProjectServiceFailure | None = None
+        self._desktop_closing = False
 
     @property
     def work_root(self) -> Path:
         """返回进程启动时固定的 attempt 根；command 不能替换它。"""
 
         return self._work_root
+
+    def assert_preview_session(self, project_session_id: str | None) -> None:
+        """预览生成前后校验页面会话；不加载全量历史，也不修改领域状态。"""
+
+        with self._state:
+            if project_session_id != self._project_session_id:
+                raise ProjectServiceError(
+                    "E_PROJECT_SESSION_CONFLICT",
+                    "工程会话已切换，请重新选择预览素材",
+                    http_status=409,
+                )
+
+    @contextmanager
+    def handoff_import_authority(
+        self, binding: HandoffImportBinding, *, importing: bool = False
+    ) -> Iterator[ImportAuthority]:
+        """按当前工程与最新 waiting 交接解析导入目标，复制期复用单操作互斥。
+
+        大文件复制/validator 不持有状态锁，status 仍可轮询；open/create/run/Submit/退出均被
+        同一 busy 准入拒绝。这里只登记进程内活动操作，不创建或推进任何 Run/NodeRun/Artifact。
+        """
+
+        with self._state:
+            self._assert_idle()
+            if self._desktop_closing:
+                raise ProjectServiceError("E_DESKTOP_CLOSING", "应用正在关闭", http_status=409)
+            if binding.project_session_id != self._project_session_id:
+                raise ProjectServiceError(
+                    "E_PROJECT_SESSION_CONFLICT",
+                    "工程会话已变化，请重新选择处理文件",
+                    http_status=409,
+                )
+            store, runtime = self._require_session()
+            try:
+                node_run = runtime.inspect_external_handoff(
+                    binding.run_id, binding.node_run_id, handoff_id=binding.handoff_id
+                )
+            except (RuntimeServiceError, RuntimeRepositoryError) as error:
+                raise self._translate_failure(error) from error
+            handoff = node_run.external_handoff
+            assert handoff is not None
+            targets = tuple(
+                target
+                for target in handoff.output_targets
+                if target.port_id == binding.port_id and target.ordinal == binding.ordinal
+            )
+            if len(handoff.output_targets) != 1 or len(targets) != 1 or binding.ordinal is not None:
+                raise ProjectServiceError(
+                    "E_HANDOFF_IMPORT_TARGET",
+                    "当前导入只支持仅声明一个单值输出的人工节点；"
+                    "多输出节点请按各目标放好文件，再执行完整检查",
+                    http_status=422,
+                )
+            authority = ImportAuthority(runtime, node_run, targets[0], self._work_root, store.path)
+            previous_run_id = self._active_run_id
+            if importing:
+                self._active_operation = "import_external"
+                self._active_run_id = node_run.run_id
+        try:
+            yield authority
+            self.assert_preview_session(binding.project_session_id)
+        except (RuntimeServiceError, RuntimeRepositoryError) as error:
+            raise self._translate_failure(error) from error
+        finally:
+            if importing:
+                with self._state:
+                    self._active_operation = None
+                    self._active_run_id = previous_run_id
+                    self._state.notify_all()
 
     def inspect_presentations(self) -> PresentationCatalogEnvelope:
         """返回与启动目录及当前 Project definitions 精确绑定的独立展示目录。
@@ -293,6 +367,28 @@ class ProjectServiceApplication:
             catalog=resolution.catalog,
             diagnostics=resolution.diagnostics,
         )
+
+    def preview_av27_publication(self, payload: object) -> PublicationPreviewEnvelope:
+        """输出设置检查与分析解耦；不创建 Project、目录、Run 或 Artifact。"""
+
+        from zniku.avenhance_v27.template import publication_directory
+
+        try:
+            envelope = PublicationPreviewRequest.model_validate(payload, strict=True)
+            request = envelope.request
+            directory = publication_directory(request)
+            return PublicationPreviewEnvelope(
+                layout=request.layout,
+                resolved_output_root=str(Path(request.output_root).resolve(strict=True)),
+                output_directory=str(directory),
+                will_create_directory=not directory.exists(),
+            )
+        except ValidationError as error:
+            raise ProjectServiceError(
+                "E_AV27_TEMPLATE_REQUEST_INVALID", str(error), http_status=422
+            ) from error
+        except Av27TemplateError as error:
+            raise self._translate_av27_failure(error) from error
 
     def preview_av_enhance_v27(self, payload: object) -> TemplatePreviewEnvelope:
         """无副作用地重算 AVEnhanceFlow v2.7 Graph、计划与 profile preflight。"""
@@ -620,6 +716,10 @@ class ProjectServiceApplication:
             raise ProjectServiceError(code, str(error), http_status=422) from error
 
         with self._state:
+            if self._desktop_closing:
+                raise ProjectServiceError(
+                    "E_DESKTOP_CLOSING", "应用正在关闭，不能再修改工程", http_status=409
+                )
             if isinstance(command, AuthoringBoundCommand):
                 self._assert_authoring_binding(command)
             if isinstance(command, AbandonRunCommand) and self._active_operation is not None:
@@ -686,6 +786,24 @@ class ProjectServiceApplication:
                 raise translated from failure
             # 回应仍持有同一会话锁，避免另一条 open/create 把命令响应换成不同工程。
             return self.inspect()
+
+    def desktop_lifecycle(self) -> tuple[bool, bool]:
+        """只读返回自动操作忙碌与关闭准入；waiting_external 不等于活动 worker。"""
+
+        with self._state:
+            return self._active_operation is not None, self._desktop_closing
+
+    def prepare_desktop_close(self) -> None:
+        """与 command 同锁关闭准入；忙碌时原样拒绝，绝不取消或接管节点。"""
+
+        with self._state:
+            if self._active_operation is not None:
+                raise ProjectServiceError(
+                    "E_DESKTOP_BUSY",
+                    "自动处理或检查仍在进行。请等当前处理停止后再退出；任务保持运行。",
+                    http_status=409,
+                )
+            self._desktop_closing = True
 
     def wait_until_idle(self, *, timeout: float = 10.0) -> bool:
         """供测试与受控 launcher 等待后台 command；产品 UI 应轮询 ``inspect``。"""
@@ -1075,7 +1193,7 @@ class ProjectServiceApplication:
         """把同一次只读文件系统检查投影给纯 profile preflight。
 
         新 preview/expand 使用请求中的显式 ``output_root``；检查已经持久化的 expanded Graph 时，
-        只能从 canonical ``target_path`` 的祖父目录恢复普通 Graph 中已经表达的发布根。任何无法安全
+        优先使用 OutputFile 明示 root；旧 Graph 仍从 title target 的祖父恢复。任何无法安全
         解析的形状都返回 ``None``，由 preflight 结合结构诊断失败关闭。
         """
 
@@ -1083,6 +1201,9 @@ class ProjectServiceApplication:
         if len(outputs) != 1:
             return None
         target = outputs[0].parameters.get("target_path")
+        declared_root = outputs[0].parameters.get("output_root")
+        if output_root is None and isinstance(declared_root, str):
+            output_root = declared_root
         if (
             not isinstance(target, str)
             or not target
@@ -1118,10 +1239,10 @@ class ProjectServiceApplication:
                 return False, False, False, False
 
         root_exists, root_is_dir, _, _ = path_state(root_path)
-        parent_exists, parent_is_dir, _, _ = path_state(parent_path)
+        parent_exists, parent_is_dir, _, parent_is_link = path_state(target_path.parent)
         target_exists, _, target_is_file, target_is_link = path_state(target_path)
         try:
-            parent_contained = parent_path != root_path and parent_path.is_relative_to(root_path)
+            parent_contained = parent_path.is_relative_to(root_path)
             target_contained = resolved_target.is_relative_to(root_path)
         except (OSError, ValueError):  # pragma: no cover - Path 纯词法调用的防御边界
             parent_contained = False
@@ -1135,6 +1256,7 @@ class ProjectServiceApplication:
             canonical_parent_exists=parent_exists,
             canonical_parent_is_directory=parent_is_dir,
             canonical_parent_contained=parent_contained,
+            canonical_parent_is_symlink_or_reparse=parent_is_link,
             target_exists=target_exists,
             target_is_regular_file=target_is_file and not target_is_link,
             target_is_symlink_or_reparse=target_is_link,

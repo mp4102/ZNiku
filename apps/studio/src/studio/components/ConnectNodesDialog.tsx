@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { Connection } from '@xyflow/react'
 import type { WorkflowNode } from '../../model'
+import { dialogFocusTargets } from './focus-management'
 
 export function CanvasDialog({ title, children, onClose }: {
   readonly title: string
@@ -14,7 +15,7 @@ export function CanvasDialog({ title, children, onClose }: {
   closeRef.current = onClose
   useEffect(() => {
     const previous = document.activeElement
-    ref.current?.querySelector<HTMLElement>('select, input, button')?.focus()
+    if (ref.current) (dialogFocusTargets(ref.current)[0] ?? ref.current).focus()
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
   }, [])
   const trap = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -22,16 +23,16 @@ export function CanvasDialog({ title, children, onClose }: {
     event.stopPropagation()
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRef.current(); return }
     if (event.key !== 'Tab') return
-    const items = [...(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), [tabindex="0"]') ?? [])]
-    if (!items.length) return
+    const items = ref.current ? dialogFocusTargets(ref.current) : []
+    if (!items.length) { event.preventDefault(); ref.current?.focus(); return }
     const first = items[0]!
     const last = items[items.length - 1]!
     if (event.shiftKey && (document.activeElement === first || !items.includes(document.activeElement as HTMLElement))) {
       event.preventDefault(); last.focus()
-    } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    } else if (!event.shiftKey && (document.activeElement === last || !items.includes(document.activeElement as HTMLElement))) { event.preventDefault(); first.focus() }
   }
   return <div className="canvas-dialog-backdrop">
-    <div ref={ref} role="dialog" aria-modal="true" aria-label={title} className="canvas-dialog" onKeyDown={trap}>
+    <div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className="canvas-dialog" onKeyDown={trap}>
       <div className="canvas-dialog-heading"><h2>{title}</h2><button type="button" aria-label={`关闭${title}`} onClick={onClose}>关闭</button></div>
       {children}
     </div>

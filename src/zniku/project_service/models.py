@@ -8,6 +8,7 @@ Run summary、
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -25,6 +26,7 @@ from zniku.avenhance_v27.template import (
     AV27_PROFILE_VERSION,
     ExpandRequest,
     PrepareRequest,
+    PublicationRequest,
     TemplatePhase,
     TemplatePlanSummary,
     TemplatePreviewRequest,
@@ -43,6 +45,7 @@ type ActiveProjectOperation = Literal[
     "run_to",
     "rerun_from_here",
     "submit_external",
+    "import_external",
     "abandon_run",
 ]
 type RunTargetMode = Literal["all", "selected"]
@@ -440,6 +443,48 @@ class CreatorTemplateSummary(ProjectServiceModel):
             raise ValueError("E_CREATOR_MEDIA_ANALYZED: analyzed 与 sources 不一致")
         if self.estimated_steps != f"预计 {self.estimated_step_count} 个处理步骤":
             raise ValueError("E_CREATOR_STEP_LABEL: estimated_steps 与数量不一致")
+        return self
+
+
+class PublicationPreviewRequest(ProjectServiceModel):
+    """在媒体分析前只读检查输出设置；不授予创建目录或发布权限。"""
+
+    contract_version: Literal["0.3.0"]
+    request: PublicationRequest
+
+
+class PublicationPreviewEnvelope(ProjectServiceModel):
+    """投影 Python 唯一计算的输出位置及将来的目录创建需求。"""
+
+    contract_version: Literal["0.3.0"] = PROJECT_SERVICE_CONTRACT_VERSION
+    layout: Literal["direct", "title_subdirectory"]
+    resolved_output_root: LocalPath
+    output_directory: LocalPath
+    will_create_directory: bool
+
+    @model_validator(mode="after")
+    def validate_layout_projection(self) -> PublicationPreviewEnvelope:
+        """布局事实也由 Python 约束；TS 只验证同一 wire，不推断或拼接目录。"""
+
+        path_type = (
+            PureWindowsPath
+            if PureWindowsPath(self.resolved_output_root).is_absolute()
+            else PurePosixPath
+        )
+        root = path_type(self.resolved_output_root)
+        directory = path_type(self.output_directory)
+        if (
+            not root.is_absolute()
+            or not directory.is_absolute()
+            or ".." in root.parts
+            or ".." in directory.parts
+        ):
+            raise ValueError("E_AV27_PUBLICATION_PROJECTION: 必须是已解析绝对路径")
+        if self.layout == "direct":
+            if directory != root or self.will_create_directory:
+                raise ValueError("E_AV27_PUBLICATION_PROJECTION: direct 不创建目录且必须等于输出根")
+        elif directory.parent != root or directory == root:
+            raise ValueError("E_AV27_PUBLICATION_PROJECTION: 子目录必须是输出根的直属子目录")
         return self
 
 

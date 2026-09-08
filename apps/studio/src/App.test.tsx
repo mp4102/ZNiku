@@ -5,6 +5,8 @@ import { App } from './App'
 import type {
   AvEnhanceV27TemplatePreviewEnvelope,
   AvEnhanceV27TemplatePreviewRequestWire,
+  AvEnhanceV27PublicationPreviewRequestWire,
+  AvEnhanceV27PublicationPreviewEnvelope,
   ExternalHandoffReadiness,
   NodeLogEnvelope,
   PresentationCatalogEnvelopeWire,
@@ -15,10 +17,12 @@ import type {
   StudioCommand,
   RerunPreviewEnvelope,
   RerunPreviewRequest,
+  NodeRunWire,
 } from './studio/contracts'
 import { StudioGatewayError, type StudioGateway } from './studio/gateway'
 import { inspectGraph } from './studio/graph'
-import type { HostBridge, HostCapabilitiesEnvelope, HostSelection } from './studio/host-bridge'
+import type { HostBridge, HostCapabilitiesEnvelope, HostSelection, HandoffImportPreviewEnvelope } from './studio/host-bridge'
+import { HostBridgeError } from './studio/host-bridge'
 import {
   failedDetailEnvelope,
   failedStatusEnvelope,
@@ -58,6 +62,17 @@ class Deferred<T> {
       this.reject = reject
     })
   }
+}
+
+/** 全局等待队列只是导航；需要操作文件的测试先显式选择对应交接任务。 */
+async function selectHandoffTask(title = 'test.transform'): Promise<HTMLElement> {
+  const label = `外部处理：${title}`
+  const selected = screen.queryByLabelText(label)
+  if (selected) return selected
+  const navigation = screen.queryByRole('button', { name: `查看外部任务：${title}` }) ??
+    await screen.findByRole('button', { name: `查看外部任务：${title}` })
+  fireEvent.click(navigation)
+  return screen.queryByLabelText(label) ?? screen.findByLabelText(label)
 }
 
 interface GatewayOptions {
@@ -161,6 +176,10 @@ class RecordingGateway implements StudioGateway {
     throw new Error('本测试未配置 AVEnhanceFlow v2.7 template preview')
   }
 
+  async previewAvEnhanceV27Publication(request: AvEnhanceV27PublicationPreviewRequestWire): Promise<AvEnhanceV27PublicationPreviewEnvelope> {
+    return { contract_version: '0.3.0', layout: request.request.layout ?? 'direct', resolved_output_root: 'D:\\Library', output_directory: 'D:\\Library', will_create_directory: false }
+  }
+
   async command(command: StudioCommand): Promise<StatusEnvelope> {
     this.commands.push(command)
     const response = await this.options.command?.(command) ?? this.envelope
@@ -252,7 +271,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     render(<App gateway={unavailableGateway('loopback offline')} />)
 
     expect(await screen.findByText('本机服务暂时不可用')).toBeVisible()
-    expect(screen.getByText('Project Service 不可用')).toBeVisible()
+    expect(screen.getByText('本机工程服务暂时不可用')).toBeVisible()
     expect(screen.getAllByText('loopback offline').some((item) => item.tagName === 'P')).toBe(true)
     expect(screen.queryByText('GUI-0 Prototype')).not.toBeInTheDocument()
     expect(screen.queryByText('Expanded Plan')).not.toBeInTheDocument()
@@ -386,6 +405,73 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     expect(gateway.commands).not.toContainEqual(expect.objectContaining({ operation: 'open_project' }))
   })
 
+  it.each(['open', 'save'] as const)('首页 %s 原生窗口忙碌指向已打开窗口，原文折叠保留且不修改工程或自动重试', async (kind) => {
+    const user = userEvent.setup()
+    const rawMessage = 'E_HOST_BRIDGE_DIALOG_BUSY: synthetic native chooser is active'
+    const pick = vi.fn<HostBridge['pick']>().mockRejectedValueOnce(new HostBridgeError(rawMessage, { code: 'E_HOST_BRIDGE_DIALOG_BUSY', httpStatus: 409 }))
+    const hostBridge: HostBridge = { configured: true, inspectCapabilities: async () => hostCapabilitiesEnvelope(), pick, launch: vi.fn() }
+    const gateway = new RecordingGateway()
+    render(<App gateway={gateway} hostBridge={hostBridge} />)
+    if (kind === 'open') {
+      const button = await screen.findByRole('button', { name: /打开已有工程/ })
+      await waitFor(() => expect(button).toBeEnabled())
+      await user.click(button)
+    } else {
+      const button = await screen.findByRole('button', { name: /空白工作流/ })
+      await waitFor(() => expect(button).toBeEnabled())
+      await user.click(button)
+      await user.click(screen.getByRole('button', { name: '选择保存位置' }))
+    }
+    expect(await screen.findByRole('alert')).toHaveTextContent('已有文件/文件夹选择窗口打开，请先完成或取消；它可能在浏览器后面。')
+    expect(screen.getByText(rawMessage)).not.toBeVisible()
+    await user.click(screen.getByText('高级 → 选择窗口原始详情'))
+    expect(screen.getByText(rawMessage)).toBeVisible()
+    expect(pick).toHaveBeenCalledTimes(1)
+    expect(gateway.commands).toEqual([])
+    expect(screen.getByRole('button', { name: '关闭工程首页' })).toBeEnabled()
+  })
+
+  it('向导打开输出根只使用当前原生选择句柄，取消保留选择，手输或重开不能借用旧句柄', async () => {
+    const user = userEvent.setup()
+    const selection = { path: 'D:\\Synthetic\\Output', selection_handle: 'selection_synthetic_output_001' }
+    const pick = vi.fn<HostBridge['pick']>().mockResolvedValueOnce([selection]).mockResolvedValueOnce(null)
+    const launch = vi.fn<HostBridge['launch']>(async () => undefined)
+    const hostBridge: HostBridge = {
+      configured: true, inspectCapabilities: async () => hostCapabilitiesEnvelope(), pick, launch,
+    }
+    const gateway = new RecordingGateway()
+    render(<App gateway={gateway} hostBridge={hostBridge} />)
+    const enterSettings = async () => {
+      await user.click(await screen.findByRole('button', { name: /新建视频工程/ }))
+      fireEvent.change(screen.getByLabelText('模板工程路径'), { target: { value: 'D:\\Synthetic\\guided.zniku' } })
+      fireEvent.change(screen.getByLabelText('Source 1 path'), { target: { value: 'D:\\Synthetic\\source.mkv' } })
+      await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+      await user.click(screen.getByRole('button', { name: '下一步：设置' }))
+    }
+    await enterSettings()
+    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await user.click(screen.getByRole('button', { name: '打开所选输出文件夹' }))
+    expect(launch).toHaveBeenLastCalledWith('reveal_in_file_manager', {
+      kind: 'picker_selection', selection_handle: selection.selection_handle,
+    })
+    expect(JSON.stringify(launch.mock.calls)).not.toContain(selection.path)
+    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await user.click(screen.getByRole('button', { name: '打开所选输出文件夹' }))
+    expect(launch).toHaveBeenCalledTimes(2)
+    fireEvent.change(screen.getByLabelText('Publication output root'), { target: { value: 'D:\\Synthetic\\Different' } })
+    await user.click(screen.getByRole('button', { name: '打开所选输出文件夹' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('请重新选择输出目录后再试')
+    expect(launch).toHaveBeenCalledTimes(2)
+    await user.click(screen.getByRole('button', { name: '关闭模板向导' }))
+    await user.click(screen.getByRole('button', { name: '工程首页' }))
+    await enterSettings()
+    fireEvent.change(screen.getByLabelText('Publication output root'), { target: { value: selection.path } })
+    await user.click(screen.getByRole('button', { name: '打开所选输出文件夹' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('请重新选择输出目录后再试')
+    expect(launch).toHaveBeenCalledTimes(2)
+    expect(gateway.commands).toEqual([])
+  })
+
   it('HostBridge capability 检查失败可从首页显式重试并恢复 picker', async () => {
     const user = userEvent.setup()
     let inspections = 0
@@ -490,6 +576,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
         chapters: [],
         manual_stages: [],
         output_target_path: null,
+        output_directory_to_create: null,
       },
       creator: {
         analyzed: false,
@@ -611,8 +698,8 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
     await user.click(screen.getByRole('button', { name: '下一步：设置' }))
-    await user.type(screen.getByLabelText('Publication title'), 'Movie')
-    await user.type(screen.getByLabelText('Publication year'), '2026')
+    await user.type(screen.getByLabelText('片名'), 'Movie')
+    await user.type(screen.getByLabelText('年份'), '2026')
     fireEvent.change(screen.getByLabelText('Publication output root'), {
       target: { value: 'D:\\Library' },
     })
@@ -828,7 +915,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     render(<App gateway={gateway} />)
     await flushReact()
-    const queue = screen.getByLabelText('外部处理：test.transform')
+    const queue = await selectHandoffTask()
     expect(queue).toHaveTextContent('199')
     expect(queue).toHaveTextContent('60000/1001')
     expect(queue).toHaveTextContent('已等待 2 秒')
@@ -859,7 +946,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     render(<App gateway={gateway} />)
     await flushReact()
-    const queue = screen.getByLabelText('外部处理：test.transform')
+    const queue = await selectHandoffTask()
     fireEvent.click(within(queue).getByRole('button', { name: '检查输出' }))
     await flushReact()
     expect(within(queue).getByLabelText('上次完整预检失败')).toHaveTextContent('E_AV27_FI_DOUBLE_COUNT')
@@ -897,7 +984,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     render(<App gateway={gateway} />)
     await flushReact()
-    fireEvent.click(within(screen.getByLabelText('外部处理：test.transform')).getByRole('button', { name: '检查输出' }))
+    fireEvent.click(within(await selectHandoffTask()).getByRole('button', { name: '检查输出' }))
     await flushReact()
     expect(screen.getByLabelText('上次完整预检失败')).toHaveTextContent('E_OLD_HANDOFF')
     const prior = selectedDetail.run.node_runs.find((item) => item.node_id === 'transform')!
@@ -910,7 +997,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1_501) })
     expect(screen.queryByLabelText('上次完整预检失败')).not.toBeInTheDocument()
     message = 'E_NEW_HANDOFF: current output is invalid'
-    fireEvent.click(within(screen.getByLabelText('外部处理：test.transform')).getByRole('button', { name: '检查输出' }))
+    fireEvent.click(within(await selectHandoffTask()).getByRole('button', { name: '检查输出' }))
     await flushReact()
     expect(screen.getByLabelText('上次完整预检失败')).toHaveTextContent('E_NEW_HANDOFF')
     expect(screen.getByLabelText('上次完整预检失败')).not.toHaveTextContent('E_OLD_HANDOFF')
@@ -927,7 +1014,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     const gateway = new RecordingGateway(handoffEnvelope())
     render(<App gateway={gateway} />)
 
-    let queueItem = await screen.findByLabelText('外部处理：test.transform')
+    let queueItem = await selectHandoffTask()
     expect(queueItem).toHaveTextContent('test.transform')
     expect(queueItem).toHaveTextContent('已等待')
     expect(queueItem).toHaveTextContent('C:\\synthetic\\source.mkv')
@@ -939,7 +1026,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     expect(await screen.findByRole('link', { name: '外部处理助手' })).toBeInTheDocument()
     expect(await screen.findByText('等待外部输出')).toBeInTheDocument()
     // 选中人工步骤后，助手移到参数表之前；重新取得实际挂载的区域，而非点击旧 DOM。
-    queueItem = await screen.findByLabelText('外部处理：test.transform')
+    queueItem = await selectHandoffTask()
 
     await user.click(within(queueItem).getByRole('button', { name: '检查输出' }))
     await waitFor(() => expect(gateway.readinessArguments.filter((call) => call[2])).toEqual([[
@@ -984,6 +1071,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
       render(<App gateway={new RecordingGateway(failedStatusEnvelope(reason))} />)
       expect(await screen.findByText('test.transform · 需要处理问题')).toBeInTheDocument()
 
+      fireEvent.click(screen.getByRole('button', { name: '查看 Run snapshot' }))
       const sourceCard = await screen.findByLabelText('source 节点')
       expect(within(sourceCard).getByText('Completed')).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: '查看当前 Graph' }))
@@ -1004,7 +1092,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
   it('active_operation 期间禁用工程切换与 Runtime mutation，但允许编辑当前图', async () => {
     const gateway = new RecordingGateway({ ...handoffEnvelope(), active_operation: 'abandon_run' })
     render(<App gateway={gateway} />)
-    const queueItem = await screen.findByLabelText('外部处理：test.transform')
+    const queueItem = await selectHandoffTask()
 
     for (const name of ['打开', '新建', '保存', 'Run all', 'Run to here', 'Rerun from here']) {
       expect(screen.getByRole('button', { name })).toBeDisabled()
@@ -1108,7 +1196,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     expect([...selector.options].map((option) => option.value)).not.toContain(
       threeRunFixtureIds.waitingFullRun,
     )
-    expect(screen.getByRole('status')).toHaveTextContent(
+    expect(screen.getByRole('status', { name: '操作提示' })).toHaveTextContent(
       '先前选择的 Run 已不存在，已重新选择可用 Run。',
     )
 
@@ -1208,6 +1296,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
         })}
       />,
     )
+    fireEvent.click(await screen.findByRole('button', { name: '查看 Run snapshot' }))
     const runningCard = await screen.findByLabelText('source 节点')
     expect(within(runningCard).getByLabelText('进度不确定')).toHaveTextContent('Working…')
     expect(within(runningCard).queryByText('0%')).not.toBeInTheDocument()
@@ -1462,7 +1551,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     expect(gateway.inspectRunCount).toBe(3)
     expect(within(screen.getByLabelText('source 节点')).getByText('80%')).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('E_STUDIO_PROGRESS_REGRESSION')
+    expect(screen.getByRole('status', { name: '操作提示' })).toHaveTextContent('E_STUDIO_PROGRESS_REGRESSION')
 
     await act(async () => {
       fresh.resolve(projectedProgressDetail(0.2, 0.9, { current: 90, total: 100 }))
@@ -1836,6 +1925,38 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     expect(screen.queryByText('detail offline')).not.toBeInTheDocument()
   })
 
+  it('打开工程默认保留完整当前图；历史快照只在显式查看时显示且不被保存改写', async () => {
+    const detail = handoffDetailEnvelope()
+    const originalRun = JSON.stringify(detail.run)
+    const extra = { ...projectSnapshot.project.graph.nodes[0]!, node_id: 'draft-only', ui_position: { x: 910, y: 220 } }
+    const snapshot = { ...projectSnapshot, project: { ...projectSnapshot.project, graph: {
+      ...projectSnapshot.project.graph, nodes: [...projectSnapshot.project.graph.nodes, extra],
+    } } }
+    const gateway = new RecordingGateway({ ...handoffEnvelope(), snapshot }, { detail: () => detail })
+    const { unmount } = render(<App gateway={gateway} />)
+    expect(await screen.findByLabelText('draft-only 节点')).toBeInTheDocument()
+    expect(screen.getByText('Current Graph')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: '查看 Run snapshot' }))
+    expect(screen.queryByLabelText('draft-only 节点')).not.toBeInTheDocument()
+    expect(screen.getByText('Run snapshot')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '自动布局' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '打开' }))
+    await waitFor(() => expect(gateway.commands.at(-1)?.operation).toBe('open_project'))
+    expect(await screen.findByLabelText('draft-only 节点')).toBeInTheDocument()
+    expect(screen.getByText('Current Graph')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('draft-only 节点'))
+    fireEvent.change(screen.getByLabelText('节点别名'), { target: { value: '新增素材' } })
+    fireEvent.blur(screen.getByLabelText('节点别名'))
+    await waitFor(() => expect(gateway.commands.at(-1)?.operation).toBe('save_project'))
+    expect(screen.getByText('Current Graph')).toBeInTheDocument()
+    expect(JSON.stringify(detail.run)).toBe(originalRun)
+    unmount()
+    render(<App gateway={gateway} />)
+    expect(await screen.findByLabelText('draft-only 节点')).toHaveTextContent('新增素材')
+    expect(screen.getByText('Current Graph')).toBeInTheDocument()
+    expect(JSON.stringify(detail.run)).toBe(originalRun)
+  })
+
   it('只允许对引用 Run 执行闭包内的节点发起 Rerun', async () => {
     const envelope = threeRunEnvelope()
     const summary = envelope.run_summaries.find(
@@ -1846,10 +1967,8 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
       { detail: () => threeRunDetail(summary.run_id) },
     )
     render(<App gateway={gateway} />)
-    await screen.findByText('Run snapshot')
-
-    fireEvent.click(screen.getByRole('button', { name: '查看当前 Graph' }))
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    await screen.findByText('Current Graph')
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     expect(screen.getByRole('button', { name: 'Run to here' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Rerun from here' })).toBeDisabled()
   })
@@ -2090,7 +2209,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     render(<App gateway={gateway} />)
     await flushReact()
-    const submit = within(screen.getByLabelText('外部处理：test.transform')).getByRole('button', {
+    const submit = within(await selectHandoffTask()).getByRole('button', {
       name: '检查输出',
     })
     fireEvent.click(submit)
@@ -2109,7 +2228,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     await flushReact()
     expect(gateway.commands.filter((command) => command.operation === 'submit_external')).toHaveLength(0)
-    fireEvent.click(within(screen.getByLabelText('外部处理：test.transform')).getByRole('button', { name: '提交并继续' }))
+    fireEvent.click(within(await selectHandoffTask()).getByRole('button', { name: '提交并继续' }))
     await flushReact()
     expect(gateway.commands.filter(
       (command) => command.operation === 'submit_external',
@@ -2142,7 +2261,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     render(<App gateway={gateway} />)
     await flushReact()
     fireEvent.click(
-      within(screen.getByLabelText('外部处理：test.transform')).getByRole('button', {
+      within(await selectHandoffTask()).getByRole('button', {
         name: '检查输出',
       }),
     )
@@ -2232,11 +2351,84 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     render(<App gateway={gateway} />)
 
-    expect(await screen.findAllByLabelText('外部处理：test.transform')).toHaveLength(2)
+    const taskList = await screen.findByRole('region', { name: '待外部处理任务' })
+    expect(within(taskList).getAllByRole('button')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: '检查输出' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('READINESS STALE')
-    const submitButtons = screen.getAllByRole('button', { name: '检查输出' })
-    expect(submitButtons).toHaveLength(2)
-    for (const button of submitButtons) expect(button).toBeDisabled()
+    fireEvent.click(within(taskList).getByRole('button', { name: '查看外部任务：test.transform' }))
+    expect(screen.getAllByRole('button', { name: '检查输出' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: '检查输出' })).toBeDisabled()
+  })
+
+  it('两个同名外部节点的画布、Inspector与任务导航一致，复制和导入只绑定所选任务', async () => {
+    window.localStorage.removeItem('zniku.studio.density')
+    const user = userEvent.setup()
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const original = handoffDetailEnvelope()
+    const waiting = original.run.node_runs.find((item) => item.external_handoff)!
+    const pair = ['A', 'B'].map((suffix, index): NodeRunWire => ({ ...waiting,
+      node_id: index === 0 ? 'transform' : 'transform.b', node_run_id: `node-run-${suffix}`,
+      external_handoff: { ...waiting.external_handoff!, handoff_id: `handoff-${suffix}`, node_run_id: `node-run-${suffix}`,
+        input_artifact_ids: [`input-${suffix}`], output_targets: [{ port_id: 'out', ordinal: null, path: `D:\\synthetic\\task-${suffix}\\out.mkv` }] },
+    }))
+    const graph = { ...original.run.graph_snapshot, nodes: [...original.run.graph_snapshot.nodes,
+      { ...original.run.graph_snapshot.nodes.find((item) => item.node_id === 'transform')!, node_id: 'transform.b' }],
+      edges: [...original.run.graph_snapshot.edges, { source_node_id: 'source', source_port_id: 'out', target_node_id: 'transform.b', target_port_id: 'in', ordinal: null }] }
+    const artifacts = ['A', 'B'].map((suffix) => ({ ...original.artifacts[0]!, artifact_id: `input-${suffix}`, path: `D:\\synthetic\\input-${suffix}.mkv` }))
+    const detail: RunDetailEnvelope = { ...original, artifacts, run: { ...original.run, graph_snapshot: graph,
+      node_runs: [...original.run.node_runs.filter((item) => item.node_id !== 'transform'), ...pair] },
+      handoff_contracts: pair.map((nodeRun, index) => ({ node_run_id: nodeRun.node_run_id, handoff_id: nodeRun.external_handoff!.handoff_id,
+        input_artifact_id: `input-${index === 0 ? 'A' : 'B'}`, title: '正式处理要求', fields: [{ label: '输出 exact N', value: index === 0 ? '899' : '902' }] })) }
+    const baseStatus = handoffEnvelope()
+    const gateway = new RecordingGateway({ ...baseStatus, snapshot: { ...baseStatus.snapshot!, project: { ...baseStatus.snapshot!.project, graph } },
+      run_summaries: baseStatus.run_summaries.map((summary) => ({ ...summary, node_count: 4, state_counts: { ...summary.state_counts, waiting_external: 2 } })) }, {
+      detail: () => detail,
+      presentations: () => presentationEnvelope([nodePresentation(transformDefinition, '画质增强')], [{ category_id: 'test', title: '处理', description: null, order: 1 }]),
+      readiness: (_runId, nodeRunId, probe) => {
+        const node = pair.find((item) => item.node_run_id === nodeRunId)!
+        const observed = handoffReadinessEnvelope(probe ? 'probe_passed' : 'present', probe)
+        return { ...observed, node_run_id: nodeRunId, handoff_id: node.external_handoff!.handoff_id,
+          targets: observed.targets.map((target) => ({ ...target, path: node.external_handoff!.output_targets[0]!.path })) }
+      },
+    })
+    let preview!: HandoffImportPreviewEnvelope
+    const host: HostBridge = { configured: true, inspectCapabilities: vi.fn(async () => hostCapabilitiesEnvelope()), launch: vi.fn(),
+      pick: vi.fn(async () => [{ selection_handle: 'finished-b', path: 'D:\\external\\finished-B.mkv' }]),
+      previewHandoffImport: vi.fn(async (request) => { preview = { ...request, import_id: 'import-b', source_name: 'finished-B.mkv', source_size: 2048,
+        target_path: pair[1]!.external_handoff!.output_targets[0]!.path, replace_existing: false, expires_in_seconds: 300 }; return preview }),
+      confirmHandoffImport: vi.fn(async () => ({ ...preview, status: 'imported' as const })),
+    }
+    render(<App gateway={gateway} hostBridge={host} />)
+    await user.click(await screen.findByRole('button', { name: '关闭工程首页' }))
+    const list = await screen.findByRole('region', { name: '待外部处理任务' })
+    expect(within(list).getAllByRole('button')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: '复制目标路径' })).not.toBeInTheDocument()
+    expect(screen.getByText('流程下一项')).toBeVisible()
+    fireEvent.click(await screen.findByLabelText('画质增强（1） 节点'))
+    const inspector = screen.getByRole('complementary', { name: '步骤设置与输出' })
+    expect(within(inspector).getByRole('heading', { level: 2 })).toHaveTextContent('画质增强（1）')
+    expect(within(inspector).getByRole('article', { name: '外部处理：画质增强（1）' })).toBeVisible()
+    expect(within(inspector).queryByText('input-B.mkv')).not.toBeInTheDocument()
+    await user.click(within(inspector).getByRole('button', { name: '复制目标路径' }))
+    expect(writeText).toHaveBeenLastCalledWith(pair[0]!.external_handoff!.output_targets[0]!.path)
+    fireEvent.click(screen.getByLabelText('画质增强（2） 节点'))
+    expect(within(inspector).getByRole('heading', { level: 2 })).toHaveTextContent('画质增强（2）')
+    expect(within(inspector).queryByText('input-A.mkv')).not.toBeInTheDocument()
+    expect(within(inspector).getByText('预期输出：902 帧')).toBeVisible()
+    await user.click(within(inspector).getByRole('button', { name: '选择处理好的文件' }))
+    const dialog = await screen.findByRole('dialog', { name: '确认导入外部处理文件' })
+    expect(host.previewHandoffImport).toHaveBeenCalledExactlyOnceWith({ contract_version: '0.3.0', selection_handle: 'finished-b',
+      project_session_id: baseStatus.project_session_id, run_id: pair[1]!.run_id, node_run_id: pair[1]!.node_run_id,
+      handoff_id: pair[1]!.external_handoff!.handoff_id, port_id: 'out', ordinal: null })
+    expect(within(dialog).getByText(pair[1]!.external_handoff!.output_targets[0]!.path)).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: '确认复制到此任务' }))
+    await waitFor(() => expect(within(inspector).getByText(/已导入到“画质增强（2）”/)).toBeVisible())
+    expect(host.confirmHandoffImport).toHaveBeenCalledExactlyOnceWith({ contract_version: '0.3.0', import_id: 'import-b', overwrite: false })
+    expect(within(inspector).getByRole('button', { name: '提交并继续' })).toBeDisabled()
+    expect(gateway.commands).toHaveLength(0)
+    fireEvent.click(screen.getByLabelText('test.source 节点'))
+    expect(within(inspector).queryByRole('article')).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole('button', { name: '选择处理好的文件' })).not.toBeInTheDocument()
   })
 
   it('Presentation 文本按纯文本渲染，并用 exact title 与声明路径生成节点摘要', async () => {
@@ -2459,8 +2651,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
   it('运行中编辑当前图可自动保存，已选 Run snapshot 和旧参数保持不变', async () => {
     const gateway = new RecordingGateway(runningProgressEnvelope(0.3))
     render(<App gateway={gateway} />)
-    await screen.findByRole('button', { name: '查看当前 Graph' })
-    fireEvent.click(screen.getByRole('button', { name: '查看当前 Graph' }))
+    await screen.findByRole('button', { name: '查看 Run snapshot' })
     fireEvent.click(screen.getByLabelText('transform 节点'))
     fireEvent.change(screen.getByLabelText('节点参数 JSON'), { target: { value: '{"strength":9,"model_name":"Synthetic Model"}' } })
     fireEvent.click(screen.getByRole('button', { name: '应用设置' }))
@@ -2514,7 +2705,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     expect(selector).toHaveValue(terminal.run_id)
     expect([...selector.options].map((option) => option.value)).toContain(terminal.run_id)
 
-    await user.click(screen.getByRole('button', { name: '查看当前 Graph' }))
+    expect(screen.getByText('Current Graph')).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('transform 节点'))
     fireEvent.change(screen.getByLabelText('节点参数 JSON'), {
       target: { value: '{"strength":4,"model_name":"Synthetic Model"}' },

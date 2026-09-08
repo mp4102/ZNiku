@@ -18,7 +18,9 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 from pydantic import BaseModel
 
+from .handoff_import import HandoffImportManager
 from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
+from .preview import PreviewCache
 from .service import ProjectServiceApplication, ProjectServiceError
 
 _MAX_BODY_BYTES: Final = 4 * 1024 * 1024
@@ -28,6 +30,10 @@ _HOST_BRIDGE_PREFIX: Final = "/api/host-bridge"
 _HOST_CAPABILITIES_ROUTE: Final = f"{_HOST_BRIDGE_PREFIX}/capabilities"
 _HOST_ACTIONS_ROUTE: Final = f"{_HOST_BRIDGE_PREFIX}/user-actions"
 _HOST_INVOKE_ROUTE: Final = f"{_HOST_BRIDGE_PREFIX}/invoke"
+_HOST_PREVIEW_ROUTE: Final = f"{_HOST_BRIDGE_PREFIX}/preview"
+_HANDOFF_IMPORT_PREFIX: Final = "/api/studio/handoff-import"
+_HANDOFF_IMPORT_PREVIEW: Final = f"{_HANDOFF_IMPORT_PREFIX}/preview"
+_HANDOFF_IMPORT_CONFIRM: Final = f"{_HANDOFF_IMPORT_PREFIX}/confirm"
 _RUNTIME_ID = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 _RUN_DETAIL_ROUTE = re.compile(rf"^/api/studio/runs/(?P<run_id>{_RUNTIME_ID})$")
 _NODE_LOG_ROUTE = re.compile(
@@ -147,8 +153,11 @@ def make_project_service_handler(
     application: ProjectServiceApplication,
     *,
     host_bridge: HostBridgeSession | None = None,
+    preview_cache: PreviewCache | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     """把 Project session 与可选 launcher-local HostBridge 绑定到 HTTP handler。"""
+
+    handoff_import = HandoffImportManager()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "ZNIKUProjectService/0.3.0"
@@ -257,6 +266,7 @@ def make_project_service_handler(
                 not in {
                     "/api/studio/command",
                     "/api/studio/templates/av-enhance-v27/preview",
+                    "/api/studio/templates/av-enhance-v27/publication-preview",
                     "/api/studio/rerun-preview",
                 }
             ):
@@ -289,6 +299,8 @@ def make_project_service_handler(
                 envelope: BaseModel
                 if parsed.path == "/api/studio/templates/av-enhance-v27/preview":
                     envelope = application.preview_av_enhance_v27(payload)
+                elif parsed.path == "/api/studio/templates/av-enhance-v27/publication-preview":
+                    envelope = application.preview_av27_publication(payload)
                 elif parsed.path == "/api/studio/rerun-preview":
                     envelope = application.preview_rerun(payload)
                 else:
@@ -318,6 +330,9 @@ def make_project_service_handler(
                     _HOST_CAPABILITIES_ROUTE,
                     _HOST_ACTIONS_ROUTE,
                     _HOST_INVOKE_ROUTE,
+                    _HOST_PREVIEW_ROUTE,
+                    _HANDOFF_IMPORT_PREVIEW,
+                    _HANDOFF_IMPORT_CONFIRM,
                 }:
                     raise HostBridgeFailure(
                         "E_HOST_BRIDGE_ROUTE",
@@ -343,7 +358,13 @@ def make_project_service_handler(
                 parsed = self._host_request_target()
                 self._authorize_host(host_bridge)
                 if parsed.path != _HOST_CAPABILITIES_ROUTE:
-                    if parsed.path in {_HOST_ACTIONS_ROUTE, _HOST_INVOKE_ROUTE}:
+                    if parsed.path in {
+                        _HOST_ACTIONS_ROUTE,
+                        _HOST_INVOKE_ROUTE,
+                        _HOST_PREVIEW_ROUTE,
+                        _HANDOFF_IMPORT_PREVIEW,
+                        _HANDOFF_IMPORT_CONFIRM,
+                    }:
                         raise HostBridgeFailure(
                             "E_HOST_BRIDGE_METHOD",
                             "HostBridge 动作 route 只接受 POST",
@@ -374,7 +395,13 @@ def make_project_service_handler(
             try:
                 parsed = self._host_request_target()
                 self._authorize_host(host_bridge)
-                if parsed.path not in {_HOST_ACTIONS_ROUTE, _HOST_INVOKE_ROUTE}:
+                if parsed.path not in {
+                    _HOST_ACTIONS_ROUTE,
+                    _HOST_INVOKE_ROUTE,
+                    _HOST_PREVIEW_ROUTE,
+                    _HANDOFF_IMPORT_PREVIEW,
+                    _HANDOFF_IMPORT_CONFIRM,
+                }:
                     raise HostBridgeFailure(
                         "E_HOST_BRIDGE_ROUTE",
                         "未知 HostBridge route",
@@ -386,11 +413,38 @@ def make_project_service_handler(
                         mode="json"
                     )
                     status = HTTPStatus.CREATED
+                elif parsed.path == _HOST_PREVIEW_ROUTE:
+                    if preview_cache is None:
+                        raise HostBridgeFailure(
+                            "E_PREVIEW_UNAVAILABLE",
+                            "当前宿主未启用媒体预览",
+                            http_status=HTTPStatus.SERVICE_UNAVAILABLE,
+                        )
+                    response_payload = preview_cache.preview(
+                        payload, session=host_bridge, application=application
+                    ).model_dump(mode="json")
+                    status = HTTPStatus.OK
+                elif parsed.path in {_HANDOFF_IMPORT_PREVIEW, _HANDOFF_IMPORT_CONFIRM}:
+                    operation = (
+                        handoff_import.preview
+                        if parsed.path == _HANDOFF_IMPORT_PREVIEW
+                        else handoff_import.confirm
+                    )
+                    response_payload = operation(
+                        payload, session=host_bridge, application=application
+                    ).model_dump(mode="json")
+                    status = HTTPStatus.OK
                 else:
                     response_payload = host_bridge.invoke(payload).model_dump(mode="json")
                     status = HTTPStatus.OK
             except HostBridgeFailure as error:
                 self._host_error(error, session=host_bridge)
+                return
+            except ProjectServiceError as error:
+                self._host_error(
+                    HostBridgeFailure(error.code, error.message, http_status=error.http_status),
+                    session=host_bridge,
+                )
                 return
             self._host_json(status, response_payload, host_bridge, methods="POST, OPTIONS")
 
@@ -437,7 +491,7 @@ def make_project_service_handler(
         def _is_host_bridge_target(self) -> bool:
             """用 path 前缀隔离 HostBridge，畸形 target 也不得落入普通 CORS。"""
 
-            return self.path.startswith(_HOST_BRIDGE_PREFIX)
+            return self.path.startswith((_HOST_BRIDGE_PREFIX, _HANDOFF_IMPORT_PREFIX))
 
         def _authorize_host(self, session: HostBridgeSession) -> None:
             origins = self.headers.get_all("Origin", [])
@@ -610,6 +664,7 @@ def serve_project_service(
     *,
     port: int = _DEFAULT_PORT,
     host_bridge: HostBridgeSession | None = None,
+    preview_cache: PreviewCache | None = None,
 ) -> ThreadingHTTPServer:
     """构造只绑定 ``127.0.0.1`` 的 server；调用方管理生命周期。"""
 
@@ -619,7 +674,9 @@ def serve_project_service(
         )
     return ThreadingHTTPServer(
         ("127.0.0.1", port),
-        make_project_service_handler(application, host_bridge=host_bridge),
+        make_project_service_handler(
+            application, host_bridge=host_bridge, preview_cache=preview_cache
+        ),
     )
 
 

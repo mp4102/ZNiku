@@ -6,11 +6,17 @@
  * 决定；任何输入变化或迟到 preview 都不能触发 mutation。
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { dialogFocusTargets } from './components/focus-management'
+import { StudioGatewayError } from './gateway'
+import { formatHostBridgeError } from './host-error-presentation'
 import type {
   AvEnhanceV27ChapterSelectorWire,
   AvEnhanceV27ExpandRequestWire,
   AvEnhanceV27PrepareRequestWire,
+  AvEnhanceV27PublicationRequestWire,
+  AvEnhanceV27PublicationPreviewEnvelope,
+  AvEnhanceV27PublicationPreviewRequestWire,
   AvEnhanceV27SourceMode,
   AvEnhanceV27TemplatePreviewEnvelope,
   AvEnhanceV27TemplatePreviewRequestWire,
@@ -43,9 +49,11 @@ export interface AvEnhanceV27WizardProps {
   readonly onPickProjectPath?: (suggestedName: string) => Promise<string | null>
   readonly onPickSources?: (multiple: boolean) => Promise<ReadonlyArray<string> | null>
   readonly onPickOutputDirectory?: () => Promise<string | null>
+  readonly onRevealOutputDirectory?: (selectedPath: string) => Promise<void>
   readonly onPreview: (
     request: AvEnhanceV27TemplatePreviewRequestWire,
   ) => Promise<AvEnhanceV27TemplatePreviewEnvelope | null>
+  readonly onPreviewPublication: (request: AvEnhanceV27PublicationPreviewRequestWire) => Promise<AvEnhanceV27PublicationPreviewEnvelope>
   readonly onCreate: (request: AvEnhanceV27PrepareRequestWire) => Promise<boolean>
   readonly onStartPreparationRun?: () => Promise<string | null>
   readonly onExpand: (request: AvEnhanceV27ExpandRequestWire) => Promise<boolean>
@@ -113,6 +121,14 @@ function stageLabel(stage: string): string {
   return '补帧'
 }
 
+function isPublicationError(code: string | null | undefined): boolean {
+  // 只按稳定错误码翻译输出设置问题；未知 message 不用于猜测原因或动作权限。
+  return code !== null && code !== undefined && new Set([
+    'E_AV27_NAMING_ROOT', 'E_AV27_NAMING_PARENT', 'E_AV27_NAMING_EXISTS', 'E_AV27_NAMING_TARGET',
+    'E_AV27_NAMING_TITLE', 'E_AV27_NAMING_YEAR', 'E_AV27_NAMING_RESERVED', 'E_AV27_NAMING_SOURCE',
+  ]).has(code)
+}
+
 export function AvEnhanceV27Wizard({
   open,
   mode,
@@ -129,7 +145,9 @@ export function AvEnhanceV27Wizard({
   onPickProjectPath,
   onPickSources,
   onPickOutputDirectory,
+  onRevealOutputDirectory,
   onPreview,
+  onPreviewPublication,
   onCreate,
   onStartPreparationRun,
   onExpand,
@@ -142,14 +160,27 @@ export function AvEnhanceV27Wizard({
   const previewRequestRef = useRef<AvEnhanceV27TemplatePreviewRequestWire | null>(null)
   const responseEpochRef = useRef(0)
   const pickerFlightRef = useRef(0)
-  const expansionFlightRef = useRef<string | null>(null)
+  const expansionFlightRef = useRef<{ readonly runId: string; readonly token: symbol } | null>(null)
+  const outputOpenFlightRef = useRef<symbol | null>(null)
+  const analysisRunIdRef = useRef<string | null>(null)
+  const publicationFlightRef = useRef<symbol | null>(null)
 
   const [step, setStep] = useState<WizardStep>(1)
   const [preview, setPreview] = useState<AvEnhanceV27TemplatePreviewEnvelope | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [pickerFailure, setPickerFailure] = useState<{ readonly message: string; readonly rawMessage: string } | null>(null)
+  const [previewFailure, setPreviewFailure] = useState<{ readonly code: string | null; readonly message: string; readonly recoveryMessage: string | null } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [openingOutput, setOpeningOutput] = useState(false)
+  const [checkingOutput, setCheckingOutput] = useState(false)
+  const [publicationPreview, setPublicationPreview] = useState<AvEnhanceV27PublicationPreviewEnvelope | null>(null)
   const [preparationCreated, setPreparationCreated] = useState(false)
-  const [analysisRunId, setAnalysisRunId] = useState<string | null>(null)
+  const [analysisRunId, setAnalysisRunIdState] = useState<string | null>(null)
+  const setAnalysisRunId = useCallback((runId: string | null) => {
+    // 开关向导时，同一批 effect 仍可能捕获旧 state；同步身份用于拒绝旧选择触发新的请求。
+    analysisRunIdRef.current = runId
+    setAnalysisRunIdState(runId)
+  }, [])
 
   const [projectPath, setProjectPath] = useState('')
   const [projectId, setProjectId] = useState('')
@@ -176,6 +207,7 @@ export function AvEnhanceV27Wizard({
   const [title, setTitle] = useState('')
   const [year, setYear] = useState('')
   const [overwrite, setOverwrite] = useState(false)
+  const [outputLayout, setOutputLayout] = useState<'direct' | 'title_subdirectory'>('direct')
 
   const currentSourceMode = mode === 'resume'
     ? sourceModeFromSnapshot(currentSnapshot) ?? sourceMode
@@ -187,6 +219,15 @@ export function AvEnhanceV27Wizard({
   const analysisSummary = analysisRunId
     ? runSummaries.find((summary) => summary.run_id === analysisRunId) ?? null
     : null
+
+  useEffect(() => () => {
+    responseEpochRef.current += 1
+    pickerFlightRef.current += 1
+    expansionFlightRef.current = null
+    outputOpenFlightRef.current = null
+    analysisRunIdRef.current = null
+    publicationFlightRef.current = null
+  }, [])
 
   useEffect(() => {
     if (open && !wasOpen.current) {
@@ -201,6 +242,13 @@ export function AvEnhanceV27Wizard({
       responseEpochRef.current += 1
       pickerFlightRef.current += 1
       setLocalError(null)
+      setPickerFailure(null)
+      setPreviewFailure(null)
+      setOpeningOutput(false)
+      setCheckingOutput(false)
+      setPublicationPreview(null)
+      publicationFlightRef.current = null
+      outputOpenFlightRef.current = null
       setSubmitting(false)
       setPreparationCreated(continuing)
       setAnalysisRunId(null)
@@ -221,6 +269,7 @@ export function AvEnhanceV27Wizard({
       setTitle('')
       setYear('')
       setOverwrite(false)
+      setOutputLayout('direct')
       setSourceMode('program')
       setSources([{ source_path: '', chapter_label: '' }])
       setMrMode('off')
@@ -234,21 +283,20 @@ export function AvEnhanceV27Wizard({
       previousFocusRef.current = null
     }
     wasOpen.current = open
-  }, [currentProjectId, currentProjectName, currentProjectPath, mode, open, projectIdFactory])
+  }, [currentProjectId, currentProjectName, currentProjectPath, mode, open, projectIdFactory, setAnalysisRunId])
 
   useEffect(() => {
     if (!open) return
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting && !busy) {
+      if (event.defaultPrevented) return
+      if (event.key === 'Escape' && !submitting && !busy && !openingOutput) {
         onClose()
         return
       }
       if (event.key !== 'Tab') return
       const dialog = dialogRef.current
       if (!dialog) return
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-      ))
+      const focusable = dialogFocusTargets(dialog)
       if (focusable.length === 0) {
         event.preventDefault()
         return
@@ -265,7 +313,7 @@ export function AvEnhanceV27Wizard({
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [busy, onClose, open, submitting])
+  }, [busy, onClose, open, openingOutput, submitting])
 
   const invalidateExpansion = () => {
     responseEpochRef.current += 1
@@ -274,6 +322,13 @@ export function AvEnhanceV27Wizard({
     previewRequestRef.current = null
     setPreview(null)
     setLocalError(null)
+    setPickerFailure(null)
+    setPreviewFailure(null)
+    setOpeningOutput(false)
+    setCheckingOutput(false)
+    setPublicationPreview(null)
+    publicationFlightRef.current = null
+    outputOpenFlightRef.current = null
   }
 
   const updateSource = (index: number, patch: Partial<SourceDraft>) => {
@@ -354,15 +409,22 @@ export function AvEnhanceV27Wizard({
         ...(fiVersion ? { model_version: fiVersion } : {}),
       },
       program_encode: { encoder },
-      publication: { output_root: outputRoot, title, year, overwrite },
+      publication: buildPublicationRequest(),
     }
   }
 
+  const buildPublicationRequest = (): AvEnhanceV27PublicationRequestWire => ({
+    output_root: outputRoot, title, year, overwrite, layout: outputLayout,
+  })
+
   const previewExpansion = async (runId: string) => {
+    if (expansionFlightRef.current) return
     const epoch = responseEpochRef.current
-    expansionFlightRef.current = runId
+    const token = Symbol('expansion-preview')
+    expansionFlightRef.current = { runId, token }
     setSubmitting(true)
     setLocalError(null)
+    setPreviewFailure(null)
     try {
       const request: AvEnhanceV27TemplatePreviewRequestWire = {
         action: 'expand',
@@ -384,14 +446,18 @@ export function AvEnhanceV27Wizard({
       if (epoch === responseEpochRef.current) {
         previewRequestRef.current = null
         setPreview(null)
-        setLocalError(error instanceof Error ? error.message : '无法生成工作流预览。')
-        // 恢复已有工程时，completed 只表示 Run 终态；是否属于可扩展 Preparation 仍由
-        // Python 精确校验。拒绝后立即回到候选列表，避免错误 ID 把用户锁进重复失败。
-        if (mode === 'resume') setAnalysisRunId(null)
+        const code = error instanceof StudioGatewayError ? error.code : null
+        setPreviewFailure({ code, message: error instanceof Error ? error.message : '无法生成工作流预览。',
+          // Python 提供精确位置；这里只展示原文，绝不解析、拼接或把它提升为系统动作 authority。
+          recoveryMessage: isPublicationError(code) && error instanceof StudioGatewayError ? error.serviceMessage : null })
+        setLocalError(isPublicationError(code)
+          ? '输出位置暂不可用。素材分析已经完成并保留；请修改输出设置，检查目录权限或同名文件冲突后重试，无需重复分析。'
+          : '工作流预览暂未生成。已完成的素材分析与工程仍然保留；请修改设置后重试，或在高级详情查看具体原因。')
+        // 路径或预览失败不撤销已完成分析；恢复模式也保留 exact Run，改选由用户显式触发。
       }
     } finally {
       if (epoch === responseEpochRef.current) setSubmitting(false)
-      if (expansionFlightRef.current === runId) expansionFlightRef.current = null
+      if (expansionFlightRef.current?.token === token) expansionFlightRef.current = null
     }
   }
 
@@ -399,18 +465,26 @@ export function AvEnhanceV27Wizard({
     if (
       !open ||
       !analysisRunId ||
+      analysisRunIdRef.current !== analysisRunId ||
       analysisSummary?.state !== 'completed' ||
       previewRequestRef.current?.action === 'expand' ||
-      expansionFlightRef.current === analysisRunId
+      expansionFlightRef.current?.runId === analysisRunId
     ) return
     void previewExpansion(analysisRunId)
-    // previewExpansion 读取当前表单；表单改变时 invalidateExpansion 会推进 epoch，必须重新显式分析。
+    // 表单改变时只废弃旧预览；已完成的 exact Run 保留，用户重新检查输出并显式生成预览即可。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisRunId, analysisSummary?.state, open])
 
   if (!open) return null
 
-  const controlsDisabled = busy || submitting
+  const controlsDisabled = busy || submitting || openingOutput
+
+  const reportPickerError = (error: unknown, fallback: string) => {
+    const rawMessage = error instanceof Error ? error.message : fallback
+    const message = formatHostBridgeError(error) ?? rawMessage
+    setLocalError(message)
+    setPickerFailure({ message, rawMessage })
+  }
 
   const chooseProjectPath = async () => {
     if (!onPickProjectPath) return
@@ -423,7 +497,7 @@ export function AvEnhanceV27Wizard({
       invalidateExpansion()
     } catch (error) {
       if (epoch === responseEpochRef.current && flight === pickerFlightRef.current) {
-        setLocalError(error instanceof Error ? error.message : '无法打开工程保存位置选择器。')
+        reportPickerError(error, '无法打开工程保存位置选择器。')
       }
     }
   }
@@ -447,7 +521,7 @@ export function AvEnhanceV27Wizard({
       invalidateExpansion()
     } catch (error) {
       if (epoch === responseEpochRef.current && flight === pickerFlightRef.current) {
-        setLocalError(error instanceof Error ? error.message : '无法打开素材选择器。')
+        reportPickerError(error, '无法打开素材选择器。')
       }
     }
   }
@@ -463,12 +537,33 @@ export function AvEnhanceV27Wizard({
       invalidateExpansion()
     } catch (error) {
       if (epoch === responseEpochRef.current && flight === pickerFlightRef.current) {
-        setLocalError(error instanceof Error ? error.message : '无法打开成片文件夹选择器。')
+        reportPickerError(error, '无法打开成片文件夹选择器。')
       }
     }
   }
 
-  const moveNext = () => {
+  const revealOutput = async () => {
+    if (!onRevealOutputDirectory || !outputRoot || outputOpenFlightRef.current) return
+    const epoch = responseEpochRef.current
+    const token = Symbol('reveal-output')
+    outputOpenFlightRef.current = token
+    setOpeningOutput(true)
+    try {
+      // 路径只是给父级匹配当次选择，系统动作 authority 始终由父级的 picker selection handle 提供。
+      await onRevealOutputDirectory(outputRoot)
+    } catch {
+      if (epoch === responseEpochRef.current && outputOpenFlightRef.current === token) {
+        setLocalError('无法打开所选输出文件夹。请重新选择输出目录后再试；工程、素材和已完成分析均未修改。')
+      }
+    } finally {
+      if (outputOpenFlightRef.current === token) {
+        outputOpenFlightRef.current = null
+        setOpeningOutput(false)
+      }
+    }
+  }
+
+  const moveNext = async () => {
     setLocalError(null)
     try {
       if (step === 1) {
@@ -478,11 +573,32 @@ export function AvEnhanceV27Wizard({
         buildPrepareRequest()
         setStep(3)
       } else if (step === 3) {
+        if (publicationFlightRef.current) return
         if (!enhancementModelName.trim() || !fiModelName.trim() || !outputRoot.trim() || !title.trim() || !year.trim()) {
           throw new Error('请完成画质增强、补帧和输出设置。')
         }
         if (!/^[0-9]{4}$/.test(year)) throw new Error('年份必须是四位数字。')
-        setStep(4)
+        const epoch = responseEpochRef.current
+        const token = Symbol('publication-check')
+        publicationFlightRef.current = token
+        setCheckingOutput(true)
+        try {
+          // 此检查不依赖媒体、不保存工程、不创建目录。输入变化或取消立即撤销迟到响应的展示资格。
+          const checked = await onPreviewPublication({ contract_version: '0.3.0', request: buildPublicationRequest() })
+          if (epoch !== responseEpochRef.current || publicationFlightRef.current !== token) return
+          if (checked.layout !== outputLayout) throw new Error('输出检查与当前整理方式不一致，请重试。')
+          setPublicationPreview(checked)
+          setStep(4)
+        } catch (error) {
+          if (epoch === responseEpochRef.current && publicationFlightRef.current === token) {
+            setLocalError(`输出位置未通过检查。工程、素材和已有分析均保持不变。${error instanceof StudioGatewayError ? error.serviceMessage ?? error.message : error instanceof Error ? error.message : '请检查所选目录后重试。'}`)
+          }
+        } finally {
+          if (publicationFlightRef.current === token) {
+            publicationFlightRef.current = null
+            setCheckingOutput(false)
+          }
+        }
       }
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : '请完成当前步骤。')
@@ -568,7 +684,7 @@ export function AvEnhanceV27Wizard({
     const authority = previewRequestRef.current
     if (!preview?.profile.compatible || !authority || authority.action !== 'expand') {
       invalidateExpansion()
-      setLocalError('当前设置没有可确认的 Python 工作流预览；请重新分析。')
+      setLocalError('当前设置没有可确认的 Python 工作流预览；请使用已完成的素材分析重新生成预览。')
       setStep(4)
       return
     }
@@ -580,7 +696,7 @@ export function AvEnhanceV27Wizard({
       if (applied) onClose()
       else {
         setPreview(null)
-        setLocalError('工作流未写入工程；分析结果已失效，请重新检查。')
+        setLocalError('工作流未写入工程；预览需要重新检查，已完成的素材分析仍保留。')
         setStep(4)
       }
     } catch (error) {
@@ -597,7 +713,7 @@ export function AvEnhanceV27Wizard({
     <div className="template-wizard-backdrop" role="presentation">
       <section aria-label="AVEnhanceFlow v2.7.0 创作者向导" aria-modal="true" className="template-wizard creator-wizard" ref={dialogRef} role="dialog">
         <header className="template-wizard-header">
-          <div><span className="eyebrow">GUIDED VIDEO WORKFLOW</span><h2>创建增强视频工作流</h2><p>ZNIKU 会准确分析素材并规划工作流，生成后仍可自由编辑节点。</p></div>
+          <div><span className="eyebrow">引导式视频工作流</span><h2>创建增强视频工作流</h2><p>ZNIKU 会准确分析素材并规划工作流，生成后仍可自由编辑节点。</p></div>
           <button aria-label="关闭模板向导" className="template-wizard-close" disabled={controlsDisabled} onClick={onClose} ref={closeButtonRef} type="button">×</button>
         </header>
 
@@ -612,10 +728,10 @@ export function AvEnhanceV27Wizard({
           {step === 1 && (
             <section className="creator-step" aria-label="选择素材">
               <header><span>01</span><div><h3>选择要处理的视频</h3><p>ZNIKU 只记录你选择的本机路径，不上传、复制或改写源视频。</p></div></header>
-              <label>素材组织方式<select aria-label="模板 Source mode" disabled={controlsDisabled || preparationCreated} onChange={(event) => { const next = event.target.value as AvEnhanceV27SourceMode; setSourceMode(next); if (next === 'program') setSources((current) => current.slice(0, 1)); invalidateExpansion() }} value={sourceMode}><option value="program">一条完整视频</option><option value="pre_chaptered">已经分章的多个视频</option></select></label>
+              <label>素材组织方式<select aria-label="素材组织方式" disabled={controlsDisabled || preparationCreated} onChange={(event) => { const next = event.target.value as AvEnhanceV27SourceMode; setSourceMode(next); if (next === 'program') setSources((current) => current.slice(0, 1)); invalidateExpansion() }} value={sourceMode}><option value="program">一条完整视频</option><option value="pre_chaptered">已经分章的多个视频</option></select></label>
               <button className="creator-picker" disabled={controlsDisabled || preparationCreated || !pickerAvailable} onClick={() => void chooseSources()} type="button"><span>▣</span><strong>{sourceMode === 'program' ? '选择视频素材' : '选择全部章节视频'}</strong><small>{pickerAvailable ? '使用 Windows 文件选择器' : '桌面选择器未连接，可在下方高级入口填写'}</small></button>
-              <div className="creator-source-list">{sources.map((source, index) => <article key={`${index}-${source.source_path}`}><span>{index + 1}</span><div><strong>{source.source_path ? pathName(source.source_path) : '尚未选择'}</strong><small>{source.source_path ? '本机文件已选择，原文件保持只读' : '不会在选择前创建工程或目录'}</small></div>{sourceMode === 'pre_chaptered' && <input aria-label={`Source ${index + 1} chapter label`} disabled={controlsDisabled || preparationCreated} onChange={(event) => updateSource(index, { chapter_label: event.target.value })} value={source.chapter_label} />}</article>)}</div>
-              <div className="creator-project-fields"><label>工程名称<input aria-label="模板 Project name" disabled={controlsDisabled || preparationCreated} maxLength={200} onChange={(event) => { setProjectName(event.target.value); invalidateExpansion() }} value={projectName} /></label><button className="button button--ghost" disabled={controlsDisabled || preparationCreated || !pickerAvailable} onClick={() => void chooseProjectPath()} type="button">选择 .zniku 保存位置</button>{projectPath && <span className="creator-selected-path">已选择：{pathName(projectPath)}</span>}</div>
+              <div className="creator-source-list">{sources.map((source, index) => <article key={`${index}-${source.source_path}`}><span>{index + 1}</span><div><strong>{source.source_path ? pathName(source.source_path) : '尚未选择'}</strong><small>{source.source_path ? '本机文件已选择，原文件保持只读' : '不会在选择前创建工程或目录'}</small></div>{sourceMode === 'pre_chaptered' && <input aria-label={`第 ${index + 1} 章名称`} disabled={controlsDisabled || preparationCreated} onChange={(event) => updateSource(index, { chapter_label: event.target.value })} value={source.chapter_label} />}</article>)}</div>
+              <div className="creator-project-fields"><label>工程名称<input aria-label="工程名称" disabled={controlsDisabled || preparationCreated} maxLength={200} onChange={(event) => { setProjectName(event.target.value); invalidateExpansion() }} value={projectName} /></label><button className="button button--ghost" disabled={controlsDisabled || preparationCreated || !pickerAvailable} onClick={() => void chooseProjectPath()} type="button">选择 .zniku 保存位置</button>{projectPath && <span className="creator-selected-path">已选择：{pathName(projectPath)}</span>}</div>
               <details className="creator-advanced-entry"><summary>开发浏览器高级入口</summary><p>正式桌面路径使用原生选择器；这里只为开发环境保留手工路径。</p><label>工程路径<input aria-label="模板工程路径" disabled={controlsDisabled || preparationCreated} onChange={(event) => { setProjectPath(event.target.value); invalidateExpansion() }} value={projectPath} /></label>{sources.map((source, index) => <label key={index}>Source {index + 1} path<input aria-label={`Source ${index + 1} path`} disabled={controlsDisabled || preparationCreated} onChange={(event) => updateSource(index, { source_path: event.target.value })} value={source.source_path} /></label>)}{sourceMode === 'pre_chaptered' && <button className="button button--ghost" disabled={controlsDisabled || preparationCreated} onClick={() => { setSources((current) => [...current, { source_path: '', chapter_label: '' }]); invalidateExpansion() }} type="button">添加 Source</button>}</details>
             </section>
           )}
@@ -631,7 +747,20 @@ export function AvEnhanceV27Wizard({
           {step === 3 && (
             <section className="creator-step" aria-label="设置">
               <header><span>03</span><div><h3>设置成片目标</h3><p>先填写创作决策；精确帧、编码器和模型版本可在高级设置中调整。</p></div></header>
-              <div className="creator-basic-settings"><label>片名<input aria-label="Publication title" disabled={controlsDisabled} onChange={(event) => { setTitle(event.target.value); invalidateExpansion() }} value={title} /></label><label>年份<input aria-label="Publication year" disabled={controlsDisabled} inputMode="numeric" maxLength={4} onChange={(event) => { setYear(event.target.value); invalidateExpansion() }} value={year} /></label><div className="creator-output-picker"><button className="button button--ghost" disabled={controlsDisabled || !pickerAvailable} onClick={() => void chooseOutput()} type="button">选择成片文件夹</button>{outputRoot && <span>已选择：{pathName(outputRoot)}</span>}</div></div>
+              <div className="creator-basic-settings">
+                <label>片名<input aria-label="片名" disabled={controlsDisabled} onChange={(event) => { setTitle(event.target.value); invalidateExpansion() }} value={title} /></label>
+                <label>年份<input aria-label="年份" disabled={controlsDisabled} inputMode="numeric" maxLength={4} onChange={(event) => { setYear(event.target.value); invalidateExpansion() }} value={year} /></label>
+                <div className="creator-output-picker">
+                  <button className="button button--ghost" disabled={controlsDisabled || !pickerAvailable} onClick={() => void chooseOutput()} type="button">选择成片文件夹</button>
+                  {outputRoot && <span>已选择输出目录：{outputRoot}</span>}
+                  {outputRoot && <button className="button button--ghost" disabled={controlsDisabled || !onRevealOutputDirectory} onClick={() => void revealOutput()} type="button">打开所选输出文件夹</button>}
+                  <small>默认直接保存到所选目录，无需预先创建片名文件夹。下一步会先检查输出位置，不创建目录或开始分析。</small>
+                  <label className="template-check"><input aria-label="按片名创建子文件夹" checked={outputLayout === 'title_subdirectory'} disabled={controlsDisabled} onChange={(event) => { setOutputLayout(event.target.checked ? 'title_subdirectory' : 'direct'); invalidateExpansion() }} type="checkbox" />按片名创建子文件夹（适合媒体库整理）</label>
+                  {outputLayout === 'title_subdirectory' && <small>最终路径由运行服务生成；若子文件夹不存在，将在开始处理后的输出步骤创建。选择、预览和确认工作流均不创建目录。</small>}
+                  <label className="template-check"><input aria-label="允许覆盖发布目标" checked={overwrite} disabled={controlsDisabled} onChange={(event) => { setOverwrite(event.target.checked); invalidateExpansion() }} type="checkbox" />如果成片目标已经存在，明确允许覆盖</label>
+                  <small>覆盖只针对最终成片，不允许覆盖源素材；默认保留已有文件。</small>
+                </div>
+              </div>
               <details className="creator-settings-advanced"><summary>高级设置</summary><div className="template-form-grid"><label>画质增强模型<input aria-label="Enhancement model name" disabled={controlsDisabled} onChange={(event) => { setEnhancementModelName(event.target.value); invalidateExpansion() }} value={enhancementModelName} /><small>记录实际外部工具模型，不作为效果证明。</small></label><label>补帧模型<input aria-label="FI model name" disabled={controlsDisabled} onChange={(event) => { setFiModelName(event.target.value); invalidateExpansion() }} value={fiModelName} /></label><label>章节切分<select aria-label="Chapter selector mode" disabled={controlsDisabled || currentSourceMode === 'pre_chaptered'} onChange={(event) => { setSelectorMode(event.target.value as SelectorMode); invalidateExpansion() }} value={selectorMode}><option value="single">整片作为一章</option><option value="exact_frames">按精确帧切分</option><option value="exact_times">按精确时间切分</option></select></label>{selectorMode === 'exact_frames' && currentSourceMode !== 'pre_chaptered' && <label>下一章首帧<textarea aria-label="Exact chapter frames" disabled={controlsDisabled} onChange={(event) => { setSelectorFrames(event.target.value); invalidateExpansion() }} placeholder="899" value={selectorFrames} /></label>}{selectorMode === 'exact_times' && currentSourceMode !== 'pre_chaptered' && <label>切分时间（秒）<textarea aria-label="Exact chapter times" disabled={controlsDisabled} onChange={(event) => { setSelectorTimes(event.target.value); invalidateExpansion() }} placeholder="1800, 7207200/1001" value={selectorTimes} /></label>}<label>单段处理时长<input aria-label="Leaf duration minutes" disabled={controlsDisabled} inputMode="numeric" onChange={(event) => { setLeafDurationMinutes(event.target.value); invalidateExpansion() }} value={leafDurationMinutes} /><small>分钟；只决定分析如何派生处理段，不改变章节边界。</small></label><label>成片编码器<select aria-label="Program encoder" disabled={controlsDisabled} onChange={(event) => { setEncoder(event.target.value as 'gpu' | 'cpu'); invalidateExpansion() }} value={encoder}><option value="gpu">GPU · hevc_nvenc</option><option value="cpu">CPU · libx265</option></select></label><label>增强倍率<input aria-label="Enhancement actual scale factor" disabled={controlsDisabled} inputMode="numeric" onChange={(event) => { setActualScaleFactor(event.target.value); invalidateExpansion() }} value={actualScaleFactor} /></label><label>增强模型版本<input aria-label="Enhancement model version" disabled={controlsDisabled} onChange={(event) => { setEnhancementModelVersion(event.target.value); invalidateExpansion() }} value={enhancementModelVersion} /></label><label>补帧模型版本<input aria-label="FI model version" disabled={controlsDisabled} onChange={(event) => { setFiModelVersion(event.target.value); invalidateExpansion() }} value={fiModelVersion} /></label><label>开发浏览器输出路径<input aria-label="Publication output root" disabled={controlsDisabled} onChange={(event) => { setOutputRoot(event.target.value); invalidateExpansion() }} value={outputRoot} /></label></div></details>
             </section>
           )}
@@ -639,7 +768,9 @@ export function AvEnhanceV27Wizard({
           {step === 4 && (
             <section className="creator-step creator-analysis" aria-label="分析素材">
               <header><span>04</span><div><h3>分析素材并生成准确方案</h3><p>只有点击下方按钮后，ZNIKU 才会创建工程并开始分析；仅打开页面不会修改任何内容。</p></div></header>
-              {!preparationCreated ? <button className="creator-analysis-action" disabled={controlsDisabled} onClick={() => void analyze()} type="button"><span>◎</span><strong>{submitting ? '正在准备素材分析…' : '开始分析素材'}</strong><small>先安全检查，再创建工程并分析真实媒体信息</small></button> : analysisRunId ? <div className={`creator-analysis-state is-${analysisSummary?.state ?? 'pending'}`} role="status"><strong>{analysisSummary?.state === 'completed' ? '素材分析完成' : analysisSummary?.state === 'failed' ? '素材分析没有完成' : analysisSummary?.requires_operator_action ? '需要完成一个外部处理步骤' : '正在分析素材'}</strong><p>{analysisSummary?.state === 'completed' ? '正在从这次准确结果生成工作流预览。' : analysisSummary?.state === 'failed' ? '工程和已完成结果仍保留；可返回工作区查看问题，或重新启动分析。' : analysisSummary?.requires_operator_action ? '请返回工作区完成马赛克修复；文件出现不会自动提交。' : `${analysisSummary?.state_counts.completed ?? 0} / ${analysisSummary?.node_count ?? '—'} 个分析步骤已完成`}</p>{analysisSummary?.state === 'failed' && <button className="button button--primary" disabled={controlsDisabled} onClick={() => void restartAnalysis()} type="button">重新分析</button>}</div> : <div className="creator-analysis-records"><strong>选择一次已完成的素材分析</strong><p>恢复已有工程时请按时间明确选择；界面不会猜测“最新”记录。</p>{completedRuns.length === 0 ? <p>当前工程还没有可用的完成记录。请返回工作区先完成素材准备。</p> : completedRuns.map((summary, index) => <button disabled={controlsDisabled} key={summary.run_id} onClick={() => selectCompletedAnalysis(summary.run_id)} type="button"><span>✓</span><strong>分析记录 {index + 1} · {humanRunTime(summary.created_at)} 完成</strong><small>{summary.node_count} 个步骤均已完成</small></button>)}</div>}
+              {publicationPreview && <div className="creator-target" aria-label="输出位置检查结果"><span>输出位置已检查</span><strong>{publicationPreview.output_directory}</strong><small>{publicationPreview.will_create_directory ? '将在开始处理后的输出步骤创建此文件夹；当前检查、分析和确认工作流均不创建目录。' : '成片将保存到此目录；已有文件仍需要明确允许覆盖。'}</small></div>}
+              {!preparationCreated ? <button className="creator-analysis-action" disabled={controlsDisabled} onClick={() => void analyze()} type="button"><span>◎</span><strong>{submitting ? '正在准备素材分析…' : '开始分析素材'}</strong><small>先安全检查，再创建工程并分析真实媒体信息</small></button> : analysisRunId ? <div className={`creator-analysis-state is-${analysisSummary?.state ?? 'pending'}`} role="status"><strong>{analysisSummary?.state === 'completed' ? isPublicationError(previewFailure?.code) ? '素材分析已完成，输出位置尚未就绪' : previewFailure ? '素材分析已完成，工作流预览尚未就绪' : '素材分析完成' : analysisSummary?.state === 'failed' ? '素材分析没有完成' : analysisSummary?.requires_operator_action ? '需要完成一个外部处理步骤' : '正在分析素材'}</strong><p>{analysisSummary?.state === 'completed' ? submitting ? '正在从这次准确结果生成工作流预览。' : previewFailure ? '这次素材分析记录仍然保留；处理下方提示后即可重新检查，不需要重复分析素材。' : '可使用这次已完成分析生成工作流预览。' : analysisSummary?.state === 'failed' ? '工程和已完成结果仍保留；可返回工作区查看问题，或重新启动分析。' : analysisSummary?.requires_operator_action ? '请返回工作区完成马赛克修复；文件出现不会自动提交。' : `${analysisSummary?.state_counts.completed ?? 0} / ${analysisSummary?.node_count ?? '—'} 个分析步骤已完成`}</p>{analysisSummary?.state === 'failed' && <button className="button button--primary" disabled={controlsDisabled} onClick={() => void restartAnalysis()} type="button">重新分析</button>}</div> : <div className="creator-analysis-records"><strong>选择一次已完成的素材分析</strong><p>恢复已有工程时请按时间明确选择；界面不会猜测“最新”记录。</p>{completedRuns.length === 0 ? <p>当前工程还没有可用的完成记录。请返回工作区先完成素材准备。</p> : completedRuns.map((summary, index) => <button disabled={controlsDisabled} key={summary.run_id} onClick={() => selectCompletedAnalysis(summary.run_id)} type="button"><span>✓</span><strong>分析记录 {index + 1} · {humanRunTime(summary.created_at)} 完成</strong><small>{summary.node_count} 个步骤均已完成</small></button>)}</div>}
+              {analysisSummary?.state === 'completed' && previewFailure && outputRoot && <button className="button button--ghost" disabled={controlsDisabled || !onRevealOutputDirectory} onClick={() => void revealOutput()} type="button">打开所选输出文件夹</button>}
             </section>
           )}
 
@@ -649,7 +780,7 @@ export function AvEnhanceV27Wizard({
               <div className={`creator-profile-result ${preview.profile.compatible ? 'is-compatible' : 'is-incompatible'}`} role="status"><strong>{preview.profile.compatible ? '工作流已就绪' : '工作流需要修正'}</strong><span>{preview.project.graph.nodes.length} 个节点 · {preview.creator.estimated_steps} · {preview.plan.chapter_count} 章 · {preview.plan.leaf_count} 个处理段</span></div>
               {preview.creator.sources.length > 0 && <section className="creator-media-summary" aria-label="媒体摘要"><h4>素材信息</h4>{preview.creator.sources.map((source) => <article key={source.source_ordinal}><strong>{source.display_name}</strong>{source.chapter_label && <span>{source.chapter_label}</span>}<dl><div><dt>文件</dt><dd>{source.size_label} · {source.container}</dd></div><div><dt>画面</dt><dd>{source.resolution}</dd></div><div><dt>帧率</dt><dd>{source.frame_rate}</dd></div><div><dt>时长</dt><dd>{source.duration}</dd></div><div><dt>帧数</dt><dd>{source.frame_count}</dd></div><div><dt>音轨</dt><dd>{source.audio_tracks.length > 0 ? source.audio_tracks.map((track) => track.label).join('；') : '无音轨'}</dd></div></dl><details><summary>媒体技术信息</summary><dl><div><dt>视频编码</dt><dd>{source.video_codec}</dd></div><div><dt>像素格式</dt><dd>{source.pixel_format}</dd></div>{source.audio_tracks.map((track) => <div key={track.ordinal}><dt>音轨 {track.ordinal + 1}</dt><dd>{track.codec}{track.channels ? ` · ${track.channels} 声道` : ''}{track.sample_rate ? ` · ${track.sample_rate} Hz` : ''}{track.language ? ` · ${track.language}` : ''}{track.title ? ` · ${track.title}` : ''}</dd></div>)}</dl></details></article>)}</section>}
               <section className="creator-workflow-summary"><h4>处理顺序</h4><div>{preview.plan.manual_stages.map((stage, index) => <span key={stage.stage}><i>{index + 1}</i><strong>{stageLabel(stage.stage)}</strong><small>{stage.node_count} 个步骤 · {stage.output_container}</small></span>)}</div></section>
-              {preview.plan.output_target_path && <div className="creator-target"><span>预计成片</span><strong>{pathName(preview.plan.output_target_path)}</strong><small>将保存到你选择的成片文件夹</small></div>}
+              {preview.plan.output_target_path && <div className="creator-target"><span>预计成片</span><strong>{preview.plan.output_target_path}</strong><small>{preview.plan.output_directory_to_create ? `将在开始处理后的输出步骤创建文件夹：${preview.plan.output_directory_to_create}。确认工作流、预览和取消都不会创建。` : '将保存到以上完整路径；已有文件仍需要明确允许覆盖。'}</small></div>}
               <label className="template-check creator-overwrite"><input aria-label="允许覆盖发布目标" checked={overwrite} disabled={controlsDisabled} onChange={(event) => { setOverwrite(event.target.checked); invalidateExpansion(); setStep(3) }} type="checkbox" />如果目标已经存在，明确允许覆盖</label>
               <details className="creator-technical-preview"><summary>查看精确章节与技术诊断</summary>{preview.plan.chapters.map((chapter) => <article key={chapter.chapter_id}><strong>{chapter.label}</strong><span>{chapter.start_timecode} → {chapter.end_timecode}</span><code>[{chapter.start_frame}, {chapter.end_frame}) · {chapter.leaves.length} 段</code></article>)}{preview.profile.diagnostics.map((diagnostic, index) => <article key={`${diagnostic.code}-${index}`}><strong>{diagnostic.code}</strong><p>{diagnostic.message}</p>{diagnostic.node_id && <button onClick={() => onLocateNode(diagnostic.node_id!)} type="button">定位对应节点</button>}</article>)}</details>
             </section>
@@ -657,8 +788,17 @@ export function AvEnhanceV27Wizard({
         </div>
 
         <footer className="template-wizard-footer creator-wizard-footer">
-          <div>{(localError || serviceError) && <div className="template-error-stack" role="alert">{serviceError && serviceError !== localError && <p className="template-local-error">{serviceError}</p>}{localError && <p className="template-local-error">{localError}</p>}</div>}</div>
-          <div className="creator-footer-actions">{step > 1 && step < 5 && !preparationCreated && <button className="button button--ghost" disabled={controlsDisabled} onClick={() => setStep((step - 1) as WizardStep)} type="button">上一步</button>}{step < 4 && <button className="button button--primary" disabled={controlsDisabled} onClick={moveNext} type="button">下一步：{(stepLabels as ReadonlyArray<string>)[step] ?? ''}</button>}{step === 4 && preparationCreated && <button className="button button--ghost" disabled={controlsDisabled} onClick={returnToSettings} type="button">修改设置</button>}{step === 4 && preparationCreated && analysisRunId && analysisSummary?.state === 'completed' && !submitting && !preview && <button className="button button--primary" onClick={() => void previewExpansion(analysisRunId)} type="button">生成工作流预览</button>}{step === 5 && <button className="button button--ghost" disabled={controlsDisabled} onClick={returnToSettings} type="button">返回设置</button>}{step === 5 && <button className="button button--primary" disabled={controlsDisabled || !preview?.profile.compatible} onClick={() => void confirmWorkflow()} type="button">确认并创建工作流</button>}</div>
+          <div>{(localError || serviceError) && <div className="template-error-stack" role="alert">{serviceError && serviceError !== localError && !previewFailure && <p className="template-local-error">{serviceError}</p>}{localError && <p className="template-local-error">{localError}</p>}{pickerFailure?.message === localError && <details><summary>高级 → 选择窗口原始详情</summary><pre>{pickerFailure.rawMessage}</pre></details>}{previewFailure?.recoveryMessage && <p className="template-local-error">{previewFailure.recoveryMessage}</p>}{previewFailure && <details><summary>高级 → 输出位置与预览详情</summary>{previewFailure.code && <code>{previewFailure.code}</code>}<pre>{previewFailure.message}</pre></details>}</div>}</div>
+          <div className="creator-footer-actions">
+            {step > 1 && step < 5 && !preparationCreated && <button className="button button--ghost" disabled={controlsDisabled} onClick={() => { invalidateExpansion(); setStep((step - 1) as WizardStep) }} type="button">上一步</button>}
+            {step === 3 && checkingOutput && <button className="button button--ghost" onClick={invalidateExpansion} type="button">取消检查</button>}
+            {step < 4 && <button className="button button--primary" disabled={controlsDisabled || checkingOutput} onClick={() => void moveNext()} type="button">{checkingOutput ? '正在检查输出位置…' : `下一步：${(stepLabels as ReadonlyArray<string>)[step] ?? ''}`}</button>}
+            {step === 4 && preparationCreated && <button className="button button--ghost" disabled={controlsDisabled} onClick={returnToSettings} type="button">修改设置</button>}
+            {step === 4 && preparationCreated && analysisRunId && analysisSummary?.state === 'completed' && !submitting && !preview && <button className="button button--primary" disabled={controlsDisabled} onClick={() => void previewExpansion(analysisRunId)} type="button">{isPublicationError(previewFailure?.code) ? '重新检查输出位置' : previewFailure ? '重新生成工作流预览' : '生成工作流预览'}</button>}
+            {step === 4 && mode === 'resume' && analysisRunId && !submitting && <button className="button button--ghost" disabled={controlsDisabled} onClick={() => { invalidateExpansion(); setAnalysisRunId(null) }} type="button">改选分析记录</button>}
+            {step === 5 && <button className="button button--ghost" disabled={controlsDisabled} onClick={returnToSettings} type="button">返回设置</button>}
+            {step === 5 && <button className="button button--primary" disabled={controlsDisabled || !preview?.profile.compatible} onClick={() => void confirmWorkflow()} type="button">确认并创建工作流</button>}
+          </div>
         </footer>
       </section>
     </div>
