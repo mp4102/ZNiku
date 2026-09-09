@@ -1,55 +1,28 @@
 /** 生产资源 + 真 Python/SQLite/Runtime；仅原生选择窗口使用显式的合成测试平台。 */
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { copyFile, readFile, readdir, stat } from 'node:fs/promises'
-import { createInterface } from 'node:readline'
-import { dirname, join, resolve, sep } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import axe from 'axe-core'
 import type { GraphWire, RunDetailEnvelope, StatusEnvelope } from '../src/studio/contracts'
+import { ProductionJournal, SyntheticFixtureHost, type SyntheticFixture } from './production-support'
 
-let service: ChildProcessWithoutNullStreams
+const service = new SyntheticFixtureHost()
 let origin: string
-let fixture: { wizard_project: string; output_root: string; output_collision: string; external_project: string }
+let fixture: SyntheticFixture
+let journals: ProductionJournal[] = []
 test.beforeEach(async ({ page }) => {
-  // 只记录本文件的合成服务错误；失败发生在最终 assertions 前时也必须保留真实浏览器原因。
-  page.on('pageerror', (error) => console.log('PRODUCTION_PAGE_ERROR', error.stack ?? error.message))
-  page.on('console', (message) => {
-    if (message.type() === 'error') console.log('PRODUCTION_CONSOLE_ERROR', message.location().url, message.text())
-  })
-  page.on('response', async (response) => {
-    if (response.status() >= 400 && response.url().startsWith(origin)) {
-      console.log('PRODUCTION_HTTP_ERROR', response.status(), response.url(), await response.text().catch(() => '<body unavailable>'))
-    }
-  })
+  journals = [new ProductionJournal(page, service)]
 })
 test.beforeAll(async () => {
-  service = spawn('uv', ['run', '--locked', '--extra', 'dev', 'python', 'tools/studio_production_fixture.py'], {
-    cwd: resolve('../..'), env: { ...process.env, PYTHONUTF8: '1' }, shell: false,
-  })
-  origin = await new Promise<string>((done, fail) => {
-    let stderr = ''
-    service.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
-    const lines = createInterface({ input: service.stdout })
-    lines.on('line', (line) => {
-      try {
-        const parsed = JSON.parse(line) as typeof fixture & { origin?: string }
-        if (parsed.origin && parsed.output_root && parsed.wizard_project && parsed.output_collision && parsed.external_project) {
-          fixture = parsed
-          done(parsed.origin)
-        }
-      } catch { /* 非就绪输出不冒充URL。 */ }
-    })
-    service.once('error', fail)
-    service.once('exit', (code) => fail(new Error(`合成服务提前退出 ${code}: ${stderr}`)))
-  })
+  await service.start()
+  origin = service.origin
+  fixture = service.fixture
 })
-test.afterAll(async () => {
-  if (service && service.exitCode === null) {
-    const stopped = new Promise<void>((done) => service.once('exit', () => done()))
-    service.stdin.end('\n')
-    await stopped
-  }
+test.afterEach(async ({}, info) => {
+  if (info.status !== info.expectedStatus) await journals.at(-1)?.capture(info)
+  for (const journal of journals) journal.dispose()
 })
+test.afterAll(async () => { await service.stop() })
 
 async function accessibility(page: Page, label: string) {
   // 测试引擎注入只发生在此测试进程，不进入 production bundle 或插件执行路径。
@@ -282,6 +255,7 @@ test('高 DPI 与 200% 等效布局仍可键盘访问', async ({ browser }, info
   // 1920×1080 物理像素 / DPR 2 = 960×540 CSS 像素；等效布局测试不冒充修改 Windows 系统设置。
   const context = await browser.newContext({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 2, reducedMotion: 'reduce' })
   const page = await context.newPage()
+  journals.push(new ProductionJournal(page, service))
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(origin)
@@ -668,7 +642,13 @@ test('生产外部任务：同名节点不串目标，选择确认导入不提�
   await expect(helper.getByRole('button', { name: '提交并继续', exact: true })).toBeDisabled()
   await helper.getByRole('button', { name: '检查输出', exact: true }).click()
   await expect(helper.getByRole('button', { name: '提交并继续', exact: true })).toBeEnabled()
+  // 区分“页面未发送 Submit”和“Python worker 未完成”；票据/header 不进入诊断。
+  const submitResponse = page.waitForResponse((response) => response.url() === `${origin}/api/studio/command` &&
+    response.request().method() === 'POST' && (response.request().postDataJSON() as { operation?: string }).operation === 'submit_external', { timeout: 15_000 })
   await helper.getByRole('button', { name: '提交并继续', exact: true }).click()
+  const submitted = await submitResponse
+  expect(submitted.status()).toBe(200)
+  expect(submitted.request().postDataJSON()).toMatchObject({ run_id: runId, node_run_id: nodeA.node_run_id, handoff_id: nodeA.external_handoff!.handoff_id })
   await expect.poll(async () => (await detail()).run.state).toBe('completed')
   expect((await detail()).artifacts).toHaveLength(before.artifacts.length + 2)
   expect(await readFile(join(fixtureRoot, 'input-A-12.mkv'))).toEqual(inputA)
@@ -826,7 +806,13 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   const helper = page.getByRole('region', { name: '外部处理助手', exact: true })
   await helper.getByRole('button', { name: '检查输出', exact: true }).click()
   await expect(helper.getByRole('button', { name: '提交并继续', exact: true })).toBeEnabled()
+  // 原完成门槛不变，额外确认点击确实提交了当前 attempt，失败包可区分 UI 与 worker。
+  const submitResponse = page.waitForResponse((response) => response.url() === `${origin}/api/studio/command` &&
+    response.request().method() === 'POST' && (response.request().postDataJSON() as { operation?: string }).operation === 'submit_external', { timeout: 15_000 })
   await helper.getByRole('button', { name: '提交并继续', exact: true }).click()
+  const submitted = await submitResponse
+  expect(submitted.status()).toBe(200)
+  expect(submitted.request().postDataJSON()).toMatchObject({ run_id: runId, node_run_id: node.node_run_id, handoff_id: node.external_handoff!.handoff_id })
   await expect.poll(async () => (await detail()).run.state).toBe('completed')
   await expect(page.getByRole('button', { name: '工程数据', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: '工程数据', exact: true }).click()

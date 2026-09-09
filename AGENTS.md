@@ -3,15 +3,17 @@
 ## 架构权威
 
 - `docs/architecture/graph-core-baseline.md` 是 ZNIKU Graph、Project、Runtime 与执行安全边界的唯一上位架构
-  权威；`0.2.0` Core 及 `v0.3.0` 创作者体验重构都不得覆盖它。
+  权威；`0.2.0` Core、`v0.3.0` 创作者体验重构及 `v0.3.1` UI 优化都不得覆盖它。
 - `docs/architecture/studio-ux-baseline.md` 是 `v0.3.0` 展示、交互、桌面入口和易用性的正式下位设计；与
   `graph-core-baseline.md` 冲突时无条件以上位基线为准。`docs/architecture/studio-schema-corpus.json` 只是内建
   Schema 的机器可读盘点，不是新的语义权威。
-- `docs/v0.3.0-execution-plan.md` 规定阶段、门禁和验收顺序，不另行定义 Graph 或 Runtime 语义。
+- `docs/v0.3.0-execution-plan.md` 保留历史阶段与验收事实；已批准的
+  `docs/v0.3.1-ui-optimization-plan.md` 接管后续 UI 的实施前门禁和 A/B/C 批次，不另行定义 Graph 或 Runtime
+  语义。每次只实施用户授权的门禁或批次，不能把前置准备扩大为 A/B/C 全部实现。
 - `docs/archive/0.1.0/` 只保存 `main@198d802` 的历史实现说明，对 `0.2.0` 没有规范权威；不得从归档
   文档恢复旧约束，除非先修订并批准 `graph-core-baseline.md`。
 - `docs/brand-baseline.md` 只负责正式命名与品牌语义，不另行定义运行架构。
-- `v0.3.0` 开发线只重构 Studio 创作者体验，继续复用已经验收的 `0.2.0` Core 与 `v0.2.1` Runtime／
+- `v0.3.0` 与 `v0.3.1` 开发线只重构 Studio 创作者体验，继续复用已经验收的 `0.2.0` Core 与 `v0.2.1` Runtime／
   AVEnhanceFlow v2.7.0 能力；不得以 UX 改造为由重新引入 `0.1.0` legacy architecture。
 
 ## 产品与领域边界

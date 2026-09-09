@@ -1,0 +1,815 @@
+{
+  "experimentVersion": 1,
+  "runtime": "Node 24.14.0",
+  "date": "2026-09-09",
+  "geometryOnly": true,
+  "warmups": 3,
+  "repetitions": 20,
+  "budget": {
+    "maxCells": 60000,
+    "maxExpanded": 40000,
+    "maxTotalExpanded": 400000,
+    "maxMs": 1000,
+    "maxEdgeMs": 100
+  },
+  "bytes": {
+    "experimentGeometryAndRouterRaw": 19446,
+    "experimentGeometryAndRouterGzip": 6682,
+    "addedProductionDependencies": 0,
+    "currentProductionBundleDelta": 0,
+    "productionImplementationBytes": null
+  },
+  "historyBoundary": {
+    "syntheticHistoryCount": 1000,
+    "passedToRouter": false,
+    "servicePaginationTested": false
+  },
+  "rows": [
+    {
+      "id": "G01",
+      "nodes": 4,
+      "edges": 3,
+      "legacy": {
+        "minMs": 0.019,
+        "medianMs": 0.023,
+        "p95Ms": 0.055,
+        "maxMs": 0.092,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.043,
+        "medianMs": 0.048,
+        "p95Ms": 0.081,
+        "maxMs": 0.088,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 50,
+        "expanded": 6,
+        "maxEdgeExpanded": 2,
+        "maxEdgeMs": 0.035,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.008,
+        "medianMs": 0.01,
+        "p95Ms": 0.017,
+        "maxMs": 0.017,
+        "hits": 3
+      }
+    },
+    {
+      "id": "G02",
+      "nodes": 3,
+      "edges": 1,
+      "legacy": {
+        "minMs": 0.005,
+        "medianMs": 0.005,
+        "p95Ms": 0.007,
+        "maxMs": 0.008,
+        "collisions": 1,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.023,
+        "medianMs": 0.028,
+        "p95Ms": 0.036,
+        "maxMs": 0.044,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 40,
+        "expanded": 8,
+        "maxEdgeExpanded": 8,
+        "maxEdgeMs": 0.034,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.005,
+        "medianMs": 0.005,
+        "p95Ms": 0.008,
+        "maxMs": 0.012,
+        "hits": 1
+      }
+    },
+    {
+      "id": "G03",
+      "nodes": 8,
+      "edges": 10,
+      "legacy": {
+        "minMs": 0.039,
+        "medianMs": 0.041,
+        "p95Ms": 0.063,
+        "maxMs": 0.294,
+        "collisions": 2,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.077,
+        "medianMs": 0.098,
+        "p95Ms": 0.261,
+        "maxMs": 0.497,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 112,
+        "expanded": 48,
+        "maxEdgeExpanded": 12,
+        "maxEdgeMs": 0.282,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.014,
+        "medianMs": 0.014,
+        "p95Ms": 0.014,
+        "maxMs": 0.014,
+        "hits": 10
+      }
+    },
+    {
+      "id": "G04-multi",
+      "nodes": 5,
+      "edges": 4,
+      "legacy": {
+        "minMs": 0.016,
+        "medianMs": 0.018,
+        "p95Ms": 0.029,
+        "maxMs": 0.029,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.05,
+        "medianMs": 0.061,
+        "p95Ms": 0.168,
+        "maxMs": 0.231,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 64,
+        "expanded": 20,
+        "maxEdgeExpanded": 8,
+        "maxEdgeMs": 0.12,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.008,
+        "medianMs": 0.008,
+        "p95Ms": 0.034,
+        "maxMs": 0.035,
+        "hits": 4
+      }
+    },
+    {
+      "id": "G04-zero",
+      "nodes": 2,
+      "edges": 1,
+      "legacy": {
+        "minMs": 0.004,
+        "medianMs": 0.005,
+        "p95Ms": 0.007,
+        "maxMs": 0.01,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.008,
+        "medianMs": 0.009,
+        "p95Ms": 0.012,
+        "maxMs": 0.032,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 30,
+        "expanded": 2,
+        "maxEdgeExpanded": 2,
+        "maxEdgeMs": 0.002,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.003,
+        "medianMs": 0.004,
+        "p95Ms": 0.007,
+        "maxMs": 0.151,
+        "hits": 1
+      }
+    },
+    {
+      "id": "G05-1",
+      "nodes": 2,
+      "edges": 1,
+      "legacy": {
+        "minMs": 0.002,
+        "medianMs": 0.003,
+        "p95Ms": 0.003,
+        "maxMs": 0.003,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.006,
+        "medianMs": 0.007,
+        "p95Ms": 0.007,
+        "maxMs": 0.008,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 30,
+        "expanded": 2,
+        "maxEdgeExpanded": 2,
+        "maxEdgeMs": 0.002,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.003,
+        "medianMs": 0.004,
+        "p95Ms": 0.004,
+        "maxMs": 0.004,
+        "hits": 1
+      }
+    },
+    {
+      "id": "G05-2",
+      "nodes": 2,
+      "edges": 2,
+      "legacy": {
+        "minMs": 0.004,
+        "medianMs": 0.004,
+        "p95Ms": 0.005,
+        "maxMs": 0.017,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.01,
+        "medianMs": 0.01,
+        "p95Ms": 0.024,
+        "maxMs": 0.031,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 36,
+        "expanded": 4,
+        "maxEdgeExpanded": 2,
+        "maxEdgeMs": 0.003,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.005,
+        "medianMs": 0.005,
+        "p95Ms": 0.005,
+        "maxMs": 0.034,
+        "hits": 2
+      }
+    },
+    {
+      "id": "G05-6",
+      "nodes": 2,
+      "edges": 6,
+      "legacy": {
+        "minMs": 0.011,
+        "medianMs": 0.012,
+        "p95Ms": 0.02,
+        "maxMs": 0.043,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 4,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.033,
+        "medianMs": 0.042,
+        "p95Ms": 0.152,
+        "maxMs": 0.218,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 60,
+        "expanded": 12,
+        "maxEdgeExpanded": 2,
+        "maxEdgeMs": 0.139,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.008,
+        "medianMs": 0.008,
+        "p95Ms": 0.009,
+        "maxMs": 0.009,
+        "hits": 6
+      }
+    },
+    {
+      "id": "G05-8",
+      "nodes": 2,
+      "edges": 8,
+      "legacy": {
+        "minMs": 0.008,
+        "medianMs": 0.008,
+        "p95Ms": 0.016,
+        "maxMs": 0.018,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 12,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.045,
+        "medianMs": 0.048,
+        "p95Ms": 0.068,
+        "maxMs": 0.174,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 72,
+        "expanded": 16,
+        "maxEdgeExpanded": 2,
+        "maxEdgeMs": 0.126,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.01,
+        "medianMs": 0.011,
+        "p95Ms": 0.011,
+        "maxMs": 0.011,
+        "hits": 8
+      }
+    },
+    {
+      "id": "G05-16",
+      "nodes": 2,
+      "edges": 16,
+      "legacy": {
+        "minMs": 0.016,
+        "medianMs": 0.017,
+        "p95Ms": 0.032,
+        "maxMs": 0.044,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 44,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.057,
+        "medianMs": 0.062,
+        "p95Ms": 0.08,
+        "maxMs": 0.197,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 120,
+        "expanded": 32,
+        "maxEdgeExpanded": 2,
+        "maxEdgeMs": 0.126,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.017,
+        "medianMs": 0.018,
+        "p95Ms": 0.018,
+        "maxMs": 0.018,
+        "hits": 16
+      }
+    },
+    {
+      "id": "G06-tall",
+      "nodes": 4,
+      "edges": 4,
+      "legacy": {
+        "minMs": 0.014,
+        "medianMs": 0.015,
+        "p95Ms": 0.02,
+        "maxMs": 0.023,
+        "collisions": 1,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 1
+      },
+      "candidate": {
+        "minMs": 0.059,
+        "medianMs": 0.062,
+        "p95Ms": 0.081,
+        "maxMs": 0.087,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 108,
+        "expanded": 39,
+        "maxEdgeExpanded": 16,
+        "maxEdgeMs": 0.036,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.007,
+        "medianMs": 0.007,
+        "p95Ms": 0.015,
+        "maxMs": 0.022,
+        "hits": 4
+      }
+    },
+    {
+      "id": "G06-collapsed",
+      "nodes": 4,
+      "edges": 4,
+      "legacy": {
+        "minMs": 0.012,
+        "medianMs": 0.013,
+        "p95Ms": 0.013,
+        "maxMs": 0.018,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.026,
+        "medianMs": 0.028,
+        "p95Ms": 0.051,
+        "maxMs": 0.071,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 64,
+        "expanded": 20,
+        "maxEdgeExpanded": 8,
+        "maxEdgeMs": 0.01,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.007,
+        "medianMs": 0.007,
+        "p95Ms": 0.012,
+        "maxMs": 0.21,
+        "hits": 4
+      }
+    },
+    {
+      "id": "G07-before",
+      "nodes": 3,
+      "edges": 1,
+      "legacy": {
+        "minMs": 0.003,
+        "medianMs": 0.003,
+        "p95Ms": 0.004,
+        "maxMs": 0.024,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.008,
+        "medianMs": 0.008,
+        "p95Ms": 0.009,
+        "maxMs": 0.009,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 56,
+        "expanded": 4,
+        "maxEdgeExpanded": 4,
+        "maxEdgeMs": 0.003,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.004,
+        "medianMs": 0.004,
+        "p95Ms": 0.005,
+        "maxMs": 0.023,
+        "hits": 1
+      }
+    },
+    {
+      "id": "G07-after",
+      "nodes": 3,
+      "edges": 1,
+      "legacy": {
+        "minMs": 0.003,
+        "medianMs": 0.003,
+        "p95Ms": 0.01,
+        "maxMs": 0.014,
+        "collisions": 1,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.009,
+        "medianMs": 0.01,
+        "p95Ms": 0.027,
+        "maxMs": 0.03,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 40,
+        "expanded": 8,
+        "maxEdgeExpanded": 8,
+        "maxEdgeMs": 0.023,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.004,
+        "medianMs": 0.004,
+        "p95Ms": 0.004,
+        "maxMs": 0.005,
+        "hits": 1
+      }
+    },
+    {
+      "id": "G08",
+      "nodes": 2,
+      "edges": 4,
+      "legacy": {
+        "minMs": 0.008,
+        "medianMs": 0.008,
+        "p95Ms": 0.023,
+        "maxMs": 0.034,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.021,
+        "medianMs": 0.022,
+        "p95Ms": 0.04,
+        "maxMs": 0.14,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 96,
+        "expanded": 20,
+        "maxEdgeExpanded": 8,
+        "maxEdgeMs": 0.017,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.007,
+        "medianMs": 0.007,
+        "p95Ms": 0.007,
+        "maxMs": 0.007,
+        "hits": 4
+      }
+    },
+    {
+      "id": "G09-overlap",
+      "nodes": 3,
+      "edges": 1,
+      "legacy": {
+        "minMs": 0.003,
+        "medianMs": 0.003,
+        "p95Ms": 0.004,
+        "maxMs": 0.004,
+        "collisions": 1,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 1
+      },
+      "candidate": {
+        "minMs": 0.007,
+        "medianMs": 0.007,
+        "p95Ms": 0.008,
+        "maxMs": 0.017,
+        "collisions": 1,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 1,
+        "cells": 40,
+        "expanded": 0,
+        "maxEdgeExpanded": 0,
+        "maxEdgeMs": 0.001,
+        "degraded": 1,
+        "reasons": {
+          "blocked_port": 1
+        },
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.005,
+        "medianMs": 0.005,
+        "p95Ms": 0.013,
+        "maxMs": 0.031,
+        "hits": 1
+      }
+    },
+    {
+      "id": "G09-surround",
+      "nodes": 3,
+      "edges": 1,
+      "legacy": {
+        "minMs": 0.003,
+        "medianMs": 0.003,
+        "p95Ms": 0.004,
+        "maxMs": 0.016,
+        "collisions": 1,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.007,
+        "medianMs": 0.008,
+        "p95Ms": 0.008,
+        "maxMs": 0.008,
+        "collisions": 1,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 56,
+        "expanded": 0,
+        "maxEdgeExpanded": 0,
+        "maxEdgeMs": 0.001,
+        "degraded": 1,
+        "reasons": {
+          "blocked_port": 1
+        },
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.005,
+        "medianMs": 0.005,
+        "p95Ms": 0.005,
+        "maxMs": 0.005,
+        "hits": 1
+      }
+    },
+    {
+      "id": "G09-budget",
+      "nodes": 3,
+      "edges": 1,
+      "legacy": {
+        "minMs": 0.003,
+        "medianMs": 0.003,
+        "p95Ms": 0.004,
+        "maxMs": 0.004,
+        "collisions": 1,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.01,
+        "medianMs": 0.011,
+        "p95Ms": 0.017,
+        "maxMs": 0.03,
+        "collisions": 1,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 40,
+        "expanded": 1,
+        "maxEdgeExpanded": 1,
+        "maxEdgeMs": 0.006,
+        "degraded": 1,
+        "reasons": {
+          "work_budget": 1
+        },
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.004,
+        "medianMs": 0.004,
+        "p95Ms": 0.004,
+        "maxMs": 0.004,
+        "hits": 1
+      }
+    },
+    {
+      "id": "G10-50",
+      "nodes": 50,
+      "edges": 41,
+      "legacy": {
+        "minMs": 0.148,
+        "medianMs": 0.192,
+        "p95Ms": 0.319,
+        "maxMs": 0.319,
+        "collisions": 2,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 0.583,
+        "medianMs": 0.71,
+        "p95Ms": 0.891,
+        "maxMs": 1.191,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 1144,
+        "expanded": 647,
+        "maxEdgeExpanded": 405,
+        "maxEdgeMs": 0.227,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.051,
+        "medianMs": 0.052,
+        "p95Ms": 0.056,
+        "maxMs": 0.074,
+        "hits": 41
+      }
+    },
+    {
+      "id": "G10-200",
+      "nodes": 200,
+      "edges": 196,
+      "legacy": {
+        "minMs": 1.411,
+        "medianMs": 1.51,
+        "p95Ms": 1.87,
+        "maxMs": 2.317,
+        "collisions": 12,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0
+      },
+      "candidate": {
+        "minMs": 7.915,
+        "medianMs": 8.174,
+        "p95Ms": 9.055,
+        "maxMs": 9.599,
+        "collisions": 0,
+        "endpointErrors": 0,
+        "outsidePorts": 0,
+        "overlaps": 0,
+        "cells": 4264,
+        "expanded": 3572,
+        "maxEdgeExpanded": 405,
+        "maxEdgeMs": 0.601,
+        "degraded": 0,
+        "reasons": {},
+        "deterministicRepeats": 20
+      },
+      "warmCache": {
+        "minMs": 0.195,
+        "medianMs": 0.197,
+        "p95Ms": 0.212,
+        "maxMs": 0.647,
+        "hits": 196
+      }
+    }
+  ]
+}

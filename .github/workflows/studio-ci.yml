@@ -49,6 +49,12 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Geometry preflight experiment tests
+        run: node --test preflight/geometry.test.mjs
+
+      - name: Geometry preflight bounded experiment
+        run: node preflight/run.mjs
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -65,7 +71,19 @@ jobs:
           sudo apt-get install -y ffmpeg
 
       - name: Production desktop host, accessibility and bounded performance
+        id: production-e2e
         run: npm run test:e2e
+
+      - name: Upload bounded synthetic failure evidence
+        if: failure() && steps.production-e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: studio-synthetic-failure
+          path: |
+            apps/studio/test-results/**/failure-diagnostics.json
+            apps/studio/test-results/**/failure-masked.png
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Audit dependencies
         run: npm audit --audit-level=low

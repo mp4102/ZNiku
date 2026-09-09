@@ -21,7 +21,7 @@ from run_media_smoke import _generate_source
 
 from zniku.desktop.server import DesktopServer, build_desktop_application
 from zniku.graph import Edge, Graph, NodeInstance, UiPosition
-from zniku.media import built_in_media_definitions
+from zniku.media import built_in_media_definitions, split_video_definition
 from zniku.project import NodeViewState, Project, ProjectStore, StudioState
 from zniku.project_service.host_bridge import (
     HOST_CAPABILITIES,
@@ -180,6 +180,58 @@ def create_external_fixture(root: Path) -> Path:
     return path
 
 
+def create_geometry_fixture(root: Path) -> Path:
+    """为端口几何量测创建合法的 6/8/16 输出定义；只设计，不运行或伪造媒体结果。"""
+    definitions = list(built_in_media_definitions())
+    source = NodeInstance(
+        node_id="geometry-source",
+        type_id="zniku.media.source.video",
+        definition_version="0.2.0",
+        parameters={"source_path": str(root / "source.mkv")},
+        ui_position=UiPosition(x=40, y=400),
+    )
+    nodes = [source]
+    edges = []
+    views = []
+    for index, count in enumerate((6, 8, 16)):
+        ports = tuple(f"part-{ordinal + 1:02d}" for ordinal in range(count))
+        definition = split_video_definition(ports, type_id=f"zniku.synthetic.split.{count}")
+        definitions.append(definition)
+        node_id = f"ports-{count}"
+        nodes.append(
+            NodeInstance(
+                node_id=node_id,
+                type_id=definition.type_id,
+                definition_version=definition.version,
+                parameters={
+                    "segments": [
+                        {"port_id": port, "start_frame": ordinal, "end_frame": ordinal + 1}
+                        for ordinal, port in enumerate(ports)
+                    ]
+                },
+                ui_position=UiPosition(x=450 + index * 450, y=400),
+            )
+        )
+        edges.append(
+            Edge(
+                source_node_id=source.node_id,
+                source_port_id="out",
+                target_node_id=node_id,
+                target_port_id="video",
+            )
+        )
+        views.append(NodeViewState(node_id=node_id, display_name=f"合成 {count} 输出端口"))
+    project = Project(
+        project_id="synthetic-port-geometry",
+        name="合成 6/8/16 端口几何工程",
+        graph=Graph(nodes=tuple(nodes), edges=tuple(edges)),
+    )
+    path = root / "synthetic-port-geometry.zniku"
+    store = ProjectStore.create(path, project, tuple(definitions))
+    store.save(project, tuple(definitions), studio_state=StudioState(node_views=tuple(views)))
+    return path
+
+
 class SyntheticPlatform:
     """模拟明确选择的路径与取消，不启动真实 OS 窗口；所有其他层保持正式实现。"""
 
@@ -241,6 +293,7 @@ def main() -> None:
         large = create_fixture(root, 200, 1000)
         media = create_fixture(root, 2)
         external = create_external_fixture(root)
+        geometry = create_geometry_fixture(root)
         application = build_desktop_application(root / "attempts")
         platform = SyntheticPlatform((small, large, media), root)
         server = DesktopServer(
@@ -258,6 +311,10 @@ def main() -> None:
                     "output_root": str(platform.output_root),
                     "output_collision": str(platform.output_collision),
                     "external_project": str(external),
+                    "small_project": str(small),
+                    "large_project": str(large),
+                    "media_project": str(media),
+                    "geometry_project": str(geometry),
                 }
             ),
             flush=True,

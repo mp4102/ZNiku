@@ -1184,6 +1184,8 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
   it('active_operation 期间禁用工程切换与 Runtime mutation，但允许编辑当前图', async () => {
     const gateway = new RecordingGateway({ ...handoffEnvelope(), active_operation: 'abandon_run' })
     render(<App gateway={gateway} />)
+    // 队列详情先于 ReactFlow 初始化到达；本例验证已就绪画布中的 mutation 资格，不抢初始选区。
+    await screen.findByLabelText('transform 节点')
     const queueItem = await selectHandoffTask()
 
     for (const name of ['打开', '新建', '保存', 'Run all', 'Run to here', 'Rerun from here']) {
@@ -2745,7 +2747,8 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     const gateway = new RecordingGateway(runningProgressEnvelope(0.3))
     render(<App gateway={gateway} />)
     await screen.findByRole('button', { name: '查看 Run snapshot' })
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    // 运行入口来自轻量状态，不代表异步详情与实际画布节点已经挂载。
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     fireEvent.change(screen.getByLabelText('节点参数 JSON'), { target: { value: '{"strength":9,"model_name":"Synthetic Model"}' } })
     fireEvent.click(screen.getByRole('button', { name: '应用设置' }))
     await waitFor(() => expect(gateway.envelope.snapshot?.project.graph.nodes[1]?.parameters.strength).toBe(9))

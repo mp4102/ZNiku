@@ -248,4 +248,33 @@ describe('FetchHostBridge', () => {
     await expect(bridge.pick('open_file')).rejects.toThrow('selected 与 selections 不一致')
     await expect(bridge.pick('open_file')).rejects.toThrow('非绝对路径')
   })
+
+  it.each([
+    'D:\\Media\\source.mkv', 'D:/Media/source.mkv', '\\\\server\\share\\source.mkv',
+    '/tmp/zniku-synthetic/source.mkv', '/tmp/合成 素材/source.mkv',
+  ])('保留 Python host 签发的绝对路径，不按浏览器平台重解释：%s', async (path) => {
+    const selection = { selection_handle: 'selection_1234567890_1234567890', path }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(action, 201))
+      .mockResolvedValueOnce(response({ contract_version: '0.3.0', status: 'selected', selections: [selection] }))
+    vi.stubGlobal('fetch', fetch)
+    const bridge = new FetchHostBridge({ baseUrl: 'http://127.0.0.1:18765', token: 'a'.repeat(43) })
+    await expect(bridge.pick('open_file')).resolves.toEqual([selection])
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    'relative.mkv', './source.mkv', '../source.mkv', 'C:source.mkv', '\\source.mkv',
+    '\\\\server', 'file:///tmp/source.mkv', 'https://example.test/source.mkv',
+    ' /tmp/source.mkv', '/tmp/source.mkv ', '/tmp/source\u0000.mkv',
+  ])('拒绝相对路径、URL 或损坏的选择响应，不重试：%s', async (path) => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(action, 201))
+      .mockResolvedValueOnce(response({ contract_version: '0.3.0', status: 'selected',
+        selections: [{ selection_handle: 'selection_1234567890_1234567890', path }] }))
+    vi.stubGlobal('fetch', fetch)
+    const bridge = new FetchHostBridge({ baseUrl: 'http://127.0.0.1:18765', token: 'a'.repeat(43) })
+    await expect(bridge.pick('open_file')).rejects.toBeInstanceOf(HostBridgeError)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
 })

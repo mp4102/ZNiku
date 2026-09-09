@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -265,17 +267,118 @@ def test_samefile_and_hardlink_target_rejected_without_changes(tmp_path: Path) -
     assert value.source.read_bytes() == value.target().read_bytes() == b"899"
 
 
-def test_target_link_and_reparse_are_rejected(tmp_path: Path) -> None:
+@pytest.mark.parametrize("operation", ["preview", "confirm"])
+@pytest.mark.parametrize("escapes_attempt", [False, True])
+def test_target_link_is_rejected_by_the_first_authoritative_boundary(
+    tmp_path: Path, operation: str, escapes_attempt: bool
+) -> None:
+    """先绑定请求再改变文件，避免测试辅助 inspect 提前截获实际接口的错误。"""
+
     value = _setup(tmp_path)
+    request = value.request()
+    preview = value.preview() if operation == "confirm" else None
+    before = _persistent_state(value)
+    linked_file = value.source if escapes_attempt else value.target().with_name("linked.mov")
+    if not escapes_attempt:
+        linked_file.write_bytes(b"old target")
+    original_bytes = linked_file.read_bytes()
     try:
-        value.target().symlink_to(value.source)
+        value.target().symlink_to(linked_file)
     except OSError:
         pytest.skip("本机未授权创建测试符号链接")
-    with pytest.raises(
-        HostBridgeFailure, check=lambda error: error.code == "E_HANDOFF_IMPORT_PATH"
-    ):
-        value.preview()
+    # 越界链接先破坏 Core handoff containment；仍位于 attempt 内的链接才到导入路径门禁。
+    expected_error = ProjectServiceError if escapes_attempt else HostBridgeFailure
+    expected_code = "E_HANDOFF_RELATION_CORRUPT" if escapes_attempt else "E_HANDOFF_IMPORT_PATH"
+    with pytest.raises(expected_error, check=lambda error: error.code == expected_code):
+        if preview is None:
+            value.manager.preview(request, session=value.session, application=value.application)
+        else:
+            value.confirm(preview, overwrite=True)
+    assert value.target().is_symlink()
+    assert value.target().readlink() == linked_file
+    assert linked_file.read_bytes() == original_bytes
     assert value.source.read_bytes() == b"899"
+    assert not list(Path(value.nodes["a"].work_dir).glob(".handoff-import-*"))
+    value.target().unlink()
+    assert _persistent_state(value) == before
+
+
+@pytest.mark.parametrize("operation", ["preview", "confirm"])
+@pytest.mark.parametrize("component", ["target", "parent"])
+@pytest.mark.parametrize("kind", ["symlink", "reparse"])
+def test_import_link_gate_runs_without_native_link_privileges(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    component: str,
+    kind: str,
+) -> None:
+    """只注入 lstat 的链接身份；Core containment 仍真实执行，导入必须在复制前拒绝。"""
+
+    value = _setup(tmp_path)
+    value.target().write_bytes(b"old target")
+    request = value.request()
+    preview = value.preview() if operation == "confirm" else None
+    before = _persistent_state(value)
+    files = sorted(tmp_path.rglob("*"))
+    blocked_path = value.target() if component == "target" else value.target().parent
+    original = Path.lstat
+
+    def linked_identity(path: Path) -> Any:
+        if path == blocked_path:
+            return SimpleNamespace(
+                st_mode=stat.S_IFLNK if kind == "symlink" else original(path).st_mode,
+                st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT if kind == "reparse" else 0,
+            )
+        return original(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "lstat", linked_identity)
+        with pytest.raises(
+            HostBridgeFailure, check=lambda error: error.code == "E_HANDOFF_IMPORT_PATH"
+        ):
+            if preview is None:
+                value.manager.preview(request, session=value.session, application=value.application)
+            else:
+                value.confirm(preview, overwrite=True)
+    assert value.target().read_bytes() == b"old target"
+    assert value.source.read_bytes() == b"899"
+    assert sorted(tmp_path.rglob("*")) == files
+    assert _persistent_state(value) == before
+
+
+@pytest.mark.parametrize("operation", ["preview", "confirm"])
+def test_core_handoff_containment_precedes_import_path_gate_without_link_privileges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    """模拟系统将目标解析到 attempt 外；不可把 Core 关系损坏降为通用导入错误。"""
+
+    value = _setup(tmp_path)
+    value.target().write_bytes(b"old target")
+    request = value.request()
+    preview = value.preview() if operation == "confirm" else None
+    before = _persistent_state(value)
+    files = sorted(tmp_path.rglob("*"))
+    target = value.target()
+    outside = value.source.resolve(strict=True)
+    original = Path.resolve
+
+    def redirected(path: Path, strict: bool = False) -> Path:
+        return outside if path == target else original(path, strict=strict)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "resolve", redirected)
+        with pytest.raises(
+            ProjectServiceError, check=lambda error: error.code == "E_HANDOFF_RELATION_CORRUPT"
+        ):
+            if preview is None:
+                value.manager.preview(request, session=value.session, application=value.application)
+            else:
+                value.confirm(preview, overwrite=True)
+    assert value.target().read_bytes() == b"old target"
+    assert value.source.read_bytes() == b"899"
+    assert sorted(tmp_path.rglob("*")) == files
+    assert _persistent_state(value) == before
 
 
 @pytest.mark.parametrize(
@@ -510,9 +613,6 @@ def test_destination_created_at_publication_is_never_overwritten(
 def test_reparse_component_fails_closed_without_native_link_privileges(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import stat
-    from types import SimpleNamespace
-
     from zniku.project_service.handoff_import import _safe_path
 
     path = tmp_path / "junction"

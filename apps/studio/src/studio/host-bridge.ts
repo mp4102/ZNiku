@@ -346,8 +346,10 @@ function parseCapabilities(value: unknown): HostCapabilitiesEnvelope {
 }
 
 function isAbsoluteHostPath(path: string): boolean {
+  // 本机路径是否合法由 Python HostSelection 的 Path.is_absolute 决定；这里仅核对响应形状。
+  // 浏览器 OS 不代表服务 OS，POSIX 合成 host 也不能被误判成相对路径。这不增加原生桌面 capability。
   return path.trim() === path && !path.includes('\u0000') && (
-    /^[A-Za-z]:[\\/]/.test(path) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(path)
+    /^[A-Za-z]:[\\/]/.test(path) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(path) || path.startsWith('/')
   )
 }
 

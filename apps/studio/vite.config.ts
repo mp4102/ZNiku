@@ -15,7 +15,8 @@ export default defineConfig({
     },
   },
   test: {
-    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
+    // preflight 使用原生 node:test 独立门禁；不让 Vitest/jsdom 重复解释实验代码。
+    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**', '**/preflight/**'],
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,

@@ -6,16 +6,30 @@
 
 ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用已完成结果的 GUI Studio。
 
-## 0.2.0 Core、v0.2.1 验收与 v0.3.0 开发状态
+## v0.3.1 UI 优化执行（当前）
 
-- 目标版本：`ZNIKU Studio v0.3.0`（package/product 当前仍为 `0.2.0`，只在 v0.3.0 Phase 6 验收候选时收敛）
+- 当前分支：`v0.3.1`，从已推送检查点 `v0.3.0@62d643f` 创建。
+- 目标版本：`ZNIKU Studio v0.3.1`；用户已批准“画布优先、精简常驻、按任务渐进展开”的详细方案。
+- 当前范围：实施前准备与本地门禁已完成；远端以同一提交 CI 为退出条件。批次 A/B/C 尚未开始，不把
+  合成选型实验当作正式 UI 实现。
+- 正式执行方案：[v0.3.1 UI 优化执行方案](docs/v0.3.1-ui-optimization-plan.md)，按信息层级、画布连线、
+  交互验收三个批次承接；不重启一套 Core Phase，不重写已验收的媒体执行逻辑。
+- 研究与方向来源：[界面与交互收敛提案](docs/studio-ui-refinement-proposal.md)。
+- 本轮证据：[UI 验收记录与合成截图](docs/v0.3.1-ui-acceptance.md)、
+  [图形实施前试验报告](docs/v0.3.1-graph-preflight.md)。
+- v0.3.0 的原生窗口、工程数据新候选与首次用户待验项由新方案明确承接，不因新分支自动算作通过。
+- 建分支/写方案不改变产品或合同版本；当前 package/product 仍为 `0.2.0`。候选版本收敛安排见新方案。
+
+## 0.2.0 Core、v0.2.1 验收与 v0.3.0 实现检查点（历史）
+
+- 原目标版本：`ZNIKU Studio v0.3.0`；原 Phase 6 的后续候选收敛安排由 v0.3.1 方案承接，不表示已发行
 - 已交付基线：`ZNIKU Studio 0.2.0` Phase 0–5，Core 已完成 legacy 清理与最小自动化验收
 - 已验收增量：`v0.2.1` Phase 0–5 已完成，真实 MR-off GUI 闭环与操作者验收通过；external MR 仍是未验证范围
-- 当前开发分支：`v0.3.0`
-- 当前增量阶段：**v0.3.0 Phase 0–4 已完成；Phase 5 已实施，原生窗口验收待完成；Phase 6 未开始**
+- 检查点分支：`v0.3.0`，工程数据与外部收件实现固化于 `62d643f`
+- 检查点阶段状态：**v0.3.0 Phase 0–4 已完成；Phase 5 已实施，原生窗口验收待完成；Phase 6 未开始**
 - Graph／Runtime 上位架构权威：[自由媒体图核心设计基线](docs/architecture/graph-core-baseline.md)
 - Studio UX 下位设计：[创作者体验基线](docs/architecture/studio-ux-baseline.md)
-- 分阶段计划：[v0.3.0 创作者体验重构执行方案](docs/v0.3.0-execution-plan.md)
+- 历史分阶段计划：[v0.3.0 创作者体验重构执行方案](docs/v0.3.0-execution-plan.md)；后续 UI 实施入口见上文
 - 已批准增量：[工程数据与外部交接专项](docs/v0.3.0-project-data-execution.md)；工程旁持久数据、显式换盘迁移、外部收件与点分命名。
 - 增量证据：[工程数据专项验收](docs/v0.3.0-project-data-acceptance.md)；新候选不自动迁移或改写旧工程。
 - Phase 0 证据：[v0.3.0 Phase 0 验收记录](docs/v0.3.0-phase0-acceptance.md)
@@ -160,6 +174,7 @@ Checksum、严格 QC、ZBaton 和归档 Manifest 仍可作为可选节点或 Exp
 | [`docs/architecture/host-bridge-prototype.md`](docs/architecture/host-bridge-prototype.md) | Phase 0 HostBridge 有界 prototype 证据；不定义 Graph／Runtime 语义 |
 | [`docs/architecture/media-node-contract.md`](docs/architecture/media-node-contract.md) | Phase 4 首批媒体节点的从属实现合同 |
 | [`docs/v0.3.0-execution-plan.md`](docs/v0.3.0-execution-plan.md) | v0.3.0 阶段、门禁与验收顺序；不覆盖 Core |
+| [`docs/v0.3.1-ui-optimization-plan.md`](docs/v0.3.1-ui-optimization-plan.md) | 已批准的 v0.3.1 UI 门禁、A/B/C 批次与旧待验项承接；不是新增领域权威 |
 | [`docs/v0.3.0-phase0-acceptance.md`](docs/v0.3.0-phase0-acceptance.md) | v0.3.0 Phase 0 实施结果、自动门禁与未证明范围 |
 | [`docs/v0.3.0-phase1-acceptance.md`](docs/v0.3.0-phase1-acceptance.md) | v0.3.0 Phase 1 Presentation、Schema 表单与组件边界验收 |
 | [`docs/v0.3.0-phase2-acceptance.md`](docs/v0.3.0-phase2-acceptance.md) | v0.3.0 Phase 2 创作者建项、HostBridge 与模板引导验收 |

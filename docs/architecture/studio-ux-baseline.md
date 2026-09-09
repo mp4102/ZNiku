@@ -3,7 +3,8 @@
 - 状态：**已批准的 v0.3.0 Studio 下位设计；Phase 0 已冻结**
 - 日期：2026-09-04
 - 上位架构权威：[`graph-core-baseline.md`](graph-core-baseline.md)
-- 正式执行方案：[`../v0.3.0-execution-plan.md`](../v0.3.0-execution-plan.md)
+- 原始执行方案：[`../v0.3.0-execution-plan.md`](../v0.3.0-execution-plan.md)；2026-09-09 批准的后续 UI 顺序由
+  [`../v0.3.1-ui-optimization-plan.md`](../v0.3.1-ui-optimization-plan.md) 承接，本文领域边界与验收门槛保持不变。
 - 实现起点：`v0.2.1@1d20cedb1154061b6b15a6701252e42d8f8adddd`
 - 适用范围：ZNIKU Studio、Project Service 的 Studio wire、Project authoring 状态与本机 HostBridge
 
