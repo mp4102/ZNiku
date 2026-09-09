@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { Connection } from '@xyflow/react'
 import type { WorkflowNode } from '../../model'
-import { dialogFocusTargets } from './focus-management'
+import { dialogFocusTargets, focusIfAvailable } from './focus-management'
 
 export function CanvasDialog({ title, children, onClose }: {
   readonly title: string
@@ -15,8 +15,14 @@ export function CanvasDialog({ title, children, onClose }: {
   closeRef.current = onClose
   useEffect(() => {
     const previous = document.activeElement
+    const parentDialog = previous instanceof HTMLElement ? previous.closest<HTMLElement>('[role="dialog"]') : null
     if (ref.current) (dialogFocusTargets(ref.current)[0] ?? ref.current).focus()
-    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
+    return () => {
+      if (previous instanceof HTMLElement && focusIfAvailable(previous)) return
+      // 子窗口返回仍在的首页等父模态；普通画布窗口的入口失效时回到可见画布。
+      if (parentDialog && focusIfAvailable(dialogFocusTargets(parentDialog)[0] ?? parentDialog)) return
+      focusIfAvailable(document.getElementById('workflow-canvas'))
+    }
   }, [])
   const trap = (event: KeyboardEvent<HTMLDivElement>) => {
     // 对话框里的快捷键不得冒泡成底图的删除、复制或 Undo。

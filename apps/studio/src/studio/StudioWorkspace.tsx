@@ -1814,7 +1814,7 @@ export function StudioWorkspace({
 
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
-      if (isEditingTarget(event.target) || (event.target instanceof Element && event.target.closest('[role="dialog"]')) || !graphEditable || busy || homeOpen || templateOpen) return
+      if (event.defaultPrevented || isEditingTarget(event.target) || (event.target instanceof Element && event.target.closest('[role="dialog"]')) || !graphEditable || busy || homeOpen || templateOpen) return
       if ((event.ctrlKey || event.metaKey) && ['z', 'y', 's'].includes(event.key.toLowerCase())) {
         event.preventDefault()
         if (parameterDraftDirty) { setClientHint('请先应用或放弃未应用的节点设置。'); return }
@@ -1822,6 +1822,10 @@ export function StudioWorkspace({
         else travel(event.key.toLowerCase() === 'y' || event.shiftKey ? 'redo' : 'undo')
         return
       }
+      // 删除/复制只服从画布焦点；菜单、抽屉或工具按钮不能误用仍保留的图选区。
+      // 保存/Undo 仍保留上面的既有全局入口；ReactFlow 节点自身的键盘焦点属于画布。
+      if (!(event.target instanceof Element) || !event.target.closest('#workflow-canvas') ||
+        event.target.closest('button, a[href], summary, [role="tab"], [role="menuitem"], [role="button"]:not(.react-flow__node)')) return
       if (
         (event.key === 'Delete' || event.key === 'Backspace') &&
         (selectedNodeIds.size || selectedEdgeIds.size)

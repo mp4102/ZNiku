@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zniku"
-version = "0.2.0"
+version = "0.3.1"
 description = "ZNIKU 的自由媒体图核心、SQLite Project Store、本地 Runtime 与 Studio Project Service"
 readme = "README.md"
 requires-python = ">=3.12"

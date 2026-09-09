@@ -1,4 +1,4 @@
-# ZNIKU Studio（0.2.0 实现 / v0.3.0 开发）
+# ZNIKU Studio（v0.3.1 验收候选）
 
 Studio 以一张自由媒体节点图同时承担编辑和 Runtime 状态展示。React 应用只维护未保存的画布 Draft；
 `.zniku` Project、Graph 校验、Run、Artifact、日志及 external handoff 的正式语义全部来自 Python Project
@@ -9,12 +9,15 @@ Graph 与 Runtime 的唯一上位架构权威是
 易用性从属于 [`studio-ux-baseline.md`](../../docs/architecture/studio-ux-baseline.md)。本应用不得恢复
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-当前产品代码仍保持 `0.2.0` package 版本。v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
+当前 package/product 版本为 `0.3.1`；wire/Presentation/StudioState 仍为 `0.3.0`，SQLite schema 4 和
+NodeDefinition exact version 不变。v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
 创作者建项、HostBridge、Undo/Redo、兼容连接、纯展示分组与 CAS 自动保存。Phase 4 已实现创作者运行中心、
 外部处理助手与只读重跑影响预览，完整门禁与合成浏览器闭环已通过，见 [Phase 4 验收记录](../../docs/v0.3.0-phase4-acceptance.md)。
 Phase 5 已加入双击桌面候选、轻量预览、无障碍与有界性能门禁；原生窗口点击验收仍待完成，不能宣称阶段关闭。
 详见 [Phase 5 验收记录](../../docs/v0.3.0-phase5-acceptance.md) 和 [Windows 桌面说明](../../docs/studio-desktop.md)。
-首次用户真实验收属于尚未开始的 Phase 6。
+后续顺序已由 [v0.3.1 A/B/C 执行方案](../../docs/v0.3.1-ui-optimization-plan.md)承接。A/B 已完成，
+C 的具体技术候选、原生操作及首次用户证据见[本轮验收](../../docs/v0.3.1-desktop-candidate-acceptance.md)，
+不沿用旧包或旧成品替代新界面验收。
 
 当前 0.2.0 Phase 1–5 与 v0.2.1 Phase 1–5 已实现产品面：
 

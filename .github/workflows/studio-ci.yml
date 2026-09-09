@@ -81,8 +81,12 @@ jobs:
         id: batch-b-e2e
         run: npx playwright test -c e2e/batch-b.config.ts
 
+      - name: Production external handoff, recovery and late response regressions
+        id: batch-c-e2e
+        run: npx playwright test -c e2e/batch-c.config.ts
+
       - name: Upload bounded synthetic failure evidence
-        if: failure() && (steps.production-e2e.outcome == 'failure' || steps.batch-b-e2e.outcome == 'failure')
+        if: failure() && (steps.production-e2e.outcome == 'failure' || steps.batch-b-e2e.outcome == 'failure' || steps.batch-c-e2e.outcome == 'failure')
         uses: actions/upload-artifact@v7.0.1
         with:
           name: studio-synthetic-failure

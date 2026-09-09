@@ -1,0 +1,17 @@
+{
+  "scope": "v0.3.1 batch C technical candidate; not creator acceptance",
+  "date": "2026-09-09",
+  "production_entry": "index-Dn8aHKVl.js",
+  "fixture_media": "synthetic only",
+  "browser_results": {"original": 15, "batch_b": 8, "batch_c": 5, "exclusive_performance_recheck": 1},
+  "screenshots": ["C1-changed-candidate-masked.png", "C2-narrow-task-focus-masked.png"],
+  "screenshots_scope": "masked behavior fixtures; not a native Windows or layout showcase",
+  "performance_source": "performance-and-history.json",
+  "performance_exclusive_after_media_finished": true,
+  "actual_exe_service_source": "package-service-result.json",
+  "native_windows_complete": false,
+  "new_real_media_gui_complete": false,
+  "first_time_users_tested": 0,
+  "human_technical_operators_tested": 0,
+  "release": false
+}

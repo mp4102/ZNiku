@@ -2,6 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProjectHome, type ProjectHomeProps } from './ProjectHome'
+import { version } from '../../../package.json'
 
 afterEach(cleanup)
 
@@ -33,6 +34,8 @@ describe('ProjectHome', () => {
     expect(screen.getByRole('button', { name: /空白工作流/ })).toBeVisible()
     expect(screen.queryByLabelText('Project ID')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('工程路径')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('前端构建版本')).toHaveTextContent(`ZNIKU Studio · v${version} 验收候选`)
+    expect(screen.getByLabelText('前端构建版本')).toHaveTextContent('不代表工程格式或服务连接状态')
   })
 
   it('服务离线时说明未修改媒体，并提供显式恢复动作', async () => {
@@ -119,5 +122,26 @@ describe('ProjectHome', () => {
     expect(screen.getByRole('dialog', { name: 'ZNIKU Studio 工程首页' })).toHaveFocus()
     rerender(<ProjectHome {...initial} loading={false} />)
     expect(screen.getByRole('button', { name: /新建视频工程/ })).toHaveFocus()
+  })
+
+  it('异步操作禁用当前控件时焦点留在首页，完成后恢复可用入口，不越过模态层', async () => {
+    const initial = props({ hasOpenProject: true })
+    const { rerender } = render(<ProjectHome {...initial} />)
+    const close = screen.getByRole('button', { name: '关闭工程首页' })
+    expect(close).toHaveFocus()
+    rerender(<ProjectHome {...initial} busy />)
+    const dialog = screen.getByRole('dialog', { name: 'ZNIKU Studio 工程首页' })
+    expect(dialog).toHaveFocus()
+    await userEvent.tab()
+    expect(dialog).toHaveFocus()
+    rerender(<ProjectHome {...initial} />)
+    expect(close).toHaveFocus()
+  })
+
+  it('加载期间没有可用操作时，即使后台持有焦点也会被 Tab 收回首页', async () => {
+    render(<><button>背景操作</button><ProjectHome {...props({ loading: true })} /></>)
+    screen.getByRole('button', { name: '背景操作' }).focus()
+    await userEvent.tab()
+    expect(screen.getByRole('dialog', { name: 'ZNIKU Studio 工程首页' })).toHaveFocus()
   })
 })

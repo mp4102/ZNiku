@@ -1,0 +1,20 @@
+{
+  "kind": "actual-exe-formal-http-not-gui",
+  "synthetic_only": true,
+  "runs": [
+    {
+      "completed": 8,
+      "reused": 0
+    },
+    {
+      "completed": 8,
+      "reused": 8
+    }
+  ],
+  "output_frame_counts": [
+    24,
+    24
+  ],
+  "source_unchanged": true,
+  "owned_instance_close_accepted": true
+}

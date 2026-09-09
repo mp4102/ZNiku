@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RecentProject } from '../recent-projects'
-import { dialogFocusTargets } from './focus-management'
+import { dialogFocusTargets, focusIfAvailable } from './focus-management'
+import { StudioBuildVersion } from './StudioBuildVersion'
 
 export interface ProjectHomeProps {
   readonly desktopControls?: ReactNode
@@ -71,13 +72,11 @@ export function ProjectHome({
         : null
       setBlankOpen(false)
       setBlankName('未命名视频工程')
-      const initial = closeButtonRef.current ?? dialogRef.current?.querySelector<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
-      ) ?? dialogRef.current
-      initial?.focus()
+      const dialog = dialogRef.current
+      if (!focusIfAvailable(closeButtonRef.current) && dialog) (dialogFocusTargets(dialog)[0] ?? dialog).focus()
     } else if (!open && wasOpen.current) {
       setBlankOpen(false)
-      previousFocusRef.current?.focus()
+      focusIfAvailable(previousFocusRef.current)
       previousFocusRef.current = null
     }
     wasOpen.current = open
@@ -88,12 +87,11 @@ export function ProjectHome({
     const dialog = dialogRef.current
     if (!dialog) return
     const active = document.activeElement
-    if (active instanceof HTMLElement && dialog.contains(active) && active !== dialog) return
-    const initial = closeButtonRef.current ?? dialog.querySelector<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
-    )
-    initial?.focus()
-  }, [hasOpenProject, hostBridgeAvailable, loading, open, serviceUnavailable])
+    const targets = dialogFocusTargets(dialog)
+    if (active instanceof HTMLElement && targets.includes(active)) return
+    // busy 可能把原焦点禁用；没有可操作项时由 dialog 容器占住焦点，恢复后才交还入口。
+    if (!focusIfAvailable(closeButtonRef.current)) (targets[0] ?? dialog).focus()
+  }, [busy, hasOpenProject, hostBridgeAvailable, loading, open, serviceUnavailable])
 
   useEffect(() => {
     if (!open) return
@@ -109,14 +107,15 @@ export function ProjectHome({
       const focusable = dialogFocusTargets(dialog)
       if (focusable.length === 0) {
         event.preventDefault()
+        dialog.focus()
         return
       }
       const first = focusable[0]!
       const last = focusable.at(-1)!
-      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      if (event.shiftKey && (document.activeElement === first || !focusable.includes(document.activeElement as HTMLElement))) {
         event.preventDefault()
         last.focus()
-      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+      } else if (!event.shiftKey && (document.activeElement === last || !focusable.includes(document.activeElement as HTMLElement))) {
         event.preventDefault()
         first.focus()
       }
@@ -152,6 +151,7 @@ export function ProjectHome({
           <span className="eyebrow">从素材到作品</span>
           <h1>从视频开始，不从工程术语开始。</h1>
           <p>选择素材和处理目标，ZNIKU 会把它变成仍可自由编辑的普通节点工作流。</p>
+          <StudioBuildVersion />
         </div>
 
         {loading ? (

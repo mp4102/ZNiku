@@ -2985,9 +2985,11 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
   })
 
   it('自动保存失败保留图和离开保护；冲突不能运行，明确重新载入后才丢弃本地更改', async () => {
+    const reopened = new Deferred<StatusEnvelope>()
     const gateway = new RecordingGateway(studioEnvelope(), {
       command: (command) => {
-        if (command.operation === 'save_project') throw new StudioGatewayError('另一窗口已保存更新，请重新载入。', { code: 'E_PROJECT_REVISION_CONFLICT' })
+        if (command.operation === 'save_project') throw new StudioGatewayError('另一窗口已保存更新，请重新载入。', { code: 'E_PROJECT_STORAGE_CONFLICT' })
+        if (command.operation === 'open_project') return reopened.promise
         return studioEnvelope()
       },
     })
@@ -3006,8 +3008,18 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     window.dispatchEvent(leaving)
     expect(leaving.defaultPrevented).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: '重新载入磁盘版本' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '重新载入磁盘版本' })).not.toBeInTheDocument())
     expect(confirmation).toHaveBeenCalledOnce()
+    expect(gateway.commands.filter((command) => command.operation === 'open_project')).toEqual([
+      { operation: 'open_project', path: studioEnvelope().project_path },
+    ])
+    const pendingLeaving = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(pendingLeaving)
+    expect(pendingLeaving.defaultPrevented).toBe(true)
+    // 错误提示消失不是 effect 完成信号；明确等待打开回执及对应 React effects 后才断言解除保护。
+    await act(async () => { reopened.resolve(studioEnvelope()); await reopened.promise })
+    expect(screen.queryByRole('button', { name: '重新载入磁盘版本' })).not.toBeInTheDocument()
+    expect(screen.getByRole('status', { name: '工程保存状态' })).toHaveTextContent('已保存')
+    expect(screen.queryByRole('heading', { name: '未保存的增强' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '撤销' })).toBeDisabled()
     expect(gateway.commands.filter((command) => command.operation === 'save_project')).toHaveLength(1)
     const cleanLeaving = new Event('beforeunload', { cancelable: true })

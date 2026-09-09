@@ -1,6 +1,8 @@
 /** 顶栏只组织已有操作与状态；工程、参数、保存和运行的唯一所有者仍在 Workspace。 */
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { StudioBuildVersion } from './StudioBuildVersion'
+import { dialogFocusTargets } from './focus-management'
 import './project-shell.css'
 
 export interface ProjectShellProps {
@@ -128,7 +130,7 @@ export function ProjectShell({
     } else if (event.key === 'ArrowDown' && event.target === trigger(openMenu)) {
       event.preventDefault()
       const panel = openMenu === 'project' ? projectMenuRef.current : viewMenuRef.current
-      panel?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+      if (panel) dialogFocusTargets(panel)[0]?.focus()
     }
   }
   const saveState = saveError ? '保存未完成' : saving ? '正在保存…' : dirty ? '有未保存更改' : draftBlocked ? '已保存，但暂不可运行' : '已保存'
@@ -160,6 +162,7 @@ export function ProjectShell({
               </div>
             </details>
             {desktopControls}
+            <StudioBuildVersion />
           </div>
         </div>
         <div className="project-shell-menu-anchor">

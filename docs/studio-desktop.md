@@ -1,7 +1,8 @@
 # ZNIKU Studio Windows 桌面候选
 
-本入口属于 v0.3.0 Phase 5，复用 `0.2.0` Core 和同一 React production build；不是新 Runtime，
-也不是正式 Release。产品版本在 Phase 6 前仍为 `0.2.0`。
+当前入口为 v0.3.1 批次 C 的本机验收候选，复用 `0.2.0` Core 和同一 React production build；不是新 Runtime，
+也不是正式 Release。产品版本统一为 `0.3.1`，wire/Presentation/StudioState 保持 `0.3.0`，工程仍为 schema 4。
+历史 v0.3.0 Phase 5 的原生待验项由本批承接，不能用旧包验收替代本次候选。
 
 ## 使用
 
@@ -19,6 +20,7 @@ loopback 端口，通过本实例健康检查后打开默认浏览器。再次�
 - 关闭浏览器标签页不会结束后台服务；再次双击可以返回同一实例。
 - 更新到新候选包前，先在旧页面点击“退出应用”并确认，再双击新目录中的 exe；只关闭旧标签不够。
   单实例保护不会用新包强行替换正在运行的旧服务，直接双击新包可能仍回到旧实例。
+- 首页和工程菜单中的候选版本标识用于辨认当前网页构建；它不表示工程格式升级或真实媒体已经验收。
 - 退出使用界面的“退出应用”，确认前可以取消。自动处理、检查或提交仍在工作时明确拒绝退出，任务保持
   运行；这不是 Runtime 的取消按钮。
 - `waiting_external` 可以退出，重开工程后继续检查和显式提交。不会自动提交外部文件。
@@ -49,7 +51,9 @@ uv run --locked --extra desktop python tools/build_desktop.py `
 
 使用 [PyInstaller one-folder](https://pyinstaller.org/en/stable/operating-mode.html) 打包 Python、Tk 与生产
 静态资源。媒体工具原始 `LICENSE` 与 `README.txt` 保留在包内，具体来源以提供的原始分发文档为准。
-`BUILD-INFO.json` 记录构建版本与许可文件位置，不记录真实媒体或个人工程路径。
+`BUILD-INFO.json` 记录构建版本、实际来源与许可文件位置，不记录真实媒体或个人工程路径。
+构建和独立审计检查 wheel、包内 Python 源码/内嵌代码、production 资源与版本的一致性；构建摘要仅用于
+验收分发文件，不进入 Graph、Run、Artifact 或成为新的领域 Evidence。
 
 当前输出仅供本机验收。构建成功不表示已完成第三方工具、编解码器、插件及其完整对应源码的公开再分发
 审阅；不得据此自动上传包、创建 Release 或声称发行许可已闭环。
@@ -86,8 +90,8 @@ Artifact 登记条件，也不隐藏原有有界 stdout/stderr 日志。
 
 ## 当前验收边界
 
-Phase 5 已验证 Windows 包、生产入口、生命周期、原生能力合同、轻量预览和本地自动门禁；Explorer、播放器
-及升级后的完整原生交互仍待操作者验收，阶段尚未关闭，详见 [Phase 5 验收记录](v0.3.0-phase5-acceptance.md)。
-真实首次用户
-五条 Journey、至少 5 名用户的量化验收属于 Phase 6，不以开发者测试替代。此入口不提供 WebView2、NLE
+旧包事实保存在 [Phase 5 验收记录](v0.3.0-phase5-acceptance.md)；当前候选的版本、文件位置、已验证项目和
+未完成项目以[批次 C 验收](v0.3.1-desktop-candidate-acceptance.md)为准。
+真实首次用户五条 Journey、至少 5 名用户的量化验收由批次 C 承接，不以开发者测试替代；
+操作者与主持人使用[候选验收任务包](v0.3.1-creator-acceptance-kit.md)分别记录。此入口不提供 WebView2、NLE
 时间线、代理播放、内部节点 resume 或外部 AI 工具进度接管。

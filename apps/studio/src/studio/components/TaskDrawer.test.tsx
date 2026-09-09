@@ -38,6 +38,25 @@ function secondSummary(): RunSummaryWire {
 }
 
 describe('占位任务抽屉', () => {
+  it.each(['disabled', 'hidden'] as const)('原入口变为 %s 后收起抽屉，焦点退回可用的任务摘要', async (unavailable) => {
+    const options = props()
+    function Example() {
+      const [open, setOpen] = useState(false)
+      const [opened, setOpened] = useState(false)
+      const triggerRef = useRef<HTMLButtonElement>(null)
+      return <>
+        <button ref={triggerRef} disabled={opened && unavailable === 'disabled'} hidden={opened && unavailable === 'hidden'}
+          onClick={() => { setOpened(true); setOpen(true) }}>外部任务入口</button>
+        <TaskDrawer {...options} open={open} returnFocusRef={triggerRef} onOpenChange={setOpen} />
+      </>
+    }
+    render(<Example />)
+    await userEvent.click(screen.getByRole('button', { name: '外部任务入口' }))
+    // 关闭时仍不可用，模拟运行状态或窄窗口改变了打开入口的资格/可见性。
+    await userEvent.click(screen.getByRole('button', { name: '关闭任务区' }))
+    expect(screen.getByRole('button', { name: '展开任务区' })).toHaveFocus()
+  })
+
   it('收起只保留36px任务摘要，等待和问题不会隐藏，也不会自动导航或执行', () => {
     const options = props({ summaries: [handoffSummary(), secondSummary()], problemCount: 2, otherWaitingCount: 2 })
     render(<TaskDrawer {...options} />)

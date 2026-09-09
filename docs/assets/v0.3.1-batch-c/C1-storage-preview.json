@@ -1,0 +1,10 @@
+{
+  "production_entry": "index-Dn8aHKVl.js",
+  "evidence": {
+    "legacy_mode": "legacy",
+    "files": 5,
+    "attempts": 2,
+    "byte_count": 42189,
+    "cancellation_no_copy": true
+  }
+}

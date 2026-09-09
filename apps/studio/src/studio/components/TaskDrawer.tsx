@@ -2,6 +2,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import type { NodeRunWire, RunSummaryWire } from '../contracts'
 import { nodeStateLabel, runHistoryLabel, runTargetLabel } from '../run-presentation'
+import { focusIfAvailable } from './focus-management'
 import './task-drawer.css'
 
 export type TaskDrawerTab = 'current' | 'history' | 'problems'
@@ -69,8 +70,7 @@ export function TaskDrawer({ open, tab, onOpenChange, onTabChange, summaries, se
       tabRefs.current.get(tab)?.focus()
     } else if (!open && priorOpen.current) {
       const target = returnFocusRef?.current ?? openerRef.current
-      if (target?.isConnected && target !== document.body) target.focus()
-      else triggerRef.current?.focus()
+      if (!focusIfAvailable(target)) triggerRef.current?.focus()
     }
     priorOpen.current = open
   }, [open, returnFocusRef, tab])

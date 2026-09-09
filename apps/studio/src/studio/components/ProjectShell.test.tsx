@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DesktopExit } from './DesktopExit'
 import { ProjectShell, type ProjectShellProps } from './ProjectShell'
 import type { HostBridge } from '../host-bridge'
+import { version } from '../../../package.json'
 
 afterEach(() => { cleanup(); delete window.__ZNIKU_DESKTOP__ })
 
@@ -25,6 +26,25 @@ function props(overrides: Partial<ProjectShellProps> = {}): ProjectShellProps {
 }
 
 describe('ProjectShell 紧凑菜单', () => {
+  it('版本只在展开工程菜单时展示，读取当前构建版本并明确不是服务健康证明', async () => {
+    render(<ProjectShell {...props()} />)
+    expect(screen.getByLabelText('前端构建版本')).not.toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: '工程' }))
+    const versionLabel = screen.getByLabelText('前端构建版本')
+    expect(versionLabel).toBeVisible()
+    expect(versionLabel).toHaveTextContent(`ZNIKU Studio · v${version} 验收候选`)
+    expect(versionLabel).toHaveTextContent('不代表工程格式或服务连接状态')
+  })
+
+  it('菜单方向键略过折叠开发入口中的按钮，进入可用的 summary', async () => {
+    render(<ProjectShell {...props({ serviceBusy: true, projectSwitchBlocked: false, hostBridgeAvailable: false })} />)
+    const trigger = screen.getByRole('button', { name: '工程' })
+    await userEvent.click(trigger)
+    await userEvent.keyboard('{ArrowDown}')
+    // 普通动作因 busy 禁用；不能跳进尚未展开的按路径按钮。
+    expect(screen.getByText('开发入口', { selector: 'summary' })).toHaveFocus()
+  })
+
   it('默认只显示顶层导航、可信保存状态和一个原主操作，参数草稿另行提示', () => {
     render(<ProjectShell {...props({ parameterDirty: true })} />)
     expect(screen.getByRole('img', { name: 'ZNIKU Studio' })).toBeVisible()

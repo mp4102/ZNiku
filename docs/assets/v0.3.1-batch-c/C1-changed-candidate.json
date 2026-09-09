@@ -1,0 +1,10 @@
+{
+  "production_entry": "index-Dn8aHKVl.js",
+  "evidence": {
+    "observed_rejection": "E_HANDOFF_INBOX_CHANGED",
+    "replay_rejection": "E_HANDOFF_INBOX_EXPIRED",
+    "old_target_preserved": true,
+    "before_submit_artifacts": 2,
+    "automatic_submit": false
+  }
+}

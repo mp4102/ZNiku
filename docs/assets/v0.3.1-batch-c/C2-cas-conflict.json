@@ -1,0 +1,10 @@
+{
+  "production_entry": "index-Dn8aHKVl.js",
+  "evidence": {
+    "rejection": "E_PROJECT_STORAGE_CONFLICT",
+    "local_alias_preserved": true,
+    "remote_not_overwritten": true,
+    "draft_not_applied": true,
+    "history_unchanged": true
+  }
+}

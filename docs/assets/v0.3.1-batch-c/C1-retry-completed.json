@@ -1,0 +1,9 @@
+{
+  "production_entry": "index-Dn8aHKVl.js",
+  "evidence": {
+    "run_state": "completed",
+    "upstream_attempts_unchanged": 2,
+    "publish_attempts": 2,
+    "original_collision_retained": true
+  }
+}

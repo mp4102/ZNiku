@@ -1,0 +1,492 @@
+{
+  "50": {
+    "arranged": {
+      "nodes": 50,
+      "ports": 90,
+      "edges": 41,
+      "viewport": {
+        "width": 1920,
+        "height": 1080,
+        "dpr": 1
+      },
+      "mode": "creator",
+      "zoom": 0.245736,
+      "counters": {
+        "pending": "false",
+        "solves": "3",
+        "cache-hits": "0",
+        "degraded": "0",
+        "elapsed-ms": "1.1000000089406967",
+        "max-slice-ms": "2.2000000029802322",
+        "read-ms": "0.10000000894069672"
+      },
+      "reasons": {
+        "routed": 41
+      },
+      "max_endpoint_error_css_px": 0.00007892887169833682,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 67,
+      "collinear": {
+        "rawMaximum": 4.914723336696625,
+        "nonterminalMaximum": 1.4744272705472667,
+        "nonterminalCount": 1,
+        "sharedTerminalAllowance": 11.795328000000001
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 50,
+      "nodes_fully_inside_canvas": 50,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "afterDrag": {
+      "nodes": 50,
+      "ports": 90,
+      "edges": 41,
+      "viewport": {
+        "width": 1920,
+        "height": 1080,
+        "dpr": 1
+      },
+      "mode": "creator",
+      "zoom": 1.2,
+      "counters": {
+        "pending": "false",
+        "solves": "25",
+        "cache-hits": "0",
+        "degraded": "0",
+        "elapsed-ms": "0.5999999940395355",
+        "max-slice-ms": "2.2000000029802322",
+        "read-ms": "0.09999999403953552"
+      },
+      "reasons": {
+        "routed": 41
+      },
+      "max_endpoint_error_css_px": 0.00028229476342468213,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 59,
+      "collinear": {
+        "rawMaximum": 24.000000953674316,
+        "nonterminalMaximum": 0,
+        "nonterminalCount": 0,
+        "sharedTerminalAllowance": 57.599999999999994
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 6,
+      "nodes_fully_inside_canvas": 4,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "samples": {
+      "selection": [
+        28,
+        28.200000002980232,
+        28.200000002980232,
+        28.599999994039536,
+        28.19999998807907,
+        30.100000008940697,
+        28.600000008940697,
+        27.700000002980232,
+        27.299999997019768,
+        27.200000002980232,
+        27.899999991059303,
+        28,
+        28.200000002980232,
+        29,
+        28.299999997019768,
+        27.5,
+        27.599999994039536,
+        26.700000002980232,
+        26.5,
+        27.400000005960464
+      ],
+      "parameters": [
+        28.799999997019768,
+        30.799999997019768,
+        31.099999994039536,
+        31.299999997019768,
+        31.599999994039536,
+        32.1000000089407,
+        30.5,
+        32.1000000089407,
+        30.600000008940697,
+        28.799999997019768,
+        31.5,
+        31.099999994039536,
+        31.5,
+        30.799999997019768,
+        30,
+        30.299999997019768,
+        31.799999997019768,
+        30.19999998807907,
+        30.700000002980232,
+        32
+      ],
+      "drag": [
+        16.599999994039536,
+        17.19999998807907,
+        16.899999991059303,
+        17.299999997019768,
+        16.799999997019768,
+        17.80000001192093,
+        18.200000002980232,
+        17.80000001192093,
+        17.900000005960464,
+        16.700000002980232,
+        16,
+        16.700000002980232,
+        17.299999997019768,
+        15.900000005960464,
+        17.299999997019768,
+        17.700000002980232,
+        17.5,
+        16.600000008940697,
+        18.599999994039536,
+        17.900000005960464
+      ]
+    },
+    "frameAudit": {
+      "frames": 58,
+      "solves": 22,
+      "maxSolvesPerFrame": 1
+    },
+    "dragPositions": [
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      }
+    ],
+    "p95": {
+      "selection": 29,
+      "parameters": 32.1000000089407,
+      "drag": 18.200000002980232
+    },
+    "detail_reads": 0,
+    "requested_page_limits": [],
+    "selection_changes": 20,
+    "parameter_opens": 20,
+    "drag_measurement": "20 ongoing pointer moves after an explicitly verified drag start",
+    "selection_and_parameter_extra_solves": 0
+  },
+  "200": {
+    "arranged": {
+      "nodes": 200,
+      "ports": 390,
+      "edges": 196,
+      "viewport": {
+        "width": 1920,
+        "height": 1080,
+        "dpr": 1
+      },
+      "mode": "creator",
+      "zoom": 0.133537,
+      "counters": {
+        "pending": "false",
+        "solves": "3",
+        "cache-hits": "0",
+        "degraded": "0",
+        "elapsed-ms": "7.899999991059303",
+        "max-slice-ms": "11.200000002980232",
+        "read-ms": "0.5"
+      },
+      "reasons": {
+        "routed": 196
+      },
+      "max_endpoint_error_css_px": 0.00024002460373655018,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 314,
+      "collinear": {
+        "rawMaximum": 16.02446436882019,
+        "nonterminalMaximum": 16.02446436882019,
+        "nonterminalCount": 4,
+        "sharedTerminalAllowance": 6.409775999999999
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 200,
+      "nodes_fully_inside_canvas": 200,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "afterDrag": {
+      "nodes": 200,
+      "ports": 390,
+      "edges": 196,
+      "viewport": {
+        "width": 1920,
+        "height": 1080,
+        "dpr": 1
+      },
+      "mode": "creator",
+      "zoom": 1.2,
+      "counters": {
+        "pending": "false",
+        "solves": "25",
+        "cache-hits": "0",
+        "degraded": "0",
+        "elapsed-ms": "7.5",
+        "max-slice-ms": "11.200000002980232",
+        "read-ms": "0.3999999910593033"
+      },
+      "reasons": {
+        "routed": 196
+      },
+      "max_endpoint_error_css_px": 0.0020598511112435787,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 309,
+      "collinear": {
+        "rawMaximum": 144.0000057220459,
+        "nonterminalMaximum": 144.0000057220459,
+        "nonterminalCount": 5,
+        "sharedTerminalAllowance": 57.599999999999994
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 6,
+      "nodes_fully_inside_canvas": 4,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "samples": {
+      "selection": [
+        29.600000008940697,
+        31.399999991059303,
+        30.899999991059303,
+        28.299999997019768,
+        29.299999997019768,
+        29.400000005960464,
+        29.899999991059303,
+        28.299999997019768,
+        28.5,
+        29.400000005960464,
+        29.599999994039536,
+        28.099999994039536,
+        28.099999994039536,
+        29.400000005960464,
+        30.5,
+        30.299999997019768,
+        29.200000002980232,
+        28,
+        30.599999994039536,
+        30.599999994039536
+      ],
+      "parameters": [
+        24.899999991059303,
+        31.200000002980232,
+        32.5,
+        32,
+        31.799999997019768,
+        31.700000002980232,
+        31.400000005960464,
+        32.099999994039536,
+        31.700000002980232,
+        31.099999994039536,
+        30.799999997019768,
+        32.70000000298023,
+        32.1000000089407,
+        31.700000002980232,
+        31.100000008940697,
+        29.5,
+        31.799999997019768,
+        30.700000002980232,
+        30.5,
+        32.30000001192093
+      ],
+      "drag": [
+        22.900000005960464,
+        21.399999991059303,
+        21.900000005960464,
+        21.599999994039536,
+        21.099999994039536,
+        23.700000002980232,
+        21.200000002980232,
+        21.200000002980232,
+        20.599999994039536,
+        23.399999991059303,
+        21.400000005960464,
+        21.200000002980232,
+        24.400000005960464,
+        20.799999997019768,
+        24.099999994039536,
+        20.5,
+        24.100000008940697,
+        22,
+        23.899999991059303,
+        21
+      ]
+    },
+    "frameAudit": {
+      "frames": 97,
+      "solves": 22,
+      "maxSolvesPerFrame": 1
+    },
+    "dragPositions": [
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      },
+      {
+        "x": 86.6667,
+        "y": 103.333
+      },
+      {
+        "x": 90,
+        "y": 106.667
+      }
+    ],
+    "p95": {
+      "selection": 30.899999991059303,
+      "parameters": 32.5,
+      "drag": 24.100000008940697
+    },
+    "detail_reads": 1,
+    "requested_page_limits": [
+      20
+    ],
+    "selection_changes": 20,
+    "parameter_opens": 20,
+    "drag_measurement": "20 ongoing pointer moves after an explicitly verified drag start",
+    "selection_and_parameter_extra_solves": 0
+  }
+}

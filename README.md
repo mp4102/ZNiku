@@ -10,15 +10,17 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 
 - 当前分支：`v0.3.1`，从已推送检查点 `v0.3.0@62d643f` 创建。
 - 目标版本：`ZNIKU Studio v0.3.1`；用户已批准“画布优先、精简常驻、按任务渐进展开”的详细方案。
-- 当前范围：实施前门禁和批次 A 已完成；批次 B 已实现实际端口行、尺寸感知整理、有界避障与路径追踪，
-  最终验证见[批次 B 验收](docs/v0.3.1-graph-routing-acceptance.md)。批次 C 桌面候选与用户验收尚未实施。
+- 当前范围：实施前门禁和批次 A/B 已完成；批次 C 已交付可测试技术候选，原生专项和创作者验收仍待完成，
+  见[批次 B 验收](docs/v0.3.1-graph-routing-acceptance.md)与[批次 C 验收](docs/v0.3.1-desktop-candidate-acceptance.md)。
 - 正式执行方案：[v0.3.1 UI 优化执行方案](docs/v0.3.1-ui-optimization-plan.md)，按信息层级、画布连线、
   交互验收三个批次承接；不重启一套 Core Phase，不重写已验收的媒体执行逻辑。
 - 研究与方向来源：[界面与交互收敛提案](docs/studio-ui-refinement-proposal.md)。
 - 本轮证据：[UI 验收记录与合成截图](docs/v0.3.1-ui-acceptance.md)、
   [图形实施前试验报告](docs/v0.3.1-graph-preflight.md)。
 - v0.3.0 的原生窗口、工程数据新候选与首次用户待验项由新方案明确承接，不因新分支自动算作通过。
-- 建分支/写方案不改变产品或合同版本；当前 package/product 仍为 `0.2.0`。候选版本收敛安排见新方案。
+- 当前实现版本：`0.3.1`；按批次 C 统一 package/product，wire/Presentation/StudioState 仍为 `0.3.0`，
+  SQLite schema 4 和 NodeDefinition exact version 不变。候选不等于正式发行。
+- 首次用户与操作者使用[候选验收任务包](docs/v0.3.1-creator-acceptance-kit.md)分别记录，自动化或作者不能冒充首次用户。
 
 ## 0.2.0 Core、v0.2.1 验收与 v0.3.0 实现检查点（历史）
 
@@ -39,7 +41,7 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - Phase 4 证据：[v0.3.0 Phase 4 验收记录](docs/v0.3.0-phase4-acceptance.md)
 - Phase 5 证据：[v0.3.0 Phase 5 验收记录](docs/v0.3.0-phase5-acceptance.md)
 - Windows 桌面入口：[启动、退出和构建说明](docs/studio-desktop.md)
-- 当前实现版本：`0.2.0`；package/product 版本按计划保持不变，公共入口为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
+- 该历史检查点实现版本为 `0.2.0`；公共入口继续为 `zniku.graph`、`zniku.project`、`zniku.runtime`、
   `zniku.project_service`、`zniku.presentation`、`zniku.media`、`zniku.avenhance_v27` 与 `zniku.desktop`
 - 历史边界：`main@198d802` 的 `0.1.0` 说明只保存在 `docs/archive/0.1.0/`，不参与产品运行或门禁
 
@@ -265,7 +267,7 @@ ZNiku/
 │   ├── v0.3.0-phase4-acceptance.md # v0.3.0 Phase 4 创作者运行与外部处理证据
 │   └── brand-baseline.md
 ├── AGENTS.md
-└── VERSION                      # 0.2.0 产品实现版本
+└── VERSION                      # 0.3.1 产品候选版本，独立于 wire/definition
 ```
 
 ## 本地运行与验证

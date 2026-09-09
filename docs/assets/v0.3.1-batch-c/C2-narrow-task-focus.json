@@ -1,0 +1,12 @@
+{
+  "production_entry": "index-Dn8aHKVl.js",
+  "evidence": {
+    "css_viewport": {
+      "width": 800,
+      "height": 720
+    },
+    "drawer_closed_focus_visible": true,
+    "canvas_delete_and_undo": true,
+    "native_windows_dpi_proof": false
+  }
+}
