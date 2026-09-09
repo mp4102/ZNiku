@@ -1,0 +1,230 @@
+{
+  "G01": {
+    "nodes": 4,
+    "ports": 6,
+    "edges": 3,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 0.735955,
+    "counters": {
+      "pending": "false",
+      "solves": "4",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.20000000298023224",
+      "max-slice-ms": "0.7999999970197678",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 3
+    },
+    "max_endpoint_error_css_px": 0.00014518229343834293,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 3,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 35.32584
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 4,
+    "nodes_fully_inside_canvas": 4,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G03": {
+    "nodes": 8,
+    "ports": 14,
+    "edges": 10,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 0.474638,
+    "counters": {
+      "pending": "false",
+      "solves": "2",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.4000000059604645",
+      "max-slice-ms": "0.4000000059604645",
+      "read-ms": "0.10000000894069672"
+    },
+    "reasons": {
+      "routed": 10
+    },
+    "max_endpoint_error_css_px": 0.000051612406880919514,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 36,
+    "collinear": {
+      "rawMaximum": 9.492753744125366,
+      "nonterminalMaximum": 4.746376872062683,
+      "nonterminalCount": 1,
+      "sharedTerminalAllowance": 22.782624
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 8,
+    "nodes_fully_inside_canvas": 8,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G04-multi": {
+    "nodes": 5,
+    "ports": 8,
+    "edges": 4,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.0155,
+    "counters": {
+      "pending": "false",
+      "solves": "2",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.29999999701976776",
+      "max-slice-ms": "0.3999999910593033",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 4
+    },
+    "max_endpoint_error_css_px": 0.00014518823834432158,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 15,
+    "collinear": {
+      "rawMaximum": 48.74416574088781,
+      "nonterminalMaximum": 48.74416574088781,
+      "nonterminalCount": 1,
+      "sharedTerminalAllowance": 48.744
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 5,
+    "nodes_fully_inside_canvas": 5,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G04-zero": {
+    "nodes": 2,
+    "ports": 3,
+    "edges": 1,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.2,
+    "counters": {
+      "pending": "false",
+      "solves": "3",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.10000000894069672",
+      "max-slice-ms": "0.20000000298023224",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 1
+    },
+    "max_endpoint_error_css_px": 0.00009048551516075772,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 3,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 57.599999999999994
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 2,
+    "nodes_fully_inside_canvas": 2,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G06": {
+    "nodes": 8,
+    "ports": 14,
+    "edges": 10,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 0.474638,
+    "counters": {
+      "pending": "false",
+      "solves": "3",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.30000001192092896",
+      "max-slice-ms": "0.7999999970197678",
+      "read-ms": "0.09999999403953552"
+    },
+    "reasons": {
+      "routed": 10
+    },
+    "max_endpoint_error_css_px": 0.00009696800303895137,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 41,
+    "collinear": {
+      "rawMaximum": 9.492753744125366,
+      "nonterminalMaximum": 4.746376872062683,
+      "nonterminalCount": 2,
+      "sharedTerminalAllowance": 22.782624
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 8,
+    "nodes_fully_inside_canvas": 8,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G08": {
+    "nodes": 2,
+    "ports": 3,
+    "edges": 4,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.2,
+    "counters": {
+      "pending": "false",
+      "solves": "3",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.19999998807907104",
+      "max-slice-ms": "0.4000000059604645",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 4
+    },
+    "max_endpoint_error_css_px": 0.0004582766154778795,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 28,
+    "collinear": {
+      "rawMaximum": 60.00010885475069,
+      "nonterminalMaximum": 43.199963378906205,
+      "nonterminalCount": 3,
+      "sharedTerminalAllowance": 57.599999999999994
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 2,
+    "nodes_fully_inside_canvas": 2,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  }
+}

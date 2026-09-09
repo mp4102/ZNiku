@@ -1,0 +1,242 @@
+{
+  "1": {
+    "before": {
+      "nodes": 8,
+      "ports": 14,
+      "edges": 10,
+      "viewport": {
+        "width": 1280,
+        "height": 720,
+        "dpr": 1
+      },
+      "mode": "creator",
+      "zoom": 0.34058,
+      "counters": {
+        "pending": "false",
+        "solves": "2",
+        "cache-hits": "1",
+        "degraded": "0",
+        "elapsed-ms": "0.800000011920929",
+        "max-slice-ms": "2.199999988079071",
+        "read-ms": "0"
+      },
+      "reasons": {
+        "routed": 10
+      },
+      "max_endpoint_error_css_px": 0.00010456104886429535,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 38,
+      "collinear": {
+        "rawMaximum": 34.39854462437569,
+        "nonterminalMaximum": 26.565208148155193,
+        "nonterminalCount": 2,
+        "sharedTerminalAllowance": 16.347839999999998
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 8,
+      "nodes_fully_inside_canvas": 8,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "collapsed": {
+      "nodes": 8,
+      "ports": 14,
+      "edges": 10,
+      "viewport": {
+        "width": 1280,
+        "height": 720,
+        "dpr": 1
+      },
+      "mode": "creator",
+      "zoom": 1.2,
+      "counters": {
+        "pending": "false",
+        "solves": "3",
+        "cache-hits": "8",
+        "degraded": "0",
+        "elapsed-ms": "0.19999998807907104",
+        "max-slice-ms": "2.199999988079071",
+        "read-ms": "0.10000000894069672"
+      },
+      "reasons": {
+        "routed": 10
+      },
+      "max_endpoint_error_css_px": 0.0003905583140204425,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 40,
+      "collinear": {
+        "rawMaximum": 121.19998040199198,
+        "nonterminalMaximum": 93.60001316070566,
+        "nonterminalCount": 2,
+        "sharedTerminalAllowance": 57.599999999999994
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 3,
+      "nodes_fully_inside_canvas": 1,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "keyboard_highlighted": 2,
+    "dpi_scope": "Chromium deviceScaleFactor simulation; not native Windows DPI"
+  },
+  "1.25": {
+    "before": {
+      "nodes": 8,
+      "ports": 14,
+      "edges": 10,
+      "viewport": {
+        "width": 1280,
+        "height": 720,
+        "dpr": 1.25
+      },
+      "mode": "creator",
+      "zoom": 0.34058,
+      "counters": {
+        "pending": "false",
+        "solves": "1",
+        "cache-hits": "0",
+        "degraded": "0",
+        "elapsed-ms": "1.199999988079071",
+        "max-slice-ms": "1.199999988079071",
+        "read-ms": "0.10000000894069672"
+      },
+      "reasons": {
+        "routed": 10
+      },
+      "max_endpoint_error_css_px": 0.00006214200569818692,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 36,
+      "collinear": {
+        "rawMaximum": 6.811594367027283,
+        "nonterminalMaximum": 3.4057971835136414,
+        "nonterminalCount": 1,
+        "sharedTerminalAllowance": 16.347839999999998
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 8,
+      "nodes_fully_inside_canvas": 8,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "collapsed": {
+      "nodes": 8,
+      "ports": 14,
+      "edges": 10,
+      "viewport": {
+        "width": 1280,
+        "height": 720,
+        "dpr": 1.25
+      },
+      "mode": "creator",
+      "zoom": 1.2,
+      "counters": {
+        "pending": "false",
+        "solves": "2",
+        "cache-hits": "8",
+        "degraded": "0",
+        "elapsed-ms": "0.3999999910593033",
+        "max-slice-ms": "1.199999988079071",
+        "read-ms": "0"
+      },
+      "reasons": {
+        "routed": 10
+      },
+      "max_endpoint_error_css_px": 0.00014340588987175206,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 38,
+      "collinear": {
+        "rawMaximum": 84.00000333786011,
+        "nonterminalMaximum": 84.00000333786011,
+        "nonterminalCount": 2,
+        "sharedTerminalAllowance": 57.599999999999994
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 3,
+      "nodes_fully_inside_canvas": 1,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "keyboard_highlighted": 2,
+    "dpi_scope": "Chromium deviceScaleFactor simulation; not native Windows DPI"
+  },
+  "1.5": {
+    "before": {
+      "nodes": 8,
+      "ports": 14,
+      "edges": 10,
+      "viewport": {
+        "width": 1280,
+        "height": 720,
+        "dpr": 1.5
+      },
+      "mode": "creator",
+      "zoom": 0.34058,
+      "counters": {
+        "pending": "false",
+        "solves": "1",
+        "cache-hits": "0",
+        "degraded": "0",
+        "elapsed-ms": "1.2000000029802322",
+        "max-slice-ms": "1.2000000029802322",
+        "read-ms": "0.09999999403953552"
+      },
+      "reasons": {
+        "routed": 10
+      },
+      "max_endpoint_error_css_px": 0.00006214200569818692,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 36,
+      "collinear": {
+        "rawMaximum": 6.811594367027283,
+        "nonterminalMaximum": 3.4057971835136414,
+        "nonterminalCount": 1,
+        "sharedTerminalAllowance": 16.347839999999998
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 8,
+      "nodes_fully_inside_canvas": 8,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "collapsed": {
+      "nodes": 8,
+      "ports": 14,
+      "edges": 10,
+      "viewport": {
+        "width": 1280,
+        "height": 720,
+        "dpr": 1.5
+      },
+      "mode": "creator",
+      "zoom": 1.2,
+      "counters": {
+        "pending": "false",
+        "solves": "2",
+        "cache-hits": "8",
+        "degraded": "0",
+        "elapsed-ms": "0.5999999940395355",
+        "max-slice-ms": "1.2000000029802322",
+        "read-ms": "0"
+      },
+      "reasons": {
+        "routed": 10
+      },
+      "max_endpoint_error_css_px": 0.00014340588987175206,
+      "routed_card_intrusions": 0,
+      "full_svg_segments_audited": 38,
+      "collinear": {
+        "rawMaximum": 84.00000333786011,
+        "nonterminalMaximum": 84.00000333786011,
+        "nonterminalCount": 2,
+        "sharedTerminalAllowance": 57.599999999999994
+      },
+      "page_overflow": false,
+      "nodes_intersecting_canvas": 3,
+      "nodes_fully_inside_canvas": 1,
+      "port_identity_errors": 0,
+      "port_row_vertical_errors": 0
+    },
+    "keyboard_highlighted": 2,
+    "dpi_scope": "Chromium deviceScaleFactor simulation; not native Windows DPI"
+  }
+}

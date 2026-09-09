@@ -14,12 +14,13 @@ interface CanvasGeometry {
 }
 
 /** 纯 UI 结构比较，不是领域身份、执行签名或持久化 digest。 */
-function geometryShape(node: WorkflowNode): string {
+export function geometryShape(node: WorkflowNode): string {
   const data = node.data
   return JSON.stringify([
     node.type, data.typeId, data.definitionVersion, data.executorKind,
     data.advanced, data.collapsed, data.groupLabel, data.label, data.summaries,
     data.inputs, data.outputs, data.portLabels,
+    data.problemSummary, data.nodeRun?.state, Boolean(data.nodeRun?.reused_from_result_id),
   ])
 }
 

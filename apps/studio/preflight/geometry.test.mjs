@@ -40,11 +40,14 @@ for (const fixture of fixtures()) {
   })
 }
 
-test('基准使用真实 smoothstep 圆角；fixed-grid/旧端口公式源位置未漂移', () => {
+test('冻结旧基准仍使用真实 smoothstep；生产已经切换实际端口行与尺寸布局', () => {
   const graphSource = readFileSync(new URL('../src/studio/graph.ts', import.meta.url), 'utf8')
   const cardSource = readFileSync(new URL('../src/components/WorkflowNodeCard.tsx', import.meta.url), 'utf8')
-  assert.ok(graphSource.includes('x: 80 + rank * 360, y: 100 + row * 280'))
-  assert.ok(cardSource.includes('58 + (index - (total - 1) / 2) * 22'))
+  const canvasSource = readFileSync(new URL('../src/studio/components/GraphCanvas.tsx', import.meta.url), 'utf8')
+  assert.ok(!graphSource.includes('x: 80 + rank * 360, y: 100 + row * 280'))
+  assert.ok(!cardSource.includes('58 + (index - (total - 1) / 2) * 22'))
+  assert.ok(cardSource.includes('node-port-row'))
+  assert.ok(canvasSource.includes('layoutMeasuredGraph'))
   const graph = layout(get('G03').graph)
   assert.ok(baseline(graph).some((route) => route.path.includes('Q')))
   assert.ok(audit(graph, baseline(graph), 'legacy').collisions > 0)

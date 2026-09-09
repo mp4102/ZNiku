@@ -1,6 +1,6 @@
 /** 画布测试验证建议、批量宏与纯 UI 分组都不直接改写 Graph 或运行状态。 */
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactFlowProps, Viewport } from '@xyflow/react'
@@ -9,16 +9,31 @@ import type { GraphWire } from '../contracts'
 import { GraphCanvas, type GraphCanvasProps } from './GraphCanvas'
 import { definitionForNode, isStudioConnectionValid } from '../graph'
 import { projectSnapshot } from '../test-fixtures'
+import { geometryShape } from './use-canvas-node-geometry'
 
 let flowProps: ReactFlowProps<WorkflowNode, WorkflowEdge> = {}
+let pauseMeasurement = false
 let currentViewport: Viewport = { x: 0, y: 0, zoom: 1 }
 const fitView = vi.fn(async () => true)
 const setViewport = vi.fn(async (value: Viewport) => { currentViewport = value; return true })
+vi.mock('./CanvasGeometryObserver', async () => {
+  const { useEffect } = await import('react')
+  return { CanvasGeometryObserver: ({ viewKey, onMeasure }: { viewKey: string; onMeasure: (key: string, value: unknown) => void }) => {
+    const nodes = (flowProps.nodes ?? []).map((node) => ({ id: node.id, ...node.position, width: 248, height: 180,
+      inputs: Object.fromEntries(node.data.inputs.map((port) => [port.port_id, { x: node.position.x - 6, y: node.position.y + 100 }])),
+      outputs: Object.fromEntries(node.data.outputs.map((port) => [port.port_id, { x: node.position.x + 254, y: node.position.y + 100 }])),
+    }))
+    const key = JSON.stringify(nodes)
+    const shapeKey = JSON.stringify((flowProps.nodes ?? []).map((node) => [node.id, geometryShape(node)]))
+    useEffect(() => { if (!pauseMeasurement) onMeasure(viewKey, { nodes, dragging: false, key: key + shapeKey, shapeKey, readMs: 0 }) }, [key, shapeKey, onMeasure, viewKey])
+    return null
+  } }
+})
 
 vi.mock('@xyflow/react', async () => {
   const { useEffect } = await import('react')
   return {
-    BackgroundVariant: { Dots: 'dots' }, Background: () => null, Controls: () => null, MiniMap: () => null,
+    BackgroundVariant: { Dots: 'dots' }, Background: () => null, Controls: () => null, MiniMap: () => <div data-testid="minimap" />,
     ReactFlow: (props: ReactFlowProps<WorkflowNode, WorkflowEdge>) => {
       flowProps = props
       useEffect(() => {
@@ -31,7 +46,7 @@ vi.mock('@xyflow/react', async () => {
   }
 })
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); currentViewport = { x: 0, y: 0, zoom: 1 } })
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); pauseMeasurement = false; currentViewport = { x: 0, y: 0, zoom: 1 } })
 const graph: GraphWire = { ...projectSnapshot.project.graph, edges: [] }
 const nodes: WorkflowNode[] = graph.nodes.map((node) => {
   const definition = definitionForNode(node, projectSnapshot.definitions)!
@@ -54,6 +69,84 @@ function props(overrides: Partial<GraphCanvasProps> = {}): GraphCanvasProps {
 }
 
 describe('Phase 3 自由画布', () => {
+  it.each(['position', 'shape'] as const)('同视图 %s 意图先于测量到达时立即拒绝迟到整理', (kind) => {
+    let serial = 0
+    const frames = new Map<number, FrameRequestCallback>()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++serial, callback); return serial })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id) })
+    const initial = props({ viewKey: 'same-session:current', onAutoLayout: vi.fn() })
+    const { rerender } = render(<GraphCanvas {...initial} />)
+    fireEvent.click(screen.getByRole('button', { name: '整理布局' }))
+    const previousGeometry = [...frames.values()].at(-1)!
+    pauseMeasurement = true
+    rerender(<GraphCanvas {...initial} nodes={nodes.map((node) => kind === 'position'
+      ? { ...node, position: { x: node.position.x + 123, y: node.position.y } }
+      : { ...node, data: { ...node.data, summaries: ['新增的实际卡片内容'] } })} />)
+    act(() => previousGeometry(0))
+    expect(screen.queryByRole('dialog', { name: '整理布局' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '整理布局' })).toBeDisabled()
+    expect(initial.onAutoLayout).not.toHaveBeenCalled()
+    expect(initial.onNodesChange).not.toHaveBeenCalled()
+  })
+
+  it('小地图默认收起，显式开关不改变 Graph、选区或相机', async () => {
+    const initial = props({ viewport: currentViewport, onViewportChange: vi.fn() })
+    render(<GraphCanvas {...initial} />)
+    expect(screen.queryByTestId('minimap')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '显示小地图' }))
+    expect(screen.getByTestId('minimap')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '隐藏小地图' }))
+    expect(screen.queryByTestId('minimap')).not.toBeInTheDocument()
+    expect(initial.onViewportChange).not.toHaveBeenCalled()
+    expect(initial.onNodesChange).not.toHaveBeenCalled()
+    expect(initial.onSelectionChange).not.toHaveBeenCalled()
+    expect(fitView).not.toHaveBeenCalled()
+  })
+
+  it('布局等待帧取消后不产生确认、Undo 或保存；旧 callback 迟到仍被拒绝', () => {
+    let serial = 0
+    const frames = new Map<number, FrameRequestCallback>()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++serial, callback); return serial })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id) })
+    const onAutoLayout = vi.fn()
+    const initial = props({ onAutoLayout })
+    const { rerender } = render(<GraphCanvas {...initial} />)
+    fireEvent.click(screen.getByRole('button', { name: '整理布局' }))
+    const cancelled = [...frames.values()].at(-1)!
+    fireEvent.click(screen.getByRole('button', { name: '取消整理' }))
+    act(() => cancelled(0))
+    expect(screen.queryByRole('dialog', { name: '整理布局' })).not.toBeInTheDocument()
+    expect(onAutoLayout).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '整理布局' }))
+    const previousView = [...frames.values()].at(-1)!
+    rerender(<GraphCanvas {...initial} nodes={nodes.map((node) => ({ ...node, position: { x: node.position.x + 900, y: node.position.y } }))}
+      showingSnapshot editable={false} />)
+    act(() => previousView(0))
+    expect(screen.queryByRole('dialog', { name: '整理布局' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '整理布局' })).toBeDisabled()
+    expect(onAutoLayout).not.toHaveBeenCalled()
+    expect(initial.onNodesChange).not.toHaveBeenCalled()
+    expect(initial.onSelectionChange).not.toHaveBeenCalled()
+  })
+
+  it('取消已计算的整理保留原图与选区；应用只提交完整测量位置一次', async () => {
+    const onAutoLayout = vi.fn()
+    const initial = props({ onAutoLayout })
+    const original = JSON.stringify(nodes)
+    render(<GraphCanvas {...initial} />)
+    await userEvent.click(screen.getByRole('button', { name: '整理布局' }))
+    await userEvent.click(await screen.findByRole('button', { name: '取消整理' }))
+    expect(onAutoLayout).not.toHaveBeenCalled()
+    expect(JSON.stringify(nodes)).toBe(original)
+    await userEvent.click(screen.getByRole('button', { name: '整理布局' }))
+    await userEvent.click(await screen.findByRole('button', { name: '应用布局' }))
+    expect(onAutoLayout).toHaveBeenCalledTimes(1)
+    expect(Object.keys(onAutoLayout.mock.calls[0][0])).toEqual(nodes.map((node) => node.id))
+    expect(initial.onSelectionChange).not.toHaveBeenCalled()
+    expect(initial.onNodesChange).not.toHaveBeenCalled()
+  })
+
   it('创作者只有一条已选历史时仍有显式记录入口，不依赖下拉框重复选中触发 change', async () => {
     const onToggleSnapshot = vi.fn()
     const current = props({ advanced: false, canToggleSnapshot: true, showingSnapshot: false, onToggleSnapshot })
@@ -100,7 +193,8 @@ describe('Phase 3 自由画布', () => {
     await waitFor(() => expect(setViewport).toHaveBeenCalledWith({ x: 30, y: 50, zoom: .8 }, { duration: 0 }))
     expect(onViewportChange).not.toHaveBeenCalled()
     expect(flowProps.nodes).toHaveLength(3)
-    expect(flowProps.edges).toBe(edges)
+    expect(flowProps.edges?.map(({ id, source, target }) => ({ id, source, target }))).toEqual(edges.map(({ id, source, target }) => ({ id, source, target })))
+    expect(flowProps.edges?.[0]?.type).toBe('routed')
     expect(flowProps.nodes?.find((node) => node.id === 'transform')?.data.collapsed).toBe(true)
     expect(flowProps.nodes?.find((node) => node.id === 'transform')?.data.inputs).toHaveLength(1)
     await userEvent.click(screen.getByRole('button', { name: '展开分组 第一章' }))
@@ -119,7 +213,9 @@ describe('Phase 3 自由画布', () => {
     await userEvent.click(screen.getByRole('button', { name: '画质增强' }))
     expect(onSelectionChange).toHaveBeenCalledExactlyOnceWith({ nodes: [nodes[1]], edges: [] })
     expect(fitView).toHaveBeenCalledWith(expect.objectContaining({ nodes: [{ id: 'transform' }] }))
-    await userEvent.click(screen.getByRole('button', { name: '自动布局' }))
+    await userEvent.click(screen.getByRole('button', { name: '整理布局' }))
+    expect(onAutoLayout).not.toHaveBeenCalled()
+    await userEvent.click(await screen.findByRole('button', { name: '应用布局' }))
     expect(onAutoLayout).toHaveBeenCalledOnce()
     await userEvent.click(screen.getByRole('button', { name: '为所有输出添加下一步' }))
     expect(screen.getByRole('dialog', { name: '添加下一步' })).toBeInTheDocument()

@@ -348,36 +348,12 @@ export function addConnectedNodes(
   return { graph: next, added_node_ids: addedIds }
 }
 
-/** 按 DAG 层级和现有节点顺序作确定性布局；只改 ui_position，不改参数和边。 */
-export function autoLayoutGraph(graph: GraphWire): GraphWire {
-  const ranks = new Map(graph.nodes.map((node) => [node.node_id, 0]))
-  const incoming = new Map(graph.nodes.map((node) => [node.node_id, 0]))
-  const adjacency = new Map(graph.nodes.map((node) => [node.node_id, new Set<string>()]))
-  for (const edge of graph.edges) {
-    const targets = adjacency.get(edge.source_node_id)
-    if (!targets || !incoming.has(edge.target_node_id)) return graph
-    if (!targets.has(edge.target_node_id)) {
-      targets.add(edge.target_node_id)
-      incoming.set(edge.target_node_id, incoming.get(edge.target_node_id)! + 1)
-    }
-  }
-  const ready = graph.nodes.filter((node) => incoming.get(node.node_id) === 0).map((node) => node.node_id)
-  for (let index = 0; index < ready.length; index += 1) {
-    const id = ready[index]!
-    for (const target of adjacency.get(id) ?? []) {
-      ranks.set(target, Math.max(ranks.get(target)!, ranks.get(id)! + 1))
-      incoming.set(target, incoming.get(target)! - 1)
-      if (incoming.get(target) === 0) ready.push(target)
-    }
-  }
-  if (ready.length !== graph.nodes.length) return graph
-  const rows = new Map<number, number>()
-  return { ...graph, nodes: graph.nodes.map((node) => {
-    const rank = ranks.get(node.node_id)!
-    const row = rows.get(rank) ?? 0
-    rows.set(rank, row + 1)
-    return { ...node, ui_position: { x: 80 + rank * 360, y: 100 + row * 280 } }
-  }) }
+/** 只提交用户确认的完整位置集合；几何求解位于独立模块，不改参数、边或输入顺序。 */
+export function applyLayoutPositions(graph: GraphWire, positions: Readonly<Record<string, { readonly x: number; readonly y: number }>>): GraphWire {
+  if (Object.keys(positions).length !== graph.nodes.length || graph.nodes.some((node) =>
+    !Object.hasOwn(positions, node.node_id) || !Number.isFinite(positions[node.node_id].x) || !Number.isFinite(positions[node.node_id].y))) return graph
+  if (graph.nodes.every((node) => node.ui_position?.x === positions[node.node_id].x && node.ui_position?.y === positions[node.node_id].y)) return graph
+  return { ...graph, nodes: graph.nodes.map((node) => ({ ...node, ui_position: positions[node.node_id] })) }
 }
 
 function cloneJson(value: JsonValue): JsonValue {

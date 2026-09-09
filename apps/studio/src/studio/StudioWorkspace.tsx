@@ -55,7 +55,7 @@ import type {
 } from './contracts'
 import {
   addConnectedNodes,
-  autoLayoutGraph,
+  applyLayoutPositions,
   connectGraph,
   copySelection,
   defaultParameters,
@@ -103,6 +103,8 @@ import { HandoffInbox } from './components/HandoffInbox'
 import { PrimaryRunAction, ServiceDiagnostics } from './components/RunCenter'
 import { TaskDrawer, type TaskDrawerTab } from './components/TaskDrawer'
 import { workspacePrimaryAction } from './workspace-primary-action'
+import { cardSummaryValue } from './card-summary'
+import { failurePresentation } from './run-presentation'
 import { RetryImpactDialog } from './components/RetryImpactDialog'
 import './workspace-shell.css'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
@@ -202,34 +204,8 @@ function defaultNodeId(): string {
   return `node.${globalThis.crypto.randomUUID()}`
 }
 
-function pathLeaf(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? '已选择'
-}
-
 function safeVisibleServiceError(message: string, fallback: string): string {
   return /(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/])/.test(message) ? fallback : message
-}
-
-function cardSummaryValue(
-  value: unknown,
-  presentation: NodePresentationWire['parameters'][number] | undefined,
-): string {
-  const enumLabel = presentation?.enum_labels.find((entry) => JSON.stringify(entry.value) === JSON.stringify(value))
-  if (enumLabel) return enumLabel.label
-  if (
-    presentation?.control_hint === 'file_path' ||
-    presentation?.control_hint === 'save_file' ||
-    presentation?.control_hint === 'directory_path'
-  ) {
-    return typeof value === 'string' ? pathLeaf(value) : '已选择'
-  }
-  if (presentation?.control_hint === 'file_paths') {
-    if (!Array.isArray(value)) return '已选择文件'
-    const names = value.flatMap((item) => typeof item === 'string' ? [pathLeaf(item)] : [])
-    if (names.length === 0) return '尚未选择'
-    return names.length <= 2 ? names.join('、') : `${names.slice(0, 2).join('、')} 等 ${names.length} 个文件`
-  }
-  return typeof value === 'string' ? value : JSON.stringify(value) ?? '—'
 }
 
 function replaceGraph(snapshot: ProjectSnapshotWire, graph: GraphWire): ProjectSnapshotWire {
@@ -1407,6 +1383,8 @@ export function StudioWorkspace({
             output: Object.fromEntries((presentation?.ports ?? []).filter((port) => port.direction === 'output').map((port) => [port.port_id, port.label])),
           },
           instanceId: node.node_id,
+          problemSummary: showRunSnapshot ? undefined : diagnostics.find((item) => item.node_id === node.node_id)
+            ? failurePresentation(diagnostics.find((item) => item.node_id === node.node_id)!.code).title : undefined,
           summaries: [...(presentation?.card_summary_paths ?? []).flatMap((pointer) => {
             const value = getPointer(node.parameters, pointer)
             if (value === undefined) return []
@@ -1457,6 +1435,8 @@ export function StudioWorkspace({
       progressSamplesByNodeRun,
       presentationsByKey,
       selectedNodeIds,
+      diagnostics,
+      showRunSnapshot,
     ],
   )
 
@@ -2895,13 +2875,16 @@ export function StudioWorkspace({
 
       <GraphCanvas
         key={status?.project_session_id ?? 'empty'}
+        viewKey={`${status?.project_session_id ?? 'empty'}:${showRunSnapshot && currentRun ? currentRun.run_id : 'current'}`}
         graph={graph}
         definitions={definitions}
         groups={(studioState?.groups ?? []).map((group) => ({ ...group, node_ids: (studioState?.node_views ?? []).filter((view) => view.group_id === group.group_id && graph.nodes.some((node) => node.node_id === view.node_id)).map((view) => view.node_id) }))}
         viewport={studioState?.viewport ?? null}
         onViewportChange={(viewport) => editStudioState('调整画布视口', (state) => ({ ...state, viewport }))}
         onToggleGroup={(groupId) => editStudioState('折叠分组', (state) => ({ ...state, groups: state.groups.map((group) => group.group_id === groupId ? { ...group, collapsed: !group.collapsed } : group) }))}
-        onAutoLayout={() => { if (!parameterDraftDirty) updateGraph(autoLayoutGraph) }}
+        onAutoLayout={(positions) => editAuthoring('整理布局', (current) => ({ ...current,
+          snapshot: replaceGraph(current.snapshot, applyLayoutPositions(current.snapshot.project.graph, positions)),
+        }))}
         libraryOpen={libraryOpen}
         onToggleLibrary={() => setLibraryOpen((open) => !open)}
         definitionLabel={(definition) => presentationsByKey.get(`${definition.type_id}@${definition.version}`)?.title ?? definition.type_id}

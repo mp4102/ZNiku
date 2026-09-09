@@ -1,0 +1,91 @@
+/* 端口行是真实布局，Handle 中心落在每行外缘，不依赖整张卡片的高度百分比。 */
+.workflow-node.workflow-node-card {
+  box-sizing: border-box;
+  width: 248px;
+  min-height: 96px;
+  padding: 0;
+}
+.workflow-node.workflow-node-card.has-ui-group { border-left-width: 1px; }
+.workflow-node-card .node-card-content { min-width: 0; padding: 12px 13px 9px; }
+.workflow-node-card .node-card-title {
+  display: block;
+  margin-top: 9px;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-card .node-subtitle,
+.workflow-node-card .node-group-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-node.workflow-node-card .node-parameter-summary > span {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-card .node-card-status { display: flex; flex-wrap: wrap; gap: 4px; }
+.workflow-node-card .node-card-status:empty { display: none; }
+.workflow-node-card .node-card-problem {
+  display: block;
+  overflow: hidden;
+  margin-top: 7px;
+  color: #ffc5be;
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node.workflow-node-card .node-progress-detail {
+  display: grid;
+  gap: 2px;
+  line-height: 18px;
+}
+.workflow-node-card .node-progress-detail > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-node-card .node-ports {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 8px;
+  width: calc(100% + 2px);
+  margin: 0 -1px 8px;
+  padding-top: 5px;
+  border-top: 1px solid #2c3a4c;
+}
+.workflow-node-card .node-ports-direction { padding: 2px 14px 4px; color: #9caec2; font-size: 12px; }
+.workflow-node-card .node-ports-direction--output { text-align: right; }
+.workflow-node-card .node-port-row { position: relative; min-width: 0; min-height: 32px; }
+.workflow-node-card .node-port-placeholder { min-height: 32px; }
+.workflow-node-card .node-port-label {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  min-height: 32px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4px 14px;
+  border-radius: 4px;
+  color: #d8e3ef;
+  font-size: 12px;
+  line-height: 18px;
+}
+.workflow-node-card .node-port-name,
+.workflow-node-card .node-port-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-node-card .node-port-type { color: #9caec2; font-size: 12px; line-height: 16px; }
+.workflow-node-card .node-port-row--output .node-port-label { text-align: right; }
+.workflow-node-card .node-port-label:hover { background: #223246; }
+.workflow-node-card .node-port-label:focus-visible { outline: 2px solid #81dcff; outline-offset: -2px; background: #223246; }
+.workflow-node-card .node-port-row .typed-handle--input {
+  top: 50%; left: 0; right: auto; transform: translate(-50%, -50%);
+}
+.workflow-node-card .node-port-row .typed-handle--output {
+  top: 50%; right: 0; left: auto; transform: translate(50%, -50%);
+}
+.workflow-node-card .node-port-row .typed-handle { transition: background-color 120ms, box-shadow 120ms; }
+@media (prefers-reduced-motion: reduce) { .workflow-node-card .node-port-row .typed-handle { transition: none; } }
+@media (forced-colors: active) {
+  .workflow-node-card .node-card-problem,
+  .workflow-node-card .node-port-label,
+  .workflow-node-card .node-port-type { color: CanvasText; }
+  .workflow-node-card .node-port-label:focus-visible { outline-color: Highlight; }
+}

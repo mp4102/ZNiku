@@ -55,6 +55,9 @@ jobs:
       - name: Geometry preflight bounded experiment
         run: node preflight/run.mjs
 
+      - name: Independent production SVG geometry auditor
+        run: node --test e2e/batch-b-audit.checks.ts
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -74,8 +77,12 @@ jobs:
         id: production-e2e
         run: npm run test:e2e
 
+      - name: Production measured ports, routing and layout invariants
+        id: batch-b-e2e
+        run: npx playwright test -c e2e/batch-b.config.ts
+
       - name: Upload bounded synthetic failure evidence
-        if: failure() && steps.production-e2e.outcome == 'failure'
+        if: failure() && (steps.production-e2e.outcome == 'failure' || steps.batch-b-e2e.outcome == 'failure')
         uses: actions/upload-artifact@v7.0.1
         with:
           name: studio-synthetic-failure

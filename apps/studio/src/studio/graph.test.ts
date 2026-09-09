@@ -11,10 +11,11 @@ import {
   nodeExecutionSignatureMatches,
   selectionChangeBlocked,
   addConnectedNodes,
-  autoLayoutGraph,
+  applyLayoutPositions,
   compatibleNodeSuggestions,
   reorderEdge,
 } from './graph'
+import { layoutMeasuredGraph } from './geometry/layout'
 import {
   dataSourceDefinition,
   mergeDefinition,
@@ -57,17 +58,20 @@ describe('Studio 0.3.0 Graph interactions', () => {
     expect(compatibleNodeSuggestions(graph, projectSnapshot.definitions, [{ sourceNodeId: 'missing', sourcePortId: 'out' }])).toEqual([])
   })
 
-  it('自动布局保持 execution 内容不变，对多 Source、分支汇合确定性分层', () => {
+  it('实际尺寸布局保持 execution 内容不变，对多 Source、分支汇合确定性分层', () => {
     const graph = projectSnapshot.project.graph
-    const arranged = autoLayoutGraph(graph)
+    const measured = graph.nodes.map((node, index) => ({ id: node.node_id, x: 10, y: index * 20, width: 248, height: 180 + index * 40 }))
+    const positions = layoutMeasuredGraph(measured, graph.edges.map((edge) => ({ source: edge.source_node_id, target: edge.target_node_id })))
+    const arranged = applyLayoutPositions(graph, positions)
     expect(arranged.edges).toBe(graph.edges)
     expect(arranged.nodes.map((node) => node.parameters)).toEqual(graph.nodes.map((node) => node.parameters))
     expect(arranged.nodes[0]!.ui_position!.x).toBeLessThan(arranged.nodes[1]!.ui_position!.x)
     expect(arranged.nodes[1]!.ui_position!.x).toBeLessThan(arranged.nodes[2]!.ui_position!.x)
-    expect(autoLayoutGraph(arranged)).toEqual(arranged)
+    expect(applyLayoutPositions(arranged, positions)).toBe(arranged)
     for (const node of graph.nodes) expect(nodeExecutionSignatureMatches(arranged, graph, node.node_id)).toBe(true)
-    const cycle = { ...graph, edges: [...graph.edges, { source_node_id: 'sink', source_port_id: 'out', target_node_id: 'source', target_port_id: 'in', ordinal: null }] }
-    expect(autoLayoutGraph(cycle)).toBe(cycle)
+    expect(applyLayoutPositions(graph, { source: { x: 0, y: 0 } })).toBe(graph)
+    expect(applyLayoutPositions(graph, { ...positions, unknown: { x: 1, y: 2 } })).toBe(graph)
+    expect(applyLayoutPositions(graph, { ...positions, source: { x: NaN, y: 2 } })).toBe(graph)
   })
 
   it('有序重排只更改同一目标输入的连续顺序，重复来源仍保留为不同条目', () => {

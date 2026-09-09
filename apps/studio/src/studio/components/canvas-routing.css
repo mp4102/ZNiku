@@ -1,0 +1,20 @@
+/* 几何强调和降级均为显示，不让交叉冒充端口连接。 */
+.routed-workflow-edge .react-flow__edge-path { stroke: #8b9bad; stroke-width: 1.8; fill: none; }
+.routed-workflow-edge .route-crossing-halo { stroke: var(--bg, #10161e); stroke-width: 6; fill: none; pointer-events: none; }
+.routed-workflow-edge.is-highlighted .react-flow__edge-path { stroke: #f0bb65; stroke-width: 3; }
+.routed-workflow-edge.is-subdued { opacity: .32; }
+.routed-workflow-edge.is-degraded .react-flow__edge-path { stroke-dasharray: 7 4; stroke: #d9a75e; }
+.react-flow__edge:focus-visible .react-flow__edge-path { stroke: #f7cd84; stroke-width: 3; }
+.canvas-route-notice { margin: 0; padding: 5px 12px; font-size: 12px; color: #e7c78e; background: #30281d; flex-shrink: 0; }
+.canvas-route-diagnostics { font-size: 12px; }
+.canvas-route-diagnostics summary { cursor: pointer; }
+.canvas-route-diagnostics dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px; }
+.canvas-route-diagnostics dd { margin: 0; }
+.canvas-path-tools { display: flex; align-items: center; gap: 4px; }
+.canvas-path-tools button[aria-pressed="true"] { border-color: #e4b468; color: #f2ca8d; }
+.canvas-layout-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.canvas-zoom-controls .canvas-minimap-toggle { font-size: 11px; }
+@media (forced-colors: active) {
+  .routed-workflow-edge .react-flow__edge-path { stroke: CanvasText; }
+  .routed-workflow-edge.is-highlighted .react-flow__edge-path { stroke: Highlight; }
+}

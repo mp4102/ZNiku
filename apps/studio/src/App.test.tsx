@@ -2126,7 +2126,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     fireEvent.click(await screen.findByRole('button', { name: '查看本次处理流程' }))
     expect(screen.queryByLabelText('draft-only 节点')).not.toBeInTheDocument()
     expect(screen.getByText('本次处理的流程（只读）')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '自动布局' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '整理布局' })).toBeDisabled()
     fireEvent.click(projectButton('打开'))
     await waitFor(() => expect(gateway.commands.at(-1)?.operation).toBe('open_project'))
     expect(await screen.findByLabelText('draft-only 节点')).toBeInTheDocument()

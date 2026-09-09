@@ -1,6 +1,7 @@
 /** 定义 ReactFlow 的显示模型；字段全部由 0.3.0 Project Service wire 数据投影而来。 */
 
 import type { Edge, Node } from '@xyflow/react'
+import type { GeometryRoute, Point } from './studio/geometry/types'
 import type {
   LatestResultWire,
   NodeProgressProjectionWire,
@@ -39,7 +40,19 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   readonly compatibleOutputPortIds?: ReadonlyArray<string>
   readonly groupLabel?: string
   readonly groupColorToken?: string
+  readonly problemSummary?: string
 }
 
 export type WorkflowNode = Node<WorkflowNodeData, 'workflow'>
-export type WorkflowEdge = Edge<{ readonly ordinal: number | null }, 'smoothstep'>
+/** 路线仅是当前画布的临时投影，不进入 Graph/StudioState。 */
+export interface WorkflowEdgeData extends Record<string, unknown> {
+  readonly ordinal: number | null
+  readonly route?: GeometryRoute
+  readonly start?: Point
+  readonly end?: Point
+  readonly displayPath?: string
+  readonly highlighted?: boolean
+  readonly subdued?: boolean
+  readonly accessibleLabel?: string
+}
+export type WorkflowEdge = Edge<WorkflowEdgeData, 'smoothstep' | 'routed'>

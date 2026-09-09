@@ -3,6 +3,9 @@
 独立纯合成实验，不被正式 `src/` 导入、不接入 UI、不新增依赖、不改 Graph/Core 或 `.zniku`。
 现有锁定的 `@xyflow/react@12.11.3` 仅用于真实 smoothstep 基准及明确标记的降级线。
 
+批次 B 后本目录继续保留改造前公式和实验作为冻结对照；不再要求生产源码仍使用有缺陷的固定网格/百分比。
+生产 TypeScript 与真实 DOM 门禁见[批次 B 验收](../../../docs/v0.3.1-graph-routing-acceptance.md)。
+
 在 `apps/studio` 安装既有锁定依赖后运行：
 
 ```powershell
@@ -15,7 +18,7 @@ node preflight/run.mjs
 参数，不探测用户目录或媒体。每组 3 次预热、20 次重复；时间数据会随机器和负载变化。
 
 - `fixtures.mjs`：G01–G10 共 20 个变体，包含 1/2/6/8/16 口、动态尺寸、长跳线、重叠、故意超预算。
-- `geometry.mjs`：闭合实验输入、生产 fixed-grid 公式镜像、尺寸感知分层布局、锚点和独立相交检查。
+- `geometry.mjs`：闭合实验输入、改造前 fixed-grid 公式镜像、尺寸感知分层布局、锚点和独立相交检查。
 - `router.mjs`：坐标压缩正交通道 + 有界 A*，确定性并列排序，单项有界缓存和会话结果版本栅栏。
 - `geometry.test.mjs`：严格输入、变体不变量、实际曲线相交、缓存失效、端点、平行边和迟到结果测试。
 - `run.mjs`：基准/替代方案的确定性、几何正确性、耗时、预算与源码 raw/gzip 统计。

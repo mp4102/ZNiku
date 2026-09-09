@@ -1,0 +1,496 @@
+{
+  "G02": {
+    "nodes": 3,
+    "ports": 3,
+    "edges": 1,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 0.826498,
+    "counters": {
+      "pending": "false",
+      "solves": "2",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.09999999403953552",
+      "max-slice-ms": "0.699999988079071",
+      "read-ms": "0.09999999403953552"
+    },
+    "reasons": {
+      "routed": 1
+    },
+    "max_endpoint_error_css_px": 0.00007802673016566838,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 7,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 39.671904
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 3,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G02-arranged": {
+    "nodes": 3,
+    "ports": 3,
+    "edges": 1,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.2,
+    "counters": {
+      "pending": "false",
+      "solves": "3",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.20000000298023224",
+      "max-slice-ms": "0.699999988079071",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 1
+    },
+    "max_endpoint_error_css_px": 0.00009880848064428236,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 3,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 57.599999999999994
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 3,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-1": {
+    "nodes": 3,
+    "ports": 4,
+    "edges": 2,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 0.789157,
+    "counters": {
+      "pending": "false",
+      "solves": "2",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.19999998807907104",
+      "max-slice-ms": "0.20000000298023224",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 2
+    },
+    "max_endpoint_error_css_px": 0.00010701919177349682,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 4,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 37.879536
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 3,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-1-arranged": {
+    "nodes": 3,
+    "ports": 4,
+    "edges": 2,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.0155,
+    "counters": {
+      "pending": "false",
+      "solves": "3",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.20000000298023224",
+      "max-slice-ms": "0.20000000298023224",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 2
+    },
+    "max_endpoint_error_css_px": 0.00014667648089860543,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 4,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 48.744
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 3,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-2": {
+    "nodes": 3,
+    "ports": 8,
+    "edges": 4,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.2,
+    "counters": {
+      "pending": "false",
+      "solves": "1",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.30000001192092896",
+      "max-slice-ms": "0.30000001192092896",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 4
+    },
+    "max_endpoint_error_css_px": 0.00020082137777262783,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 4,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 57.599999999999994
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 2,
+    "nodes_fully_inside_canvas": 1,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-2-arranged": {
+    "nodes": 3,
+    "ports": 8,
+    "edges": 4,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.0155,
+    "counters": {
+      "pending": "false",
+      "solves": "2",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.10000000894069672",
+      "max-slice-ms": "0.30000001192092896",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 4
+    },
+    "max_endpoint_error_css_px": 0.0001585291564205518,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 4,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 48.744
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 3,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-6": {
+    "nodes": 3,
+    "ports": 24,
+    "edges": 12,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.2,
+    "counters": {
+      "pending": "false",
+      "solves": "1",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.30000001192092896",
+      "max-slice-ms": "0.30000001192092896",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 12
+    },
+    "max_endpoint_error_css_px": 0.0002018448314059016,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 12,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 57.599999999999994
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 2,
+    "nodes_fully_inside_canvas": 1,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-6-arranged": {
+    "nodes": 3,
+    "ports": 24,
+    "edges": 12,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.0155,
+    "counters": {
+      "pending": "false",
+      "solves": "2",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.20000000298023224",
+      "max-slice-ms": "0.30000001192092896",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 12
+    },
+    "max_endpoint_error_css_px": 0.00015134452587044968,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 12,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 48.744
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 3,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-8": {
+    "nodes": 3,
+    "ports": 32,
+    "edges": 16,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.2,
+    "counters": {
+      "pending": "false",
+      "solves": "1",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.7999999970197678",
+      "max-slice-ms": "0.7999999970197678",
+      "read-ms": "0.09999999403953552"
+    },
+    "reasons": {
+      "routed": 16
+    },
+    "max_endpoint_error_css_px": 0.00020212868458471591,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 16,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 57.599999999999994
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 2,
+    "nodes_fully_inside_canvas": 1,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-8-arranged": {
+    "nodes": 3,
+    "ports": 32,
+    "edges": 16,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.0155,
+    "counters": {
+      "pending": "false",
+      "solves": "2",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.19999998807907104",
+      "max-slice-ms": "0.7999999970197678",
+      "read-ms": "0"
+    },
+    "reasons": {
+      "routed": 16
+    },
+    "max_endpoint_error_css_px": 0.00015148134765315962,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 16,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 48.744
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 3,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-16": {
+    "nodes": 3,
+    "ports": 64,
+    "edges": 32,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 0.789157,
+    "counters": {
+      "pending": "false",
+      "solves": "2",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.7000000029802322",
+      "max-slice-ms": "0.7000000029802322",
+      "read-ms": "0.09999999403953552"
+    },
+    "reasons": {
+      "routed": 32
+    },
+    "max_endpoint_error_css_px": 0.0009883483812502137,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 64,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 37.879536
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 3,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-16-arranged": {
+    "nodes": 3,
+    "ports": 64,
+    "edges": 32,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "creator",
+    "zoom": 1.0155,
+    "counters": {
+      "pending": "false",
+      "solves": "3",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.5",
+      "max-slice-ms": "0.7000000029802322",
+      "read-ms": "0.09999999403953552"
+    },
+    "reasons": {
+      "routed": 32
+    },
+    "max_endpoint_error_css_px": 0.0012295648649018824,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 64,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 48.744
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 3,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  },
+  "G05-16-advanced": {
+    "nodes": 3,
+    "ports": 64,
+    "edges": 32,
+    "viewport": {
+      "width": 1920,
+      "height": 1080,
+      "dpr": 1
+    },
+    "mode": "advanced",
+    "zoom": 1.0155,
+    "counters": {
+      "pending": "false",
+      "solves": "4",
+      "cache-hits": "0",
+      "degraded": "0",
+      "elapsed-ms": "0.29999999701976776",
+      "max-slice-ms": "0.7000000029802322",
+      "read-ms": "0.10000000894069672"
+    },
+    "reasons": {
+      "routed": 32
+    },
+    "max_endpoint_error_css_px": 0.003253821590122718,
+    "routed_card_intrusions": 0,
+    "full_svg_segments_audited": 32,
+    "collinear": {
+      "rawMaximum": 0,
+      "nonterminalMaximum": 0,
+      "nonterminalCount": 0,
+      "sharedTerminalAllowance": 48.744
+    },
+    "page_overflow": false,
+    "nodes_intersecting_canvas": 3,
+    "nodes_fully_inside_canvas": 0,
+    "port_identity_errors": 0,
+    "port_row_vertical_errors": 0
+  }
+}

@@ -14,6 +14,7 @@ export interface SyntheticFixture {
   readonly large_project: string
   readonly media_project: string
   readonly geometry_project: string
+  readonly batch_b_projects?: Readonly<Record<string, { readonly path: string; readonly nodes: number; readonly edges: number }>>
 }
 
 /** 只保存测试生成的绑定与状态；一次性票据、bootstrap、header 及媒体内容永不进入报告。 */
@@ -71,8 +72,8 @@ export class SyntheticFixtureHost {
   origin = ''
   fixture!: SyntheticFixture
 
-  async start(): Promise<void> {
-    this.child = spawn('uv', ['run', '--locked', '--extra', 'dev', 'python', 'tools/studio_production_fixture.py'], {
+  async start(scriptPath = 'tools/studio_production_fixture.py'): Promise<void> {
+    this.child = spawn('uv', ['run', '--locked', '--extra', 'dev', 'python', scriptPath], {
       cwd: resolve('../..'), env: { ...process.env, PYTHONUTF8: '1' }, shell: false,
       windowsHide: true, detached: process.platform !== 'win32',
     })
