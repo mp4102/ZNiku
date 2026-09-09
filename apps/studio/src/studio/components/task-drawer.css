@@ -1,0 +1,56 @@
+.task-drawer {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+}
+.task-drawer-summary { display: flex; align-items: center; gap: 16px; min-height: 35px; padding: 0 12px; }
+.task-drawer-trigger { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 0; border: 0; background: transparent; text-align: left; }
+.task-drawer-trigger span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-drawer-counts, .task-drawer-other { flex-shrink: 0; color: var(--muted); font-size: 12px; }
+.task-drawer-other { color: var(--amber); }
+.task-drawer-content { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.task-drawer [hidden] { display: none !important; }
+.task-drawer-toolbar { display: flex; flex-shrink: 0; align-items: center; gap: 12px; min-height: 38px; padding: 0 12px; border-bottom: 1px solid var(--border-soft); }
+.task-drawer-tabs { display: flex; align-self: stretch; gap: 4px; }
+.task-drawer-tabs button { padding: 7px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); white-space: nowrap; }
+.task-drawer-tabs button[aria-selected="true"] { border-bottom-color: var(--cyan); color: var(--text); }
+.task-drawer-resize { display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--muted); font-size: 12px; }
+.task-drawer-resize input { width: 88px; accent-color: var(--cyan); }
+.task-drawer-close { padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; background: transparent; }
+.task-drawer-panel { min-height: 0; overflow: auto; padding: 12px 16px; scrollbar-gutter: stable; }
+.task-drawer-columns { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(320px, 2fr); gap: 24px; }
+.task-drawer h3, .task-drawer h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.task-drawer p { margin: 6px 0 10px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
+.task-drawer ul, .task-drawer ol { margin: 0; padding: 0; list-style: none; }
+.task-drawer-active li + li, .task-drawer-history li + li { margin-top: 4px; }
+.task-drawer-active li button, .task-drawer-history li button, .task-drawer-node-list li button { display: flex; width: 100%; gap: 6px; border: 1px solid transparent; border-radius: 5px; padding: 8px; background: transparent; text-align: left; }
+.task-drawer-active li button { flex-direction: column; }
+.task-drawer-active li span { color: var(--muted); font-size: 12px; }
+.task-drawer li button:hover, .task-drawer li button[aria-current="true"] { background: var(--panel-raised); border-color: var(--border); }
+.task-drawer-node-list li button { align-items: center; gap: 12px; }
+.task-drawer-node-list strong { min-width: 0; overflow-wrap: anywhere; }
+.task-drawer-node-list span { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.task-drawer-history-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.task-drawer-outputs, .task-drawer-danger, .task-drawer-current-graph { margin-top: 16px; border-top: 1px solid var(--border-soft); padding-top: 12px; }
+.task-drawer-danger button { color: var(--red); }
+.task-drawer button:focus-visible, .task-drawer input:focus-visible, .task-drawer [tabindex]:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.service-diagnostics { margin: 12px 0; font-size: 12px; }
+.service-diagnostics summary { cursor: pointer; }
+.service-diagnostics dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; }
+.service-diagnostics dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .task-drawer-summary { gap: 8px; }
+  .task-drawer-trigger { flex: 1; }
+  .task-drawer-other { max-width: 150px; white-space: normal; }
+  .task-drawer-columns { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .task-drawer-tabs button { padding-inline: 7px; }
+  .task-drawer-resize { gap: 2px; }
+  .task-drawer-resize input { width: 58px; }
+}

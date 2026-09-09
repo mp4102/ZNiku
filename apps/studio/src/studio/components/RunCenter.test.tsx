@@ -1,8 +1,8 @@
-/** 创作者唯一主操作只调用显式 intent，高级精确命令与状态通道仍可查。 */
+/** 唯一主操作与只读诊断分离；展示层不推导运行资格或持有另一套命令。 */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RunCanvasOverlays, RunCenter, type RunCenterProps } from './RunCenter'
-import { handoffRun, handoffSummary } from '../test-fixtures'
+import { PrimaryRunAction, ServiceDiagnostics, RunCenter, type RunCenterProps } from './RunCenter'
+import { handoffEnvelope, handoffSummary } from '../test-fixtures'
 
 afterEach(cleanup)
 function props(overrides: Partial<RunCenterProps> = {}): RunCenterProps {
@@ -12,32 +12,35 @@ function props(overrides: Partial<RunCenterProps> = {}): RunCenterProps {
     runBlocked: false, runToBlocked: true, rerunBlocked: true, onSelectRun: vi.fn(),
     onRunAll: vi.fn(), onRunTo: vi.fn(), onRerun: vi.fn(), ...overrides }
 }
-describe('创作者运行中心', () => {
-  it('突出唯一上下文主操作，默认关闭精确命令与 ID', () => {
+describe('上下文主操作与只读服务诊断', () => {
+  it('只展示一个主操作，不再夹带历史、精确命令和内部身份', () => {
     const action = vi.fn()
-    const { container } = render(<RunCenter {...props({ primaryAction: { label: '继续外部处理', disabled: false, onAction: action } })} />)
+    const base = props()
+    const { container } = render(<PrimaryRunAction health={base.health} status={handoffEnvelope()}
+      action={{ label: '处理外部文件（2）', disabled: false, onAction: action }} />)
     expect(container.querySelectorAll('.button--primary')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Run all' })).not.toBeVisible()
-    expect(screen.getByRole('combobox', { name: '处理记录' })).toHaveTextContent('完整工作流')
-    expect(screen.getByRole('combobox', { name: '处理记录' })).not.toHaveTextContent(handoffSummary().run_id)
-    const advancedDetails = container.querySelector('details')!
-    advancedDetails.open = true
-    fireEvent.click(screen.getByRole('button', { name: '继续外部处理' }))
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Run all|Run to|Rerun|高级运行操作/)).not.toBeInTheDocument()
+    expect(container).not.toHaveTextContent(handoffSummary().run_id)
+    fireEvent.click(screen.getByRole('button', { name: '处理外部文件（2）' }))
     expect(action).toHaveBeenCalledTimes(1)
-    expect(advancedDetails.open).toBe(false)
+    expect(base.onRunAll).not.toHaveBeenCalled()
   })
-  it('高级模式保留精确命令，同时给禁用理由', () => {
-    const options = props({ advanced: true, blockedReasons: { runTo: '请先选择一个步骤。' } })
-    render(<RunCenter {...options} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Run all' }))
+  it('兼容入口的高级模式不再自动展开命令或诊断', () => {
+    const options = props({ advanced: true })
+    const { container } = render(<RunCenter {...options} />)
+    expect(container.querySelector('details')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Run to here' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '开始处理' }))
     expect(options.onRunAll).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Run to here' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Run to here' })).toHaveAccessibleDescription('请先选择一个步骤。')
-    expect(screen.getByRole('combobox', { name: '查看 Run' })).toHaveTextContent(handoffSummary().run_id)
+    expect(options.onRunTo).not.toHaveBeenCalled()
+    expect(options.onRerun).not.toHaveBeenCalled()
   })
   it('禁用主操作有可读说明和恢复入口，不调用执行意图', () => {
-    const action = vi.fn(); const recover = vi.fn()
-    render(<RunCenter {...props({ primaryAction: { label: '开始处理', disabled: true, reason: '请应用未保存设置。', recoveryLabel: '查看设置', onAction: action, onRecover: recover } })} />)
+    const action = vi.fn(), recover = vi.fn(), base = props()
+    render(<PrimaryRunAction health={base.health} status={null}
+      action={{ label: '开始处理', disabled: true, reason: '请应用未保存设置。', recoveryLabel: '查看设置', onAction: action, onRecover: recover }} />)
     const button = screen.getByRole('button', { name: '开始处理' })
     expect(button).toHaveAccessibleDescription('请应用未保存设置。')
     fireEvent.click(button)
@@ -45,31 +48,36 @@ describe('创作者运行中心', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看设置' }))
     expect(recover).toHaveBeenCalledTimes(1)
   })
-  it('连接失效明确区分上次状态，并提供重新连接', () => {
-    const recover = vi.fn(); const base = props()
-    render(<RunCenter {...base} health={{ ...base.health, status: { stale: true, lastSuccess: null } }} onRecoverService={recover} />)
-    expect(screen.getByRole('status')).toHaveTextContent('上次状态')
+  it('连接提示保留最后可信状态；重新连接仍只调用传入主操作', () => {
+    const recover = vi.fn(), base = props()
+    render(<PrimaryRunAction health={{ ...base.health, status: { stale: true, lastSuccess: null } }} status={null}
+      action={{ label: '重新连接', disabled: false, onAction: recover }} />)
+    expect(screen.getByRole('status')).toHaveTextContent('显示的是上次状态')
     fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
     expect(recover).toHaveBeenCalledTimes(1)
+    expect(screen.getAllByRole('button')).toHaveLength(1)
   })
-  it('仅详情频道失效也提示陈旧状态，但展示层不擅自更改命令资格', () => {
+  it('详情频道失效提示陈旧状态，但不擅自改变只读主操作资格', () => {
     const base = props()
-    render(<RunCenter {...base} health={{ ...base.health, detail: { stale: true, lastSuccess: 'synthetic-time' } }}
-      primaryAction={{ label: '查看当前进度', disabled: false, onAction: vi.fn() }} />)
+    render(<PrimaryRunAction health={{ ...base.health, detail: { stale: true, lastSuccess: 'synthetic-time' } }}
+      status={null} action={{ label: '查看进度', disabled: false, onAction: vi.fn() }} />)
     expect(screen.getByRole('status')).toHaveTextContent('步骤详情暂未更新，仍保留上次可信状态')
-    expect(screen.getByRole('button', { name: '查看当前进度' })).toBeEnabled()
-    expect(screen.queryByRole('button', { name: '重新连接' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '查看进度' })).toBeEnabled()
   })
-  it('外部摘要没有伪造百分比、倒计时或默认绝对路径', () => {
-    const node = handoffRun().node_runs.find((item) => item.state === 'waiting_external')!
-    const locate = vi.fn()
-    render(<RunCanvasOverlays viewedSummary={handoffSummary()} firstWaiting={node}
-      firstWaitingInputPaths={['C:\\synthetic\\private-source.mkv']} firstWaitingReadinessLabel="已发现目标文件，尚未完成检查"
-      firstWaitingElapsedLabel="已等待 8 分钟" globalActionSummary={null} firstFailed={null} sameRun onLocateNode={locate} onSelectRun={vi.fn()} nodeLabel={() => '画质增强'} />)
-    expect(screen.getByRole('status')).toHaveTextContent('已等待 8 分钟')
-    expect(screen.getByRole('status')).not.toHaveTextContent(/%|倒计时|C:\\/)
-    expect(screen.getByLabelText('Run summary')).not.toHaveTextContent('%')
-    fireEvent.click(screen.getByRole('button', { name: '查看外部处理步骤' }))
-    expect(locate).toHaveBeenCalledWith(node.node_id)
+  it('高级诊断默认关闭、纯只读，原状态和精确身份按需可查', () => {
+    const base = props(), status = handoffEnvelope()
+    const { container, rerender } = render(<ServiceDiagnostics health={base.health} status={status} viewRunId={handoffSummary().run_id} />)
+    const details = container.querySelector('details')!
+    expect(details.open).toBe(false)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    for (const value of screen.getAllByText(handoffSummary().run_id, { selector: 'code' })) expect(value).not.toBeVisible()
+    fireEvent.click(screen.getByText('服务高级诊断'))
+    expect(details.open).toBe(true)
+    rerender(<ServiceDiagnostics health={{ ...base.health, readiness: { stale: true, lastSuccess: 'synthetic-time' } }}
+      status={{ ...status, active_operation: 'import_external' }} viewRunId={handoffSummary().run_id} />)
+    expect(details.open).toBe(true)
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('READINESS STALE')
+    expect(screen.getByText('import_external')).toBeVisible()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })

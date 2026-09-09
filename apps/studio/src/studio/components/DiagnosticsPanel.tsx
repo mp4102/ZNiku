@@ -10,6 +10,7 @@ export interface RuntimeProblem {
   readonly edge_id?: string | null
 }
 export interface DiagnosticsPanelProps {
+  readonly embedded?: boolean
   readonly open: boolean
   readonly diagnostics: ReadonlyArray<StudioDiagnostic>
   readonly serviceError: StudioServiceError | null
@@ -25,7 +26,7 @@ export interface DiagnosticsPanelProps {
   readonly onRecoverService?: () => void
   readonly onLocateRuntimeNode?: (nodeId: string) => void
 }
-export function DiagnosticsPanel({ open, diagnostics, serviceError, hasOlderRuns, historyBusy, onToggle,
+export function DiagnosticsPanel({ open, diagnostics, serviceError, hasOlderRuns, historyBusy, onToggle, embedded = false,
   onLocateNode, onLocateEdge, onLoadOlderRuns, advanced = false, nodeLabel,
   runtimeProblems = [], onRecoverService, onLocateRuntimeNode }: DiagnosticsPanelProps) {
   const problems: ReadonlyArray<RuntimeProblem & { readonly origin: string; readonly service?: boolean }> = [
@@ -33,15 +34,16 @@ export function DiagnosticsPanel({ open, diagnostics, serviceError, hasOlderRuns
     ...runtimeProblems.map((item) => ({ ...item, origin: 'Runtime' })),
     ...(serviceError ? [{ ...serviceError, origin: 'Project Service', service: true }] : []),
   ]
-  return <section className={`bottom-drawer creator-problems ${open ? 'is-open' : ''}`} aria-label="问题与恢复">
-    <button className="drawer-toggle" type="button" onClick={onToggle} aria-expanded={open}>
+  return <section className={`${embedded ? 'task-problems' : 'bottom-drawer'} creator-problems ${open ? 'is-open' : ''}`} aria-label="问题与恢复">
+    {!embedded && <button className="drawer-toggle" type="button" onClick={onToggle} aria-expanded={open}>
       <span>{advanced ? 'Graph diagnostics' : '问题与恢复'}</span><strong>{problems.length}</strong><i>{open ? '收起' : '展开'}</i>
-    </button>
+    </button>}
     {open && <div className="diagnostic-list">
       {problems.length === 0 && <div className="diagnostic-empty">目前没有需要处理的问题。</div>}
       {problems.map((problem, index) => {
         const explanation = failurePresentation(problem.code)
         return <article className="problem-card" key={`${problem.origin}-${problem.code}-${problem.node_id ?? problem.edge_id ?? 'project'}-${index}`}>
+          {embedded && <p className="problem-context">{problem.origin === 'Graph Core' ? '当前编辑的工作流问题' : problem.origin === 'Runtime' ? '被查看的处理记录问题' : '工程服务问题'}</p>}
           <header><strong>{explanation.title}</strong>{problem.node_id && <span>{nodeLabel?.(problem.node_id) ?? '相关步骤'}</span>}</header>
           <dl><dt>发生了什么</dt><dd>{explanation.cause}</dd>
             <dt>保留的内容</dt><dd>{explanation.preserved}</dd>
@@ -59,7 +61,7 @@ export function DiagnosticsPanel({ open, diagnostics, serviceError, hasOlderRuns
           </details>
         </article>
       })}
-      {hasOlderRuns && <div className="problem-history-action"><button className="button button--ghost" type="button" disabled={historyBusy} onClick={onLoadOlderRuns}>{historyBusy ? '读取历史…' : advanced ? '加载更早 Run' : '加载更早处理记录'}</button>
+      {!embedded && hasOlderRuns && <div className="problem-history-action"><button className="button button--ghost" type="button" disabled={historyBusy} onClick={onLoadOlderRuns}>{historyBusy ? '读取历史…' : advanced ? '加载更早 Run' : '加载更早处理记录'}</button>
         {historyBusy && <p role="status">正在读取更早记录，请等待完成。</p>}</div>}
     </div>}
   </section>

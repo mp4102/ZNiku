@@ -91,8 +91,8 @@ import { asParameterSchema, canonicalJsonKey, getPointer, validateParameterDraft
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { AuthoringViewPanel } from './components/AuthoringViewPanel'
 import { GraphCanvas } from './components/GraphCanvas'
-import { HandoffCenter, elapsedLabel, handoffResourceKey, readinessLabel } from './components/HandoffCenter'
-import { NodeInspector } from './components/NodeInspector'
+import { HandoffCenter, handoffResourceKey } from './components/HandoffCenter'
+import { NodeInspector, type InspectorTab } from './components/NodeInspector'
 import { MediaPreview, type PreviewCandidate } from './components/MediaPreview'
 import { DesktopExit } from './components/DesktopExit'
 import { NodePalette } from './components/NodePalette'
@@ -100,8 +100,11 @@ import { ProjectHome } from './components/ProjectHome'
 import { ProjectShell } from './components/ProjectShell'
 import { ProjectStoragePanel } from './components/ProjectStoragePanel'
 import { HandoffInbox } from './components/HandoffInbox'
-import { RunCanvasOverlays, RunCenter, targetLabel } from './components/RunCenter'
+import { PrimaryRunAction, ServiceDiagnostics } from './components/RunCenter'
+import { TaskDrawer, type TaskDrawerTab } from './components/TaskDrawer'
+import { workspacePrimaryAction } from './workspace-primary-action'
 import { RetryImpactDialog } from './components/RetryImpactDialog'
+import './workspace-shell.css'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
 
 // 仅决定能否继续展示“模板已就绪”标签，不进入 Run 绑定、执行或存储版本。
@@ -471,7 +474,9 @@ export function StudioWorkspace({
   const [checkingNodeRunId, setCheckingNodeRunId] = useState<string | null>(null)
   const [submittingNodeRunId, setSubmittingNodeRunId] = useState<string | null>(null)
   const handoffActionRef = useRef<symbol | null>(null)
-  const [runtimeDiagnosticsOpen, setRuntimeDiagnosticsOpen] = useState(false)
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('settings')
+  const [libraryOpen, setLibraryOpen] = useState(() => window.innerWidth >= 1500)
+  const [inspectorVisible, setInspectorVisible] = useState(false)
   const [retryOpen, setRetryOpen] = useState(false)
   const [retryBusy, setRetryBusy] = useState(false)
   const [retryError, setRetryError] = useState<string | null>(null)
@@ -509,7 +514,8 @@ export function StudioWorkspace({
   const [parameterDraft, setParameterDraft] = useState<JsonObject>({})
   const [parameterText, setParameterText] = useState('{}')
   const [parameterRawError, setParameterRawError] = useState<string | null>(null)
-  const [bottomOpen, setBottomOpen] = useState(advanced)
+  const [bottomOpen, setBottomOpen] = useState(false)
+  const [taskTab, setTaskTab] = useState<TaskDrawerTab>('current')
   const [pollEpoch, setPollEpoch] = useState(0)
   const [detailPollEpoch, setDetailPollEpoch] = useState(0)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -1604,9 +1610,9 @@ export function StudioWorkspace({
 
   useEffect(() => {
     selectedLogResourceRef.current = selectedLogResourceKey
-    if ((!advanced && !runtimeDiagnosticsOpen) || !viewRunId || !selectedNodeRun?.log_path || !selectedLogResourceKey) return
+    if (inspectorTab !== 'diagnostics' || !viewRunId || !selectedNodeRun?.log_path || !selectedLogResourceKey) return
     void loadLog(viewRunId, selectedNodeRun.node_run_id, generationRef.current)
-  }, [advanced, runtimeDiagnosticsOpen, loadLog, selectedLogResourceKey, selectedNodeRun?.log_path, selectedNodeRun?.node_run_id, viewRunId])
+  }, [inspectorTab, loadLog, selectedLogResourceKey, selectedNodeRun?.log_path, selectedNodeRun?.node_run_id, viewRunId])
 
   const changeSelection = useCallback((
     nodeIds: ReadonlySet<string>,
@@ -1617,6 +1623,8 @@ export function StudioWorkspace({
     const current = selectionGuardRef.current
     if (selectionChangeBlocked(current.selectedNodeId, current.parameterDraftDirty, nodeIds, edgeIds)) {
       setClientHint('当前节点有未应用设置；请先“应用设置”或“放弃未应用更改”。')
+      setInspectorVisible(true)
+      setInspectorTab('settings')
       return false
     }
     // React Flow 会在受控 selected 投影后再次发出 selection 事件；相同集合不得重复 setState。
@@ -1665,6 +1673,7 @@ export function StudioWorkspace({
   }, [changeSelection])
 
   const handleNodeClick: NodeMouseHandler<WorkflowNode> = useCallback((event, node) => {
+    setInspectorVisible(true)
     if (event.ctrlKey || event.metaKey) {
       const next = new Set(selectedNodeIds)
       if (next.has(node.id)) next.delete(node.id)
@@ -1676,6 +1685,7 @@ export function StudioWorkspace({
   }, [changeSelection, selectedEdgeIds, selectedNodeIds])
 
   const handleEdgeClick: EdgeMouseHandler<WorkflowEdge> = useCallback((event, edge) => {
+    setInspectorVisible(true)
     if (event.ctrlKey || event.metaKey) {
       const next = new Set(selectedEdgeIds)
       if (next.has(edge.id)) next.delete(edge.id)
@@ -2447,19 +2457,8 @@ export function StudioWorkspace({
   const runBlocked = serviceBusy || homeActionBusy || health.status.stale || !draft || diagnostics.length > 0 || parameterDraftDirty || !!authoring.error
   const detailMutationBlocked = serviceBusy || homeActionBusy || health.status.stale || health.detail.stale
   const firstWaiting = waitingNodeRuns[0] ?? null
-  const firstWaitingObserved = firstWaiting ? readiness.get(firstWaiting.node_run_id) ?? null : null
-  const firstWaitingChecked = firstWaiting?.external_handoff ? checkedOutputs.get(handoffResourceKey(
-    firstWaiting.run_id, firstWaiting.node_run_id, firstWaiting.external_handoff.handoff_id)) : null
-  const firstWaitingCheckCurrent = !!firstWaiting && !!firstWaitingChecked && !!firstWaitingObserved &&
-    isFullCheck(firstWaitingChecked, firstWaiting) && sameObservedOutputs(firstWaitingChecked, firstWaitingObserved)
-  const firstFailed = [...runLatestAttempts.values()].find(
-    (nodeRun) => nodeRun.state === 'failed',
-  ) ?? null
-  const globalActionSummary =
-    allSummaries.find((summary) => summary.requires_operator_action) ?? null
-  const firstWaitingInputPaths = firstWaiting?.external_handoff?.input_artifact_ids.map(
-    (artifactId) => artifactsById.get(artifactId)?.path ?? `未解析 Artifact：${artifactId}`,
-  ) ?? []
+  const activeSummaries = allSummaries.filter((summary) => summary.actionable || summary.state === 'running')
+  const activeWaitingCount = activeSummaries.reduce((total, summary) => total + summary.state_counts.waiting_external, 0)
   const snapshotChanged =
     !!currentRun && !!draft && currentRun.graph_snapshot !== draft.project.graph &&
     JSON.stringify(currentRun.graph_snapshot) !== JSON.stringify(draft.project.graph)
@@ -2609,17 +2608,42 @@ export function StudioWorkspace({
   const locateCurrentNode = (nodeId: string) => {
     if (!changeSelection(new Set([nodeId]), new Set())) return
     setShowRunSnapshot(false)
+    setInspectorVisible(true)
+    setInspectorTab('settings')
     void fitView({ nodes: [{ id: nodeId }], padding: 0.3, maxZoom: 1.2, duration: 0 })
+  }
+  const returnToCurrentEditing = () => {
+    const editableNode = draft?.project.graph.nodes.find((node) => node.node_id === selectedNode?.node_id)
+    // 同一步骤、同一已应用设置的只读查看不会消耗草稿；返回时保留选区才能避免被离开保护困住。
+    // 不同定义或历史参数仍必须走原保护，不能把历史草稿覆盖到当前图。
+    const canKeepDraft = parameterDraftDirty && selectedNode && editableNode &&
+      editableNode.type_id === selectedNode.type_id && editableNode.definition_version === selectedNode.definition_version &&
+      JSON.stringify(editableNode.parameters) === selectedParameterSignature
+    if (!canKeepDraft && !changeSelection(new Set(), new Set())) return
+    setShowRunSnapshot(false)
+    setInspectorTab('settings')
   }
   const locateRunNode = (nodeId: string) => {
-    if (!changeSelection(new Set([nodeId]), new Set())) return
+    // 同 node_id 的历史参数可能不同；视图切换也不能静默覆盖尚未应用的当前草稿。
+    const recordedNode = currentRun?.graph_snapshot.nodes.find((node) => node.node_id === nodeId)
+    if (!showRunSnapshot && parameterDraftDirty && (
+      recordedNode?.type_id !== selectedNode?.type_id || recordedNode?.definition_version !== selectedNode?.definition_version ||
+      JSON.stringify(recordedNode?.parameters ?? {}) !== selectedParameterSignature
+    )) {
+      setClientHint('当前节点有未应用设置；请先应用或放弃，再查看不同的历史设置。')
+      setInspectorVisible(true)
+      return false
+    }
+    if (!changeSelection(new Set([nodeId]), new Set())) return false
     setShowRunSnapshot(true)
+    setInspectorVisible(true)
     void fitView({ nodes: [{ id: nodeId }], padding: 0.3, maxZoom: 1.2, duration: 0 })
+    return true
   }
   const openExternalAssistant = (nodeId: string) => {
-    locateRunNode(nodeId)
-    // 定位节点后把操作步骤滚入侧栏；仅改变视图，不改变交接或 Run 身份。
-    requestAnimationFrame(() => document.getElementById('external-processing-assistant')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }))
+    if (!locateRunNode(nodeId)) return
+    setInspectorTab('files')
+    requestAnimationFrame(() => document.getElementById('node-inspector')?.focus())
   }
   const blockedRunReason = health.status.stale ? '本机服务连接已中断；请重新连接。'
     : serviceBusy || homeActionBusy ? '当前操作尚未完成，请稍候。'
@@ -2631,42 +2655,43 @@ export function StudioWorkspace({
     : parameterDraftDirty ? '请先应用或放弃未应用的设置。' : undefined
   const repairGraph = () => {
     setBottomOpen(true)
+    setTaskTab('problems')
     const diagnostic = diagnostics.find((item) => item.node_id || item.edge_id)
     if (diagnostic?.node_id) locateCurrentNode(diagnostic.node_id)
     else if (diagnostic?.edge_id && changeSelection(new Set(), new Set([diagnostic.edge_id]))) setShowRunSnapshot(false)
     else if (parameterDraftDirty && selectedNode) locateCurrentNode(selectedNode.node_id)
   }
-  const runningStep = [...runLatestAttempts.values()].find((item) => item.state === 'running')
-  const outputStep = [...runLatestAttempts.values()].reverse().find((item) => item.state === 'completed' && item.output_artifact_ids.length > 0)
-  const completedStep = [...runLatestAttempts.values()].reverse().find((item) => item.state === 'completed')
   const executionChanged = !!currentRun && !!draft && graphPresentationComparison(currentRun.graph_snapshot) !== graphPresentationComparison(draft.project.graph)
   const hasStaleResult = status?.latest_results.some((item) => item.stale) ?? false
-  const primaryAction = health.status.stale ? {
-    label: '重新连接', disabled: loading, reason: '与本机服务的连接已中断，保留最后可信状态。',
-    onAction: () => setReconnectEpoch((value) => value + 1),
-  } : !draft ? {
-    label: '新建或打开工程', disabled: loading, reason: loading ? '正在连接本机工程服务。' : undefined,
-    onAction: () => setHomeOpen(true),
-  } : runningStep ? {
-    label: '查看当前进度', disabled: false, onAction: () => locateRunNode(runningStep.node_id),
-  } : firstWaiting ? {
-    label: '继续外部处理', disabled: false, onAction: () => openExternalAssistant(firstWaiting.node_id),
-  } : firstFailed ? {
-    label: '查看问题并重试此步骤', disabled: detailMutationBlocked || parameterDraftDirty,
-    reason: blockedDetailReason, onAction: () => { locateRunNode(firstFailed.node_id); void requestRerun(firstFailed.node_id, firstFailed.run_id) },
-  } : globalActionSummary && globalActionSummary.run_id !== viewRunId ? {
-    label: '查看待处理任务', disabled: false, onAction: () => selectRun(globalActionSummary.run_id),
-  } : parameterDraftDirty || diagnostics.length > 0 ? {
-    label: '修复设置或连接', disabled: false, reason: blockedRunReason, onAction: repairGraph,
-  } : authoring.error ? {
-    label: '处理保存问题', disabled: false, reason: '本地编辑仍保留，尚不能开始处理。', onAction: () => { void saveProject() },
-  } : viewedSummary?.state === 'completed' && !executionChanged && !hasStaleResult ? {
-    label: outputStep ? '查看输出' : '查看完成记录', disabled: false,
-    reason: outputStep ? undefined : '此任务没有声明输出文件；已完成的步骤记录仍保留。',
-    onAction: () => { if (outputStep ?? completedStep) locateRunNode((outputStep ?? completedStep)!.node_id); else setBottomOpen(true) },
-  } : {
-    label: '开始处理', disabled: runBlocked, reason: blockedRunReason, onAction: () => { void saveThenRun({ operation: 'run_all' }) },
-  }
+  const primaryView = workspacePrimaryAction({
+    connected: !health.status.stale, loading, hasProject: !!draft, historical: showRunSnapshot && !!currentRun,
+    viewedState: viewedSummary?.state ?? null, viewedWaiting: waitingNodeRuns.length,
+    viewedFailed: [...runLatestAttempts.values()].filter((item) => item.state === 'failed').length,
+    viewedRunning: viewedSummary?.state_counts.running ?? 0,
+    activeWaiting: activeWaitingCount,
+    activeFailed: activeSummaries.reduce((total, item) => total + item.state_counts.failed, 0),
+    activeRunning: activeSummaries.reduce((total, item) => total + item.state_counts.running, 0),
+    parameterDirty: parameterDraftDirty, saveError: !!authoring.error, diagnostics: diagnostics.length,
+    executionChanged, staleResults: hasStaleResult, runBlocked, runReason: blockedRunReason,
+  })
+  const openTasks = (tab: TaskDrawerTab) => { setTaskTab(tab); setBottomOpen(true) }
+  const primaryAction = { ...primaryView, onAction: () => {
+    switch (primaryView.target) {
+      case 'reconnect': setReconnectEpoch((value) => value + 1); break
+      case 'home': setHomeOpen(true); break
+      case 'settings': setInspectorTab('settings'); setInspectorVisible(true); break
+      case 'save': setClientHint(authoring.error); openTasks('problems'); break
+      case 'run': void saveThenRun({ operation: 'run_all' }); break
+      case 'problems': if (!showRunSnapshot && diagnostics.length) repairGraph(); else openTasks('problems'); break
+      case 'files':
+        // 只有所需集合恰好一项且已加载精确详情才直接定位；其余显式列出，不按名称或“最新”猜选。
+        if (firstWaiting && (showRunSnapshot ? waitingNodeRuns.length === 1 : activeWaitingCount === 1)) openExternalAssistant(firstWaiting.node_id)
+        else openTasks('current')
+        break
+      case 'outputs': openTasks('current'); requestAnimationFrame(() => document.getElementById('run-output-list')?.focus()); break
+      case 'tasks': openTasks('current'); break
+    }
+  } }
   const editStudioState = (label: string, updater: (state: StudioStateWire) => StudioStateWire) => {
     if (!graphEditable || busy || homeActionBusy || parameterDraftDirty) return
     editAuthoring(label, (current) => ({ ...current, studioState: updater(current.studioState) }))
@@ -2698,14 +2723,21 @@ export function StudioWorkspace({
   /> : null
 
   return (
-    <main className={`app-shell studio-workspace ${bottomOpen ? 'has-bottom-drawer' : ''}`}>
+    <main className={`app-shell studio-workspace task-workspace ${libraryOpen ? 'library-open' : ''} ${inspectorVisible ? 'show-node-detail' : ''}`}>
       {storageOpen && status?.project_session_id && status.storage_revision !== null && <ProjectStoragePanel
         key={status.project_session_id} bridge={effectiveHostBridge}
         projectSessionId={status.project_session_id} storageRevision={status.storage_revision}
         onClose={() => setStorageOpen(false)}
         onBusyChange={(active) => { busyRef.current = active; setBusy(active); setDataBusy(active) }}
         onChanged={() => { setPollEpoch((value) => value + 1); setDetailPollEpoch((value) => value + 1) }} />}
-      <nav className="studio-skip-links" aria-label="跳转到工作区"><a href="#workflow-canvas">跳到画布</a><a href="#node-palette">跳到节点面板</a><a href="#node-inspector">跳到步骤设置</a></nav>
+      <nav className="studio-skip-links" aria-label="跳转到工作区">{[
+        ['workflow-canvas', '跳到画布'], ['node-palette', '跳到节点面板'], ['node-inspector', '跳到步骤设置'],
+      ].map(([id, label]) => <a key={id} href={`#${id}`} onClick={(event) => {
+        event.preventDefault()
+        setInspectorVisible(id === 'node-inspector')
+        if (id === 'node-palette') setLibraryOpen(true)
+        requestAnimationFrame(() => document.getElementById(id!)?.focus())
+      }}>{label}</a>)}</nav>
       {retryOpen && <RetryImpactDialog preview={retryPreview} nodeLabel={nodeLabel} busy={retryBusy} error={retryError}
         onConfirm={() => void confirmRerun()} onCancel={() => { retryTokenRef.current = null; retryBindingRef.current = null; setRetryOpen(false); setRetryBusy(false) }} />}
       <ProjectHome
@@ -2767,6 +2799,11 @@ export function StudioWorkspace({
         serviceError={boundaryError ? '本机工程服务暂时不可用；当前工程和媒体没有被修改。' : null}
       />
       <ProjectShell
+        parameterDirty={parameterDraftDirty}
+        libraryOpen={libraryOpen}
+        onToggleLibrary={() => { setLibraryOpen((open) => !open); setInspectorVisible(false) }}
+        onOpenHistory={() => openTasks('history')}
+        onOpenDiagnostics={() => { setInspectorTab('diagnostics'); setInspectorVisible(true) }}
         desktopControls={!homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || dataBusy || inboxBusy} />}
         projectName={draft?.project.name ?? null}
         onOpenStorage={effectiveHostBridge.inspectStorage ? () => {
@@ -2827,29 +2864,16 @@ export function StudioWorkspace({
         }}
         onSaveProject={() => void saveProject()}
         runCenter={(
-          <RunCenter
-            advanced={advanced}
-            nodeLabel={nodeLabel}
-            primaryAction={primaryAction}
-            blockedReasons={{ runAll: blockedRunReason,
-              runTo: blockedRunReason ?? (!singleSelectedNodeId ? '先选择一个步骤。' : showRunSnapshot ? '请切回当前工作流后再执行局部处理。' : undefined),
-              rerun: blockedDetailReason ?? (!singleSelectedNodeId ? '先选择一个步骤。' : !rerunId || !rerunNodeIncluded ? '所选步骤不属于当前查看任务的执行范围。' : undefined) }}
-            onRecoverService={() => setReconnectEpoch((value) => value + 1)}
+          <PrimaryRunAction
+            action={primaryAction}
             health={health}
             status={status}
-            summaries={allSummaries}
-            viewRunId={viewRunId}
-            runBlocked={runBlocked}
-            runToBlocked={runBlocked || !singleSelectedNodeId || showRunSnapshot}
-            rerunBlocked={detailMutationBlocked || parameterDraftDirty || !singleSelectedNodeId || !rerunId || !rerunNodeIncluded}
-            onSelectRun={selectRun}
-            onRunAll={() => void saveThenRun({ operation: 'run_all' })}
-            onRunTo={() => singleSelectedNodeId && void saveThenRun({ operation: 'run_to', node_id: singleSelectedNodeId })}
-            onRerun={() => singleSelectedNodeId && rerunId && void requestRerun(singleSelectedNodeId, rerunId)}
           />
         )}
       />
 
+      <div className="workspace-body">
+      <div className="workspace-library" aria-label="节点工具库">
       <NodePalette
         advanced={advanced}
         definitionCount={draft?.definitions.length ?? 0}
@@ -2867,6 +2891,7 @@ export function StudioWorkspace({
         onCopySelection={copySelected}
         onDeleteSelection={deleteSelected}
       />
+      </div>
 
       <GraphCanvas
         key={status?.project_session_id ?? 'empty'}
@@ -2877,6 +2902,8 @@ export function StudioWorkspace({
         onViewportChange={(viewport) => editStudioState('调整画布视口', (state) => ({ ...state, viewport }))}
         onToggleGroup={(groupId) => editStudioState('折叠分组', (state) => ({ ...state, groups: state.groups.map((group) => group.group_id === groupId ? { ...group, collapsed: !group.collapsed } : group) }))}
         onAutoLayout={() => { if (!parameterDraftDirty) updateGraph(autoLayoutGraph) }}
+        libraryOpen={libraryOpen}
+        onToggleLibrary={() => setLibraryOpen((open) => !open)}
         definitionLabel={(definition) => presentationsByKey.get(`${definition.type_id}@${definition.version}`)?.title ?? definition.type_id}
         portLabel={(definition, direction, portId) => presentationsByKey.get(`${definition.type_id}@${definition.version}`)?.ports.find((port) => port.direction === direction && port.port_id === portId)?.label ?? portId}
         onAddConnectedNodes={(request) => {
@@ -2895,16 +2922,17 @@ export function StudioWorkspace({
         busy={busy || homeActionBusy}
         advanced={advanced}
         showingSnapshot={showRunSnapshot && currentRun !== null}
-        modeLabel={showRunSnapshot && currentRun ? advanced ? 'Run snapshot' : '本次处理的工作流' : advanced ? 'Current Graph' : '当前工作流'}
-        contextLabel={showRunSnapshot && currentRun ? advanced && viewedSummary ? `${viewedSummary.run_id} · ${targetLabel(viewedSummary)} · ${viewedSummary.state}` : '只读记录；编辑当前工作流不改变这次处理。' : '自由编辑，修改将用于下一次处理。'}
+        modeLabel={showRunSnapshot && currentRun ? '本次处理的流程（只读）' : '当前编辑'}
+        contextLabel={showRunSnapshot && currentRun ? '只读记录；编辑当前工作流不改变这次处理。' : executionChanged ? '上次处理记录保留；当前编辑已改变，将用于下一次处理。' : '自由编辑，修改将用于下一次处理。'}
         snapshotChanged={snapshotChanged}
         canToggleSnapshot={currentRun !== null}
         loading={loading}
         boundaryError={boundaryError}
         hasProject={draft !== null}
         onToggleSnapshot={() => {
+          if (showRunSnapshot) { returnToCurrentEditing(); return }
           if (!changeSelection(new Set(), new Set())) return
-          setShowRunSnapshot((value) => !value)
+          setShowRunSnapshot(true)
         }}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
@@ -2913,33 +2941,35 @@ export function StudioWorkspace({
         onEdgeClick={handleEdgeClick}
         onConnect={handleConnect}
         isValidConnection={connectionIsValid}
-        overlays={(
-          <RunCanvasOverlays
-            advanced={advanced}
-            nodeLabel={nodeLabel}
-            viewedSummary={viewedSummary}
-            firstWaiting={firstWaiting}
-            firstWaitingInputPaths={firstWaitingInputPaths}
-            firstWaitingReadinessLabel={health.readiness.stale ? '检测离线，保留上次观察' : firstWaitingCheckCurrent ? '完整检查通过，等待你提交' : firstWaiting ? readinessLabel(firstWaitingObserved) : ''}
-            firstWaitingElapsedLabel={firstWaiting ? elapsedLabel(firstWaiting.started_at ?? firstWaiting.created_at) : ''}
-            globalActionSummary={globalActionSummary}
-            firstFailed={firstFailed}
-            sameRun={globalActionSummary?.run_id === viewRunId}
-            onLocateNode={locateRunNode}
-            onSelectRun={selectRun}
-          />
-        )}
       />
 
+      <div className="workspace-inspector">
+      <button className="inspector-back" type="button" onClick={() => {
+        setInspectorVisible(false)
+        requestAnimationFrame(() => document.getElementById('workflow-canvas')?.focus())
+      }}>返回画布</button>
       <NodeInspector
+        tab={inspectorTab}
+        onTabChange={setInspectorTab}
+        selectedNodeCount={selectedNodeIds.size}
+        serviceDiagnostics={<ServiceDiagnostics health={health} status={status} viewRunId={viewRunId} />}
+        nodeActions={selectedNode && <section className="node-context-actions" aria-label="此步骤的处理操作">
+          <p>局部处理会包含所需上游；重新处理会先列出下游影响，已有文件不会被删除。</p>
+          <button type="button" disabled={runBlocked || !singleSelectedNodeId || showRunSnapshot}
+            title={blockedRunReason ?? (showRunSnapshot ? '请返回当前编辑后处理到此步骤' : '包含此步骤所需的上游依赖')}
+            onClick={() => singleSelectedNodeId && void saveThenRun({ operation: 'run_to', node_id: singleSelectedNodeId })}>处理到此步骤</button>
+          <button type="button" disabled={detailMutationBlocked || parameterDraftDirty || !singleSelectedNodeId || !rerunId || !rerunNodeIncluded}
+            title={blockedDetailReason ?? (!rerunNodeIncluded ? '此步骤不属于所选处理记录' : '先预览影响，再确认从头处理')}
+            onClick={() => singleSelectedNodeId && rerunId && void requestRerun(singleSelectedNodeId, rerunId)}>从此步骤重新处理</button>
+          {blockedRunReason && <p>{blockedRunReason}</p>}
+        </section>}
         advanced={advanced}
         mediaPreview={status?.project_session_id && selectedNodeRun && <MediaPreview
           key={`${status.project_session_id}:${selectedNodeRun.run_id}:${selectedNodeRun.node_run_id}:${selectedNodeRun.state}`}
           hostBridge={effectiveHostBridge} projectSessionId={status.project_session_id}
           candidates={previewCandidates} disabled={health.detail.stale || health.status.stale} advanced={advanced}
         />}
-        advancedDetailsOpen={advanced || runtimeDiagnosticsOpen}
-        onToggleDiagnostics={setRuntimeDiagnosticsOpen}
+        advancedDetailsOpen={inspectorTab === 'diagnostics'}
         selectedLatestResult={selectedNode ? latestResults.get(selectedNode.node_id) ?? null : null}
         authoringPanel={authoringPanel}
         orderedInputs={orderedInputs}
@@ -3009,7 +3039,7 @@ export function StudioWorkspace({
             lastFullPrecheckFailures={lastFullPrecheckFailures}
             mutationBlocked={detailMutationBlocked}
             readinessStale={health.readiness.stale}
-            onSelectNode={locateRunNode}
+            onSelectNode={openExternalAssistant}
             onCopyPath={(path) => void copyPath(path)}
           />
         )}
@@ -3041,22 +3071,65 @@ export function StudioWorkspace({
           if (viewRunId && window.confirm('放弃此任务会停止等待中的步骤；已完成结果仍保留。是否继续？')) void executeCommands([{ operation: 'abandon_run', run_id: viewRunId }])
         }}
       />
+      </div>
+      </div>
 
-      <DiagnosticsPanel
-        advanced={advanced}
+      <TaskDrawer
+        open={bottomOpen} tab={taskTab} onOpenChange={setBottomOpen} onTabChange={setTaskTab}
+        summaries={allSummaries} selectedRunId={viewRunId} selectedSummary={viewedSummary}
+        nodeRuns={[...runLatestAttempts.values()].map((nodeRun) => {
+          const node = currentRun?.graph_snapshot.nodes.find((item) => item.node_id === nodeRun.node_id)
+          const definition = node && definitionForNode(node, currentRun?.definitions_snapshot ?? [])
+          const progress = definition && nodeProgressView(nodeRun, definition, progressSamplesByNodeRun.get(nodeRun.node_run_id) ?? null)
+          // 与画布/Inspector 共用原投影；人工等待、未知进度不补成百分比。
+          return { ...nodeRun, progress: progress?.mode === 'determinate' ? progress.fraction : null }
+        })} showingSnapshot={showRunSnapshot}
+        nodeLabel={nodeLabel} onSelectRun={selectRun}
+        onLocateNode={(runId, nodeId) => {
+          if (runId !== currentRun?.run_id) return
+          if (runLatestAttempts.get(nodeId)?.state === 'waiting_external') openExternalAssistant(nodeId)
+          else if (locateRunNode(nodeId)) setInspectorTab('settings')
+        }}
+        otherWaitingCount={activeSummaries.filter((item) => item.run_id !== viewRunId).reduce((total, item) => total + item.state_counts.waiting_external, 0)}
+        nextRunCursor={historyCursor} historyBusy={historyBusy} onLoadOlder={() => void loadOlderRuns()}
+        onReturnToEditing={returnToCurrentEditing}
+        onAbandon={viewedSummary?.actionable ? (runId) => {
+          if (runId === viewRunId && window.confirm('放弃此任务会停止等待中的步骤；已完成结果仍保留。是否继续？')) void executeCommands([{ operation: 'abandon_run', run_id: runId }])
+        } : undefined}
+        abandonDisabled={detailMutationBlocked || (viewedSummary?.state_counts.running ?? 0) > 0}
+        abandonDisabledReason="进行中的步骤或不可用的连接不允许放弃任务。"
+        currentGraphActions={advanced && <details className="current-graph-run-command"><summary>当前编辑的完整处理命令</summary>
+          <p>对当前编辑的工作流创建新处理；不是重新执行被查看的历史图。参数和保存门禁仍完整执行。</p>
+          <button type="button" disabled={runBlocked} title={blockedRunReason} onClick={() => void saveThenRun({ operation: 'run_all' })}>开始新的完整处理</button>
+          {runBlocked && <p>{blockedRunReason}</p>}
+        </details>}
+        outputs={currentRun && <section id="run-output-list" aria-label="本次输出列表" tabIndex={-1}>
+          <h3>本次处理的输出</h3>
+          <p>来自被查看的只读处理记录，不代表已改变的当前编辑已完成。</p>
+          {[...runLatestAttempts.values()].flatMap((nodeRun) => nodeRun.output_artifact_ids.map((id) => artifactsById.get(id)).filter((item): item is ArtifactWire => !!item).map((artifact) => <div className="run-output-item" key={artifact.artifact_id}>
+            <strong>{nodeLabel(nodeRun.node_id)}</strong><span>{artifact.path.split(/[\\/]/).pop()}</span>
+            <button type="button" disabled={!hostCapabilityAvailable('reveal_in_file_manager') || health.detail.stale || health.status.stale} onClick={() => void launchArtifact('reveal_in_file_manager', artifact.artifact_id)}>在文件夹中显示</button>
+            <button type="button" onClick={() => { if (locateRunNode(nodeRun.node_id)) setInspectorTab('files') }}>查看文件详情</button>
+          </div>))}
+          {![...runLatestAttempts.values()].some((item) => item.output_artifact_ids.length > 0) && <p>本次处理没有已登记的输出文件；零输出工作流也是合法的。</p>}
+        </section>}
+        problemCount={diagnostics.length + [...runLatestAttempts.values()].filter((item) => !!item.error).length + (boundaryError || commandFailure || status?.error ? 1 : 0)}
+        diagnostics={<DiagnosticsPanel
+        embedded advanced={false}
         nodeLabel={nodeLabel}
         runtimeProblems={[...runLatestAttempts.values()].flatMap((item) => item.error ? [{ code: item.error.reason, message: item.error.message, node_id: item.node_id }] : [])}
         onRecoverService={() => setReconnectEpoch((value) => value + 1)}
-        open={bottomOpen}
+        open
         diagnostics={diagnostics}
         serviceError={commandFailure ?? status?.error ?? (boundaryError ? { code: 'E_STUDIO_SERVICE_UNAVAILABLE', message: boundaryError, related_run_ids: [] } : null)}
         hasOlderRuns={historyCursor !== null}
         historyBusy={historyBusy}
-        onToggle={() => setBottomOpen((open) => !open)}
+        onToggle={() => undefined}
         onLocateNode={locateCurrentNode}
         onLocateRuntimeNode={locateRunNode}
         onLocateEdge={(id) => { if (changeSelection(new Set(), new Set([id]))) setShowRunSnapshot(false) }}
         onLoadOlderRuns={() => void loadOlderRuns()}
+      />}
       />
     </main>
   )

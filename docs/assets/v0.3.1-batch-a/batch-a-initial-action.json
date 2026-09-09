@@ -1,0 +1,6 @@
+{
+  "purpose": "Actual first-mount navigation; no sleep or node-mount prerequisite. The observed count is not a forced unmounted scenario.",
+  "node_count_at_click": 0,
+  "initial_navigation": "task-drawer-awaiting-detail",
+  "automatic_submits": 0
+}

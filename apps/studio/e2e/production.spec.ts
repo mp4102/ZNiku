@@ -36,15 +36,19 @@ async function accessibility(page: Page, label: string) {
 }
 
 async function openProject(page: Page, count: number, home = false) {
+  if (!home) await page.getByRole('button', { name: '工程', exact: true }).click()
   await page.getByRole('button', { name: home ? /打开已有工程/ : /^打开工程$/ }).click()
-  await expect(page.locator('.workflow-identity')).toContainText(`合成 ${count} 节点工程`)
-  await expect(page.locator('.context-mode')).toHaveText('当前工作流')
+  await expect(page.locator('.project-shell-identity')).toContainText(`合成 ${count} 节点工程`)
+  await expect(page.locator('.context-mode')).toHaveText('当前编辑')
   await expect(page.locator('.react-flow__node')).toHaveCount(count)
 }
 
 async function focusSource(page: Page) {
   await page.getByRole('textbox', { name: '查找画布节点' }).fill('source.mkv')
   await page.locator('[aria-label="画布搜索结果"]').getByRole('button').first().click()
+  await page.getByRole('tab', { name: '设置', exact: true }).click()
+  const display = page.getByText('显示设置', { exact: true })
+  if (!await display.evaluate((item) => item.closest('details')?.open)) await display.click()
   await expect(page.getByLabel('节点别名')).toBeVisible()
 }
 
@@ -114,12 +118,12 @@ async function dragSourceContinuously(page: Page, count: number) {
 
 async function waitSavedGraph(page: Page, expected: GraphWire) {
   await expect.poll(async () => (await readStatus(page)).snapshot?.project.graph).toEqual(expected)
-  await expect(page.locator('.workflow-identity')).toContainText('已保存')
+  await expect(page.locator('.project-shell-identity')).toContainText('已保存')
 }
 
 async function assertDragPersistence(page: Page) {
   await settleCanvas(page)
-  await expect(page.locator('.workflow-identity')).toContainText('已保存')
+  await expect(page.locator('.project-shell-identity')).toContainText('已保存')
   const before = (await readStatus(page)).snapshot!.project.graph
   const saves: GraphWire[] = []
   const observeSave = (request: import('@playwright/test').Request) => {
@@ -130,7 +134,7 @@ async function assertDragPersistence(page: Page) {
   page.on('request', observeSave)
   await dragSourceContinuously(page, 50)
   await expect.poll(async () => (await readStatus(page)).snapshot!.project.graph.nodes[0]!.ui_position).not.toEqual(before.nodes[0]!.ui_position)
-  await expect(page.locator('.workflow-identity')).toContainText('已保存')
+  await expect(page.locator('.project-shell-identity')).toContainText('已保存')
   page.off('request', observeSave)
   const moved = (await readStatus(page)).snapshot!.project.graph
   expect(saves).toEqual([moved])
@@ -147,7 +151,7 @@ async function assertDragPersistence(page: Page) {
   // 页面重开从正式 SQLite 恢复相同 Graph，不能仅靠同一 React session 的临时布局。
   await page.reload()
   await page.getByRole('button', { name: '关闭工程首页', exact: true }).click()
-  await expect(page.locator('.context-mode')).toHaveText('当前工作流')
+  await expect(page.locator('.context-mode')).toHaveText('当前编辑')
   await expect(page.locator('.react-flow__node')).toHaveCount(50)
   expect((await readStatus(page)).snapshot!.project.graph).toEqual(moved)
   const domPosition = await page.locator('.react-flow__node[data-id="source"]').evaluate((item) => {
@@ -164,7 +168,7 @@ async function assertDragPersistence(page: Page) {
   await page.getByLabel('折叠节点摘要', { exact: true }).uncheck()
   await settleCanvas(page)
   await assertCanvasGeometry(page, 50, 49)
-  await expect(page.locator('.workflow-identity')).toContainText('已保存')
+  await expect(page.locator('.project-shell-identity')).toContainText('已保存')
 }
 
 test('桌面 production：原生代理合同、50/200节点、1000历史、静帧与无障碍', async ({ page }, info) => {
@@ -188,6 +192,7 @@ test('桌面 production：原生代理合同、50/200节点、1000历史、静�
     await source.click({ modifiers: ['Control'] })
     await expect(page.getByLabel('节点别名')).toHaveCount(0)
     select.push(await measured(page, 'click', () => source.click()))
+    await page.getByRole('tab', { name: '诊断', exact: true }).click()
     expand.push(await measured(page, 'click', () => page.getByText('高级 → 原始参数', { exact: true }).click()))
     const bounds = await source.boundingBox()
     if (!bounds) throw new Error('合成 source 节点没有可见边界')
@@ -202,31 +207,35 @@ test('桌面 production：原生代理合同、50/200节点、1000历史、静�
   expect(metrics.select_p95_ms).toBeLessThanOrEqual(150)
   expect(metrics.parameter_expand_p95_ms).toBeLessThanOrEqual(150)
   expect(metrics.drag_p95_ms).toBeLessThanOrEqual(150)
-  await expect(page.locator('.workflow-identity')).toContainText('已保存')
+  await expect(page.locator('.project-shell-identity')).toContainText('已保存')
   await openProject(page, 200)
-  await expect(page.getByRole('combobox', { name: '处理记录', exact: true }).locator('option')).toHaveCount(20)
-  const status = await (await page.request.get(`${origin}/api/studio/status`)).json() as { run_summaries: unknown[]; next_run_cursor: string }
+  await page.getByRole('button', { name: '处理记录', exact: true }).click()
+  const history = page.getByRole('tabpanel', { name: '历史记录', exact: true })
+  await expect(history.locator('.task-drawer-history > li')).toHaveCount(20)
+  const status = await (await page.request.get(`${origin}/api/studio/status`)).json() as { run_summaries: { run_id: string }[]; next_run_cursor: string }
   expect(status.run_summaries).toHaveLength(20)
   expect(status.next_run_cursor).toBeTruthy()
-  const history = page.getByRole('combobox', { name: '处理记录', exact: true })
-  const historicalRun = await history.locator('option').nth(1).getAttribute('value')
+  const historicalRun = await history.locator('.task-drawer-history > li > button').nth(1).getAttribute('value')
   if (!historicalRun) throw new Error('合成历史记录必须具有正式 Run ID')
+  expect(status.run_summaries.map((summary) => summary.run_id)).toContain(historicalRun)
   const detailUrl = `${origin}/api/studio/runs/${historicalRun}`
   const historicalBefore = await (await page.request.get(detailUrl)).json()
-  await history.selectOption(historicalRun)
-  await expect(page.locator('.context-mode')).toHaveText('本次处理的工作流')
+  await history.locator('.task-drawer-history > li > button').nth(1).click()
+  await expect(page.locator('.context-mode')).toHaveText('本次处理的流程（只读）')
   await expect(page.locator('.react-flow__node')).toHaveCount(0)
-  await page.getByRole('button', { name: '编辑当前工作流', exact: true }).click()
+  await page.locator('.canvas-context').getByRole('button', { name: '返回当前编辑', exact: true }).click()
+  await page.getByRole('button', { name: '关闭任务区', exact: true }).click()
   await expect(page.locator('.react-flow__node')).toHaveCount(200)
   await focusSource(page)
   await page.getByLabel('节点别名').fill('大型图可编辑')
   await page.getByLabel('节点别名').press('Enter')
-  await expect(page.locator('.workflow-identity')).toContainText('已保存')
+  await expect(page.locator('.project-shell-identity')).toContainText('已保存')
   expect(await (await page.request.get(detailUrl)).json()).toEqual(historicalBefore)
   await openProject(page, 2)
   await page.getByRole('button', { name: '开始处理', exact: true }).click()
-  await expect(page.getByRole('button', { name: '查看输出', exact: true })).toBeVisible({ timeout: 45_000 })
-  await page.getByRole('button', { name: '查看输出', exact: true }).click()
+  await expect(page.getByRole('button', { name: '查看本次输出', exact: true })).toBeVisible({ timeout: 45_000 })
+  await page.getByRole('button', { name: '查看本次输出', exact: true }).click()
+  await page.getByRole('region', { name: '本次输出列表', exact: true }).getByRole('button', { name: '查看文件详情', exact: true }).last().click()
   await page.getByText('画面预览与前后比较', { exact: true }).click()
   await page.getByRole('button', { name: '加载画面', exact: true }).click()
   await expect(page.locator('.preview-frames img')).toHaveCount(2)
@@ -236,12 +245,13 @@ test('桌面 production：原生代理合同、50/200节点、1000历史、静�
   await accessibility(page, '完成输出与 A/B')
   for (const size of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }, { width: 960, height: 540 }]) {
     await page.setViewportSize(size)
-    await expect(page.getByRole('button', { name: '查看输出', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^查看(?:本次)?输出$/ })).toBeVisible()
     await page.screenshot({ path: info.outputPath(`viewport-${size.width}.png`), fullPage: true })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await accessibility(page, `视口 ${size.width}`)
   }
   // 键盘打开退出确认并取消，服务与已完成结果不受影响。
+  await page.getByRole('button', { name: '工程', exact: true }).click()
   await page.getByRole('button', { name: '退出应用', exact: true }).focus()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('dialog', { name: '退出 ZNIKU Studio' })).toBeVisible()
@@ -258,6 +268,11 @@ test('高 DPI 与 200% 等效布局仍可键盘访问', async ({ browser }, info
   journals.push(new ProductionJournal(page, service))
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
+  // 前例失败后 Playwright 会重建 worker/fixture；本例明确打开自己的合成工程，不借用前例状态。
+  const opened = await page.request.post(`${origin}/api/studio/command`, {
+    headers: { Origin: origin }, data: { operation: 'open_project', path: fixture.media_project },
+  })
+  expect(opened.status()).toBe(200)
   await page.goto(origin)
   await expect(page.getByRole('button', { name: '关闭工程首页', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '关闭工程首页', exact: true }).press('Enter')
@@ -481,12 +496,12 @@ test('生产向导：空输出目录默认直存，片名子目录预览不落�
   // 分析记录只有 2 个节点；展开后的当前图必须在重开时直接可编辑，而不是被旧 snapshot 遮住。
   await page.reload()
   await page.getByRole('button', { name: '关闭工程首页', exact: true }).click()
-  await expect(page.locator('.context-mode')).toHaveText('当前工作流')
+  await expect(page.locator('.context-mode')).toHaveText('当前编辑')
   await expect(page.locator('.react-flow__node')).toHaveCount(after.snapshot.project.graph.nodes.length)
-  await page.getByRole('button', { name: '查看处理记录', exact: true }).click()
-  await expect(page.locator('.context-mode')).toHaveText('本次处理的工作流')
+  await page.getByRole('button', { name: '查看本次处理流程', exact: true }).click()
+  await expect(page.locator('.context-mode')).toHaveText('本次处理的流程（只读）')
   await expect(page.locator('.react-flow__node')).toHaveCount(2)
-  await page.getByRole('button', { name: '编辑当前工作流', exact: true }).click()
+  await page.locator('.canvas-context').getByRole('button', { name: '返回当前编辑', exact: true }).click()
   await expect(page.locator('.react-flow__node')).toHaveCount(after.snapshot.project.graph.nodes.length)
   expect((await readWizardStatus(page)).snapshot.project.graph).toEqual(after.snapshot.project.graph)
   expect(await (await page.request.get(detailUrl)).json()).toEqual(detailBefore)
@@ -517,7 +532,7 @@ test('生产外部任务：同名节点不串目标，选择确认导入不提�
   expect(opened.status()).toBe(200)
   await page.goto(origin)
   await page.getByRole('button', { name: '关闭工程首页', exact: true }).click()
-  await expect(page.locator('.workflow-identity')).toContainText('合成外部任务区分工程')
+  await expect(page.locator('.project-shell-identity')).toContainText('合成外部任务区分工程')
   await page.getByRole('button', { name: '开始处理', exact: true }).click()
   await expect.poll(async () => (await readStatus(page)).run_summaries.length).toBe(1)
   const runId = (await readStatus(page)).run_summaries[0]!.run_id
@@ -548,17 +563,20 @@ test('生产外部任务：同名节点不串目标，选择确认导入不提�
     expect(await exists(targetA)).toBe(false)
     expect(commands.filter((operation) => operation === 'submit_external')).toEqual([])
   }
+  await page.getByRole('tab', { name: '文件', exact: true }).click()
   await expect(queue).toBeVisible()
   await expect(queue.getByRole('button', { name: '查看外部任务：画质增强（1）', exact: true })).toBeVisible()
   await expect(queue.getByRole('button', { name: '查看外部任务：画质增强（2）', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '复制目标路径', exact: true })).toHaveCount(0)
   await page.locator('.react-flow__node[data-id="enhance-A"]').click()
+  await page.getByRole('tab', { name: '文件', exact: true }).click()
   await expect(helper.getByRole('article')).toHaveCount(1)
   await expect(helper.getByRole('article')).toHaveAttribute('aria-label', '外部处理：画质增强（1）')
   await expect(helper.getByText('input-A-12.mkv', { exact: true })).toBeVisible()
   await expect(helper.getByText(targetA, { exact: true }).first()).toBeVisible()
   await expect(helper.getByText('input-B-15.mkv', { exact: true })).toHaveCount(0)
   await page.locator('.react-flow__node[data-id="enhance-B"]').click()
+  await page.getByRole('tab', { name: '文件', exact: true }).click()
   await expect(helper.getByRole('article')).toHaveCount(1)
   await expect(helper.getByRole('article')).toHaveAttribute('aria-label', '外部处理：画质增强（2）')
   await expect(helper.getByText('input-B-15.mkv', { exact: true })).toBeVisible()
@@ -634,6 +652,7 @@ test('生产外部任务：同名节点不串目标，选择确认导入不提�
   expect(await exists(targetA)).toBe(false)
 
   await page.locator('.react-flow__node[data-id="enhance-A"]').click()
+  await page.getByRole('tab', { name: '文件', exact: true }).click()
   await expect(helper.getByRole('article')).toHaveAttribute('aria-label', '外部处理：画质增强（1）')
   await choose()
   await expect(dialog.getByText(targetA, { exact: true })).toBeVisible()
@@ -755,7 +774,7 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   expect(saved.status()).toBe(200)
   await page.goto(origin)
   await page.getByRole('button', { name: '关闭工程首页', exact: true }).click()
-  await expect(page.locator('.workflow-identity')).toContainText('合成工程数据与收件验收')
+  await expect(page.locator('.project-shell-identity')).toContainText('合成工程数据与收件验收')
   await page.getByRole('button', { name: '开始处理', exact: true }).click()
   await expect.poll(async () => (await readStatus(page)).run_summaries.length).toBe(1)
   const runId = (await readStatus(page)).run_summaries[0]!.run_id
@@ -768,6 +787,7 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   expect(node.work_dir.startsWith(join(dataRoot, 'attempts') + sep)).toBe(true)
   expect(target.startsWith(node.work_dir + sep)).toBe(true)
   await page.locator('.react-flow__node[data-id="enhance-A"]').click()
+  await page.getByRole('tab', { name: '文件', exact: true }).click()
   const inbox = page.getByRole('region', { name: '当前任务收件箱', exact: true })
   await expect(inbox).toBeVisible()
   await expect(inbox.getByText(/收件箱中尚无可用的/)).toBeVisible()
@@ -814,6 +834,7 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   expect(submitted.status()).toBe(200)
   expect(submitted.request().postDataJSON()).toMatchObject({ run_id: runId, node_run_id: node.node_run_id, handoff_id: node.external_handoff!.handoff_id })
   await expect.poll(async () => (await detail()).run.state).toBe('completed')
+  await page.getByRole('button', { name: '工程', exact: true }).click()
   await expect(page.getByRole('button', { name: '工程数据', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: '工程数据', exact: true }).click()
   const panel = page.getByRole('dialog', { name: '工程数据与归档检查', exact: true })

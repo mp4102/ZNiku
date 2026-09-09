@@ -55,6 +55,8 @@ export interface GraphCanvasProps {
   readonly definitionLabel?: (definition: NodeDefinitionWire) => string
   readonly portLabel?: (definition: NodeDefinitionWire, direction: 'input' | 'output', portId: string) => string
   readonly onAutoLayout?: () => void
+  readonly onToggleLibrary?: () => void
+  readonly libraryOpen?: boolean
   readonly onViewportChange?: (viewport: Viewport) => void
   readonly onToggleGroup?: (groupId: string) => void
   readonly onAddConnectedNodes?: (request: AddConnectedNodesRequest) => void
@@ -75,7 +77,7 @@ export function GraphCanvas({
   nodes, edges, editable, busy, modeLabel, contextLabel, snapshotChanged,
   canToggleSnapshot, loading, boundaryError, hasProject, overlays,
   graph, definitions = emptyDefinitions, groups = emptyGroups, viewport, definitionLabel, portLabel,
-  onAutoLayout, onViewportChange, onToggleGroup, onAddConnectedNodes, onNodeDragStart, onNodeDragStop,
+  onAutoLayout, onToggleLibrary, libraryOpen, onViewportChange, onToggleGroup, onAddConnectedNodes, onNodeDragStart, onNodeDragStop,
   onToggleSnapshot, onNodesChange, onEdgesChange, onSelectionChange, onNodeClick, onEdgeClick,
   onConnect, isValidConnection,
 }: GraphCanvasProps) {
@@ -142,11 +144,12 @@ export function GraphCanvas({
       <div className="canvas-context">
         <div><span className="context-mode">{modeLabel}</span><strong>{contextLabel}</strong></div>
         <div className="canvas-context-actions">
-          {canToggleSnapshot && <button type="button" onClick={onToggleSnapshot}>{(showingSnapshot ?? modeLabel === 'Run snapshot') ? advanced ? '查看当前 Graph' : '编辑当前工作流' : advanced ? '查看 Run snapshot' : '查看处理记录'}</button>}
+          {canToggleSnapshot && <button type="button" onClick={onToggleSnapshot}>{(showingSnapshot ?? modeLabel === 'Run snapshot') ? '返回当前编辑' : '查看本次处理流程'}</button>}
           {snapshotChanged && <span>{advanced ? 'Run snapshot / 当前 Graph 已变化' : '当前编辑与这次处理记录不同'}</span>}
         </div>
       </div>
       {hasProject && !loading && <div className="canvas-edit-toolbar" aria-label="画布工具">
+        {onToggleLibrary && <button type="button" aria-expanded={libraryOpen} onClick={onToggleLibrary}>添加节点</button>}
         <button type="button" disabled={!instance || nodes.length === 0} onClick={() => focusNodes()}>适应画布</button>
         <button type="button" disabled={!instance || selectedNodes.length === 0} onClick={() => focusNodes(selectedNodes.map((node) => node.id))}>缩放到选区</button>
         {onAutoLayout && <button type="button" disabled={disabled || nodes.length === 0} onClick={onAutoLayout}>自动布局</button>}

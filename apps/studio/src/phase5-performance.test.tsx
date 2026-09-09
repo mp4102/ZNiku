@@ -22,6 +22,12 @@ async function flush() {
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 }
 
+function openViewAction(name: string): HTMLElement {
+  const trigger = screen.getByRole('button', { name: '视图' })
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger)
+  return within(screen.getByRole('group', { name: '视图菜单' })).getByRole('button', { name })
+}
+
 function unusedGatewayMethods() {
   return {
     inspectLog: vi.fn(async () => { throw new Error('未显式打开日志') }),
@@ -80,11 +86,12 @@ describe('Phase 5 合成规模与偏好恢复', () => {
     expect(container.querySelectorAll('.workflow-node')).toHaveLength(200)
     const node = screen.getByLabelText('source-0 节点')
     expect(within(node).getByText('1%')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '处理记录' }))
     for (let tick = 1; tick <= 16; tick += 1) {
       current = tick * 5
       await act(async () => { await vi.advanceTimersByTimeAsync(751) })
       expect(within(node).getByText(`${current}%`)).toBeInTheDocument()
-      expect(screen.getByRole('combobox', { name: '查看 Run' }).querySelectorAll('option')).toHaveLength(21)
+      expect(screen.getAllByRole('button', { name: /^查看处理记录 \d+：/ })).toHaveLength(21)
     }
     expect(inspect.mock.calls.length).toBeGreaterThanOrEqual(17)
     expect(inspectRun.mock.calls.length).toBeGreaterThanOrEqual(17)
@@ -95,11 +102,11 @@ describe('Phase 5 合成规模与偏好恢复', () => {
     expect(JSON.stringify(snapshot)).toBe(before)
     expect(JSON.stringify(originalDetail.run.graph_snapshot)).toBe(JSON.stringify(projectSnapshot.project.graph))
     // 只有用户请求下一页才读取一次；后续进度轮询不扩张已加载的历史范围。
-    fireEvent.click(screen.getByRole('button', { name: '加载更早 Run' }))
+    fireEvent.click(screen.getByRole('button', { name: '加载更早记录' }))
     await flush()
     expect(listRuns).toHaveBeenCalledExactlyOnceWith('history.20', 20)
     await act(async () => { await vi.advanceTimersByTimeAsync(751) })
-    expect(screen.getByRole('combobox', { name: '查看 Run' }).querySelectorAll('option')).toHaveLength(41)
+    expect(screen.getAllByRole('button', { name: /^查看处理记录 \d+：/ })).toHaveLength(41)
     expect(listRuns).toHaveBeenCalledTimes(1)
     expect(extras.command).not.toHaveBeenCalled()
     unmount()
@@ -139,7 +146,7 @@ describe('Phase 5 合成规模与偏好恢复', () => {
       listRuns: vi.fn(async () => ({ contract_version: '0.3.0' as const, run_summaries: [], next_run_cursor: null })) }
     render(<StrictMode><App gateway={gateway} hostBridge={hostBridge} /></StrictMode>)
     await flush()
-    expect(screen.getByRole('button', { name: density === 'advanced' ? '返回创作者模式' : '高级节点图' })).toBeInTheDocument()
+    expect(openViewAction(density === 'advanced' ? '返回创作者模式' : '高级节点图')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /合成最近工程 A/ })).toBeVisible()
     expect(screen.getByRole('button', { name: /合成最近工程 B/ })).toBeVisible()
     expect(saveDesktopPreferences).not.toHaveBeenCalled()
@@ -153,10 +160,10 @@ describe('Phase 5 合成规模与偏好恢复', () => {
     expect(saved.recent_projects.map((item) => item.path)).toEqual([preferences.recent_projects[1]!.path, preferences.recent_projects[0]!.path])
     expect(saveDesktopPreferences.mock.calls.every((call) => call[1].recent_projects.length === 2)).toBe(true)
     expect(readRecentProjects().map((item) => item.name)).toEqual(['合成最近工程 B', '合成最近工程 A'])
-    fireEvent.click(screen.getByRole('button', { name: density === 'advanced' ? '返回创作者模式' : '高级节点图' }))
+    fireEvent.click(openViewAction(density === 'advanced' ? '返回创作者模式' : '高级节点图'))
     await flush()
     expect(persisted.density).not.toBe(density)
-    fireEvent.click(screen.getByRole('button', { name: density === 'advanced' ? '高级节点图' : '返回创作者模式' }))
+    fireEvent.click(openViewAction(density === 'advanced' ? '高级节点图' : '返回创作者模式'))
     await flush()
     // 回到初始密度也必须写回，不能始终只与 bootstrap 比较而跳过真正的用户修改。
     expect(persisted.density).toBe(density)

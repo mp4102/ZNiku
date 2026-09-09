@@ -1,0 +1,52 @@
+/* A 批次只改变空间分配；画布、参数和任务控制器保持挂载与原有身份。 */
+html:has(.task-workspace), body:has(.task-workspace), #root:has(.task-workspace) { height: 100%; overflow: hidden; }
+.app-shell.studio-workspace.task-workspace {
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100dvh; min-height: 0; min-width: 0; overflow: hidden; font-size: 14px;
+}
+.task-workspace .workspace-body {
+  grid-row: 2; grid-column: 1; min-width: 0; min-height: 0; display: grid;
+  grid-template-columns: 0 minmax(0, 1fr) 360px;
+}
+.task-workspace.library-open .workspace-body { grid-template-columns: 250px minmax(0, 1fr) 360px; }
+.task-workspace .workspace-library { grid-column: 1; min-height: 0; min-width: 0; overflow: hidden; display: none; }
+.task-workspace.library-open .workspace-library { display: block; }
+.task-workspace .workspace-library .palette-panel { height: 100%; max-height: none; overflow: auto; }
+.task-workspace .workspace-body > .canvas-panel { grid-row: 1; grid-column: 2; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.task-workspace .canvas-panel > .react-flow { flex: 1; min-height: 0; height: auto; }
+.task-workspace .workspace-inspector { grid-row: 1; grid-column: 3; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.task-workspace .workspace-inspector > .inspector-panel { flex: 1; min-height: 0; width: 100%; }
+.task-workspace .inspector-back { display: none; }
+.task-workspace .canvas-context { position: relative; inset: auto; flex: none; min-height: 48px; padding: 8px 12px; gap: 8px; pointer-events: auto; }
+.task-workspace .canvas-context strong { font-size: 12px; font-weight: 400; }
+.task-workspace .canvas-edit-toolbar { position: relative; inset: auto; flex: none; display: flex; flex-wrap: wrap; padding: 8px 12px; gap: 6px; border-radius: 0; }
+.task-workspace .canvas-group-strip { position: relative; inset: auto; flex: none; padding: 6px 12px; }
+.task-workspace .project-shell-run-center .creator-run-center { min-width: 0; max-width: 440px; padding: 0; }
+.task-workspace .creator-run-action { flex: 0 1 auto; }
+.task-workspace .canvas-edit-toolbar :is(button,input) { font-size: 12px; }
+.task-workspace .node-context-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; }
+.task-workspace .node-context-actions p { width: 100%; font-size: 12px; color: var(--muted); margin: 0; }
+.task-workspace .node-context-actions button { border: 1px solid var(--border); border-radius: 5px; background: var(--panel-raised); padding: 8px; }
+.task-workspace .node-context-actions button:disabled { opacity: .55; }
+.task-workspace .task-problems .diagnostic-list { display: grid; gap: 10px; padding: 12px; max-height: none; overflow: visible; }
+.task-workspace .task-problems .problem-card { min-width: 0; }
+.task-workspace .run-output-item { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border-soft); }
+.task-workspace .run-output-item span { overflow-wrap: anywhere; flex: 1; min-width: 160px; }
+.task-workspace .current-graph-run-command { padding: 12px; border: 1px solid var(--border); }
+.task-workspace .current-graph-run-command p { color: var(--muted); font-size: 12px; }
+.task-workspace :is(button,a,summary,input,select,textarea,[tabindex]):focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+@media (max-width: 1450px) {
+  .task-workspace .workspace-body { grid-template-columns: 0 minmax(0, 1fr) 340px; }
+  .task-workspace.library-open .workspace-body { grid-template-columns: 240px minmax(0, 1fr) 340px; }
+}
+@media (max-width: 1050px) {
+  .task-workspace .workspace-body { grid-template-columns: 0 minmax(0, 1fr); }
+  .task-workspace.library-open .workspace-body { grid-template-columns: min(260px, 40vw) minmax(0, 1fr); }
+  .task-workspace .workspace-inspector { display: none; }
+  .task-workspace.show-node-detail .workspace-body { grid-template-columns: minmax(0, 1fr); }
+  .task-workspace.show-node-detail .workspace-body > .canvas-panel,
+  .task-workspace.show-node-detail .workspace-library { display: none; }
+  .task-workspace.show-node-detail .workspace-inspector { display: flex; grid-column: 1; }
+  .task-workspace .inspector-back { display: block; flex: none; padding: 10px; text-align: left; background: var(--panel-raised); border: 0; border-bottom: 1px solid var(--border); }
+  .task-workspace .canvas-context { flex-wrap: wrap; }
+}

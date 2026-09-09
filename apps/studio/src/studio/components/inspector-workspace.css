@@ -1,0 +1,49 @@
+/* Inspector 自成占位布局；页签和应用栏均占空间，不浮在可滚动参数之上。 */
+.inspector-panel.inspector-workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.inspector-workspace > .inspector-heading { flex: 0 0 auto; padding: 14px 16px 10px; }
+.inspector-workspace .inspector-heading h2 { margin: 0; font-size: 17px; line-height: 1.45; overflow-wrap: anywhere; }
+.inspector-workspace .inspector-readonly,
+.inspector-workspace .inspector-draft-notice { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--amber, #e3b775); }
+
+.inspector-tabs { display: flex; flex: 0 0 auto; gap: 4px; padding: 0 12px 8px; border-bottom: 1px solid var(--border); }
+.inspector-tabs > button { flex: 1; min-width: 0; min-height: 36px; padding: 6px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font-size: 14px; cursor: pointer; }
+.inspector-tabs > button[aria-selected="true"] { color: var(--amber, #e3b775); border-color: #72583b; background: #2d251b; }
+.inspector-workspace :is(button, summary, textarea):focus-visible { outline: 2px solid var(--cyan, #86c9e4); outline-offset: 2px; }
+
+.inspector-workspace-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 14px 14px; }
+.inspector-workspace .inspector-tab-panel { min-width: 0; padding: 12px 0 0; }
+.inspector-workspace .inspector-tab-panel[hidden],
+.inspector-workspace .inspector-apply-bar[hidden] { display: none; }
+.inspector-workspace .inspector-tab-panel :is(h3, h4) { margin: 0 0 8px; font-size: 14px; line-height: 1.5; }
+.inspector-workspace .inspector-tab-panel p { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.inspector-workspace .inspector-content > section { padding: 0; border: 0; margin: 0 0 16px; }
+.inspector-workspace .empty-inspector { padding: 6px 0; }
+.inspector-workspace .runtime-user-status { margin: 10px 0 0; padding: 8px 10px; font-size: 13px; }
+.inspector-workspace .runtime-user-status p { margin: 5px 0; }
+.inspector-workspace .runtime-user-status button,
+.inspector-workspace .inspector-parameter-error button,
+.inspector-workspace .inspector-diagnostics button { min-height: 32px; border: 1px solid #46627a; border-radius: 5px; background: #172c3e; color: #e2edf6; font-size: 13px; padding: 4px 9px; cursor: pointer; }
+.inspector-workspace .inspector-display-settings { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 18px; }
+.inspector-workspace .inspector-display-settings > p,
+.inspector-workspace .inspector-diagnostic-warning { color: var(--muted); font-size: 12px; }
+.inspector-workspace .inspector-files > :is(section, p) { margin-bottom: 16px; }
+.inspector-workspace .inspector-diagnostics pre { overflow: auto; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.inspector-workspace .inspector-diagnostics textarea { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; }
+.inspector-workspace .property-list dd { min-width: 0; overflow-wrap: anywhere; }
+.inspector-workspace .client-hint { margin: 10px 0 0; }
+
+.inspector-workspace .inspector-apply-bar { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin: 0; padding: 10px 14px 12px; border-top: 1px solid var(--border); background: #101a26; }
+.inspector-workspace .inspector-apply-bar > span { grid-column: 1 / -1; font-size: 12px; line-height: 1.5; }
+.inspector-workspace .inspector-apply-bar .inspector-action { width: 100%; min-width: 0; min-height: 36px; margin: 0; font-size: 13px; white-space: normal; }
+
+@media (prefers-reduced-motion: reduce) {
+  .inspector-workspace * { scroll-behavior: auto; }
+}

@@ -1,0 +1,40 @@
+{
+  "purpose": "v0.3.1 批次 A 的纯合成 production 页面证据，不是领域合同或正式媒体验收",
+  "captured_on": "2026-09-09",
+  "source": "apps/studio/e2e/batch-a-capture.ts",
+  "command": "npx playwright test -c e2e/batch-a.config.ts",
+  "production_index": "index-BIzGMvDQ.js",
+  "result": "3 passed",
+  "privacy": "仅转存 maskedScreenshot 生成的 PNG 与有界几何/导航观测 JSON；不含原始截图、trace、HAR、票据、日志或真实媒体路径",
+  "limits": [
+    "不是 Windows 原生 DPI 设置验收；正式 production.spec 另保留 DPR 2 / 200% 等效布局检查",
+    "viewport-pressure 保留窗口变化后的原镜头；layout 在同尺寸下显式点击适应画布，不暗中移动节点",
+    "1280 压力状态的 50 个节点仍有可见 DOM 和有效尺寸，但均在当前镜头外；适应后可见 20 个，未宣称 50 个全部进入视野",
+    "1366 适应后可见 30 个，1920 适应后可见 50 个；图形布局与镜头行为仍由后续 B 批次审查",
+    "初次入口记录实际点击时 0 个画布节点；点击进入任务抽屉等待正式详情，再精确打开文件页，不表示伪造或强制延迟挂载"
+  ],
+  "data": ["batch-a-layout.json", "batch-a-initial-action.json"],
+  "screenshots": [
+    { "file": "creator-current-50-masked.png", "view": "1920 当前编辑，50 节点，任务摘要收起" },
+    { "file": "project-menu-masked.png", "view": "工程菜单，路径开发入口仍需再展开" },
+    { "file": "view-menu-masked.png", "view": "视图菜单，高级密度与诊断分开" },
+    { "file": "advanced-current-50-masked.png", "view": "高级节点密度，不自动展开诊断" },
+    { "file": "inspector-settings-masked.png", "view": "设置页" },
+    { "file": "inspector-files-masked.png", "view": "文件页" },
+    { "file": "inspector-diagnostics-masked.png", "view": "显式诊断与同一原始参数草稿，原文区域遮罩" },
+    { "file": "task-drawer-current-masked.png", "view": "当前任务抽屉，普通展开高度" },
+    { "file": "viewport-pressure-1280x720-masked.png", "view": "1280 原镜头压力状态，抽屉已按新视口限制到 324px" },
+    { "file": "layout-1280x720-masked.png", "view": "1280 显式适应画布后，不代表所有节点进入视野" },
+    { "file": "viewport-pressure-1366x768-masked.png", "view": "1366 调整窗口后的原镜头" },
+    { "file": "layout-1366x768-masked.png", "view": "1366 显式适应画布后" },
+    { "file": "viewport-pressure-1920x1080-masked.png", "view": "1920 调整窗口后的原镜头" },
+    { "file": "layout-1920x1080-masked.png", "view": "1920 显式适应画布后" },
+    { "file": "keyboard-840x720-masked.png", "view": "840 键盘跳转解除隐藏并正确移焦后返回画布" },
+    { "file": "creator-current-200-masked.png", "view": "200 节点当前编辑" },
+    { "file": "history-snapshot-masked.png", "view": "从 1000 条合成历史的首批 20 条中显式选择只读 snapshot" },
+    { "file": "failed-problems-masked.png", "view": "缺失合成输入产生真实节点失败，任务问题页可见" },
+    { "file": "waiting-selected-B-masked.png", "view": "同名外部节点 B 的精确文件页" },
+    { "file": "waiting-1280x720-masked.png", "view": "1280 外部节点文件页" },
+    { "file": "initial-external-action-masked.png", "view": "初次打开立即点击唯一外部主入口后的文件页，不自动提交" }
+  ]
+}

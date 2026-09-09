@@ -1,0 +1,432 @@
+{
+  "purpose": "Batch A synthetic production UI evidence; not real-media or native Windows DPI acceptance",
+  "observations": {
+    "creator_50": {
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "boxes": {
+        "topbar": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 64,
+          "visible": true
+        },
+        "library": {
+          "x": 0,
+          "y": 64,
+          "width": 250,
+          "height": 980,
+          "visible": true
+        },
+        "canvas": {
+          "x": 250,
+          "y": 64,
+          "width": 1310,
+          "height": 980,
+          "visible": true
+        },
+        "inspector": {
+          "x": 1560,
+          "y": 64,
+          "width": 360,
+          "height": 980,
+          "visible": true
+        },
+        "tasks": {
+          "x": 0,
+          "y": 1044,
+          "width": 1920,
+          "height": 36,
+          "visible": true
+        }
+      },
+      "horizontal_page_overflow": false,
+      "context_toolbar_overlap": false,
+      "toolbar_flow_overlap": false,
+      "canvas_tasks_overlap": false,
+      "node_count": 50,
+      "node_dom_visible_count": 50,
+      "node_in_canvas_count": 50,
+      "old_canvas_overlays": 0,
+      "primary_actions": 1
+    },
+    "drawer_resize": {
+      "keyboard_minimum": 120,
+      "keyboard_step": 10,
+      "expanded_height": "420"
+    },
+    "viewport_1280_pressure": {
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "boxes": {
+        "topbar": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 64,
+          "visible": true
+        },
+        "library": {
+          "x": 0,
+          "y": 64,
+          "width": 240,
+          "height": 332,
+          "visible": true
+        },
+        "canvas": {
+          "x": 240,
+          "y": 64,
+          "width": 700,
+          "height": 332,
+          "visible": true
+        },
+        "inspector": {
+          "x": 940,
+          "y": 64,
+          "width": 340,
+          "height": 332,
+          "visible": true
+        },
+        "tasks": {
+          "x": 0,
+          "y": 396,
+          "width": 1280,
+          "height": 324,
+          "visible": true
+        }
+      },
+      "horizontal_page_overflow": false,
+      "context_toolbar_overlap": false,
+      "toolbar_flow_overlap": false,
+      "canvas_tasks_overlap": false,
+      "node_count": 50,
+      "node_dom_visible_count": 50,
+      "node_in_canvas_count": 0,
+      "old_canvas_overlays": 0,
+      "primary_actions": 1
+    },
+    "viewport_1280_fit": {
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "boxes": {
+        "topbar": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 64,
+          "visible": true
+        },
+        "library": {
+          "x": 0,
+          "y": 64,
+          "width": 240,
+          "height": 332,
+          "visible": true
+        },
+        "canvas": {
+          "x": 240,
+          "y": 64,
+          "width": 700,
+          "height": 332,
+          "visible": true
+        },
+        "inspector": {
+          "x": 940,
+          "y": 64,
+          "width": 340,
+          "height": 332,
+          "visible": true
+        },
+        "tasks": {
+          "x": 0,
+          "y": 396,
+          "width": 1280,
+          "height": 324,
+          "visible": true
+        }
+      },
+      "horizontal_page_overflow": false,
+      "context_toolbar_overlap": false,
+      "toolbar_flow_overlap": false,
+      "canvas_tasks_overlap": false,
+      "node_count": 50,
+      "node_dom_visible_count": 50,
+      "node_in_canvas_count": 20,
+      "old_canvas_overlays": 0,
+      "primary_actions": 1
+    },
+    "viewport_1366_pressure": {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "boxes": {
+        "topbar": {
+          "x": 0,
+          "y": 0,
+          "width": 1366,
+          "height": 64,
+          "visible": true
+        },
+        "library": {
+          "x": 0,
+          "y": 64,
+          "width": 240,
+          "height": 380,
+          "visible": true
+        },
+        "canvas": {
+          "x": 240,
+          "y": 64,
+          "width": 786,
+          "height": 380,
+          "visible": true
+        },
+        "inspector": {
+          "x": 1026,
+          "y": 64,
+          "width": 340,
+          "height": 380,
+          "visible": true
+        },
+        "tasks": {
+          "x": 0,
+          "y": 444,
+          "width": 1366,
+          "height": 324,
+          "visible": true
+        }
+      },
+      "horizontal_page_overflow": false,
+      "context_toolbar_overlap": false,
+      "toolbar_flow_overlap": false,
+      "canvas_tasks_overlap": false,
+      "node_count": 50,
+      "node_dom_visible_count": 50,
+      "node_in_canvas_count": 30,
+      "old_canvas_overlays": 0,
+      "primary_actions": 1
+    },
+    "viewport_1366_fit": {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "boxes": {
+        "topbar": {
+          "x": 0,
+          "y": 0,
+          "width": 1366,
+          "height": 64,
+          "visible": true
+        },
+        "library": {
+          "x": 0,
+          "y": 64,
+          "width": 240,
+          "height": 380,
+          "visible": true
+        },
+        "canvas": {
+          "x": 240,
+          "y": 64,
+          "width": 786,
+          "height": 380,
+          "visible": true
+        },
+        "inspector": {
+          "x": 1026,
+          "y": 64,
+          "width": 340,
+          "height": 380,
+          "visible": true
+        },
+        "tasks": {
+          "x": 0,
+          "y": 444,
+          "width": 1366,
+          "height": 324,
+          "visible": true
+        }
+      },
+      "horizontal_page_overflow": false,
+      "context_toolbar_overlap": false,
+      "toolbar_flow_overlap": false,
+      "canvas_tasks_overlap": false,
+      "node_count": 50,
+      "node_dom_visible_count": 50,
+      "node_in_canvas_count": 30,
+      "old_canvas_overlays": 0,
+      "primary_actions": 1
+    },
+    "viewport_1920_pressure": {
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "boxes": {
+        "topbar": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 64,
+          "visible": true
+        },
+        "library": {
+          "x": 0,
+          "y": 64,
+          "width": 250,
+          "height": 692,
+          "visible": true
+        },
+        "canvas": {
+          "x": 250,
+          "y": 64,
+          "width": 1310,
+          "height": 692,
+          "visible": true
+        },
+        "inspector": {
+          "x": 1560,
+          "y": 64,
+          "width": 360,
+          "height": 692,
+          "visible": true
+        },
+        "tasks": {
+          "x": 0,
+          "y": 756,
+          "width": 1920,
+          "height": 324,
+          "visible": true
+        }
+      },
+      "horizontal_page_overflow": false,
+      "context_toolbar_overlap": false,
+      "toolbar_flow_overlap": false,
+      "canvas_tasks_overlap": false,
+      "node_count": 50,
+      "node_dom_visible_count": 50,
+      "node_in_canvas_count": 40,
+      "old_canvas_overlays": 0,
+      "primary_actions": 1
+    },
+    "viewport_1920_fit": {
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "boxes": {
+        "topbar": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 64,
+          "visible": true
+        },
+        "library": {
+          "x": 0,
+          "y": 64,
+          "width": 250,
+          "height": 692,
+          "visible": true
+        },
+        "canvas": {
+          "x": 250,
+          "y": 64,
+          "width": 1310,
+          "height": 692,
+          "visible": true
+        },
+        "inspector": {
+          "x": 1560,
+          "y": 64,
+          "width": 360,
+          "height": 692,
+          "visible": true
+        },
+        "tasks": {
+          "x": 0,
+          "y": 756,
+          "width": 1920,
+          "height": 324,
+          "visible": true
+        }
+      },
+      "horizontal_page_overflow": false,
+      "context_toolbar_overlap": false,
+      "toolbar_flow_overlap": false,
+      "canvas_tasks_overlap": false,
+      "node_count": 50,
+      "node_dom_visible_count": 50,
+      "node_in_canvas_count": 50,
+      "old_canvas_overlays": 0,
+      "primary_actions": 1
+    },
+    "keyboard_840": {
+      "viewport": {
+        "width": 840,
+        "height": 720
+      },
+      "boxes": {
+        "topbar": {
+          "x": 0,
+          "y": 0,
+          "width": 840,
+          "height": 64,
+          "visible": true
+        },
+        "library": {
+          "x": 0,
+          "y": 64,
+          "width": 260,
+          "height": 332,
+          "visible": true
+        },
+        "canvas": {
+          "x": 260,
+          "y": 64,
+          "width": 580,
+          "height": 332,
+          "visible": true
+        },
+        "inspector": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "visible": false
+        },
+        "tasks": {
+          "x": 0,
+          "y": 396,
+          "width": 840,
+          "height": 324,
+          "visible": true
+        }
+      },
+      "horizontal_page_overflow": false,
+      "context_toolbar_overlap": false,
+      "toolbar_flow_overlap": false,
+      "canvas_tasks_overlap": false,
+      "node_count": 50,
+      "node_dom_visible_count": 50,
+      "node_in_canvas_count": 3,
+      "old_canvas_overlays": 0,
+      "primary_actions": 1
+    },
+    "history": {
+      "total_fixture_history": 1000,
+      "displayed_rows": 20,
+      "first_status_summaries": 20,
+      "has_next_cursor": true
+    }
+  }
+}

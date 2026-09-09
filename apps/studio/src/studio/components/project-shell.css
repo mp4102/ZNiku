@@ -1,0 +1,77 @@
+/* 顶栏只负责布局；状态/操作资格均由 ProjectShell 原 props 提供。 */
+.studio-workspace .topbar.project-shell,
+.topbar.project-shell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 8px 14px;
+  align-items: center;
+  position: relative;
+  /* 不给原 DesktopExit 的 fixed 确认框建立只覆盖顶栏的 containing block。 */
+  backdrop-filter: none;
+}
+.project-shell-brand {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #725a39;
+  border-radius: 8px;
+  color: var(--amber, #e1a44f);
+  font-size: 13px;
+  font-weight: 700;
+}
+.project-shell-menus,
+.project-shell-history-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.project-shell-menu-anchor { position: relative; }
+.project-shell .project-shell-trigger,
+.project-shell .project-shell-history,
+.project-shell .project-shell-history-actions button { min-height: 36px; padding: 7px 10px; font-size: 14px; }
+.project-shell-identity { flex: 1 1 180px; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; min-width: 0; }
+.project-shell-identity > strong { flex: 0 1 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; }
+.project-shell-save-state { color: var(--muted, #a4b1c4); font-size: 12px; line-height: 1.45; }
+.project-shell-parameter-dirty { border: 1px solid #88672f; border-radius: 4px; padding: 1px 5px; color: #f0c57d; font-size: 12px; }
+.project-shell-run-center { display: flex; align-items: center; flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.project-shell .project-shell-run-center > .top-actions { border: 0; padding: 0; min-height: 0; background: transparent; }
+.project-shell-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 85;
+  width: min(340px, calc(100vw - 80px));
+  max-height: calc(100dvh - 100px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border, #33465c);
+  border-radius: 9px;
+  background: #101b28;
+  box-shadow: 0 12px 32px #0007;
+}
+.project-shell-menu[hidden] { display: none; }
+.project-shell-menu--view { width: 220px; }
+.project-shell .project-shell-menu > button,
+.project-shell .project-shell-developer-entry > div > button,
+.project-shell .project-shell-menu > .desktop-exit > button { min-height: 36px; width: 100%; text-align: left; font-size: 14px; padding: 7px 10px; }
+.project-shell-menu-separator { border-top: 1px solid var(--border-soft, #253344); margin: 3px 0; }
+.project-shell-profile { margin: 3px 9px 6px; font-size: 12px; line-height: 1.5; color: var(--muted, #a4b1c4); }
+.project-shell-developer-entry { padding: 3px; }
+.project-shell-developer-entry > summary { cursor: pointer; padding: 8px; font-size: 14px; }
+.project-shell-developer-entry label { display: grid; gap: 4px; margin: 8px 0; font-size: 12px; color: var(--muted, #a4b1c4); }
+.project-shell-developer-entry input { width: 100%; min-width: 0; border: 1px solid var(--border, #33465c); border-radius: 5px; min-height: 34px; background: #0a121c; color: var(--text, #e0e7ef); padding: 6px; font-size: 14px; }
+.project-shell-developer-entry > div { display: grid; gap: 5px; }
+.project-shell-save-error { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: 8px; color: #ffc2b7; font-size: 14px; line-height: 1.5; border-top: 1px solid #713c35; padding-top: 8px; overflow-wrap: anywhere; }
+.project-shell-save-error > span { flex: 1 1 240px; }
+.project-shell :is(button, summary, input):focus-visible { outline: 2px solid #f0ba66; outline-offset: 2px; }
+/* 确认框由 DesktopExit 原组件持有，不受菜单滚动区域裁切。 */
+.project-shell-menu:has([role="dialog"][aria-modal="true"]) { overflow: visible; }
+@media (max-width: 760px) {
+  .studio-workspace .topbar.project-shell { gap: 7px; padding: 8px; }
+  .project-shell-identity { flex-basis: calc(100% - 190px); }
+  .project-shell-run-center { flex: 1 1 auto; }
+}

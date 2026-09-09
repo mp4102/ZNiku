@@ -42,11 +42,13 @@ function setup(initial = handoffEnvelope(), initialDetail = handoffDetailEnvelop
 }
 async function assistant() {
   // 未选节点只显示任务导航；先明确选择本次交接，后续动作才有唯一目标。
+  await screen.findByRole('tab', { name: '文件' })
+  const home = screen.queryByRole('button', { name: '关闭工程首页' })
+  if (home) await act(async () => { fireEvent.click(home) })
+  fireEvent.click(screen.getByRole('tab', { name: '文件' }))
   if (!screen.queryByRole('region', { name: '外部处理助手' })) {
     const task = screen.queryByRole('button', { name: '查看外部任务：外部画质增强' })
       ?? await screen.findByRole('button', { name: '查看外部任务：外部画质增强' })
-    const home = screen.queryByRole('button', { name: '关闭工程首页' })
-    if (home) await act(async () => { fireEvent.click(home) })
     await act(async () => { fireEvent.click(task) })
   }
   const section = screen.queryByRole('region', { name: '外部处理助手' })
@@ -55,17 +57,41 @@ async function assistant() {
   return within(section)
 }
 async function tick(ms: number) { await act(async () => { await vi.advanceTimersByTimeAsync(ms) }) }
+function history() {
+  const open = screen.queryByRole('button', { name: '展开任务区' })
+  if (open) fireEvent.click(open)
+  const drawer = screen.getByRole('region', { name: '任务抽屉' })
+  fireEvent.click(within(drawer).getByRole('tab', { name: '历史记录' }))
+  return within(drawer).getByRole('tabpanel', { name: '历史记录' })
+}
+async function retryStep() {
+  await screen.findByRole('button', { name: '查看问题' })
+  const home = screen.queryByRole('button', { name: '关闭工程首页' })
+  if (home) fireEvent.click(home)
+  fireEvent.click(screen.getByRole('button', { name: '查看问题' }))
+  const problems = screen.getByRole('region', { name: '问题与恢复' })
+  fireEvent.click(within(problems).getByRole('button', { name: '定位步骤与设置' }))
+  fireEvent.click(screen.getByRole('tab', { name: '设置' }))
+  const retry = screen.getByRole('button', { name: '从此步骤重新处理' })
+  await waitFor(() => expect(retry).toBeEnabled())
+  fireEvent.click(retry)
+}
 
 describe('Phase 4 默认创作者操作链', () => {
   it('默认只显示上下文主操作，不读取日志；高级信息可查看但不会变更任务', async () => {
     const test = setup()
     render(<App gateway={test.gateway} />)
     await assistant()
-    expect(screen.getByRole('button', { name: '继续外部处理' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Run all' })).not.toBeVisible()
+    expect(screen.getByRole('button', { name: '处理外部文件' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: '开始新的完整处理' })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: '查看 Run' })).not.toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: '处理记录' }).textContent).not.toContain(handoffFixtureIds.run)
+    expect(history().textContent).not.toContain(handoffFixtureIds.run)
     expect(test.logs).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '视图' }))
+    fireEvent.click(screen.getByRole('button', { name: '高级节点图' }))
+    expect(test.logs).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('tab', { name: '诊断' }))
+    await waitFor(() => expect(test.logs).toHaveBeenCalledTimes(1))
     expect(test.commands).toEqual([])
   })
 
@@ -110,7 +136,8 @@ describe('Phase 4 默认创作者操作链', () => {
     fireEvent.click(area.getByRole('button', { name: '检查输出' }))
     await waitFor(() => expect(area.getByRole('button', { name: '提交并继续' })).toBeEnabled())
     await tick(5000)
-    expect(screen.getAllByText(/完整检查通过，等待你提交/).length).toBeGreaterThanOrEqual(2)
+    // 同一检查摘要归文件页，不再要求画布覆盖层重复一份。
+    expect(area.getByText(/完整检查通过，等待你提交/)).toBeVisible()
     expect(test.commands).toEqual([])
     expect(test.readiness.mock.calls.filter((call) => call[2])).toHaveLength(1)
   })
@@ -126,7 +153,9 @@ describe('Phase 4 默认创作者操作链', () => {
     const check = area.getByRole('button', { name: '检查输出' })
     fireEvent.click(check); fireEvent.click(check)
     await waitFor(() => expect(test.readiness.mock.calls.filter((call) => call[2])).toHaveLength(1))
-    fireEvent.change(screen.getByRole('combobox', { name: '处理记录' }), { target: { value: threeRunFixtureIds.laterLocalRun } })
+    const record = within(history()).getAllByRole('button').find((item) => (item as HTMLButtonElement).value === threeRunFixtureIds.laterLocalRun)
+    expect(record).toBeDefined()
+    fireEvent.click(record!)
     await act(async () => { resolve(handoffReadinessEnvelope('probe_passed', true)); await pending })
     await waitFor(() => expect(screen.queryByRole('region', { name: '外部处理助手' })).not.toBeInTheDocument())
     expect(test.commands).toEqual([])
@@ -156,14 +185,14 @@ describe('Phase 4 默认创作者操作链', () => {
     const user = userEvent.setup()
     const test = setup(failedStatusEnvelope('interrupted'), failedDetailEnvelope('interrupted'))
     render(<App gateway={test.gateway} />)
-    await user.click(await screen.findByRole('button', { name: '查看问题并重试此步骤' }))
+    await retryStep()
     let dialog = within(await screen.findByRole('dialog', { name: '确认重新处理的影响' }))
     await waitFor(() => expect(dialog.getByRole('button', { name: '确认从头重新处理' })).toBeEnabled())
     expect(dialog.getByRole('region', { name: '可以复用的步骤' })).toHaveTextContent('导入视频')
     expect(test.commands).toEqual([])
     await user.click(dialog.getByRole('button', { name: '取消' }))
     expect(test.commands).toEqual([])
-    await user.click(screen.getByRole('button', { name: '查看问题并重试此步骤' }))
+    await user.click(screen.getByRole('button', { name: '从此步骤重新处理' }))
     dialog = within(await screen.findByRole('dialog', { name: '确认重新处理的影响' }))
     await waitFor(() => expect(dialog.getByRole('button', { name: '确认从头重新处理' })).toBeEnabled())
     await user.click(dialog.getByRole('button', { name: '确认从头重新处理' }))
@@ -175,7 +204,7 @@ describe('Phase 4 默认创作者操作链', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const test = setup(failedStatusEnvelope('interrupted'), failedDetailEnvelope('interrupted'))
     render(<App gateway={test.gateway} />)
-    fireEvent.click(await screen.findByRole('button', { name: '查看问题并重试此步骤' }))
+    await retryStep()
     const dialog = within(await screen.findByRole('dialog', { name: '确认重新处理的影响' }))
     await waitFor(() => expect(dialog.getByRole('button', { name: '确认从头重新处理' })).toBeEnabled())
     test.update({ ...failedStatusEnvelope('interrupted'), storage_revision: 2 })
@@ -185,15 +214,18 @@ describe('Phase 4 默认创作者操作链', () => {
     expect(test.commands).toEqual([])
   })
 
-  it('零 Output 的合法已完成任务提供完成记录入口，不强迫添加 Output', async () => {
+  it('零 Output 的合法已完成任务提供输出说明与完成记录，不强迫添加 Output', async () => {
     const run = threeRunDetail(threeRunFixtureIds.laterLocalRun)
     const detail: RunDetailEnvelope = { ...run, artifacts: [], run: { ...run.run,
       node_runs: run.run.node_runs.map((item) => ({ ...item, output_artifact_ids: [] })) } }
     const test = setup(studioEnvelope({ run_summaries: threeRunEnvelope().run_summaries.slice(0, 1),
       active_run_id: detail.run.run_id }), detail)
     render(<App gateway={test.gateway} />)
-    expect(await screen.findByRole('button', { name: '查看完成记录' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: '查看完成记录' }))
+    expect(await screen.findByRole('button', { name: '查看输出' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: '关闭工程首页' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看输出' }))
+    expect(screen.getByRole('region', { name: '任务抽屉' })).toBeVisible()
+    expect(screen.getByText('本次处理没有已登记的输出文件；零输出工作流也是合法的。')).toBeVisible()
     expect(test.commands).toEqual([])
   })
 })
