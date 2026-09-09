@@ -87,11 +87,15 @@ describe('Phase 5 合成规模与偏好恢复', () => {
     const node = screen.getByLabelText('source-0 节点')
     expect(within(node).getByText('1%')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '处理记录' }))
+    // 只在已经可见的历史面板核对条目，避免每轮从200节点/任务行的整棵DOM重复扫描可访问角色。
+    // 仍逐轮验证21条、显式翻页后41条；不改变轮询数、请求预算或20秒上限。
+    const historyPanel = screen.getByRole('tabpanel', { name: '历史记录' })
+    expect(historyPanel).toBeVisible()
     for (let tick = 1; tick <= 16; tick += 1) {
       current = tick * 5
       await act(async () => { await vi.advanceTimersByTimeAsync(751) })
       expect(within(node).getByText(`${current}%`)).toBeInTheDocument()
-      expect(screen.getAllByRole('button', { name: /^查看处理记录 \d+：/ })).toHaveLength(21)
+      expect(within(historyPanel).getAllByRole('button', { name: /^查看处理记录 \d+：/ })).toHaveLength(21)
     }
     expect(inspect.mock.calls.length).toBeGreaterThanOrEqual(17)
     expect(inspectRun.mock.calls.length).toBeGreaterThanOrEqual(17)
@@ -102,11 +106,11 @@ describe('Phase 5 合成规模与偏好恢复', () => {
     expect(JSON.stringify(snapshot)).toBe(before)
     expect(JSON.stringify(originalDetail.run.graph_snapshot)).toBe(JSON.stringify(projectSnapshot.project.graph))
     // 只有用户请求下一页才读取一次；后续进度轮询不扩张已加载的历史范围。
-    fireEvent.click(screen.getByRole('button', { name: '加载更早记录' }))
+    fireEvent.click(within(historyPanel).getByRole('button', { name: '加载更早记录' }))
     await flush()
     expect(listRuns).toHaveBeenCalledExactlyOnceWith('history.20', 20)
     await act(async () => { await vi.advanceTimersByTimeAsync(751) })
-    expect(screen.getAllByRole('button', { name: /^查看处理记录 \d+：/ })).toHaveLength(41)
+    expect(within(historyPanel).getAllByRole('button', { name: /^查看处理记录 \d+：/ })).toHaveLength(41)
     expect(listRuns).toHaveBeenCalledTimes(1)
     expect(extras.command).not.toHaveBeenCalled()
     unmount()
