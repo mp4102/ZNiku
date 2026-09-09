@@ -135,9 +135,12 @@ const initialHealth: Record<ChannelName, ChannelHealth> = {
   log: { stale: false, lastSuccess: null },
 }
 
+// UI 观察的资源上限，不是领域执行并发；跨 Run 导航也不能无限堆积尚未返回的 HTTP。
+const passiveReadinessLimit = 8
+
 type ResourceHealth = Record<ResourceChannelName, ReadonlyMap<string, ChannelHealth>>
 
-interface ReadinessProbeFlight {
+interface ReadinessFlight {
   readonly generation: number
   readonly token: symbol
   readonly promise: Promise<ExternalHandoffReadiness | null>
@@ -577,7 +580,8 @@ export function StudioWorkspace({
     readiness: new Map<string, number>(),
     log: new Map<string, number>(),
   })
-  const readinessProbeFlightRef = useRef(new Map<string, ReadinessProbeFlight>())
+  const readinessProbeFlightRef = useRef(new Map<string, ReadinessFlight>())
+  const readinessPassiveFlightRef = useRef(new Map<string, ReadinessFlight>())
   const detailFlightRef = useRef(new Map<string, DetailFlight>())
   const detailBackoffRef = useRef(new Map<string, DetailBackoff>())
   const detailReinspectRef = useRef(new Set<string>())
@@ -805,7 +809,8 @@ export function StudioWorkspace({
       if (existing) detailFlightRef.current.delete(resourceKey)
 
       const token = Symbol(resourceKey)
-      const requestedWhileIdle = statusRef.current?.active_operation === null
+      const requestedWhileIdle = statusRef.current?.active_operation === null &&
+        !handoffActionRef.current && !busyRef.current
       const requestedInboxFences = new Set(inboxSubmissionFencesRef.current)
       detailRequestedSummaryRevisionRef.current = requestedSummaryRevision
       const request = (async (): Promise<RunDetailEnvelope | null> => {
@@ -825,9 +830,10 @@ export function StudioWorkspace({
           const merged = monotonicDetail(detailRef.current, incoming)
           detailRef.current = merged.detail
           setDetail(merged.detail)
-          if (!merged.regressed && requestedWhileIdle && statusRef.current?.active_operation === null) {
+          if (!merged.regressed && requestedWhileIdle && statusRef.current?.active_operation === null &&
+              !handoffActionRef.current && !busyRef.current) {
             // Submit 之后的旧 waiting 响应不能重启收件观察。只有操作已空闲时新发起的 detail
-            // 才解除它在发起时已看到的暂停，避免观察请求落到刚完成的旧任务上。
+            // 才解除它在发起时已看到的暂停；status 尚未反映本地 Submit 时也不能冒认空闲。
             const remaining = new Set(inboxSubmissionFencesRef.current)
             for (const key of requestedInboxFences) if (key.startsWith(`${runId}/`)) remaining.delete(key)
             if (remaining.size !== inboxSubmissionFencesRef.current.size) {
@@ -916,12 +922,26 @@ export function StudioWorkspace({
     ): Promise<ExternalHandoffReadiness | null> => {
       if (generation !== generationRef.current || runId !== viewRunIdRef.current) return null
       const resourceKey = nodeRunResourceKey(runId, nodeRunId)
+      const passiveIsCurrent = () => {
+        const run = detailRef.current?.run
+        const node = run?.node_runs.find((item) => item.node_run_id === nodeRunId)
+        const latest = node ? latestNodeRuns(run ?? null).get(node.node_id) : null
+        return run?.run_id === runId && latest?.node_run_id === nodeRunId &&
+          latest.state === 'waiting_external' && latest.external_handoff !== null &&
+          !handoffActionRef.current && !busyRef.current && statusRef.current?.active_operation === null &&
+          !inboxSubmissionFencesRef.current.has(handoffResourceKey(runId, nodeRunId, latest.external_handoff.handoff_id))
+      }
+      // 旧 detail 只是一份观察，不得在本地提交或已暂停的 handoff 上重新发起 HTTP。
+      if (!probe && !passiveIsCurrent()) return null
       const existingFlight = readinessProbeFlightRef.current.get(resourceKey)
       if (existingFlight?.generation === generation) {
         // 显式完整 probe 是该 handoff 的短期权威；被动轮询不得抢占它，重复点击则复用同一请求。
         return probe ? existingFlight.promise : null
       }
       if (existingFlight) readinessProbeFlightRef.current.delete(resourceKey)
+      // 保留尚未结束的物理请求，即使 generation 已变化；不能遗失它而让 Submit 穿过旧请求。
+      if (!probe && (readinessPassiveFlightRef.current.has(resourceKey) ||
+          readinessPassiveFlightRef.current.size >= passiveReadinessLimit)) return null
       if (probe) {
         setLastFullPrecheckFailures((current) => new Map([...current].filter(([, failure]) =>
           failure.run_id !== runId || failure.node_run_id !== nodeRunId,
@@ -938,7 +958,8 @@ export function StudioWorkspace({
             runId !== viewRunIdRef.current ||
             sequence !== latestIssuedSequenceRef.current.readiness.get(resourceKey) ||
             sequence <=
-              (acceptedResourceSequenceRef.current.readiness.get(resourceKey) ?? 0)
+              (acceptedResourceSequenceRef.current.readiness.get(resourceKey) ?? 0) ||
+            (!probe && !passiveIsCurrent())
           ) {
             return null
           }
@@ -969,7 +990,8 @@ export function StudioWorkspace({
           if (
             generation === generationRef.current &&
             runId === viewRunIdRef.current &&
-            sequence === latestIssuedSequenceRef.current.readiness.get(resourceKey)
+            sequence === latestIssuedSequenceRef.current.readiness.get(resourceKey) &&
+            (probe || passiveIsCurrent())
           ) {
             markResourceHealth('readiness', resourceKey, true)
             setClientHint(error instanceof Error ? error.message : 'handoff readiness 读取失败')
@@ -977,16 +999,15 @@ export function StudioWorkspace({
           return null
         }
       })()
-      if (!probe) return request
-
+      const flights = probe ? readinessProbeFlightRef.current : readinessPassiveFlightRef.current
       const token = Symbol(resourceKey)
       const guarded = request.finally(() => {
-        const current = readinessProbeFlightRef.current.get(resourceKey)
+        const current = flights.get(resourceKey)
         if (current?.generation === generation && current.token === token) {
-          readinessProbeFlightRef.current.delete(resourceKey)
+          flights.delete(resourceKey)
         }
       })
-      readinessProbeFlightRef.current.set(resourceKey, { generation, token, promise: guarded })
+      flights.set(resourceKey, { generation, token, promise: guarded })
       return guarded
     },
     [effectiveGateway, markResourceHealth, updateCheckedOutputs],
@@ -2220,6 +2241,14 @@ export function StudioWorkspace({
       current.external_handoff?.handoff_id === nodeRun.external_handoff?.handoff_id
   }, [])
 
+  const setExternalFileBusy = useCallback((active: boolean) => {
+    const wasBusy = busyRef.current
+    busyRef.current = active
+    setBusy(active)
+    // 导入/收纳回调仍持有 busy，不能在那里穿透读取门禁；释放后由既有 detail 周期刷新精确任务。
+    if (wasBusy && !active) setDetailPollEpoch((value) => value + 1)
+  }, [])
+
   const handoffImport = useHandoffImport({
     hostBridge: effectiveHostBridge,
     projectSessionId: status?.project_session_id ?? null,
@@ -2229,7 +2258,7 @@ export function StudioWorkspace({
     canStart: () => !busyRef.current && !homeActionBusyRef.current && !operationActive && !health.status.stale && !health.detail.stale,
     isCurrent: (nodeRun) => !health.status.stale && !health.detail.stale && selectionGuardRef.current.nodeIds.size === 1 &&
       selectionGuardRef.current.nodeIds.has(nodeRun.node_id) && handoffIsCurrent(nodeRun, generationRef.current),
-    onBusyChange: (active) => { busyRef.current = active; setBusy(active) },
+    onBusyChange: setExternalFileBusy,
     onImportStarted: (nodeRun) => {
       const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, nodeRun.external_handoff!.handoff_id)
       updateCheckedOutputs((previous) => { const next = new Map(previous); next.delete(key); return next })
@@ -2273,6 +2302,23 @@ export function StudioWorkspace({
     handoffActionRef.current = token
     setSubmittingNodeRunId(nodeRun.node_run_id)
     try {
+      const resourceKey = nodeRunResourceKey(nodeRun.run_id, nodeRun.node_run_id)
+      const passive = readinessPassiveFlightRef.current.get(resourceKey)
+      if (passive) {
+        // 先使旧观察失效，再等待 HTTP 真正结束；仅丢弃响应不能阻止服务收到 Submit 后的过期读取。
+        // 有界排空超时只取消本次用户操作，不发副作用、不自动重试，也不假装请求已经结束。
+        latestIssuedSequenceRef.current.readiness.set(resourceKey, ++sequenceRef.current.readiness)
+        let timer: number | undefined
+        const drained = await Promise.race([
+          passive.promise.then(() => true),
+          new Promise<false>((resolve) => { timer = window.setTimeout(() => resolve(false), 5_000) }),
+        ]).finally(() => window.clearTimeout(timer))
+        if (handoffActionRef.current !== token || !handoffIsCurrent(nodeRun, generation)) return
+        if (!drained) {
+          setClientHint('当前文件状态读取仍未结束；本次没有提交。请稍后再次点击“提交并继续”。')
+          return
+        }
+      }
       // 用户确认与检查分开；确认时重新完整预检，替换文件必须回到检查步骤，不能暗中提交新文件。
       const fresh = await loadReadiness(nodeRun.run_id, nodeRun.node_run_id, true, generation)
       if (handoffActionRef.current !== token || !handoffIsCurrent(nodeRun, generation)) return
@@ -2940,7 +2986,7 @@ export function StudioWorkspace({
                   run_id: nodeRun.run_id, node_run_id: nodeRun.node_run_id, handoff_id: handoff.handoff_id,
                   port_id: target.port_id, ordinal: target.ordinal }}
                 disabled={inboxSubmissionFences.has(handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, handoff.handoff_id)) || (busy && !inboxBusy) || (operationActive && !inboxBusy) || homeActionBusy || checkingNodeRunId !== null || submittingNodeRunId !== null || health.status.stale || health.detail.stale}
-                onBusyChange={(active) => { busyRef.current = active; setBusy(active); setInboxBusy(active) }}
+                onBusyChange={(active) => { setExternalFileBusy(active); setInboxBusy(active) }}
                 onCollected={() => {
                   const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, handoff.handoff_id)
                   updateCheckedOutputs((previous) => { const next = new Map(previous); next.delete(key); return next })

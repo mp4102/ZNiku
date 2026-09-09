@@ -2334,6 +2334,187 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     }])
   })
 
+  it.each(['success', 'failure'] as const)('Submit 先排空同任务的被动读取，迟到 %s 不覆盖显式检查', async (outcome) => {
+    vi.useFakeTimers()
+    const passive = new Deferred<ExternalHandoffReadiness>()
+    let delayPassive = false
+    const gateway = new RecordingGateway(handoffEnvelope(), {
+      readiness: (_runId, _nodeRunId, probe) => probe
+        ? handoffReadinessEnvelope('probe_passed', true)
+        : delayPassive ? passive.promise : handoffReadinessEnvelope('present', false),
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    fireEvent.click(within(await selectHandoffTask()).getByRole('button', { name: '检查输出' }))
+    await flushReact()
+    delayPassive = true
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_501) })
+    expect(gateway.readinessArguments.filter((item) => !item[2])).toHaveLength(2)
+
+    fireEvent.click(within(await selectHandoffTask()).getByRole('button', { name: '提交并继续' }))
+    await flushReact()
+    // 未结束的 HTTP 不能只丢弃结果：必须在真正 Submit 前结束，否则服务仍可能收到过期读取。
+    expect(gateway.readinessArguments.filter((item) => item[2])).toHaveLength(1)
+    expect(gateway.commands.filter((command) => command.operation === 'submit_external')).toHaveLength(0)
+    await act(async () => {
+      if (outcome === 'success') passive.resolve(handoffReadinessEnvelope('missing', false))
+      else passive.reject(new Error('synthetic old passive failure'))
+    })
+    await flushReact()
+    expect(gateway.readinessArguments.filter((item) => item[2])).toHaveLength(2)
+    expect(gateway.commands.filter((command) => command.operation === 'submit_external')).toEqual([{
+      operation: 'submit_external', run_id: handoffFixtureIds.run,
+      node_run_id: handoffFixtureIds.transformNodeRun, handoff_id: handoffFixtureIds.handoff,
+    }])
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('READINESS OK')
+    expect(screen.queryByText('synthetic old passive failure')).not.toBeInTheDocument()
+  })
+
+  it('被动读取排空超时只取消本次 Submit，迟到响应不会自动重试', async () => {
+    vi.useFakeTimers()
+    const passive = new Deferred<ExternalHandoffReadiness>()
+    let delayPassive = false
+    const gateway = new RecordingGateway(handoffEnvelope(), {
+      readiness: (_runId, _nodeRunId, probe) => probe
+        ? handoffReadinessEnvelope('probe_passed', true)
+        : delayPassive ? passive.promise : handoffReadinessEnvelope('present', false),
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    fireEvent.click(within(await selectHandoffTask()).getByRole('button', { name: '检查输出' }))
+    await flushReact()
+    delayPassive = true
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_501) })
+    fireEvent.click(within(await selectHandoffTask()).getByRole('button', { name: '提交并继续' }))
+    await flushReact()
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_001) })
+    expect(gateway.commands.filter((command) => command.operation === 'submit_external')).toHaveLength(0)
+    expect(gateway.readinessArguments.filter((item) => item[2])).toHaveLength(1)
+    expect(screen.getByRole('status', { name: '操作提示' })).toHaveTextContent('仍未结束；本次没有提交')
+    expect(within(await selectHandoffTask()).getByRole('button', { name: '提交并继续' })).toBeEnabled()
+    await act(async () => { passive.reject(new Error('synthetic expired passive failure')) })
+    await flushReact()
+    expect(gateway.commands.filter((command) => command.operation === 'submit_external')).toHaveLength(0)
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('READINESS OK')
+    expect(screen.queryByText('synthetic expired passive failure')).not.toBeInTheDocument()
+  })
+
+  it('跨 Run 导航保留在途被动读取但最多八个，旧请求结束后才释放名额', async () => {
+    vi.useFakeTimers()
+    const initialStatus = handoffEnvelope()
+    const runIds = Array.from({ length: 9 }, (_, index) => `00000000-0000-4000-8000-${String(100 + index).padStart(12, '0')}`)
+    const initialDetail = handoffDetailEnvelope()
+    const details = new Map(runIds.map((runId, index) => [runId, {
+      ...initialDetail, run: { ...initialDetail.run, run_id: runId,
+        node_runs: initialDetail.run.node_runs.map((nodeRun, ordinal) => {
+          const id = `00000000-0000-4000-8000-${String(1000 + index * 10 + ordinal).padStart(12, '0')}`
+          return { ...nodeRun, run_id: runId, node_run_id: id,
+            external_handoff: nodeRun.external_handoff ? { ...nodeRun.external_handoff, node_run_id: id,
+              handoff_id: `00000000-0000-4000-8000-${String(2000 + index).padStart(12, '0')}` } : null,
+          }
+        }),
+      },
+    }]))
+    const pending: Array<Deferred<ExternalHandoffReadiness>> = []
+    let delayPassive = false
+    const envelope: StatusEnvelope = { ...initialStatus, active_run_id: runIds[0]!,
+      run_summaries: runIds.map((runId) => ({ ...initialStatus.run_summaries[0]!, run_id: runId })),
+    }
+    const gateway = new RecordingGateway(envelope, {
+      detail: (runId) => details.get(runId)!,
+      readiness: (runId, nodeRunId) => {
+        if (delayPassive) {
+          const flight = new Deferred<ExternalHandoffReadiness>()
+          pending.push(flight)
+          return flight.promise
+        }
+        const handoff = details.get(runId)!.run.node_runs.find((item) => item.external_handoff)!.external_handoff!
+        return { ...handoffReadinessEnvelope('present', false), run_id: runId, node_run_id: nodeRunId, handoff_id: handoff.handoff_id }
+      },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    delayPassive = true
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_501) })
+    for (const runId of runIds.slice(1)) {
+      fireEvent.change(screen.getByRole('combobox', { name: '查看 Run' }), { target: { value: runId } })
+      await flushReact()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    }
+    expect(pending).toHaveLength(8)
+    expect(gateway.readinessArguments).toHaveLength(9)
+    await act(async () => { pending[0]!.reject(new Error('synthetic inactive Run failure')) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_501) })
+    expect(pending).toHaveLength(9)
+    expect(gateway.readinessArguments.at(-1)?.[0]).toBe(runIds.at(-1))
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('READINESS OK')
+    expect(screen.queryByText('synthetic inactive Run failure')).not.toBeInTheDocument()
+  })
+
+  it.each(['进行中', '已完成'] as const)('Submit %s 时迟到的旧 waiting detail 不重启被动读取', async (phase) => {
+    vi.useFakeTimers()
+    const command = new Deferred<StatusEnvelope>()
+    const oldWaitingDetail = new Deferred<RunDetailEnvelope>()
+    const finalDetail = new Deferred<RunDetailEnvelope>()
+    let submitting = false
+    let finished = false
+    const waitingDetail = handoffDetailEnvelope()
+    const endedAt = '2026-08-24T00:00:03Z'
+    const completedDetail: RunDetailEnvelope = {
+      ...waitingDetail,
+      run: { ...waitingDetail.run, state: 'completed', ended_at: endedAt,
+        node_runs: waitingDetail.run.node_runs.map((nodeRun) => ({ ...nodeRun,
+          state: 'completed', started_at: nodeRun.started_at ?? endedAt, ended_at: endedAt,
+          progress: 1, external_handoff: null,
+        })),
+      },
+    }
+    const initialStatus = handoffEnvelope()
+    const completedStatus: StatusEnvelope = { ...initialStatus,
+      run_summaries: initialStatus.run_summaries.map((summary) => ({ ...summary,
+        state: 'completed', actionable: false, requires_operator_action: false,
+        ended_at: endedAt, latest_activity_at: endedAt,
+        state_counts: { pending: 0, running: 0, waiting_external: 0, completed: summary.node_count, failed: 0 },
+      })),
+    }
+    const gateway = new RecordingGateway(initialStatus, {
+      detail: () => finished ? finalDetail.promise : submitting ? oldWaitingDetail.promise : waitingDetail,
+      command: () => { submitting = true; return command.promise },
+    })
+    render(<App gateway={gateway} />)
+    await flushReact()
+    fireEvent.click(within(await selectHandoffTask()).getByRole('button', { name: '检查输出' }))
+    await flushReact()
+    fireEvent.click(within(await selectHandoffTask()).getByRole('button', { name: '提交并继续' }))
+    await flushReact()
+    expect(gateway.commands.filter((item) => item.operation === 'submit_external')).toHaveLength(1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_501) })
+    expect(gateway.inspectRunCount).toBeGreaterThan(1)
+    if (phase === '已完成') {
+      finished = true
+      gateway.envelope = completedStatus
+      await act(async () => { command.resolve(completedStatus) })
+      await flushReact()
+    }
+    await act(async () => { oldWaitingDetail.resolve(waitingDetail) })
+    await flushReact()
+    expect(gateway.readinessArguments.filter((item) => !item[2])).toHaveLength(1)
+
+    finished = true
+    gateway.envelope = completedStatus
+    await act(async () => { command.resolve(completedStatus) })
+    await flushReact()
+    // 完成通知已到，但新的最终 detail 还在路上；旧 waiting 不能在这个窗口重新取得观察资格。
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_501) })
+    expect(gateway.readinessArguments.filter((item) => !item[2])).toHaveLength(1)
+    await act(async () => { finalDetail.resolve(completedDetail) })
+    await flushReact()
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_001) })
+    expect(gateway.readinessArguments.filter((item) => !item[2])).toHaveLength(1)
+    expect(screen.getByLabelText('Resource channel health')).toHaveTextContent('READINESS OK')
+    expect(screen.queryByRole('button', { name: '提交并继续' })).not.toBeInTheDocument()
+  })
+
   it('generation 切换后迟到的显式 probe 不得 Submit 或回写旧 readiness', async () => {
     vi.useFakeTimers()
     const slowProbe = new Deferred<ExternalHandoffReadiness>()

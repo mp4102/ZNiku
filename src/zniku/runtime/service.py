@@ -7,6 +7,9 @@ DAG 顺序执行 ready 节点、登记完整结果、复用启动前仍适用的
 节点失败只会阻断其依赖分支，Run 保持 ``running`` 以等待操作者执行 ``rerun_from_start``；独立分支
 仍会继续。只有全部选中节点 completed 才把 Run 终结为 completed，避免把可从头重跑的节点失败错误地
 变成不可再次创建 attempt 的 Run 终态。
+
+交接只读检查在同一次 Run snapshot 内解析目标与 latest attempt，避免并发状态推进被误判为重跑；
+该观察不持有写锁，实际登记仍由 Repository 写事务重验当前身份与状态。
 """
 
 from __future__ import annotations
@@ -416,17 +419,30 @@ class RuntimeService:
         *,
         handoff_id: str | None = None,
     ) -> NodeRun:
-        """只读解析一个精确绑定且仍可操作的最新 waiting handoff。"""
+        """在同一次 Run 读取视图中解析精确绑定的最新 waiting handoff。
+
+        ``get_run`` 已固定 SQLite snapshot；不能另读 NodeRun 后比较整个模型，否则两次读取间的
+        正常 Submit 会因状态字段变化被误判为 superseded。这里只提供当次观察，不能替代登记结果时
+        Repository 对 latest attempt、状态与父 Run 的事务重验。
+        """
 
         run = self._repository.get_run(run_id)
-        node_run = self._repository.get_node_run(node_run_id)
-        if node_run.run_id != run.run_id:
+        node_run = next((item for item in run.node_runs if item.node_run_id == node_run_id), None)
+        if node_run is None:
+            # 仅用补查区分原有 NOT_FOUND / OUTSIDE_RUN；不能把较新的对象混入旧快照。
+            outside = self._repository.get_node_run(node_run_id)
+            if outside.run_id != run.run_id:
+                raise RuntimeServiceError(
+                    "E_SERVICE_NODE_RUN_OUTSIDE_RUN",
+                    "NodeRun 不属于声明的 Run",
+                )
             raise RuntimeServiceError(
-                "E_SERVICE_NODE_RUN_OUTSIDE_RUN",
-                "NodeRun 不属于声明的 Run",
+                "E_SERVICE_HANDOFF_SUPERSEDED",
+                "attempt 不在本次 Run 读取快照中，请重新读取交接",
             )
         latest = self._latest_attempts(run, self._selected_node_ids(run))
-        if latest.get(node_run.node_id) != node_run:
+        latest_attempt = latest.get(node_run.node_id)
+        if latest_attempt is None or latest_attempt.node_run_id != node_run.node_run_id:
             raise RuntimeServiceError(
                 "E_SERVICE_HANDOFF_SUPERSEDED",
                 "manual_external attempt 已被新的 rerun attempt 取代",

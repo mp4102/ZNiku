@@ -37,10 +37,12 @@ from zniku.runtime import (
     ProducedOutput,
     PythonAdapterContext,
     PythonAdapterResult,
+    Run,
     RunnerCancelled,
     RunnerInterrupted,
     RunState,
     RuntimeDataError,
+    RuntimeNotFoundError,
     RuntimeService,
     RuntimeServiceError,
     StaleReason,
@@ -501,6 +503,135 @@ def test_manual_handoff_respects_definition_input_port_order(tmp_path: Path) -> 
     assert _latest_attempt(completed.node_runs, "manual").state is NodeRunState.COMPLETED
 
 
+def test_handoff_inspection_uses_one_run_snapshot_during_concurrent_submit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """在两次历史读取之间真实提交；同一 attempt 的状态推进不等于被 rerun 取代。"""
+
+    graph, definitions = _manual_graph()
+    service = RuntimeService(
+        _store(tmp_path, graph, definitions),
+        tmp_path / "work",
+        python_adapters={
+            "tests:source": _source_adapter([]),
+            "tests:copy": _copy_adapter([]),
+        },
+    )
+    waiting_run = service.run_until_blocked(service.create_run().run_id)
+    waiting = _latest_attempt(waiting_run.node_runs, "manual")
+    assert waiting.external_handoff is not None
+    handoff_id = waiting.external_handoff.handoff_id
+    Path(waiting.external_handoff.output_targets[0].path).write_text("done", encoding="utf-8")
+    original = service.repository.get_run
+    submitted = False
+
+    def submit_after_snapshot(run_id: str) -> Run:
+        nonlocal submitted
+        snapshot = original(run_id)
+        if not submitted:
+            submitted = True
+            completed = service.submit_external(
+                waiting.node_run_id, run_id=run_id, handoff_id=handoff_id
+            )
+            assert completed.state is RunState.COMPLETED
+        return snapshot
+
+    monkeypatch.setattr(service.repository, "get_run", submit_after_snapshot)
+    observed = service.inspect_external_handoff(
+        waiting_run.run_id, waiting.node_run_id, handoff_id=handoff_id
+    )
+
+    assert submitted
+    assert observed == waiting
+    persisted = original(waiting_run.run_id)
+    assert persisted.state is RunState.COMPLETED
+    assert len(persisted.node_runs) == len(waiting_run.node_runs)
+    assert _latest_attempt(persisted.node_runs, "manual").node_run_id == waiting.node_run_id
+    # 当次读取可以返回提交前的 waiting 观察；下一次新快照必须严格拒绝已完成的同一 attempt。
+    with pytest.raises(
+        RuntimeServiceError, check=lambda error: error.code == "E_SERVICE_HANDOFF_STATE"
+    ):
+        service.inspect_external_handoff(
+            waiting_run.run_id, waiting.node_run_id, handoff_id=handoff_id
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_binding", ["missing_run", "missing_node", "outside", "state", "handoff"]
+)
+def test_handoff_snapshot_preserves_exact_binding_failure_semantics(
+    tmp_path: Path, invalid_binding: str
+) -> None:
+    """一致性修复不得放宽 unknown、其他 Run、非 waiting 或错误 handoff 的原有门禁。"""
+
+    graph, definitions = _manual_graph()
+    service = RuntimeService(
+        _store(tmp_path, graph, definitions),
+        tmp_path / "work",
+        python_adapters={
+            "tests:source": _source_adapter([]),
+            "tests:copy": _copy_adapter([]),
+        },
+    )
+    run = service.run_until_blocked(service.create_run().run_id)
+    waiting = _latest_attempt(run.node_runs, "manual")
+    assert waiting.external_handoff is not None
+    run_id, node_run_id, handoff_id = (
+        run.run_id,
+        waiting.node_run_id,
+        waiting.external_handoff.handoff_id,
+    )
+    if invalid_binding == "missing_run":
+        run_id, code = str(uuid4()), "E_RUN_NOT_FOUND"
+    elif invalid_binding == "missing_node":
+        node_run_id, code = str(uuid4()), "E_NODE_RUN_NOT_FOUND"
+    elif invalid_binding == "outside":
+        node_run_id = service.create_run().node_runs[0].node_run_id
+        code = "E_SERVICE_NODE_RUN_OUTSIDE_RUN"
+    elif invalid_binding == "state":
+        node_run_id = _latest_attempt(run.node_runs, "source").node_run_id
+        code = "E_SERVICE_HANDOFF_STATE"
+    else:
+        handoff_id, code = str(uuid4()), "E_SERVICE_HANDOFF_STALE"
+    expected_error = (
+        RuntimeNotFoundError if invalid_binding.startswith("missing") else RuntimeServiceError
+    )
+    before = service.repository.get_run(run.run_id)
+
+    with pytest.raises(expected_error, check=lambda error: error.code == code):
+        service.inspect_external_handoff(run_id, node_run_id, handoff_id=handoff_id)
+
+    assert service.repository.get_run(run.run_id) == before
+
+
+def test_handoff_created_after_run_snapshot_is_not_mixed_into_old_view(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """快照之后新增的同 Run attempt 也必须拒绝本次观察，不能拼接两次读取。"""
+
+    graph, definitions = _manual_graph()
+    service = RuntimeService(
+        _store(tmp_path, graph, definitions),
+        tmp_path / "work",
+        python_adapters={
+            "tests:source": _source_adapter([]),
+            "tests:copy": _copy_adapter([]),
+        },
+    )
+    old_snapshot = service.run_until_blocked(service.create_run().run_id)
+    rerun = service.rerun_from_start(old_snapshot.run_id, "manual")
+    current = _latest_attempt(rerun.node_runs, "manual")
+    assert current.attempt == 2 and current.external_handoff is not None
+    monkeypatch.setattr(service.repository, "get_run", lambda run_id: old_snapshot)
+
+    with pytest.raises(
+        RuntimeServiceError, check=lambda error: error.code == "E_SERVICE_HANDOFF_SUPERSEDED"
+    ):
+        service.inspect_external_handoff(
+            rerun.run_id, current.node_run_id, handoff_id=current.external_handoff.handoff_id
+        )
+
+
 def test_rerun_creates_new_attempts_and_supersedes_old_handoff(tmp_path: Path) -> None:
     graph, definitions = _manual_graph()
     store = _store(tmp_path, graph, definitions)
@@ -529,6 +660,13 @@ def test_rerun_creates_new_attempts_and_supersedes_old_handoff(tmp_path: Path) -
     assert len(copy_calls) == 2
     assert manual_one.state is NodeRunState.WAITING_EXTERNAL
     assert manual_two.state is NodeRunState.WAITING_EXTERNAL
+    assert manual_one.external_handoff is not None
+    with pytest.raises(
+        RuntimeServiceError, check=lambda error: error.code == "E_SERVICE_HANDOFF_SUPERSEDED"
+    ):
+        service.inspect_external_handoff(
+            run.run_id, manual_one.node_run_id, handoff_id=manual_one.external_handoff.handoff_id
+        )
     with pytest.raises(RuntimeServiceError, match="E_SERVICE_HANDOFF_SUPERSEDED"):
         service.submit_external(manual_one.node_run_id)
 
