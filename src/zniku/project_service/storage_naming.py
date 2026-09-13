@@ -23,6 +23,19 @@ from zniku.chapter_overlap.node_contracts import (
 from zniku.graph import NodeDefinition, NodeInstance
 from zniku.project.storage_layout import AttemptNamingHint
 from zniku.runtime import Run
+from zniku.source_aligned.definitions import definition_role as aligned_role
+from zniku.source_aligned.node_contracts import (
+    PARAMETER_MODELS as ALIGNED_MODELS,
+)
+from zniku.source_aligned.node_contracts import (
+    ChapterParameters as AlignedChapterParameters,
+)
+from zniku.source_aligned.node_contracts import (
+    EnhancementParameters as AlignedEnhancementParameters,
+)
+from zniku.source_aligned.node_contracts import (
+    ExternalParameters,
+)
 
 _OVERLAP_NAMES = {
     "split": "分章分叶",
@@ -53,6 +66,23 @@ def resolve_attempt_naming(
     fallback = AttemptNamingHint(task_name=definition.type_id.rsplit(".", 1)[-1][:300] or "任务")
     if (node.type_id, node.definition_version) != (definition.type_id, definition.version):
         return fallback
+    new_role = aligned_role(definition)
+    if new_role is not None:
+        try:
+            model = ExternalParameters if new_role == "external" else ALIGNED_MODELS[new_role]
+            aligned = model.model_validate(node.model_dump(mode="json")["parameters"], strict=True)
+        except (ValidationError, ValueError, Av27MediaError):
+            return fallback
+        if new_role == "external":
+            return AttemptNamingHint(category="common", task_name="外部修复")
+        name = _OVERLAP_NAMES[new_role]
+        if isinstance(aligned, AlignedChapterParameters):
+            if isinstance(aligned, AlignedEnhancementParameters):
+                name += f"-leaf-{aligned.leaf.ordinal + 1:04d}"
+            return _chapter(aligned.chapter.ordinal, name)
+        return AttemptNamingHint(
+            category="common" if new_role == "split" else "program", task_name=name
+        )
     role = definition_role(definition)
     if role is not None:
         try:

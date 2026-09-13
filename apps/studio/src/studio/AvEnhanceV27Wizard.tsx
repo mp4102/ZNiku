@@ -1,5 +1,5 @@
 /**
- * 提供 AVEnhanceFlow v2.7.0 面向创作者的五步建项流程。
+ * 提供原片规划与明确版本兼容的五步建项流程。
  *
  * React 只收集意图、显示 Python preview，并把用户显式发起的“分析素材”编排为 preparation create 与
  * 普通 Run。Chapter/Leaf、dynamic ports、媒体 probe、输出命名和 profile compatibility 始终由 Python
@@ -13,6 +13,7 @@ import { ChapterOverlapSettingsForm } from './ChapterOverlapSettingsForm'
 import { ChapterOverlapPreview } from './ChapterOverlapPreview'
 import { ChapterOverlapDraftError, chapterSettingsIntent, initialChapterOverlapSettings, type ChapterOverlapFieldIssue } from './chapter-overlap-form'
 import { OverlapContractError, type OverlapFullEnvelope, type OverlapFullIntent, type OverlapProcessing, type OverlapProcessingEnvelope, type OverlapProcessingRequest } from './chapter-overlap-contracts'
+import type { SourceAlignedFullEnvelope, SourceAlignedFullIntent, SourceAlignedProcessing, SourceAlignedProcessingEnvelope, SourceAlignedProcessingRequest } from './source-aligned-contracts'
 import { formatHostBridgeError } from './host-error-presentation'
 import type {
   AvEnhanceV27ChapterSelectorWire,
@@ -30,9 +31,11 @@ import type {
 
 type SelectorMode = AvEnhanceV27ChapterSelectorWire['mode']
 type WizardStep = 1 | 2 | 3 | 4 | 5
+type WorkflowProfile = 'av27' | 'overlap' | 'source-aligned'
 type SettingsField = '片名' | '年份' | 'Chapter selector mode' | 'Exact chapter frames' | 'Exact chapter times'
   | 'Leaf duration minutes' | 'Enhancement model name' | 'Enhancement actual scale factor'
   | 'Enhancement model version' | 'FI model name' | 'FI model version' | 'Program encoder' | 'Publication output root' | '更改成片父目录'
+  | 'MR model name' | 'MR model version' | '确认外部修复保留帧顺序'
 export type AvEnhanceV27WizardMode = 'create' | 'resume'
 
 interface SourceDraft {
@@ -72,10 +75,16 @@ export interface AvEnhanceV27WizardProps {
   readonly onPreviewOverlapProcessing?: (request: OverlapProcessingRequest) => Promise<OverlapProcessingEnvelope>
   readonly onPreviewOverlap?: (request: OverlapFullIntent) => Promise<OverlapFullEnvelope>
   readonly onExpandOverlap?: (request: OverlapFullIntent) => Promise<boolean>
+  readonly onPreviewSourceAlignedProcessing?: (request: SourceAlignedProcessingRequest) => Promise<SourceAlignedProcessingEnvelope>
+  readonly onPreviewSourceAligned?: (request: SourceAlignedFullIntent) => Promise<SourceAlignedFullEnvelope>
+  readonly onExpandSourceAligned?: (request: SourceAlignedFullIntent) => Promise<boolean>
+  readonly onOpenExternalTasks?: (runId: string) => Promise<void>
   readonly onLocateNode: (nodeId: string) => void
 }
 
-const stepLabels = ['选择素材', '处理方案', '成片设置', '分析', '确认工作流'] as const
+const stepLabels = ['选择素材', '处理方案', '处理与成片设置', '分析', '确认工作流'] as const
+const legacyMRType = 'zniku.avenhance.v27.mosaic_restoration.external'
+const preparationTypes = new Set(['zniku.avenhance.v27.source_program', 'zniku.avenhance.v27.source_admission', legacyMRType])
 
 function defaultProjectId(): string {
   return `project.${globalThis.crypto.randomUUID()}`
@@ -174,6 +183,10 @@ export function AvEnhanceV27Wizard({
   onPreviewOverlapProcessing,
   onPreviewOverlap,
   onExpandOverlap,
+  onPreviewSourceAlignedProcessing,
+  onPreviewSourceAligned,
+  onExpandSourceAligned,
+  onOpenExternalTasks,
   onLocateNode,
 }: AvEnhanceV27WizardProps) {
   const wasOpen = useRef(false)
@@ -185,7 +198,7 @@ export function AvEnhanceV27Wizard({
   const chapterNameRefs = useRef<Array<HTMLInputElement | null>>([])
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const previewRequestRef = useRef<AvEnhanceV27TemplatePreviewRequestWire | null>(null)
-  const overlapRequestRef = useRef<OverlapFullIntent | null>(null)
+  const overlapRequestRef = useRef<OverlapFullIntent | SourceAlignedFullIntent | null>(null)
   const responseEpochRef = useRef(0)
   const pickerFlightRef = useRef(0)
   const expansionFlightRef = useRef<{ readonly runId: string; readonly token: symbol } | null>(null)
@@ -199,6 +212,9 @@ export function AvEnhanceV27Wizard({
   const initializedDraftResetRef = useRef(0)
   const [draftResetEpoch, setDraftResetEpoch] = useState(0)
   const autoPreviewAllowedRef = useRef(true)
+  const autoExpansionAllowedRef = useRef(true)
+  const profileExplicitlyChosenRef = useRef(false)
+  const preparedMRRef = useRef<AvEnhanceV27PrepareRequestWire['mr']>({ mode: 'off' })
   const mutationFlightRef = useRef<symbol | null>(null)
   const [connectionInterrupted, setConnectionInterrupted] = useState(false)
   const [mutationInterrupted, setMutationInterrupted] = useState(false)
@@ -207,8 +223,8 @@ export function AvEnhanceV27Wizard({
   const [step, setStep] = useState<WizardStep>(1)
   const [dataParent, setDataParent] = useState<string | null>(null)
   const [preview, setPreview] = useState<AvEnhanceV27TemplatePreviewEnvelope | null>(null)
-  const [overlapPreview, setOverlapPreview] = useState<OverlapFullEnvelope | null>(null)
-  const [workflowProfile, setWorkflowProfile] = useState<'av27' | 'overlap'>('av27')
+  const [overlapPreview, setOverlapPreview] = useState<OverlapFullEnvelope | SourceAlignedFullEnvelope | null>(null)
+  const [workflowProfile, setWorkflowProfile] = useState<WorkflowProfile>('source-aligned')
   const [overlapSettings, setOverlapSettings] = useState(initialChapterOverlapSettings)
   const [overlapIssue, setOverlapIssue] = useState<ChapterOverlapFieldIssue | null>(null)
   const [contextLeft, setContextLeft] = useState('32')
@@ -246,6 +262,8 @@ export function AvEnhanceV27Wizard({
   const [mrMode, setMrMode] = useState<'off' | 'external'>('off')
   const [mrModelName, setMrModelName] = useState('Jasna')
   const [mrModelVersion, setMrModelVersion] = useState('')
+  const [mrContainer, setMrContainer] = useState<'mp4' | 'mov' | 'mkv'>('mp4')
+  const [mrFrameOrderConfirmed, setMrFrameOrderConfirmed] = useState(false)
 
   const [selectorMode, setSelectorMode] = useState<SelectorMode>('single')
   const [selectorFrames, setSelectorFrames] = useState('')
@@ -267,9 +285,13 @@ export function AvEnhanceV27Wizard({
   const currentSourceMode = mode === 'resume'
     ? sourceModeFromSnapshot(currentSnapshot) ?? sourceMode
     : sourceMode
-  const overlapEnabled = workflowProfile === 'overlap' && currentSourceMode === 'program'
+  const sourceAlignedEnabled = workflowProfile === 'source-aligned' && currentSourceMode === 'program'
+  const overlapEnabled = workflowProfile !== 'av27' && currentSourceMode === 'program'
   const overlapAvailable = Boolean(onPreviewOverlapProcessing && onPreviewOverlap && onExpandOverlap)
-  const alreadyOverlap = mode === 'resume' && Boolean(currentSnapshot?.project.graph.nodes.some((node) => node.type_id.startsWith('zniku.overlap.')))
+  const sourceAlignedAvailable = Boolean(onPreviewSourceAlignedProcessing && onPreviewSourceAligned && onExpandSourceAligned)
+  const legacyMRNodes = currentSnapshot?.project.graph.nodes.filter((node) => node.type_id === legacyMRType) ?? []
+  const legacyMRPrepared = preparationCreated && legacyMRNodes.length > 0
+  const alreadyExpanded = mode === 'resume' && Boolean(currentSnapshot?.project.graph.nodes.some((node) => !preparationTypes.has(node.type_id)))
   const completedRuns = useMemo(
     () => runSummaries.filter((summary) => summary.state === 'completed'),
     [runSummaries],
@@ -305,15 +327,18 @@ export function AvEnhanceV27Wizard({
       interruptedProjectIdRef.current = null
       mutationFlightRef.current = null
       autoPreviewAllowedRef.current = true
+      autoExpansionAllowedRef.current = true
       setConnectionInterrupted(false)
       setMutationInterrupted(false)
       setOutputSelectionExpired(false)
       const continuing = mode === 'resume'
+      profileExplicitlyChosenRef.current = continuing
       setStep(continuing ? 3 : 1)
       setPreview(null)
       setOverlapPreview(null)
       overlapRequestRef.current = null
-      setWorkflowProfile('av27')
+      // 重开旧工程不推断新版本；只有新建且服务具备独立合同，默认使用原片规划。
+      setWorkflowProfile(!continuing && sourceAlignedAvailable ? 'source-aligned' : 'av27')
       setOverlapSettings(initialChapterOverlapSettings())
       setOverlapIssue(null)
       setContextLeft('32'); setContextRight('32'); setContextMinimum('2')
@@ -362,11 +387,18 @@ export function AvEnhanceV27Wizard({
       setYear('')
       setOverwrite(false)
       setOutputLayout(priorOutput ? priorOutput.parameters.create_parent === true ? 'title_subdirectory' : 'direct' : 'title_subdirectory')
-      setSourceMode('program')
-      setSources([{ source_path: '', chapter_label: '' }])
-      setMrMode('off')
-      setMrModelName('Jasna')
-      setMrModelVersion('')
+      setSourceMode(continuing ? sourceModeFromSnapshot(currentSnapshot) ?? 'program' : 'program')
+      const recordedSources = continuing ? currentSnapshot?.project.graph.nodes.filter((node) => node.type_id === 'zniku.avenhance.v27.source_program')
+        .sort((left, right) => Number(left.parameters.source_ordinal ?? 0) - Number(right.parameters.source_ordinal ?? 0))
+        .map((node) => ({ source_path: typeof node.parameters.source_path === 'string' ? node.parameters.source_path : '', chapter_label: typeof node.parameters.label === 'string' ? node.parameters.label : '' })) : undefined
+      setSources(recordedSources?.length ? recordedSources : [{ source_path: '', chapter_label: '' }])
+      const recordedMR = continuing ? currentSnapshot?.project.graph.nodes.find((node) => node.type_id === legacyMRType) : undefined
+      preparedMRRef.current = recordedMR ? { mode: 'external', model_name: String(recordedMR.parameters.model_name ?? ''), model_version: String(recordedMR.parameters.model_version ?? '') } : { mode: 'off' }
+      setMrMode(recordedMR ? 'external' : 'off')
+      setMrModelName(typeof recordedMR?.parameters.model_name === 'string' ? recordedMR.parameters.model_name : 'Jasna')
+      setMrModelVersion(typeof recordedMR?.parameters.model_version === 'string' ? recordedMR.parameters.model_version : '')
+      setMrContainer('mp4')
+      setMrFrameOrderConfirmed(false)
       closeButtonRef.current?.focus()
     } else if (!open && wasOpen.current) {
       responseEpochRef.current += 1
@@ -376,6 +408,11 @@ export function AvEnhanceV27Wizard({
     }
     wasOpen.current = open
   }, [currentProjectId, currentProjectName, currentProjectPath, currentSnapshot?.project.project_id, draftResetEpoch, mode, open, projectIdFactory, setAnalysisRunId])
+
+  useEffect(() => {
+    // 目录与首页可并行加载；晚到的能力目录只补新建默认值，不能覆盖用户明确选择或已创建工程。
+    if (open && mode === 'create' && !preparationCreated && sourceMode === 'program' && sourceAlignedAvailable && !profileExplicitlyChosenRef.current) setWorkflowProfile('source-aligned')
+  }, [mode, open, preparationCreated, sourceAlignedAvailable, sourceMode])
 
   useEffect(() => {
     const previous = connectionRef.current
@@ -394,6 +431,7 @@ export function AvEnhanceV27Wizard({
     publicationAutoFlightRef.current = null
     previewRequestRef.current = null
     autoPreviewAllowedRef.current = false
+    autoExpansionAllowedRef.current = false
     overlapRequestRef.current = null
     setOverlapPreview(null)
     setConnectionInterrupted(true)
@@ -481,6 +519,7 @@ export function AvEnhanceV27Wizard({
   }, [open, step, overlapIssue])
 
   const invalidateExpansion = () => {
+    autoExpansionAllowedRef.current = false
     responseEpochRef.current += 1
     pickerFlightRef.current += 1
     expansionFlightRef.current = null
@@ -545,9 +584,6 @@ export function AvEnhanceV27Wizard({
       }
       return { source_path: source.source_path, source_ordinal: sourceOrdinal }
     })
-    if (mrMode === 'external' && (!mrModelName.trim() || !mrModelVersion.trim())) {
-      throw new Error('启用马赛克修复时，需要填写实际工具/模型与版本。')
-    }
     return {
       profile_version: '2.7.0',
       project_path: projectPath,
@@ -555,7 +591,7 @@ export function AvEnhanceV27Wizard({
       project_name: projectName,
       source_mode: sourceMode,
       sources: normalizedSources,
-      mr: mrMode === 'off'
+      mr: sourceAlignedEnabled || mrMode === 'off'
         ? { mode: 'off' }
         : { mode: 'external', model_name: mrModelName, model_version: mrModelVersion },
     }
@@ -618,9 +654,23 @@ export function AvEnhanceV27Wizard({
   const applyOverlapIssue = (error: unknown) => {
     const issue = error instanceof OverlapContractError || error instanceof ChapterOverlapDraftError ? error.issue
       : error instanceof StudioGatewayError && error.fieldPath.length ? { fieldPath: error.fieldPath, message: error.serviceMessage ?? error.message } : null
-    if (issue) { setOverlapIssue(issue); setStep(3) }
+    if (issue && issue.fieldPath[0] === 'source') return false
+    if (issue) {
+      setOverlapIssue(issue); setStep(3)
+      if (issue.fieldPath.includes('mr')) {
+        setInvalidSetting({ field: issue.fieldPath.includes('model_name') ? 'MR model name' : issue.fieldPath.includes('model_version') ? 'MR model version' : '确认外部修复保留帧顺序' })
+      }
+    }
     return issue !== null
   }
+
+  const buildSourceAlignedProcessing = (): SourceAlignedProcessing => ({
+    ...buildOverlapProcessing(),
+    mr: mrMode === 'off' ? { mode: 'off' } : {
+      mode: 'external', model_name: mrModelName, model_version: optionalText(mrModelVersion) ?? null,
+      declared_container: mrContainer, operator_frame_order_confirmed: true,
+    },
+  })
 
   const buildPublicationRequest = (): AvEnhanceV27PublicationRequestWire => {
     const root = outputOrigin === 'custom' ? outputRoot : resolvedProjectOutput?.projectPath === projectPath ? resolvedProjectOutput.root : ''
@@ -641,6 +691,13 @@ export function AvEnhanceV27Wizard({
     }
     check('片名', () => { if (!title.trim()) throw new Error('请填写片名。') })
     check('年份', () => { if (!/^[0-9]{4}$/.test(year)) throw new Error('年份必须是四位数字。') })
+    if (mrMode === 'external' && (!preparationCreated || sourceAlignedEnabled)) {
+      check('MR model name', () => { if (!mrModelName.trim()) throw new Error('请填写外部修复使用的工具/模型。') })
+      check('MR model version', () => {
+        if (sourceAlignedEnabled ? mrModelVersion !== '' && mrModelVersion.trim() !== mrModelVersion : !mrModelVersion.trim()) throw new Error(sourceAlignedEnabled ? '实际版本可留空；填写时不能包含首尾空白。' : '旧流程需要填写实际工具/模型与版本。')
+      })
+      if (sourceAlignedEnabled) check('确认外部修复保留帧顺序', () => { if (!mrFrameOrderConfirmed) throw new Error('请确认外部修复不剪辑、不变速、不增删或重排帧。') })
+    }
     if (overlapEnabled) buildOverlapProcessing()
     if (!overlapEnabled && currentSourceMode !== 'pre_chaptered') {
       if (selectorMode === 'exact_frames') check('Exact chapter frames', () => parseFrames(selectorFrames))
@@ -704,10 +761,18 @@ export function AvEnhanceV27Wizard({
     setPreviewFailure(null)
     try {
       if (overlapEnabled) {
-        if (!onPreviewOverlap) throw new Error('当前服务没有重叠补帧候选接口。')
         validateSettings()
-        const request: OverlapFullIntent = { contract_version: '0.3.2', preparation_run_id: runId, processing: buildOverlapProcessing(), publication: buildPublicationRequest() }
-        const next = await onPreviewOverlap(request)
+        let request: OverlapFullIntent | SourceAlignedFullIntent
+        let next: OverlapFullEnvelope | SourceAlignedFullEnvelope
+        if (sourceAlignedEnabled) {
+          if (!onPreviewSourceAligned) throw new Error('当前服务没有原片规划接口。')
+          request = { contract_version: '0.3.3', preparation_run_id: runId, processing: buildSourceAlignedProcessing(), publication: buildPublicationRequest() }
+          next = await onPreviewSourceAligned(request)
+        } else {
+          if (!onPreviewOverlap) throw new Error('当前服务没有重叠补帧候选接口。')
+          request = { contract_version: '0.3.2', preparation_run_id: runId, processing: buildOverlapProcessing(), publication: buildPublicationRequest() }
+          next = await onPreviewOverlap(request)
+        }
         if (epoch !== responseEpochRef.current || !open) return
         if (next.preparation_run_id !== runId) throw new Error('重叠补帧预览与分析记录不一致。')
         overlapRequestRef.current = request
@@ -739,10 +804,15 @@ export function AvEnhanceV27Wizard({
         setOverlapPreview(null)
         applyOverlapIssue(error)
         const code = error instanceof StudioGatewayError ? error.code : null
+        const sourceAlignedMessages: Readonly<Record<string, string>> = {
+          E_SOURCE_ALIGNED_AUDIO_PRIMING_UNSUPPORTED: '原片音轨包含当前不支持的编码起始延迟。0.3.3 暂不能保证该音轨直接封装后的起点同步，因此停止生成工作流；不会自动转码、裁音或补偿。原片与已完成分析均保留。',
+          E_SOURCE_ALIGNED_LEGACY_PREPARATION: '此工程已经创建旧版外部修复准备任务，请返回处理方案选择原有流程并完成该任务；不能直接转成原片规划。',
+          E_SOURCE_ALIGNED_GRAPH_ALREADY_EXPANDED: '当前图已经展开或编辑过。请返回节点图继续配置；向导不能整图覆盖已有工作流。',
+        }
         setPreviewFailure({ code, message: error instanceof Error ? error.message : '无法生成工作流预览。',
           // Python 提供精确位置；这里只展示原文，绝不解析、拼接或把它提升为系统动作 authority。
           recoveryMessage: isPublicationError(code) && error instanceof StudioGatewayError ? error.serviceMessage : null })
-        setLocalError(isPublicationError(code)
+        setLocalError(code && sourceAlignedMessages[code] ? sourceAlignedMessages[code]! : isPublicationError(code)
           ? '输出位置暂不可用。素材分析已经完成并保留；请修改输出设置，检查目录权限或同名文件冲突后重试，无需重复分析。'
           : '工作流预览暂未生成。已完成的素材分析与工程仍然保留；请修改设置后重试，或在高级详情查看具体原因。')
         // 路径或预览失败不撤销已完成分析；恢复模式也保留 exact Run，改选由用户显式触发。
@@ -756,7 +826,7 @@ export function AvEnhanceV27Wizard({
   useEffect(() => {
     if (
       !open ||
-      serviceUnavailable || reconnecting || !autoPreviewAllowedRef.current ||
+      serviceUnavailable || reconnecting || !autoPreviewAllowedRef.current || !autoExpansionAllowedRef.current ||
       !analysisRunId ||
       analysisRunIdRef.current !== analysisRunId ||
       analysisSummary?.state !== 'completed' ||
@@ -770,14 +840,26 @@ export function AvEnhanceV27Wizard({
   }, [analysisRunId, analysisSummary?.state, open])
 
   if (!open) return null
-  if (alreadyOverlap) return <div className="template-wizard-backdrop"><section className="template-wizard creator-wizard" role="dialog" aria-modal="true" aria-label="重叠补帧工程已创建" ref={dialogRef}><h2>这个工程已经包含重叠补帧工作流</h2><p>请在节点图中配置或运行已有节点。向导不会重新展开或覆盖已编辑的工作流，也不会迁移旧结果。</p><p>Aion · 软件 v1.0 · 待真实验收。上下文输入、外部原始结果和裁边结果分别保留。</p><button type="button" className="button button--primary" onClick={onClose} ref={closeButtonRef}>返回当前节点图</button></section></div>
+  if (alreadyExpanded) return <div className="template-wizard-backdrop"><section className="template-wizard creator-wizard" role="dialog" aria-modal="true" aria-label="已有工作流保持不变" ref={dialogRef}><h2>这个工程已经展开或编辑过节点图</h2><p>请在节点图中配置或运行已有节点。向导不会重新展开或覆盖已编辑的工作流，也不会迁移旧结果。旧 Run 和产物保持原样。</p><button type="button" className="button button--primary" onClick={onClose} ref={closeButtonRef}>返回当前节点图</button></section></div>
 
   const controlsDisabled = !serviceUnavailable && ((busy && !connectionInterrupted) || submitting || openingOutput)
   const serviceControlsDisabled = busy || submitting || openingOutput || serviceUnavailable || reconnecting || mutationInterrupted
+  const chooseProfile = (next: WorkflowProfile) => {
+    profileExplicitlyChosenRef.current = true
+    setWorkflowProfile(next)
+    if (preparationCreated && next !== 'source-aligned') {
+      // 新 MR 是尚未应用的处理草稿；旧流程只能沿用真实 preparation，不能把新草稿显示成旧图已启用。
+      const recorded = preparedMRRef.current
+      setMrMode(recorded.mode)
+      if (recorded.mode === 'external') { setMrModelName(recorded.model_name); setMrModelVersion(recorded.model_version) }
+    }
+    invalidateExpansion()
+  }
   const profileChoice = <section className="creator-settings-group" aria-label="工作流版本">
-    <h4>处理链</h4><label>工作流方案<select aria-label="工作流方案" disabled={controlsDisabled} value={overlapEnabled ? 'overlap' : 'av27'} onChange={(event) => { setWorkflowProfile(event.target.value as 'av27' | 'overlap'); invalidateExpansion() }}><option value="av27">AVEnhanceFlow v2.7.0 · 既有流程</option><option value="overlap" disabled={!overlapAvailable || currentSourceMode !== 'program'}>ZNIKU 重叠 FI · 0.3.2 候选</option></select></label>
-    {currentSourceMode === 'pre_chaptered' ? <p>已经分章的素材沿用既有流程，不会自动迁移为重叠补帧。</p> : overlapEnabled ? <p>支持平均 / 精确时间 / 精确帧分章和章内均衡分叶。Aion 软件 v1.0 尚待真实验收；这是 ZNIKU 新处理链，不是 AVEnhanceFlow 2.7.0 原有行为。</p> : <p>保留既有分章和逐章补帧语义；不会自动升级已有工程或结果。</p>}
-    {!overlapAvailable && currentSourceMode === 'program' && <p>当前连接未提供新候选接口；升级本机服务后才能显式选择。</p>}
+    <h4>处理链</h4><label>工作流方案<select aria-label="工作流方案" disabled={controlsDisabled} value={currentSourceMode === 'program' ? workflowProfile : 'av27'} onChange={(event) => chooseProfile(event.target.value as WorkflowProfile)}><option value="source-aligned" disabled={!sourceAlignedAvailable || currentSourceMode !== 'program' || legacyMRPrepared}>ZNIKU 原片规划与重叠 FI · 0.3.3（推荐）</option><option value="overlap" disabled={!overlapAvailable || currentSourceMode !== 'program'}>ZNIKU 重叠 FI · 0.3.2 既有流程</option><option value="av27">AVEnhanceFlow v2.7.0 · 既有流程</option></select></label>
+    {currentSourceMode === 'pre_chaptered' ? <p>已经分章的素材沿用既有流程，不会自动迁移为单一原片规划。</p> : sourceAlignedEnabled ? <p>先分析原片，再确认完整处理链。可选外部修复不会阻塞原片分析；分章分叶、增强和重叠 FI 共用原片时间轴。</p> : overlapEnabled ? <p>保留 0.3.2 的分章和重叠 FI 合同；不自动迁移旧工程或结果。</p> : <p>保留既有分章和逐章补帧语义；不会自动升级已有工程或结果。</p>}
+    {legacyMRPrepared && <p>此工程已创建旧版外部修复任务，继续使用其原合同；不能改为原片规划或修改冻结的交付目标。</p>}
+    {!sourceAlignedAvailable && currentSourceMode === 'program' && <p>当前连接未提供 0.3.3 接口；升级本机服务后才能选择原片规划。</p>}
   </section>
 
   const reportPickerError = (error: unknown, fallback: string) => {
@@ -884,10 +966,10 @@ export function AvEnhanceV27Wizard({
     setLocalError(null)
     try {
       if (step === 1) {
-        buildPrepareRequest()
+        if (!preparationCreated) buildPrepareRequest()
         setStep(2)
       } else if (step === 2) {
-        buildPrepareRequest()
+        if (!preparationCreated) buildPrepareRequest()
         setStep(3)
       } else if (step === 3) {
         if (serviceControlsDisabled) return
@@ -904,8 +986,13 @@ export function AvEnhanceV27Wizard({
         try {
           // 此检查不依赖媒体、不保存工程、不创建目录。输入变化或取消立即撤销迟到响应的展示资格。
           if (overlapEnabled) {
-            if (!onPreviewOverlapProcessing) throw new Error('当前服务没有重叠补帧候选设置接口。')
-            await onPreviewOverlapProcessing({ contract_version: '0.3.2', processing: buildOverlapProcessing() })
+            if (sourceAlignedEnabled) {
+              if (!onPreviewSourceAlignedProcessing) throw new Error('当前服务没有原片规划设置接口。')
+              await onPreviewSourceAlignedProcessing({ contract_version: '0.3.3', processing: buildSourceAlignedProcessing() })
+            } else {
+              if (!onPreviewOverlapProcessing) throw new Error('当前服务没有重叠补帧候选设置接口。')
+              await onPreviewOverlapProcessing({ contract_version: '0.3.2', processing: buildOverlapProcessing() })
+            }
             if (epoch !== responseEpochRef.current || publicationFlightRef.current !== token) return
           }
           const checked = await onPreviewPublication(overlapEnabled ? publicationIntent : { ...publicationIntent, processing: buildProcessingRequest() })
@@ -981,6 +1068,7 @@ export function AvEnhanceV27Wizard({
       if (mutationFlightRef.current === mutationToken) mutationFlightRef.current = null
       previewRequestRef.current = null
       if (!created) throw new Error('工程没有创建；素材和原有工程保持不变。')
+      preparedMRRef.current = prepareRequest.mr
       setPreparationCreated(true)
       if (!onStartPreparationRun) {
         throw new Error('当前入口无法启动素材分析；工程已安全创建，可返回工作区继续。')
@@ -991,6 +1079,7 @@ export function AvEnhanceV27Wizard({
       if (mutationFlightRef.current === mutationToken) mutationFlightRef.current = null
       if (!runId) throw new Error('素材分析没有启动；工程已创建，但没有产生 Run。')
       autoPreviewAllowedRef.current = true
+      autoExpansionAllowedRef.current = true
       setAnalysisRunId(runId)
     } catch (error) {
       if (epoch === responseEpochRef.current) {
@@ -1018,6 +1107,7 @@ export function AvEnhanceV27Wizard({
       if (epoch !== responseEpochRef.current || !open) return
       if (!runId) throw new Error('素材分析没有启动；原工程和已完成结果保持不变。')
       autoPreviewAllowedRef.current = true
+      autoExpansionAllowedRef.current = true
       setAnalysisRunId(runId)
     } catch (error) {
       if (epoch === responseEpochRef.current) {
@@ -1032,6 +1122,7 @@ export function AvEnhanceV27Wizard({
     if (serviceControlsDisabled) return
     invalidateExpansion()
     autoPreviewAllowedRef.current = true
+    autoExpansionAllowedRef.current = true
     setAnalysisRunId(runId)
   }
 
@@ -1040,11 +1131,20 @@ export function AvEnhanceV27Wizard({
     setStep(3)
   }
 
+  const openExternalTasks = async (runId: string) => {
+    if (!onOpenExternalTasks || serviceControlsDisabled) return
+    const epoch = responseEpochRef.current
+    setSubmitting(true)
+    try { await onOpenExternalTasks(runId) }
+    catch (error) { if (epoch === responseEpochRef.current) setLocalError(error instanceof Error ? error.message : '无法打开外部任务；请返回工作区查看。') }
+    finally { if (epoch === responseEpochRef.current) setSubmitting(false) }
+  }
+
   const confirmWorkflow = async () => {
     if (serviceControlsDisabled) return
     const epoch = responseEpochRef.current
     const authority = previewRequestRef.current
-    if (overlapEnabled ? !overlapPreview || !overlapRequestRef.current || !onExpandOverlap : !preview?.profile.compatible || !authority || authority.action !== 'expand') {
+    if (overlapEnabled ? !overlapPreview || !overlapRequestRef.current || (sourceAlignedEnabled ? !onExpandSourceAligned : !onExpandOverlap) : !preview?.profile.compatible || !authority || authority.action !== 'expand') {
       invalidateExpansion()
       setLocalError('当前设置没有可确认的 Python 工作流预览；请使用已完成的素材分析重新生成预览。')
       setStep(4)
@@ -1054,8 +1154,11 @@ export function AvEnhanceV27Wizard({
     setLocalError(null)
     try {
       mutationFlightRef.current = Symbol('expand-workflow')
-      const applied = overlapEnabled && overlapRequestRef.current && onExpandOverlap
-        ? await onExpandOverlap(overlapRequestRef.current)
+      const overlapRequest = overlapRequestRef.current
+      const applied = sourceAlignedEnabled && overlapRequest?.contract_version === '0.3.3' && onExpandSourceAligned
+        ? await onExpandSourceAligned(overlapRequest)
+        : overlapEnabled && overlapRequest?.contract_version === '0.3.2' && onExpandOverlap
+        ? await onExpandOverlap(overlapRequest)
         : authority?.action === 'expand' ? await onExpand(authority.request) : false
       if (epoch !== responseEpochRef.current) return
       previewRequestRef.current = null
@@ -1092,7 +1195,7 @@ export function AvEnhanceV27Wizard({
         <ol className="creator-wizard-steps" aria-label="建项进度">
           {stepLabels.map((label, index) => {
             const number = (index + 1) as WizardStep
-            return <li aria-current={number === step ? 'step' : undefined} className={number === step ? 'is-current' : number < step ? 'is-complete' : ''} key={label}><span>{number < step ? '✓' : number}</span><strong>{label}</strong></li>
+            return <li aria-current={number === step ? 'step' : undefined} className={number === step ? 'is-current' : number < step ? 'is-complete' : ''} key={label}><span>{number < step ? '✓' : number}</span><button type="button" disabled={controlsDisabled || checkingOutput || number === step || !(number < step || (preparationCreated && number <= 3))} onClick={() => { invalidateExpansion(); setStep(number) }} aria-label={`查看${label}`}><strong>{label}</strong></button></li>
           })}
         </ol>
 
@@ -1108,15 +1211,18 @@ export function AvEnhanceV27Wizard({
             setDraftResetEpoch((value) => value + 1)
           }}>放弃保留的向导草稿</button>}
         </section>}
+          {preparationCreated && legacyMRPrepared && runSummaries.some((summary) => summary.requires_operator_action) && <section className="creator-setting-note" aria-label="已创建的外部修复任务"><p>旧版外部修复任务仍在等待交付。使用同一外部助手选择文件、检查并提交；返回向导不会改写或重建任务。</p>{runSummaries.filter((summary) => summary.requires_operator_action).map((summary) => <button type="button" className="button button--ghost" key={summary.run_id} disabled={serviceControlsDisabled || !onOpenExternalTasks} onClick={() => void openExternalTasks(summary.run_id)}>打开外部任务 · {humanRunTime(summary.created_at)}</button>)}</section>}
           {step === 1 && (
             <section className="creator-step" aria-label="选择素材">
               <header><span>01</span><div><h3>选择要处理的视频</h3><p>先选择素材，再为工程命名并选择保存位置。</p></div></header>
+              {preparationCreated && <p className="creator-setting-note" role="status">工程与素材身份已经创建，以下为实际保存的只读信息；返回查看不会重新分析或更换源视频。需要其他素材时请新建工程。处理方案与后续参数仍可在确认前修改。</p>}
               <section className="creator-setup-group" aria-label="素材设置">
                 <h4>素材</h4>
                 <label className="creator-setup-row"><span>素材组织方式</span><select aria-label="素材组织方式" disabled={controlsDisabled || preparationCreated} onChange={(event) => {
                   const next = event.target.value as AvEnhanceV27SourceMode
                   setSourceMode(next)
                   if (next === 'pre_chaptered') setWorkflowProfile('av27')
+                  else if (sourceAlignedAvailable) setWorkflowProfile('source-aligned')
                   // 默认章名只是可编辑表单值；切换后不应逼操作者展开高级区补内部必填项。
                   setSources((current) => next === 'program' ? current.slice(0, 1) : current.map((source, index) => source.chapter_label.trim() ? source : { ...source, chapter_label: `章节 ${index + 1}` }))
                   invalidateExpansion()
@@ -1141,9 +1247,10 @@ export function AvEnhanceV27Wizard({
                 </div>
               </section>
               <details className="creator-setup-advanced">
-                <summary><span>高级选项（可选）</span>{dataParent && <span className="creator-advanced-badge">已自定义工作数据位置</span>}</summary>
+                <summary><span>高级选项（可选）</span>{dataParent && !preparationCreated && <span className="creator-advanced-badge">已自定义工作数据位置</span>}</summary>
                 <section className="creator-advanced-section" aria-label="工作数据位置">
                   <h4>工作数据</h4>
+                  {preparationCreated ? <p>沿用已保存的工作数据位置，请在“工程 → 工程数据”查看。此处只读，不移动或删除文件。</p> : <>
                   <p>{dataParent ? `专用磁盘父目录：${dataParent}` : '使用工程旁默认位置'}</p>
                   <small>{dataParent ? '创建工程时，将在此目录内建立工程文件同名的 .data 文件夹。工程文件位置不变。' : '创建工程时，将在工程文件旁建立同名 .data 文件夹。'} 中间产物和外部处理结果会长期保留，完成或退出不会自动清除。</small>
                   <div className="creator-storage-actions">
@@ -1151,6 +1258,7 @@ export function AvEnhanceV27Wizard({
                     {dataParent && <button className="button button--ghost" type="button" disabled={controlsDisabled || preparationCreated} onClick={() => { setDataParent(null); invalidateExpansion() }}>恢复工程旁默认</button>}
                   </div>
                   <small>仅在需要其他磁盘时修改；恢复默认不改变工程文件位置，不移动或删除文件。</small>
+                  </>}
                 </section>
                 {sourceMode === 'pre_chaptered' && <section className="creator-advanced-section" aria-label="章节名称"><h4>章节名称</h4><p>按所选视频顺序命名，默认名称可直接使用。</p>{sources.map((source, index) => <label key={index}>{source.source_path ? pathName(source.source_path) : `第 ${index + 1} 个视频`}<input aria-label={`第 ${index + 1} 章名称`} aria-invalid={missingChapter?.index === index || undefined} aria-describedby={missingChapter?.index === index ? 'creator-project-field-error' : undefined} ref={(element) => { chapterNameRefs.current[index] = element }} disabled={controlsDisabled || preparationCreated} onChange={(event) => updateSource(index, { chapter_label: event.target.value })} value={source.chapter_label} /></label>)}</section>}
                 <section className="creator-advanced-section" aria-label="手动路径（开发用）">
@@ -1170,13 +1278,13 @@ export function AvEnhanceV27Wizard({
               <header><span>02</span><div><h3>选择处理方案</h3><p>标准流程会先增强每段画面，合并章节后再统一补帧和编码。</p></div></header>
               {profileChoice}
               <article className="creator-plan-card is-selected"><span>推荐</span><h4>完整增强流程</h4><p>画质增强 → 合并 → 补帧 → 连续 Main10 编码 → 保留原始音频。</p><ul><li>节点仍可在创建后自由调整</li><li>外部工具步骤会逐项引导</li><li>同一工程可随时切换到节点图继续编辑</li></ul></article>
-              <details className="creator-settings-advanced"><summary>马赛克修复（高级）</summary><label className="template-check"><input aria-label="启用外部马赛克修复" checked={mrMode === 'external'} disabled={controlsDisabled || preparationCreated} onChange={(event) => { setMrMode(event.target.checked ? 'external' : 'off'); invalidateExpansion() }} type="checkbox" />素材分析前先在 Jasna 等外部工具中修复马赛克</label>{mrMode === 'external' && <div className="template-form-grid"><label>工具/模型<input aria-label="MR model name" disabled={controlsDisabled || preparationCreated} onChange={(event) => { setMrModelName(event.target.value); invalidateExpansion() }} value={mrModelName} /></label><label>实际版本<input aria-label="MR model version" disabled={controlsDisabled || preparationCreated} onChange={(event) => { setMrModelVersion(event.target.value); invalidateExpansion() }} value={mrModelVersion} /></label></div>}</details>
+              <p>可选外部修复与处理参数统一在下一页设置。{preparationCreated && '返回本页只修改未确认的处理草稿，不修改已有 Run、分析记录或产物。'}</p>
             </section>
           )}
 
           {step === 3 && (
             <section className="creator-step" aria-label="设置">
-              <header><span>03</span><div><h3>成片设置</h3><p>先确定成片名称，再按处理顺序确认参数。已有默认值可以直接使用；需要填写的项目始终可见。</p></div></header>
+              <header><span>03</span><div><h3>处理与成片设置</h3><p>先确定成片名称，再按处理顺序确认参数。已有默认值可以直接使用；需要填写的项目始终可见。</p></div></header>
               {mode === 'resume' && profileChoice}
               <section className="creator-settings-group" aria-label="成片命名">
                 <h4>成片名称与位置</h4>
@@ -1193,6 +1301,21 @@ export function AvEnhanceV27Wizard({
                 </div>
               </section>
               <div className="creator-processing-settings">
+                <section className="creator-settings-group" aria-label="可选外部马赛克修复">
+                  <h4><span>0</span>可选外部马赛克修复</h4>
+                  <label className="template-check"><input aria-label="启用外部马赛克修复" checked={mrMode === 'external'} disabled={controlsDisabled || (preparationCreated && !sourceAlignedEnabled)} onChange={(event) => { setMrMode(event.target.checked ? 'external' : 'off'); invalidateExpansion() }} type="checkbox" />启用外部马赛克修复</label>
+                  <p>{sourceAlignedEnabled ? '默认关闭。开启后仍先分析原片；确认完整工作流后，在分章前等待外部修复。与增强共用同一外部处理助手。' : '旧流程保留原有顺序：外部修复属于素材准备，完成后才能继续规划。已创建的准备图不能在此改变修复配置。'}</p>
+                  {preparationCreated && !sourceAlignedEnabled && <p className="creator-setting-note">以下状态来自已经创建的正式准备图，不是新的可应用设置。{legacyMRPrepared ? '此工程已启用外部修复。' : '此工程未启用旧版外部修复。若需新增修复，可返回处理方案明确选择 0.3.3 原片规划。'}</p>}
+                  {mrMode === 'external' && <div className="template-form-grid">
+                    <label>工具/模型<input aria-label="MR model name" aria-invalid={invalidSetting?.field === 'MR model name' || undefined} disabled={controlsDisabled || (preparationCreated && !sourceAlignedEnabled)} onChange={(event) => { setMrModelName(event.target.value); invalidateExpansion() }} value={mrModelName} /></label>
+                    <label>{sourceAlignedEnabled ? '实际版本（可选）' : '实际版本'}<input aria-label="MR model version" aria-invalid={invalidSetting?.field === 'MR model version' || undefined} disabled={controlsDisabled || (preparationCreated && !sourceAlignedEnabled)} onChange={(event) => { setMrModelVersion(event.target.value); invalidateExpansion() }} value={mrModelVersion} /></label>
+                    {sourceAlignedEnabled ? <>
+                      <label>交付文件格式<select aria-label="MR output container" disabled={controlsDisabled} value={mrContainer} onChange={(event) => { setMrContainer(event.target.value as 'mp4' | 'mov' | 'mkv'); invalidateExpansion() }}><option value="mp4">MP4（默认）</option><option value="mov">MOV</option><option value="mkv">MKV</option></select><small>应与外部工具真实导出的容器一致；不靠改扩展名转换格式。</small></label>
+                      <label className="template-check creator-setting-wide"><input type="checkbox" aria-label="确认外部修复保留帧顺序" aria-invalid={invalidSetting?.field === '确认外部修复保留帧顺序' || undefined} checked={mrFrameOrderConfirmed} disabled={controlsDisabled} onChange={(event) => { setMrFrameOrderConfirmed(event.target.checked); invalidateExpansion() }} />我确认外部修复不剪辑、不变速、不增删或重排帧；保持原片帧数、帧率、尺寸与时间轴。</label>
+                      <p className="creator-setting-wide">交付后仍需在外部任务中检查并明确提交。程序核对媒体合同，无法仅凭帧数证明逐帧画面内容相同；最终音频始终来自原片。</p>
+                    </> : <p>旧外部任务继续使用原先声明的 MKV 交付合同，不自动改为 MP4/MOV。</p>}
+                  </div>}
+                </section>
                 <section className="creator-settings-group" aria-label="章节与分段">
                   <h4><span>1</span>章节与分段</h4>
                   <p>先划分章节，再把每章拆成便于外部处理的小段。</p>
@@ -1280,7 +1403,7 @@ export function AvEnhanceV27Wizard({
         <footer className="template-wizard-footer creator-wizard-footer">
           <div>{(localError || serviceError) && <div className="template-error-stack" role="alert">{serviceError && serviceError !== localError && !previewFailure && <p className="template-local-error">{serviceError}</p>}{localError && <p className="template-local-error" id={missingProjectField || missingChapter ? 'creator-project-field-error' : undefined}>{localError}</p>}{pickerFailure?.message === localError && <details><summary>高级 → 选择窗口原始详情</summary><pre>{pickerFailure.rawMessage}</pre></details>}{previewFailure?.recoveryMessage && <p className="template-local-error">{previewFailure.recoveryMessage}</p>}{previewFailure && <details><summary>高级 → 输出位置与预览详情</summary>{previewFailure.code && <code>{previewFailure.code}</code>}<pre>{previewFailure.message}</pre></details>}</div>}</div>
           <div className="creator-footer-actions">
-            {step > 1 && step < 5 && !preparationCreated && <button className="button button--ghost" disabled={controlsDisabled} onClick={() => { invalidateExpansion(); setStep((step - 1) as WizardStep) }} type="button">上一步</button>}
+            {step > 1 && step < 5 && <button className="button button--ghost" disabled={controlsDisabled} onClick={() => { invalidateExpansion(); setStep((step - 1) as WizardStep) }} type="button">上一步</button>}
             {step === 3 && checkingOutput && <button className="button button--ghost" onClick={invalidateExpansion} type="button">取消检查</button>}
             {step < 4 && <button className="button button--primary" disabled={controlsDisabled || checkingOutput || (step === 3 && serviceControlsDisabled)} onClick={() => void moveNext()} type="button">{checkingOutput ? '正在检查输出位置…' : `下一步：${(stepLabels as ReadonlyArray<string>)[step] ?? ''}`}</button>}
             {step === 4 && preparationCreated && <button className="button button--ghost" disabled={controlsDisabled} onClick={returnToSettings} type="button">修改设置</button>}

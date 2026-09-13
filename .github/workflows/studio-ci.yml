@@ -50,6 +50,10 @@ jobs:
         working-directory: .
         run: uv run --locked --extra dev python tools/generate_overlap_studio_corpus.py
 
+      - name: Verify source-aligned Studio schema corpus and Python preview fixture
+        working-directory: .
+        run: uv run --locked --extra dev python tools/generate_source_aligned_studio_corpus.py
+
       - name: Install locked dependencies
         run: npm ci
 

@@ -32,8 +32,10 @@ from zniku.chapter_overlap.definitions import built_in_overlap_definitions
 from zniku.graph import NodeDefinition, PortSpec
 from zniku.media import built_in_media_definitions
 from zniku.media.definitions import is_supported_output_file_definition
+from zniku.source_aligned import definitions as aligned_definitions
 
 from . import chapter_overlap as overlap_presentation
+from . import source_aligned as aligned_presentation
 from .models import (
     PRESENTATION_CONTRACT_VERSION,
     PRESENTATION_LOCALE,
@@ -79,7 +81,7 @@ _CATEGORIES = (
     CategoryPresentation(
         category_id="overlap",
         title="ZNIKU 重叠 FI 候选",
-        description="独立的 0.3.2 分章与重叠补帧处理链；Aion 软件 v1.0 待真实验收。",
+        description="0.3.2 / 0.3.3 独立精确版本的分章与重叠补帧节点；Aion 软件 v1.0 待真实验收。",
         order=60,
     ),
     CategoryPresentation(
@@ -462,9 +464,12 @@ _ADVANCED_PARAMETERS = _BINDING_PARAMETERS | {
 
 def _builtin_metadata(definition: NodeDefinition) -> _NodeMetadata:
     key = (definition.type_id, definition.version)
-    if definition.type_id.startswith("zniku.overlap."):
+    if definition.type_id.startswith(("zniku.overlap.", "zniku.source_aligned.")):
         try:
-            return _NodeMetadata(*overlap_presentation.metadata(definition))
+            presenter = (
+                aligned_presentation if definition.version == "0.3.3" else overlap_presentation
+            )
+            return _NodeMetadata(*presenter.metadata(definition))
         except ValueError as error:
             raise PresentationCatalogError(
                 "E_PRESENTATION_BUILTIN_DEFINITION_DRIFT", str(error)
@@ -513,7 +518,9 @@ def _builtin_metadata(definition: NodeDefinition) -> _NodeMetadata:
 def _is_builtin_definition(definition: NodeDefinition) -> bool:
     """按受控 namespace 识别必须失败关闭的仓库内 definition。"""
 
-    return definition.type_id.startswith(("zniku.media.", "zniku.avenhance.v27.", "zniku.overlap."))
+    return definition.type_id.startswith(
+        ("zniku.media.", "zniku.avenhance.v27.", "zniku.overlap.", "zniku.source_aligned.")
+    )
 
 
 def _schema_properties(definition: NodeDefinition) -> Mapping[str, object]:
@@ -581,11 +588,14 @@ def _parameter_presentations(
 ) -> tuple[tuple[ParameterGroupPresentation, ...], tuple[ParameterPresentation, ...]]:
     parameters: list[ParameterPresentation] = []
     groups_in_use: set[str] = set()
-    overlap = definition.type_id.startswith("zniku.overlap.")
+    overlap = definition.type_id.startswith(("zniku.overlap.", "zniku.source_aligned."))
+    aligned = overlap and definition.version == "0.3.3"
     for order, (name, raw_schema) in enumerate(_schema_properties(definition).items(), start=1):
         label = (
-            overlap_presentation.PARAMETER_LABELS.get(name) if overlap else None
-        ) or _PARAMETER_LABELS.get(name)
+            (aligned_presentation.PARAMETER_LABELS.get(name) if aligned else None)
+            or (overlap_presentation.PARAMETER_LABELS.get(name) if overlap else None)
+            or _PARAMETER_LABELS.get(name)
+        )
         if label is None:
             raise PresentationCatalogError(
                 "E_PRESENTATION_BUILTIN_PARAMETER",
@@ -614,7 +624,8 @@ def _parameter_presentations(
             ParameterPresentation(
                 parameter_pointer=f"/{name.replace('~', '~0').replace('/', '~1')}",
                 label=label,
-                description=overlap_presentation.PARAMETER_HELP.get(name) if overlap else None,
+                description=(aligned_presentation.PARAMETER_HELP.get(name) if aligned else None)
+                or (overlap_presentation.PARAMETER_HELP.get(name) if overlap else None),
                 group_id=group_id,
                 order=order,
                 importance=(
@@ -887,6 +898,10 @@ def build_builtin_presentation_catalog(
             *built_in_media_definitions(),
             *built_in_av27_definitions(),
             *built_in_overlap_definitions(),
+            *aligned_definitions.built_in_overlap_definitions(),
+            aligned_definitions.external_definition("mp4"),
+            aligned_definitions.external_definition("mov"),
+            aligned_definitions.external_definition("mkv"),
         )
         if definitions is None
         else tuple(definitions)

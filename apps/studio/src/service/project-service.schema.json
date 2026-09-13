@@ -2509,6 +2509,14 @@
       "title": "CreatorTemplateSummary",
       "type": "object"
     },
+    "DeclaredContainer": {
+      "enum": [
+        "mp4",
+        "mov",
+        "mkv"
+      ],
+      "type": "string"
+    },
     "DesktopCloseEnvelope": {
       "additionalProperties": false,
       "description": "表示已经原子封闭后续修改准入并开始关闭 listener。",
@@ -6704,6 +6712,741 @@
       "title": "StorageIndexPathReference",
       "type": "object"
     },
+    "Host_SourceAlignedFullRequest_AverageChapterSelector": {
+      "additionalProperties": false,
+      "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+      "properties": {
+        "count": {
+          "default": 1,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "average",
+          "default": "average",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "AverageChapterSelector",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_CandidateFiProfile": {
+      "additionalProperties": false,
+      "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+      "properties": {
+        "left_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 0,
+          "title": "Left Context Frames",
+          "type": "integer"
+        },
+        "minimum_input_frames": {
+          "default": 2,
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Minimum Input Frames",
+          "type": "integer"
+        },
+        "model_name": {
+          "const": "Aion",
+          "default": "Aion",
+          "title": "Model Name",
+          "type": "string"
+        },
+        "phase": {
+          "const": "even-input-2m-minus-1",
+          "default": "even-input-2m-minus-1",
+          "title": "Phase",
+          "type": "string"
+        },
+        "right_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 1,
+          "title": "Right Context Frames",
+          "type": "integer"
+        },
+        "software_version": {
+          "const": "v1.0",
+          "default": "v1.0",
+          "title": "Software Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "CandidateFiProfile",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "average": "#/$defs/Host_SourceAlignedFullRequest_AverageChapterSelector",
+          "exact_frames": "#/$defs/Host_SourceAlignedFullRequest_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Host_SourceAlignedFullRequest_ExactTimesChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_AverageChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Host_SourceAlignedFullRequest_ChapterSettings": {
+      "additionalProperties": false,
+      "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_ChapterSelector"
+        },
+        "leaf_max_minutes": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Leaf Max Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "ChapterSettings",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_DeclaredContainer": {
+      "enum": [
+        "mp4",
+        "mov",
+        "mkv"
+      ],
+      "type": "string"
+    },
+    "Host_SourceAlignedFullRequest_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+      "properties": {
+        "frames": {
+          "items": {
+            "$ref": "#/$defs/Host_SourceAlignedFullRequest_PositiveInt"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "$ref": "#/$defs/Host_SourceAlignedFullRequest_Timecode"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "Host_SourceAlignedFullRequest_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_PublicationRequest": {
+      "additionalProperties": false,
+      "description": "声明发布目录、可选片名子目录及显式覆盖；省略 layout 时直接写入所选目录。",
+      "properties": {
+        "layout": {
+          "default": "direct",
+          "enum": [
+            "direct",
+            "title_subdirectory"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "output_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Output Root",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 4,
+          "minLength": 4,
+          "title": "Year",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_root",
+        "title",
+        "year",
+        "overwrite"
+      ],
+      "title": "PublicationRequest",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_SourceAlignedEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "SourceAlignedEnhancement",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_SourceAlignedMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Host_SourceAlignedFullRequest_SourceAlignedMrExternal",
+          "off": "#/$defs/Host_SourceAlignedFullRequest_SourceAlignedMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_SourceAlignedMrOff"
+        },
+        {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_SourceAlignedMrExternal"
+        }
+      ]
+    },
+    "Host_SourceAlignedFullRequest_SourceAlignedMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的源对齐外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "SourceAlignedMrExternal",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_SourceAlignedMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "SourceAlignedMrOff",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_SourceAlignedProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_SourceAlignedEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_SourceAlignedMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_ChapterSettings"
+        }
+      },
+      "required": [
+        "enhancement",
+        "program_encode"
+      ],
+      "title": "SourceAlignedProcessing",
+      "type": "object"
+    },
+    "Host_SourceAlignedFullRequest_Timecode": {
+      "maxLength": 128,
+      "minLength": 8,
+      "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+      "type": "string"
+    },
+    "Host_SourceAlignedProcessingRequest_AverageChapterSelector": {
+      "additionalProperties": false,
+      "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+      "properties": {
+        "count": {
+          "default": 1,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "average",
+          "default": "average",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "AverageChapterSelector",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_CandidateFiProfile": {
+      "additionalProperties": false,
+      "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+      "properties": {
+        "left_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 0,
+          "title": "Left Context Frames",
+          "type": "integer"
+        },
+        "minimum_input_frames": {
+          "default": 2,
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Minimum Input Frames",
+          "type": "integer"
+        },
+        "model_name": {
+          "const": "Aion",
+          "default": "Aion",
+          "title": "Model Name",
+          "type": "string"
+        },
+        "phase": {
+          "const": "even-input-2m-minus-1",
+          "default": "even-input-2m-minus-1",
+          "title": "Phase",
+          "type": "string"
+        },
+        "right_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 1,
+          "title": "Right Context Frames",
+          "type": "integer"
+        },
+        "software_version": {
+          "const": "v1.0",
+          "default": "v1.0",
+          "title": "Software Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "CandidateFiProfile",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "average": "#/$defs/Host_SourceAlignedProcessingRequest_AverageChapterSelector",
+          "exact_frames": "#/$defs/Host_SourceAlignedProcessingRequest_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Host_SourceAlignedProcessingRequest_ExactTimesChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_AverageChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Host_SourceAlignedProcessingRequest_ChapterSettings": {
+      "additionalProperties": false,
+      "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_ChapterSelector"
+        },
+        "leaf_max_minutes": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Leaf Max Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "ChapterSettings",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_DeclaredContainer": {
+      "enum": [
+        "mp4",
+        "mov",
+        "mkv"
+      ],
+      "type": "string"
+    },
+    "Host_SourceAlignedProcessingRequest_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+      "properties": {
+        "frames": {
+          "items": {
+            "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_PositiveInt"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_Timecode"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "Host_SourceAlignedProcessingRequest_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_SourceAlignedEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "SourceAlignedEnhancement",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_SourceAlignedMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Host_SourceAlignedProcessingRequest_SourceAlignedMrExternal",
+          "off": "#/$defs/Host_SourceAlignedProcessingRequest_SourceAlignedMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_SourceAlignedMrOff"
+        },
+        {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_SourceAlignedMrExternal"
+        }
+      ]
+    },
+    "Host_SourceAlignedProcessingRequest_SourceAlignedMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的源对齐外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "SourceAlignedMrExternal",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_SourceAlignedMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "SourceAlignedMrOff",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_SourceAlignedProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_SourceAlignedEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_SourceAlignedMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_ChapterSettings"
+        }
+      },
+      "required": [
+        "enhancement",
+        "program_encode"
+      ],
+      "title": "SourceAlignedProcessing",
+      "type": "object"
+    },
+    "Host_SourceAlignedProcessingRequest_Timecode": {
+      "maxLength": 128,
+      "minLength": 8,
+      "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+      "type": "string"
+    },
     "IconToken": {
       "description": "Studio 内置图标 token 的闭合集合；不得注入 SVG、路径或 URL。",
       "enum": [
@@ -9617,6 +10360,444 @@
         "message"
       ],
       "title": "RuntimeFailure",
+      "type": "object"
+    },
+    "SourceAlignedEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name",
+        "model_version",
+        "actual_scale_factor"
+      ],
+      "title": "SourceAlignedEnhancement",
+      "type": "object"
+    },
+    "SourceAlignedFailure": {
+      "additionalProperties": false,
+      "description": "新预览专属失败，不改变旧 0.3.0 的错误响应形状。",
+      "properties": {
+        "code": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "field_path": {
+          "default": [],
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Field Path",
+          "type": "array"
+        },
+        "message": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "related_run_ids": {
+          "default": [],
+          "items": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          "title": "Related Run Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "field_path",
+        "related_run_ids"
+      ],
+      "title": "SourceAlignedFailure",
+      "type": "object"
+    },
+    "SourceAlignedFailureEnvelope": {
+      "additionalProperties": false,
+      "description": "返回可辨认的版本及错误；失败响应永不携带可用规划或成功标志。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.3",
+          "default": "0.3.3",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "error": {
+          "$ref": "#/$defs/SourceAlignedFailure"
+        }
+      },
+      "required": [
+        "contract_version",
+        "error"
+      ],
+      "title": "SourceAlignedFailureEnvelope",
+      "type": "object"
+    },
+    "SourceAlignedFullEnvelope": {
+      "additionalProperties": false,
+      "description": "完整新链的只读投影，不传输第二张可运行Graph。",
+      "properties": {
+        "contexts": {
+          "$ref": "#/$defs/ExperimentalContextPlan"
+        },
+        "contract_version": {
+          "const": "0.3.3",
+          "default": "0.3.3",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "edge_count": {
+          "minimum": 0,
+          "title": "Edge Count",
+          "type": "integer"
+        },
+        "execution_available": {
+          "const": true,
+          "default": true,
+          "title": "Execution Available",
+          "type": "boolean"
+        },
+        "node_count": {
+          "exclusiveMinimum": 0,
+          "title": "Node Count",
+          "type": "integer"
+        },
+        "plan": {
+          "$ref": "#/$defs/ChapterLeafPlan"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/SourceAlignedProcessing"
+        },
+        "profile_id": {
+          "const": "zniku.source-aligned-overlap",
+          "default": "zniku.source-aligned-overlap",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "0.3.3",
+          "default": "0.3.3",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "publication": {
+          "$ref": "#/$defs/SourceAlignedPublication"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        },
+        "storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Storage Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "processing",
+        "profile_id",
+        "profile_version",
+        "project_session_id",
+        "storage_revision",
+        "preparation_run_id",
+        "execution_available",
+        "plan",
+        "contexts",
+        "publication",
+        "node_count",
+        "edge_count"
+      ],
+      "title": "SourceAlignedFullEnvelope",
+      "type": "object"
+    },
+    "SourceAlignedFullRequest": {
+      "additionalProperties": false,
+      "description": "预览与展开共享请求；每次重新核对会话、CAS、分析Run和原文件stat。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.3",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_SourceAlignedProcessing"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "publication": {
+          "$ref": "#/$defs/Host_SourceAlignedFullRequest_PublicationRequest"
+        }
+      },
+      "required": [
+        "contract_version",
+        "processing",
+        "project_session_id",
+        "expected_storage_revision",
+        "preparation_run_id",
+        "publication"
+      ],
+      "title": "SourceAlignedFullRequest",
+      "type": "object"
+    },
+    "SourceAlignedMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/SourceAlignedMrExternal",
+          "off": "#/$defs/SourceAlignedMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SourceAlignedMrOff"
+        },
+        {
+          "$ref": "#/$defs/SourceAlignedMrExternal"
+        }
+      ]
+    },
+    "SourceAlignedMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的源对齐外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "model_version",
+        "declared_container",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "SourceAlignedMrExternal",
+      "type": "object"
+    },
+    "SourceAlignedMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "SourceAlignedMrOff",
+      "type": "object"
+    },
+    "SourceAlignedProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/SourceAlignedEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/SourceAlignedMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/ChapterSettings"
+        }
+      },
+      "required": [
+        "mr",
+        "settings",
+        "enhancement",
+        "fi_profile",
+        "program_encode"
+      ],
+      "title": "SourceAlignedProcessing",
+      "type": "object"
+    },
+    "SourceAlignedProcessingEnvelope": {
+      "additionalProperties": false,
+      "description": "仅表示设置合法，不冒充Aion或源媒体已经验收。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.3",
+          "default": "0.3.3",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/SourceAlignedProcessing"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "processing"
+      ],
+      "title": "SourceAlignedProcessingEnvelope",
+      "type": "object"
+    },
+    "SourceAlignedProcessingRequest": {
+      "additionalProperties": false,
+      "description": "分析前验证设置，不接受浏览器提供的媒体事实。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.3",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/Host_SourceAlignedProcessingRequest_SourceAlignedProcessing"
+        }
+      },
+      "required": [
+        "contract_version",
+        "processing"
+      ],
+      "title": "SourceAlignedProcessingRequest",
+      "type": "object"
+    },
+    "SourceAlignedPublication": {
+      "additionalProperties": false,
+      "description": "只读出版目标预览；目录实际创建仍由受控Output节点执行。",
+      "properties": {
+        "output_directory_to_create": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Directory To Create"
+        },
+        "output_target_path": {
+          "title": "Output Target Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_target_path",
+        "output_directory_to_create"
+      ],
+      "title": "SourceAlignedPublication",
       "type": "object"
     },
     "StaleReason": {

@@ -82,9 +82,9 @@ function displayValue(value: unknown): string {
 }
 
 export function ArtifactMediaSummary({ artifact, label }: { readonly artifact: ArtifactWire; readonly label?: string }) {
-  const overlap = objectValue(artifact.media_info['zniku.chapter.overlap'])
+  const overlap = objectValue(artifact.media_info['zniku.source.aligned']) ?? objectValue(artifact.media_info['zniku.chapter.overlap'])
   const metadata = overlap ?? objectValue(artifact.media_info['zniku.avenhance.v27'])
-  const roles: Readonly<Record<string, string>> = { context: '包含邻章上下文的补帧输入', fi: '外部原始补帧结果（保留）', crop: '精确裁边后正式章节', split: '正式章内处理段', enhancement: '已增强处理段', merge: '章内合并增强视频', program: '连续编码视频', final: '最终封装媒体' }
+  const roles: Readonly<Record<string, string>> = { external: '已验收外部前处理视频', context: '包含邻章上下文的补帧输入', fi: '外部原始补帧结果（保留）', crop: '精确裁边后正式章节', split: '正式章内处理段', enhancement: '已增强处理段', merge: '章内合并增强视频', program: '连续编码视频', final: '最终封装媒体' }
   const role = typeof overlap?.role === 'string' && Object.hasOwn(roles, overlap.role) ? roles[overlap.role] : null
   const fiProfile = objectValue(overlap?.fi_profile)
   return (

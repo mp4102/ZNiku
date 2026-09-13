@@ -56,6 +56,7 @@ def test_graph_core_is_the_upper_authority_and_designs_are_subordinate() -> None
         Path("media-node-contract.md"),
         Path("studio-schema-corpus.json"),
         Path("studio-overlap-schema-corpus.json"),
+        Path("studio-source-aligned-schema-corpus.json"),
         Path("studio-run-observability.md"),
         Path("studio-ux-baseline.md"),
     }
@@ -134,10 +135,10 @@ def test_active_guidance_preserves_core_authority_and_ux_subordination() -> None
     assert "docs/architecture/studio-ux-baseline.md" in agents
     assert "正式下位设计" in agents
     assert "多个 Source、多个 Output、零 Output" in agents
-    assert "目标版本：`ZNIKU Studio v0.3.2`" in readme
+    assert "目标版本：`ZNIKU Studio v0.3.3`" in readme
     assert "docs/v0.3.1-ui-optimization-plan.md" in agents
     assert "docs/v0.3.1-ui-optimization-plan.md" in readme
-    assert "当前实现版本：`0.3.2`" in readme
+    assert "当前实现版本：`0.3.3`" in readme
     assert "`v0.2.1` Phase 0\u20135 已完成" in readme
     assert "docs/architecture/studio-ux-baseline.md" in readme
     assert "docs/v0.3.0-execution-plan.md" in readme
@@ -198,4 +199,16 @@ def test_legacy_python_implementation_is_not_shipped_as_product_code() -> None:
         "project_service",
         "presentation",
         "runtime",
+        "source_aligned",
     }
+
+
+def test_source_aligned_is_an_independent_subordinate_node_contract() -> None:
+    """新原片绑定只属于局部节点，不改变旧精确合同或引入新 Graph authority。"""
+    plan = (ROOT / "docs" / "v0.3.3-execution-plan.md").read_text("utf-8")
+    assert "graph-core-baseline.md" in plan
+    assert "旧定义的 Schema、validator 和结果含义保持不变" in plan
+    assert "zniku.source-aligned-overlap@0.3.3" in plan
+    assert "不预填未来修复结果的 UUID" in plan
+    assert "E_SOURCE_ALIGNED_AUDIO_PRIMING_UNSUPPORTED" in plan
+    assert "docs/v0.3.3-execution-plan.md" in (ROOT / "AGENTS.md").read_text("utf-8")

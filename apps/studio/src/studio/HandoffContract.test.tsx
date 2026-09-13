@@ -6,6 +6,16 @@ import { handoffDetailEnvelope, handoffReadinessEnvelope } from './test-fixtures
 afterEach(cleanup)
 
 describe('只读人工交付说明', () => {
+  it('新原片绑定媒体仍显示已登记帧数与角色，不推导外部内容是否相同', () => {
+    const artifact = handoffDetailEnvelope().artifacts[0]!
+    render(<ArtifactMediaSummary artifact={{ ...artifact, media_info: {
+      'zniku.source.aligned': { role: 'external', frame_count: 120, frame_rate: '30000/1001', geometry: { width: 1920, height: 1080 }, signal: { color_space: 'bt709' } },
+    } }} />)
+    expect(screen.getByText('已验收外部前处理视频')).toBeVisible()
+    expect(screen.getByText('120')).toBeVisible()
+    expect(screen.getByText('30000/1001')).toBeVisible()
+    expect(screen.queryByText('探测时长（秒）')).not.toBeInTheDocument()
+  })
   it('直接显示服务器的预期与实际帧数，历史失败仍标记为上次记录', () => {
     const readiness = handoffReadinessEnvelope('probe_failed', true)
     const message = 'E_RUNNER_VALIDATION_REJECTED: E_AV27_ENHANCEMENT_FRAME_COUNT: 增强结果帧数不符：预期 902 帧，实际 899 帧。请确认是否选错分段。'

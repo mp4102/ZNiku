@@ -14,6 +14,9 @@
 
 ## 1. 文档定位
 
+本文继续约束旧 `0.2.1` 精确合同；[`v0.3.3` 原片规划与外部前处理](../v0.3.3-execution-plan.md)
+是独立 ZNIKU 扩展，不将旧外部修复步骤自动改为新格式，也不宣称是 AVEnhanceFlow 2.7 的原有行为。
+
 本文冻结 ZNIKU Studio v0.2.1 如何把 AVEnhanceFlow v2.7.0 的固定媒体配方表达为：
 
 1. 一组位于独立 namespace 的普通 `NodeDefinition`；

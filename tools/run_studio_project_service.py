@@ -23,6 +23,7 @@ from zniku.media import (
     runner_media_probe,
 )
 from zniku.project_service import ProjectServiceApplication, serve_project_service
+from zniku.source_aligned import definitions as source_aligned
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,13 +68,23 @@ def build_application(work_root: Path) -> ProjectServiceApplication:
             *built_in_media_definitions(),
             *built_in_av27_definitions(),
             *built_in_overlap_definitions(),
+            *source_aligned.built_in_overlap_definitions(),
+            source_aligned.external_definition("mp4"),
+            source_aligned.external_definition("mov"),
+            source_aligned.external_definition("mkv"),
         ),
         python_adapters={
             **media_python_adapters(),
             **av27_python_adapters(),
             **overlap_python_adapters(),
+            **source_aligned.overlap_python_adapters(),
         },
-        validators={**media_validators(), **av27_validators(), **overlap_validators()},
+        validators={
+            **media_validators(),
+            **av27_validators(),
+            **overlap_validators(),
+            **source_aligned.overlap_validators(),
+        },
         media_probe=runner_media_probe,
         artifact_quick_probe=media_artifact_quick_probe,
     )

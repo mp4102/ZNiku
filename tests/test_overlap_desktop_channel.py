@@ -1,4 +1,4 @@
-"""确保0.3.2候选的默认单实例和本机状态不碰旧Studio验收线。"""
+"""确保当前候选的默认单实例和本机状态不碰旧Studio验收线。"""
 
 from pathlib import Path
 
@@ -12,7 +12,7 @@ def test_candidate_state_is_separate_from_legacy_studio(
 ) -> None:
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     root = application_data_root()
-    assert root == tmp_path / "ZNIKU" / "Studio-v0.3.2-candidate"
+    assert root == tmp_path / "ZNIKU" / "Studio-v0.3.3-candidate"
     assert root != tmp_path / "ZNIKU" / "Studio"
     assert not root.exists()
 

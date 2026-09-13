@@ -24,6 +24,12 @@ from .handoff_inbox import HandoffInboxManager
 from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
 from .preview import PreviewCache
 from .service import ProjectServiceApplication, ProjectServiceError
+from .source_aligned import (
+    SOURCE_ALIGNED_EXPAND_ROUTE,
+    SOURCE_ALIGNED_FULL_PREVIEW_ROUTE,
+    SOURCE_ALIGNED_PROCESSING_ROUTE,
+    SourceAlignedError,
+)
 from .storage_api import StorageApi
 
 _MAX_BODY_BYTES: Final = 4 * 1024 * 1024
@@ -297,6 +303,9 @@ def make_project_service_handler(
                     "/api/studio/templates/chapter-overlap-fi/processing-preview",
                     "/api/studio/templates/chapter-overlap-fi/full-preview",
                     "/api/studio/templates/chapter-overlap-fi/expand",
+                    SOURCE_ALIGNED_PROCESSING_ROUTE,
+                    SOURCE_ALIGNED_FULL_PREVIEW_ROUTE,
+                    SOURCE_ALIGNED_EXPAND_ROUTE,
                     "/api/studio/rerun-preview",
                 }
             ):
@@ -348,6 +357,12 @@ def make_project_service_handler(
                     envelope = application.preview_av27_publication(payload)
                 elif parsed.path == CHAPTER_OVERLAP_PREVIEW_ROUTE:
                     envelope = application.preview_chapter_overlap(payload)
+                elif parsed.path == SOURCE_ALIGNED_PROCESSING_ROUTE:
+                    envelope = application.preview_source_aligned_processing(payload)
+                elif parsed.path == SOURCE_ALIGNED_FULL_PREVIEW_ROUTE:
+                    envelope = application.preview_source_aligned(payload)
+                elif parsed.path == SOURCE_ALIGNED_EXPAND_ROUTE:
+                    envelope = application.expand_source_aligned(payload)
                 elif parsed.path == "/api/studio/templates/chapter-overlap-fi/processing-preview":
                     from .overlap_application import processing_preview
 
@@ -365,7 +380,7 @@ def make_project_service_handler(
                     envelope = application.preview_rerun(payload)
                 else:
                     envelope = application.command(payload)
-            except ChapterOverlapPreviewError as error:
+            except (ChapterOverlapPreviewError, SourceAlignedError) as error:
                 self._json(HTTPStatus(error.http_status), error.envelope.model_dump(mode="json"))
                 return
             except _JsonPayloadError as error:

@@ -1,6 +1,7 @@
 """仅为重叠补帧 production E2E 提供 120 帧合成媒体与隔离桌面服务。
 
-使用正式 Registry、SQLite、Runtime 和服务端点；只替代原生路径选择，不伪造增强或 Aion 输出。
+使用正式 Registry、SQLite、Runtime 和服务端点；只替代原生路径选择。MR 候选是同一合成原片的
+120 帧 H.264/MP4，不代表真实修复软件能力；不伪造增强或 Aion 输出。
 所有文件落在本工作树新建的临时目录，父测试结束即关闭自己创建的服务，不触碰操作者工程。
 """
 
@@ -49,7 +50,31 @@ def main() -> None:
                 str(root / "av27-source.mkv"),
             ]
         )
+        mr_candidate = root / "source-aligned-mr.mp4"
+        _run_tool(
+            [
+                *_base_argv(require_tools()),
+                "-i",
+                str(root / "av27-source.mkv"),
+                "-map",
+                "0:v:0",
+                "-an",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-fps_mode",
+                "passthrough",
+                *_signal_argv(),
+                str(mr_candidate),
+            ]
+        )
         platform = SyntheticPlatform((), root)
+        platform.external_candidates = iter((None, mr_candidate))
         application = build_desktop_application(root / "attempts")
         server = DesktopServer(application, repository_root / "apps/studio/dist", platform=platform)
         server.start()
@@ -61,6 +86,7 @@ def main() -> None:
                     "output_root": str(platform.output_root),
                     "output_collision": str(platform.output_collision),
                     "external_project": str(platform.wizard_project),
+                    "source_aligned_mr": str(mr_candidate),
                 }
             ),
             flush=True,

@@ -613,7 +613,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
       fireEvent.change(screen.getByLabelText('模板工程路径'), { target: { value: 'D:\\Synthetic\\guided.zniku' } })
       fireEvent.change(screen.getByLabelText('Source 1 path'), { target: { value: 'D:\\Synthetic\\source.mkv' } })
       await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
-      await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
+      await user.click(screen.getByRole('button', { name: '下一步：处理与成片设置' }))
       await user.click(screen.getByText('其他选项（可选）'))
     }
     await enterSettings()
@@ -866,7 +866,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
       target: { value: 'C:\\synthetic\\source.mkv' },
     })
     await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
-    await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
+    await user.click(screen.getByRole('button', { name: '下一步：处理与成片设置' }))
     await user.type(screen.getByLabelText('片名'), 'Movie')
     await user.type(screen.getByLabelText('年份'), '2026')
     await user.click(screen.getByText('其他选项（可选）'))

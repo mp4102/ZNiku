@@ -312,7 +312,8 @@ async function wizardSettings(page: Page): Promise<Locator> {
   await wizard.getByLabel('工程名称', { exact: true }).fill('合成输出布局工程')
   await wizard.getByRole('button', { name: '选择工程保存位置', exact: true }).click()
   await wizard.getByRole('button', { name: '下一步：处理方案', exact: true }).click()
-  await wizard.getByRole('button', { name: '下一步：成片设置', exact: true }).click()
+  await wizard.getByLabel('工作流方案').selectOption('av27')
+  await wizard.getByRole('button', { name: '下一步：处理与成片设置', exact: true }).click()
   if (!await wizard.getByLabel('片名', { exact: true }).isVisible()) await openOutputOptions(wizard)
   await wizard.getByLabel('片名', { exact: true }).fill('Synthetic Wizard Output')
   await wizard.getByLabel('年份', { exact: true }).fill('2026')
@@ -418,7 +419,7 @@ test('生产向导：首步四项设置，高级统一折叠、取消与恢复�
   expect(await readdir(fixture.data_parent)).toEqual([])
   // 不碰可选磁盘 picker 也可继续；默认位置不能成为另一道必答题。
   await wizard.getByRole('button', { name: '下一步：处理方案', exact: true }).click()
-  await expect(wizard.getByRole('button', { name: '下一步：成片设置', exact: true })).toBeVisible()
+  await expect(wizard.getByRole('button', { name: '下一步：处理与成片设置', exact: true })).toBeVisible()
   await wizard.getByRole('button', { name: '上一步', exact: true }).click()
   await maskedScreenshot(page, info.outputPath('wizard-storage-default-1920.png'))
 
@@ -468,7 +469,7 @@ test('生产向导：首步四项设置，高级统一折叠、取消与恢复�
   await expect(advanced).not.toContainText('已自定义工作数据位置')
   await expect(dataPicker).not.toBeVisible()
   await wizard.getByRole('button', { name: '下一步：处理方案', exact: true }).click()
-  await expect(wizard.getByRole('button', { name: '下一步：成片设置', exact: true })).toBeVisible()
+  await expect(wizard.getByRole('button', { name: '下一步：处理与成片设置', exact: true })).toBeVisible()
   expect(await readStatus(page)).toEqual(before)
   expect(await readdir(dirname(fixture.wizard_project))).toEqual(rootListing)
   expect(await exists(fixture.wizard_project)).toBe(false)
@@ -530,7 +531,7 @@ test('生产向导：四组常用设置与工程旁默认输出，改选取消�
     for (const group of groups) { await expect(group).toBeVisible(); expect((await group.boundingBox())!.width).toBeGreaterThanOrEqual(260) }
     for (const field of fields) { await expect(field).toBeVisible(); expect((await field.boundingBox())!.width).toBeGreaterThanOrEqual(120) }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await wizard.getByRole('heading', { name: '成片设置', exact: true }).scrollIntoViewIfNeeded()
+    await wizard.getByRole('heading', { name: '处理与成片设置', exact: true }).scrollIntoViewIfNeeded()
     await maskedScreenshot(page, info.outputPath(`wizard-step3-primary-${width}.png`))
     await fields.at(-1)!.scrollIntoViewIfNeeded()
     await expect(wizard.getByRole('button', { name: '下一步：分析', exact: true })).toBeInViewport()
@@ -624,7 +625,7 @@ test('生产向导：四组常用设置与工程旁默认输出，改选取消�
   expect(commands).toEqual([])
   for (const size of [{ width: 1920, height: 1080 }, { width: 960, height: 540 }]) {
     await page.setViewportSize(size)
-    await wizard.getByRole('heading', { name: '成片设置', exact: true }).scrollIntoViewIfNeeded()
+    await wizard.getByRole('heading', { name: '处理与成片设置', exact: true }).scrollIntoViewIfNeeded()
     // axe 不会报告“每个汉字都被挤成一行”；补布局几何门禁，覆盖长路径与新增选项。
     const pickerBounds = await wizard.getByRole('button', { name: '更改成片父目录', exact: true }).boundingBox()
     const layoutBounds = await wizard.getByLabel('按片名创建子文件夹', { exact: true }).locator('..').boundingBox()

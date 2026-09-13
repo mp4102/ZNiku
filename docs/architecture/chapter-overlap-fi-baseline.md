@@ -48,6 +48,10 @@
 
 ## 3. 三种分章方式
 
+本节的准备阶段身份规则继续约束 `0.3.2` exact definitions。经用户批准新增的
+[`0.3.3` 原片规划与外部前处理](../v0.3.3-execution-plan.md)使用独立节点版本，将规划原片与
+实际执行视频分开绑定；仅复用以下分章/分叶和重叠 FI 数学，不修改旧规则。
+
 本节只适用于 `program` 的单个 admitted effective-video；N/FPS 仍来自已完成 preparation 的直接 Artifact，
 不接受客户端自报。MR-off 使用 admitted Source，external MR 使用 admitted MR 输出；不在 MR 前预冻范围。
 

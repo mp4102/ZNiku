@@ -63,6 +63,13 @@ from zniku.project_service.models import (
     TemplatePreviewEnvelope,
 )
 from zniku.project_service.preview import MediaPreviewEnvelope, MediaPreviewRequest
+from zniku.project_service.source_aligned import (
+    SourceAlignedFailureEnvelope,
+    SourceAlignedFullEnvelope,
+    SourceAlignedFullRequest,
+    SourceAlignedProcessingEnvelope,
+    SourceAlignedProcessingRequest,
+)
 from zniku.project_service.storage import (
     StorageInspection,
     StorageMigrationPreview,
@@ -150,6 +157,9 @@ def render_schema() -> str:
     """输出 status root、全部定向 response 与 command Schema；它只是 wire drift gate。"""
 
     response_models = (
+        SourceAlignedFailureEnvelope,
+        SourceAlignedFullEnvelope,
+        SourceAlignedProcessingEnvelope,
         StatusEnvelope,
         RunSummaryPageEnvelope,
         RunDetailEnvelope,
@@ -215,6 +225,8 @@ def render_schema() -> str:
     envelope_definitions["TemplatePreviewRequest"] = preview_schema
 
     host_request_models = (
+        SourceAlignedFullRequest,
+        SourceAlignedProcessingRequest,
         ChapterOverlapPreviewRequest,
         ChapterOverlapProcessingRequest,
         ChapterOverlapFullRequest,

@@ -19,6 +19,7 @@ import {
 } from '@xyflow/react'
 import { AvEnhanceV27Wizard, type AvEnhanceV27WizardMode } from './AvEnhanceV27Wizard'
 import type { OverlapFullEnvelope, OverlapFullIntent, OverlapFullRequest, OverlapProcessingRequest } from './chapter-overlap-contracts'
+import { sourceAlignedCatalogAvailable, type SourceAlignedFullEnvelope, type SourceAlignedFullIntent, type SourceAlignedFullRequest, type SourceAlignedProcessingRequest } from './source-aligned-contracts'
 import type {
   WorkflowEdge,
   WorkflowNode,
@@ -110,7 +111,7 @@ import { RetryImpactDialog } from './components/RetryImpactDialog'
 import './workspace-shell.css'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
 /** 仅用于复用 UI 请求互斥；expand_overlap 从不发送到旧 command wire。 */
-type WorkspaceOperation = StudioCommand | { readonly operation: 'expand_overlap'; readonly request: OverlapFullRequest; readonly preview: OverlapFullEnvelope }
+type WorkspaceOperation = StudioCommand | { readonly operation: 'expand_overlap'; readonly request: OverlapFullRequest | SourceAlignedFullRequest; readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope }
 
 // 仅决定能否继续展示“模板已就绪”标签，不进入 Run 绑定、执行或存储版本。
 const graphPresentationComparison = (graph: GraphWire) => JSON.stringify({
@@ -593,7 +594,7 @@ export function StudioWorkspace({
     readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
     readonly precondition: AuthoringPrecondition | null
   } | null>(null)
-  const latestOverlapPreviewRef = useRef<{ readonly intentJson: string; readonly request: OverlapFullRequest; readonly envelope: OverlapFullEnvelope; readonly precondition: AuthoringPrecondition } | null>(null)
+  const latestOverlapPreviewRef = useRef<{ readonly intentJson: string; readonly request: OverlapFullRequest | SourceAlignedFullRequest; readonly envelope: OverlapFullEnvelope | SourceAlignedFullEnvelope; readonly precondition: AuthoringPrecondition } | null>(null)
   const templateConnectionEpochRef = useRef(0)
   useEffect(() => {
     // 断线与显式重连撤销旧会话的预览资格，迟到响应也不能再次提升为 mutation authority。
@@ -1936,8 +1937,13 @@ export function StudioWorkspace({
             throw new Error('连接在等待保存期间已变化；未发送后续向导命令，请重新检查工程。')
           }
           if (command.operation === 'expand_overlap') {
-            if (!effectiveGateway.expandOverlap) throw new Error('当前服务不支持重叠補帧展开。')
-            next = await effectiveGateway.expandOverlap(command.request)
+            if (command.request.contract_version === '0.3.3') {
+              if (!effectiveGateway.expandSourceAligned) throw new Error('当前服务不支持原片规划工作流展开。')
+              next = await effectiveGateway.expandSourceAligned(command.request)
+            } else {
+              if (!effectiveGateway.expandOverlap) throw new Error('当前服务不支持重叠補帧展开。')
+              next = await effectiveGateway.expandOverlap(command.request)
+            }
           } else next = await effectiveGateway.command(command)
           if (generation !== generationRef.current) return null
           if (command.operation === 'expand_overlap' && (
@@ -2146,7 +2152,27 @@ export function StudioWorkspace({
     return envelope
   }, [effectiveGateway, flushAuthoring, precondition])
 
-  const expandOverlap = useCallback(async (intent: OverlapFullIntent): Promise<boolean> => {
+  const previewSourceAlignedProcessing = useCallback(async (request: SourceAlignedProcessingRequest) => {
+    if (!effectiveGateway.previewSourceAlignedProcessing) throw new Error('当前服务不支持原片规划设置检查。')
+    return effectiveGateway.previewSourceAlignedProcessing(request)
+  }, [effectiveGateway])
+
+  const previewSourceAligned = useCallback(async (intent: SourceAlignedFullIntent) => {
+    latestOverlapPreviewRef.current = null
+    if (!effectiveGateway.previewSourceAligned) throw new Error('当前服务不支持原片规划工作流预览。')
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置。')
+    const connectionEpoch = templateConnectionEpochRef.current
+    const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间连接或设置发生变化，请重新检查。')
+    const request: SourceAlignedFullRequest = { ...intent, ...binding }
+    const envelope = await effectiveGateway.previewSourceAligned(request)
+    if (connectionEpoch !== templateConnectionEpochRef.current || JSON.stringify(binding) !== JSON.stringify(precondition())) throw new Error('工程在预览期间发生变化，请重新预览。')
+    if (envelope.project_session_id !== binding.project_session_id || envelope.storage_revision !== binding.expected_storage_revision || envelope.preparation_run_id !== intent.preparation_run_id) throw new Error('工作流预览与当前工程或分析记录不一致。')
+    latestOverlapPreviewRef.current = { intentJson: JSON.stringify(intent), request, envelope, precondition: binding }
+    return envelope
+  }, [effectiveGateway, flushAuthoring, precondition])
+
+  const expandOverlap = useCallback(async (intent: OverlapFullIntent | SourceAlignedFullIntent): Promise<boolean> => {
     const current = latestOverlapPreviewRef.current
     if (!current || current.intentJson !== JSON.stringify(intent) || parameterDraftDirty || dirty || JSON.stringify(current.precondition) !== JSON.stringify(precondition())) {
       latestOverlapPreviewRef.current = null
@@ -2509,6 +2535,7 @@ export function StudioWorkspace({
     query,
     presentationEnvelope?.catalog ?? null,
   )
+  const sourceAlignedSupported = presentationError === null && sourceAlignedCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
   const singleSelectedNodeId = selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null
   const rerunId = currentRun?.run_id ?? null
   const rerunNodeIncluded = singleSelectedNodeId
@@ -2706,6 +2733,22 @@ export function StudioWorkspace({
     setInspectorTab('files')
     requestAnimationFrame(() => document.getElementById('node-inspector')?.focus())
   }
+  const openTemplateExternalTasks = async (runId: string) => {
+    if (!changeSelection(new Set(), new Set())) return
+    selectRun(runId)
+    const generation = generationRef.current
+    const selected = await loadDetail(runId, generation)
+    if (!selected || generation !== generationRef.current || runId !== viewRunIdRef.current) return
+    const waiting = [...latestNodeRuns(selected.run).values()].filter((item) => item.state === 'waiting_external' && item.external_handoff !== null)
+    setTemplateOpen(false)
+    setShowRunSnapshot(true)
+    setInspectorVisible(true)
+    setInspectorTab('files')
+    if (waiting.length === 1) changeSelection(new Set([waiting[0]!.node_id]), new Set())
+    else changeSelection(new Set(), new Set())
+    setTaskTab('current'); setBottomOpen(true)
+    requestAnimationFrame(() => document.getElementById('node-inspector')?.focus())
+  }
   const blockedRunReason = health.status.stale ? '本机服务连接已中断；请重新连接。'
     : serviceBusy || homeActionBusy ? '当前操作尚未完成，请稍候。'
       : !draft ? '请先新建或打开工程。'
@@ -2842,6 +2885,7 @@ export function StudioWorkspace({
         onCreate={createAvEnhanceV27}
         onExpand={expandAvEnhanceV27}
         onLocateNode={locateTemplateNode}
+        onOpenExternalTasks={openTemplateExternalTasks}
         onPickOutputDirectory={pickTemplateOutputDirectory}
         onPickDataDirectory={async () => (await pickHostPaths('select_directory', { title: '选择工作数据父目录（保留中间产物）' }))?.[0] ?? null}
         onRevealOutputDirectory={revealTemplateOutputDirectory}
@@ -2859,6 +2903,9 @@ export function StudioWorkspace({
         onPreviewOverlapProcessing={effectiveGateway.previewOverlapProcessing ? previewOverlapProcessing : undefined}
         onPreviewOverlap={effectiveGateway.previewOverlap ? previewOverlap : undefined}
         onExpandOverlap={effectiveGateway.expandOverlap ? expandOverlap : undefined}
+        onPreviewSourceAlignedProcessing={sourceAlignedSupported && effectiveGateway.previewSourceAlignedProcessing ? previewSourceAlignedProcessing : undefined}
+        onPreviewSourceAligned={sourceAlignedSupported && effectiveGateway.previewSourceAligned ? previewSourceAligned : undefined}
+        onExpandSourceAligned={sourceAlignedSupported && effectiveGateway.expandSourceAligned ? expandOverlap : undefined}
         onStartPreparationRun={startPreparationRun}
         open={templateOpen}
         pickerAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file') && hostCapabilityAvailable('select_directory')}

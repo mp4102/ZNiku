@@ -39,8 +39,16 @@ import {
   parseOverlapProcessingEnvelope, parseOverlapProcessingRequest,
   type OverlapFailureEnvelope, type OverlapFullEnvelope, type OverlapFullRequest, type OverlapProcessingEnvelope, type OverlapProcessingRequest,
 } from './chapter-overlap-contracts'
+import {
+  sourceAlignedProcessingMatches, parseSourceAlignedFailure, parseSourceAlignedFullEnvelope, parseSourceAlignedFullRequest,
+  parseSourceAlignedProcessingEnvelope, parseSourceAlignedProcessingRequest,
+  type SourceAlignedFullEnvelope, type SourceAlignedFullRequest, type SourceAlignedProcessingEnvelope, type SourceAlignedProcessingRequest,
+} from './source-aligned-contracts'
 
 export interface StudioGateway {
+  previewSourceAlignedProcessing?(request: SourceAlignedProcessingRequest): Promise<SourceAlignedProcessingEnvelope>
+  previewSourceAligned?(request: SourceAlignedFullRequest): Promise<SourceAlignedFullEnvelope>
+  expandSourceAligned?(request: SourceAlignedFullRequest): Promise<StatusEnvelope>
   previewOverlapProcessing?(request: OverlapProcessingRequest): Promise<OverlapProcessingEnvelope>
   previewOverlap?(request: OverlapFullRequest): Promise<OverlapFullEnvelope>
   expandOverlap?(request: OverlapFullRequest): Promise<StatusEnvelope>
@@ -148,6 +156,34 @@ export class FetchStudioGateway implements StudioGateway {
     private readonly baseUrl =
       window.__ZNIKU_STUDIO_API_BASE__ ?? 'http://127.0.0.1:18765',
   ) {}
+
+  async previewSourceAlignedProcessing(request: SourceAlignedProcessingRequest): Promise<SourceAlignedProcessingEnvelope> {
+    const payload = parseSourceAlignedProcessingRequest(request)
+    const preview = await this.request('/api/studio/templates/source-aligned-overlap/processing-preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parseSourceAlignedProcessingEnvelope, 'source-aligned')
+    if (!sourceAlignedProcessingMatches(payload.processing, preview.processing)) throw new StudioContractError('原片规划设置检查回显与当前请求不一致')
+    return preview
+  }
+
+  async previewSourceAligned(request: SourceAlignedFullRequest): Promise<SourceAlignedFullEnvelope> {
+    const payload = parseSourceAlignedFullRequest(request)
+    const preview = await this.request('/api/studio/templates/source-aligned-overlap/full-preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parseSourceAlignedFullEnvelope, 'source-aligned')
+    if (preview.project_session_id !== request.project_session_id || preview.storage_revision !== request.expected_storage_revision ||
+        preview.preparation_run_id !== request.preparation_run_id || !sourceAlignedProcessingMatches(payload.processing, preview.processing)) throw new StudioContractError('原片规划预览与当前工程、存储版本、分析记录或处理设置不一致')
+    return preview
+  }
+
+  async expandSourceAligned(request: SourceAlignedFullRequest): Promise<StatusEnvelope> {
+    const payload = parseSourceAlignedFullRequest(request)
+    const status = await this.request('/api/studio/templates/source-aligned-overlap/expand', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parseStatusEnvelope, 'source-aligned')
+    if (status.project_session_id !== request.project_session_id || status.storage_revision !== request.expected_storage_revision + 1) throw new StudioContractError('原片规划展开响应与当前工程或存储版本不一致')
+    return status
+  }
 
   async previewOverlapProcessing(request: OverlapProcessingRequest): Promise<OverlapProcessingEnvelope> {
     const payload = parseOverlapProcessingRequest(request)
@@ -309,7 +345,7 @@ export class FetchStudioGateway implements StudioGateway {
     )
   }
 
-  private async request<T>(path: string, init: RequestInit, parser: Parser<T>, overlap = false): Promise<T> {
+  private async request<T>(path: string, init: RequestInit, parser: Parser<T>, overlap: boolean | 'source-aligned' = false): Promise<T> {
     let response: Response
     try {
       response = await fetch(`${this.baseUrl}${path}`, init)
@@ -329,7 +365,7 @@ export class FetchStudioGateway implements StudioGateway {
     }
 
     if (!response.ok) {
-      const error = overlap ? parseOverlapFailure(value).error : parseErrorEnvelope(value)
+      const error = overlap === 'source-aligned' ? parseSourceAlignedFailure(value).error : overlap ? parseOverlapFailure(value).error : parseErrorEnvelope(value)
       throw new StudioGatewayError(`Project Service command 失败：${error.code}: ${error.message}`, {
         code: error.code,
         serviceMessage: error.message,

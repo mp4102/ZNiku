@@ -148,6 +148,7 @@ from .models import (
     parse_project_service_command,
     parse_template_preview_request,
 )
+from .source_aligned import SourceAlignedFullEnvelope, SourceAlignedProcessingEnvelope
 from .storage_naming import resolve_attempt_naming
 from .storage_paths import existing_storage_root, prepare_storage_location
 
@@ -567,6 +568,28 @@ class ProjectServiceApplication:
                 raise self._translate_av27_failure(error) from error
             except (ProjectStoreError, RuntimeRepositoryError, ValidationError) as error:
                 raise self._translate_failure(error) from error
+
+    def preview_source_aligned_processing(self, payload: object) -> SourceAlignedProcessingEnvelope:
+        """只检查新路线处理设置；不改动原片分析与已有工程。"""
+        from .source_aligned_application import processing_preview
+
+        return processing_preview(payload)
+
+    def preview_source_aligned(self, payload: object) -> SourceAlignedFullEnvelope:
+        """基于已完成的原片分析只读构建新路线，不等待可选外部修复。"""
+        from .source_aligned_application import full_source_aligned
+
+        result = full_source_aligned(self, payload, expand=False)
+        assert isinstance(result, SourceAlignedFullEnvelope)
+        return result
+
+    def expand_source_aligned(self, payload: object) -> StatusEnvelope:
+        """显式一次性写入普通图；已展开或手编图禁止被向导覆盖。"""
+        from .source_aligned_application import full_source_aligned
+
+        result = full_source_aligned(self, payload, expand=True)
+        assert isinstance(result, StatusEnvelope)
+        return result
 
     def preview_chapter_overlap(self, payload: object) -> ChapterOverlapPreviewEnvelope:
         """从精确 preparation 结果只读规划新章节/均分叶，不创建或更新任何 Graph/Run。
@@ -1988,10 +2011,17 @@ class ProjectServiceApplication:
         ) -> tuple[OutputPathSpec, ...]:
             if storage is None or storage.media_basename is None:
                 return ()
-            return overlap_output_paths(
-                node, definition, media_basename=storage.media_basename
-            ) or descriptive_output_paths(
-                node, definition, media_basename=storage.media_basename, graph=run.graph_snapshot
+            from .source_aligned_presentation import source_aligned_output_paths
+
+            return (
+                source_aligned_output_paths(node, definition, media_basename=storage.media_basename)
+                or overlap_output_paths(node, definition, media_basename=storage.media_basename)
+                or descriptive_output_paths(
+                    node,
+                    definition,
+                    media_basename=storage.media_basename,
+                    graph=run.graph_snapshot,
+                )
             )
 
         return RuntimeService(

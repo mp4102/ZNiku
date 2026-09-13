@@ -1,4 +1,4 @@
-# ZNIKU Studio（v0.3.2 开发线）
+# ZNIKU Studio（v0.3.3 开发线）
 
 Studio 以一张自由媒体节点图同时承担编辑和 Runtime 状态展示。React 应用只维护未保存的画布 Draft；
 `.zniku` Project、Graph 校验、Run、Artifact、日志及 external handoff 的正式语义全部来自 Python Project
@@ -9,8 +9,9 @@ Graph 与 Runtime 的唯一上位架构权威是
 易用性从属于 [`studio-ux-baseline.md`](../../docs/architecture/studio-ux-baseline.md)。本应用不得恢复
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-当前 package/product 版本为 `0.3.2`；已有wire/Presentation/StudioState 仍为 `0.3.0`，SQLite schema 4 和
-NodeDefinition exact version 不变。v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
+当前 package/product 版本为 `0.3.3`；已有 wire/Presentation/StudioState 仍为 `0.3.0`，SQLite schema 4
+不变。新增原片规划使用独立 `0.3.3` wire 和 exact NodeDefinition，旧定义的版本与含义保持不变。
+v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
 创作者建项、HostBridge、Undo/Redo、兼容连接、纯展示分组与 CAS 自动保存。Phase 4 已实现创作者运行中心、
 外部处理助手与只读重跑影响预览，完整门禁与合成浏览器闭环已通过，见 [Phase 4 验收记录](../../docs/v0.3.0-phase4-acceptance.md)。
 Phase 5 已加入双击桌面候选、轻量预览、无障碍与有界性能门禁；原生窗口点击验收仍待完成，不能宣称阶段关闭。
@@ -19,11 +20,26 @@ Phase 5 已加入双击桌面候选、轻量预览、无障碍与有界性能门
 C 的具体技术候选、原生操作及首次用户证据见[本轮验收](../../docs/v0.3.1-desktop-candidate-acceptance.md)，
 不沿用旧包或旧成品替代新界面验收。
 
-本工作树按 [v0.3.2 执行计划](../../docs/v0.3.2-execution-plan.md)开发；新向导可显式选择重叠FI候选，
+历史 [v0.3.2 执行计划](../../docs/v0.3.2-execution-plan.md)提供独立重叠 FI 流程，
 三种章节切分与独立1–60分钟分叶(默认5)均由Python规划，GUI只显示预览，不改变旧AV27精确定义。
 FI软件v1.0、模型Aion已通过首轮1080p三章及操作者对照；4K本轮暂缓，其他能力范围仍待验，
 候选标记不变，详情见[Phase 5统一真实验收](../../docs/v0.3.2-phase5-acceptance.md)。
-旧v0.3.1候选留在独立维护工作树；新桌面候选使用独立`Studio-v0.3.2-candidate`本机状态通道。
+旧候选保留在各自独立工作树与本机状态通道，不以新版覆盖操作者正在验收的包或数据。
+
+本工作树按 [v0.3.3 执行计划](../../docs/v0.3.3-execution-plan.md)实施原片规划与可选外部前处理：
+
+- 新建单一完整视频默认 `zniku.source-aligned-overlap@0.3.3`；只有真实服务目录提供全部新 exact 定义时
+  才启用。旧后端只保留旧方案，不因新版前端存在方法就伪称支持，也不在失败后隐式降级。
+- 第三页为“处理与成片设置”：片名/年份，0 可选外部马赛克修复（默认关闭），1 分章分叶，2 增强，
+  3 重叠 FI，4 编码。必要声明常驻；外部修复可声明 MP4/MOV/MKV，默认 MP4，不靠更名伪装容器。
+- 原片分析始终只创建 Source/Admission，开启外部修复也不阻塞分析。确认后才生成带可选第 0 步的普通图，
+  修复结果经同一外部助手导入、检查和明确提交，才开始分章；原音频始终来自原片。
+- 可返回前面步骤查看或修改未确认的处理草稿。工程与素材身份创建后只读，处理设置变更复用准确分析，
+  不回写已有 Run snapshot。已经展开或自由编辑的图必须在节点图继续配置，向导不会整图覆盖。
+- 旧 `0.3.2` overlap 与 AVEnhanceFlow v2.7.0 保留明确选项；旧工程重开默认沿用旧方案，旧 MR-on
+  显示真实配置与“打开外部任务”入口，不显示假关闭、不自动转换目标或迁移旧图。
+- 当前不支持含音频 priming 的原片直接封装时，预览以 `E_SOURCE_ALIGNED_AUDIO_PRIMING_UNSUPPORTED`
+  提前停止；不会自动转码、裁音或猜测补偿。合成门禁不代表真实外部 AI 画面与音画同步验收完成。
 
 当前 0.2.0 Phase 1–5 与 v0.2.1 Phase 1–5 已实现产品面：
 
@@ -49,9 +65,8 @@ Runtime。Project Service 不可用或响应不符合 Python 生成 Schema 时�
 
 ## 开发运行
 
-以下是单实例通用开发方式。与v0.3.1验收环境并行时，不直接复用默认端口/状态目录/工程；必须先按
-[v0.3.2隔离门禁](../../docs/v0.3.2-execution-plan.md#3-双线服务与数据隔离)配置独立实例。本轮自动化只使用
-隔离的合成fixture服务，未提供可双击运行的新候选，也未把新分章方式接入下述旧向导。
+以下是单实例通用开发方式。与既有验收环境并行时，不复用默认端口/状态目录/工程；必须使用独立实例。
+自动化只启动自己拥有的合成 fixture 服务，不操作用户已打开的浏览器、真实媒体或既有服务。
 
 确保 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。先在仓库根目录启动 loopback Project
 Service（默认 `127.0.0.1:18765`），再启动 Vite：
@@ -98,7 +113,14 @@ npm run typecheck
 npm run test:run
 npm run build
 npm audit --audit-level=low
+npx playwright test
+npx playwright test -c e2e/batch-b.config.ts
+npx playwright test -c e2e/batch-c.config.ts
 ```
 
 `src/service/project-service.schema.json` 由 Python Pydantic 模型生成，是 Studio response 的唯一运行时
 Schema；不得手写第二份同义 Schema。
+
+默认 production E2E 包括旧 production/overlap 兼容及新的 `source-aligned.spec.ts`；后者覆盖返回不写入、
+MR off/on 原片分析不等待、MP4 导入取消/复制/检查/Submit，以及旧 MR 等待工程重开。
+截图与有界诊断只写测试输出目录，不作为真实媒体或外部模型能力的证明。

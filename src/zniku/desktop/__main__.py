@@ -16,13 +16,13 @@ from .windows import DesktopWindowsPlatform, install_process_job, is_windows, op
 def application_data_root() -> Path:
     """候选采用独立通道，避免二次启动发现并打开操作者仍在验收的v0.3.1服务。
 
-    这是0.3.2候选隔离位置，不迁移旧偏好/最近工程/产物；正式升级策略另行验收。
+    这是0.3.3候选隔离位置，不迁移旧偏好/最近工程/产物；正式升级策略另行验收。
     """
 
     base = os.environ.get("LOCALAPPDATA")
     if not base or not Path(base).is_absolute():
         raise RuntimeError("找不到当前用户的 Windows 本机应用数据目录")
-    return Path(base) / "ZNIKU" / "Studio-v0.3.2-candidate"
+    return Path(base) / "ZNIKU" / "Studio-v0.3.3-candidate"
 
 
 def bundled_assets() -> Path:

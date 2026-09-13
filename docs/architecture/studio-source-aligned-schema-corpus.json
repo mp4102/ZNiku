@@ -1,0 +1,2775 @@
+{
+  "contract_kind": "studio_source_aligned_schema_authoring_corpus",
+  "contract_version": "0.3.3",
+  "definitions": [
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/AdmittedTimeline",
+          "#/$defs/AverageChapterSelector",
+          "#/$defs/ChapterLeafPlan",
+          "#/$defs/ChapterProjection",
+          "#/$defs/ChapterSelector",
+          "#/$defs/ChapterSettings",
+          "#/$defs/DisplayTimecode",
+          "#/$defs/ExactFramesChapterSelector",
+          "#/$defs/ExactSeconds",
+          "#/$defs/ExactTimesChapterSelector",
+          "#/$defs/LeafProjection",
+          "#/$defs/MappedCutPoint",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation",
+          "#/$defs/Timecode"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "discriminator",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "maximum",
+          "minItems",
+          "minLength",
+          "minimum",
+          "oneOf",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.overlap.split.leaves.1",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "AdmittedTimeline": {
+            "additionalProperties": false,
+            "description": "由服务注入的直接产物时间轴，不是允许客户端自报的 probe 或 admission。",
+            "properties": {
+              "artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              }
+            },
+            "required": [
+              "artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "AdmittedTimeline",
+            "type": "object"
+          },
+          "AverageChapterSelector": {
+            "additionalProperties": false,
+            "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+            "properties": {
+              "count": {
+                "default": 1,
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "mode": {
+                "const": "average",
+                "default": "average",
+                "title": "Mode",
+                "type": "string"
+              }
+            },
+            "title": "AverageChapterSelector",
+            "type": "object"
+          },
+          "ChapterLeafPlan": {
+            "additionalProperties": false,
+            "description": "可重算的严格只读预览；持久化/运行时仍须从当前直接输入重新检查。",
+            "properties": {
+              "chapter_count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Chapter Count",
+                "type": "integer"
+              },
+              "chapters": {
+                "items": {
+                  "$ref": "#/$defs/ChapterProjection"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "title": "Chapters",
+                "type": "array"
+              },
+              "cut_points": {
+                "items": {
+                  "$ref": "#/$defs/MappedCutPoint"
+                },
+                "maxItems": 999,
+                "title": "Cut Points",
+                "type": "array"
+              },
+              "leaf_count": {
+                "const": 1,
+                "maximum": 10000,
+                "minimum": 1,
+                "title": "Leaf Count",
+                "type": "integer"
+              },
+              "leaf_frame_cap": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "profile_id": {
+                "const": "zniku.chapter-overlap-fi",
+                "default": "zniku.chapter-overlap-fi",
+                "title": "Profile Id",
+                "type": "string"
+              },
+              "profile_version": {
+                "const": "0.3.2",
+                "default": "0.3.2",
+                "title": "Profile Version",
+                "type": "string"
+              },
+              "settings": {
+                "$ref": "#/$defs/ChapterSettings"
+              },
+              "source": {
+                "$ref": "#/$defs/AdmittedTimeline"
+              }
+            },
+            "required": [
+              "source",
+              "settings",
+              "chapter_count",
+              "leaf_count",
+              "leaf_frame_cap",
+              "cut_points",
+              "chapters"
+            ],
+            "title": "ChapterLeafPlan",
+            "type": "object"
+          },
+          "ChapterProjection": {
+            "additionalProperties": false,
+            "description": "正式章节只组织已规划叶，不持有执行状态、媒体路径或隐藏拓扑。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "duration_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "duration_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "end_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "end_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "label": {
+                "pattern": "^[A-Z]+$",
+                "title": "Label",
+                "type": "string"
+              },
+              "leaves": {
+                "items": {
+                  "$ref": "#/$defs/LeafProjection"
+                },
+                "maxItems": 10000,
+                "minItems": 1,
+                "title": "Leaves",
+                "type": "array"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "start_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              }
+            },
+            "required": [
+              "start_frame",
+              "end_frame",
+              "frame_count",
+              "start_seconds",
+              "end_seconds",
+              "duration_seconds",
+              "start_timecode",
+              "end_timecode",
+              "duration_timecode",
+              "chapter_id",
+              "ordinal",
+              "label",
+              "leaves"
+            ],
+            "title": "ChapterProjection",
+            "type": "object"
+          },
+          "ChapterSelector": {
+            "discriminator": {
+              "mapping": {
+                "average": "#/$defs/AverageChapterSelector",
+                "exact_frames": "#/$defs/ExactFramesChapterSelector",
+                "exact_times": "#/$defs/ExactTimesChapterSelector"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AverageChapterSelector"
+              },
+              {
+                "$ref": "#/$defs/ExactFramesChapterSelector"
+              },
+              {
+                "$ref": "#/$defs/ExactTimesChapterSelector"
+              }
+            ]
+          },
+          "ChapterSettings": {
+            "additionalProperties": false,
+            "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+            "properties": {
+              "chapter_selector": {
+                "$ref": "#/$defs/ChapterSelector"
+              },
+              "leaf_max_minutes": {
+                "default": 5,
+                "maximum": 60,
+                "minimum": 1,
+                "title": "Leaf Max Minutes",
+                "type": "integer"
+              }
+            },
+            "title": "ChapterSettings",
+            "type": "object"
+          },
+          "DisplayTimecode": {
+            "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}$",
+            "type": "string"
+          },
+          "ExactFramesChapterSelector": {
+            "additionalProperties": false,
+            "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+            "properties": {
+              "frames": {
+                "items": {
+                  "$ref": "#/$defs/PositiveInt"
+                },
+                "maxItems": 999,
+                "minItems": 1,
+                "title": "Frames",
+                "type": "array"
+              },
+              "mode": {
+                "const": "exact_frames",
+                "title": "Mode",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "frames"
+            ],
+            "title": "ExactFramesChapterSelector",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "ExactTimesChapterSelector": {
+            "additionalProperties": false,
+            "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+            "properties": {
+              "mode": {
+                "const": "exact_times",
+                "title": "Mode",
+                "type": "string"
+              },
+              "times": {
+                "items": {
+                  "$ref": "#/$defs/Timecode"
+                },
+                "maxItems": 999,
+                "minItems": 1,
+                "title": "Times",
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "times"
+            ],
+            "title": "ExactTimesChapterSelector",
+            "type": "object"
+          },
+          "LeafProjection": {
+            "additionalProperties": false,
+            "description": "叶身份全局有序，ordinal 在章内从零开始，区间仍是同一源坐标。",
+            "properties": {
+              "chapter_ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "duration_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "duration_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "end_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "end_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "global_ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "leaf_id": {
+                "pattern": "^leaf-[0-9]{4,}$",
+                "title": "Leaf Id",
+                "type": "string"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "start_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              }
+            },
+            "required": [
+              "start_frame",
+              "end_frame",
+              "frame_count",
+              "start_seconds",
+              "end_seconds",
+              "duration_seconds",
+              "start_timecode",
+              "end_timecode",
+              "duration_timecode",
+              "leaf_id",
+              "global_ordinal",
+              "chapter_ordinal",
+              "ordinal"
+            ],
+            "title": "LeafProjection",
+            "type": "object"
+          },
+          "MappedCutPoint": {
+            "additionalProperties": false,
+            "description": "原始用户切点和实际帧边界的并列展示，平均模式没有伪造的用户输入。",
+            "properties": {
+              "actual_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "actual_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "actual_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "requested_frame": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/PositiveInt"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "requested_time": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Timecode"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "ordinal",
+              "actual_frame",
+              "actual_seconds",
+              "actual_timecode"
+            ],
+            "title": "MappedCutPoint",
+            "type": "object"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          },
+          "Timecode": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "一次全源 Split 的严格 planner 投影以及直接准入/原音轨绑定。",
+        "properties": {
+          "plan": {
+            "$ref": "#/$defs/ChapterLeafPlan"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "plan",
+          "source"
+        ],
+        "title": "SplitParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Geometry",
+          "#/$defs/Label",
+          "#/$defs/LeafBinding",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "exclusiveMaximum",
+          "exclusiveMinimum",
+          "maxLength",
+          "maximum",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.overlap.enhancement.external",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Geometry": {
+            "additionalProperties": false,
+            "description": "规范方形像素几何；不允许隐式缩放或 SAR 更改。",
+            "properties": {
+              "height": {
+                "maximum": 16384,
+                "minimum": 2,
+                "title": "Height",
+                "type": "integer"
+              },
+              "sample_aspect_ratio": {
+                "const": "1/1",
+                "default": "1/1",
+                "title": "Sample Aspect Ratio",
+                "type": "string"
+              },
+              "width": {
+                "maximum": 16384,
+                "minimum": 2,
+                "title": "Width",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "title": "Geometry",
+            "type": "object"
+          },
+          "Label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "LeafBinding": {
+            "additionalProperties": false,
+            "description": "全局 leaf 身份与章内连续序号分开保存，避免跨章重名被当作同一产物。",
+            "properties": {
+              "count": {
+                "maximum": 10000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "global_ordinal": {
+                "exclusiveMaximum": 10000,
+                "minimum": 0,
+                "title": "Global Ordinal",
+                "type": "integer"
+              },
+              "leaf_id": {
+                "pattern": "^leaf-[0-9]{4,5}$",
+                "title": "Leaf Id",
+                "type": "string"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "leaf_id",
+              "global_ordinal",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "LeafBinding",
+            "type": "object"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "一个完整叶的人工增强声明与受控整数缩放；不得由文件名推断。",
+        "properties": {
+          "actual_scale_factor": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "expected_input_geometry": {
+            "$ref": "#/$defs/Geometry"
+          },
+          "expected_output_geometry": {
+            "$ref": "#/$defs/Geometry"
+          },
+          "leaf": {
+            "$ref": "#/$defs/LeafBinding"
+          },
+          "model_name": {
+            "$ref": "#/$defs/Label"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Version"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter",
+          "leaf",
+          "expected_input_geometry",
+          "expected_output_geometry",
+          "model_name"
+        ],
+        "title": "EnhancementParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "description",
+          "exclusiveMinimum",
+          "maxLength",
+          "maximum",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.overlap.merge_video",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "普通章节点的局部源与正式范围，不承载上下游隐藏路径。",
+        "properties": {
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter"
+        ],
+        "title": "ChapterParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/CandidateFiProfile",
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "const",
+          "default",
+          "description",
+          "exclusiveMinimum",
+          "maxLength",
+          "maximum",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.overlap.fi_context",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "CandidateFiProfile": {
+            "additionalProperties": false,
+            "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+            "properties": {
+              "left_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 0,
+                "title": "Left Context Frames",
+                "type": "integer"
+              },
+              "minimum_input_frames": {
+                "default": 2,
+                "maximum": 256,
+                "minimum": 2,
+                "title": "Minimum Input Frames",
+                "type": "integer"
+              },
+              "model_name": {
+                "const": "Aion",
+                "default": "Aion",
+                "title": "Model Name",
+                "type": "string"
+              },
+              "phase": {
+                "const": "even-input-2m-minus-1",
+                "default": "even-input-2m-minus-1",
+                "title": "Phase",
+                "type": "string"
+              },
+              "right_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 1,
+                "title": "Right Context Frames",
+                "type": "integer"
+              },
+              "software_version": {
+                "const": "v1.0",
+                "default": "v1.0",
+                "title": "Software Version",
+                "type": "string"
+              },
+              "status": {
+                "const": "pending_real_acceptance",
+                "default": "pending_real_acceptance",
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "title": "CandidateFiProfile",
+            "type": "object"
+          },
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "上下文、外部 FI 和裁边共用同一候选 profile，变更必须使下游失效。",
+        "properties": {
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "fi_profile": {
+            "$ref": "#/$defs/CandidateFiProfile"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter"
+        ],
+        "title": "FiParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/CandidateFiProfile",
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "const",
+          "default",
+          "description",
+          "exclusiveMinimum",
+          "maxLength",
+          "maximum",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.overlap.frame_interpolation.external",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "CandidateFiProfile": {
+            "additionalProperties": false,
+            "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+            "properties": {
+              "left_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 0,
+                "title": "Left Context Frames",
+                "type": "integer"
+              },
+              "minimum_input_frames": {
+                "default": 2,
+                "maximum": 256,
+                "minimum": 2,
+                "title": "Minimum Input Frames",
+                "type": "integer"
+              },
+              "model_name": {
+                "const": "Aion",
+                "default": "Aion",
+                "title": "Model Name",
+                "type": "string"
+              },
+              "phase": {
+                "const": "even-input-2m-minus-1",
+                "default": "even-input-2m-minus-1",
+                "title": "Phase",
+                "type": "string"
+              },
+              "right_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 1,
+                "title": "Right Context Frames",
+                "type": "integer"
+              },
+              "software_version": {
+                "const": "v1.0",
+                "default": "v1.0",
+                "title": "Software Version",
+                "type": "string"
+              },
+              "status": {
+                "const": "pending_real_acceptance",
+                "default": "pending_real_acceptance",
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "title": "CandidateFiProfile",
+            "type": "object"
+          },
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "上下文、外部 FI 和裁边共用同一候选 profile，变更必须使下游失效。",
+        "properties": {
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "fi_profile": {
+            "$ref": "#/$defs/CandidateFiProfile"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter"
+        ],
+        "title": "FiParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/CandidateFiProfile",
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "const",
+          "default",
+          "description",
+          "exclusiveMinimum",
+          "maxLength",
+          "maximum",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.overlap.fi_crop",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "CandidateFiProfile": {
+            "additionalProperties": false,
+            "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+            "properties": {
+              "left_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 0,
+                "title": "Left Context Frames",
+                "type": "integer"
+              },
+              "minimum_input_frames": {
+                "default": 2,
+                "maximum": 256,
+                "minimum": 2,
+                "title": "Minimum Input Frames",
+                "type": "integer"
+              },
+              "model_name": {
+                "const": "Aion",
+                "default": "Aion",
+                "title": "Model Name",
+                "type": "string"
+              },
+              "phase": {
+                "const": "even-input-2m-minus-1",
+                "default": "even-input-2m-minus-1",
+                "title": "Phase",
+                "type": "string"
+              },
+              "right_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 1,
+                "title": "Right Context Frames",
+                "type": "integer"
+              },
+              "software_version": {
+                "const": "v1.0",
+                "default": "v1.0",
+                "title": "Software Version",
+                "type": "string"
+              },
+              "status": {
+                "const": "pending_real_acceptance",
+                "default": "pending_real_acceptance",
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "title": "CandidateFiProfile",
+            "type": "object"
+          },
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "上下文、外部 FI 和裁边共用同一候选 profile，变更必须使下游失效。",
+        "properties": {
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "fi_profile": {
+            "$ref": "#/$defs/CandidateFiProfile"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter"
+        ],
+        "title": "FiParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "maxLength",
+          "maximum",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.overlap.program_encode",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "完整裁后章的单次连续编码，仅全局末尾补一帧。",
+        "properties": {
+          "chapter_count": {
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Chapter Count",
+            "type": "integer"
+          },
+          "encoder": {
+            "enum": [
+              "cpu",
+              "gpu"
+            ],
+            "title": "Encoder",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter_count",
+          "encoder"
+        ],
+        "title": "ProgramParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "maxLength",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.overlap.final_mux",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Program 与原始音轨的绑定；不改变章节或帧率。",
+        "properties": {
+          "mr_mode": {
+            "enum": [
+              "off",
+              "external"
+            ],
+            "title": "Mr Mode",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "mr_mode"
+        ],
+        "title": "FinalParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/AdmittedTimeline",
+          "#/$defs/AverageChapterSelector",
+          "#/$defs/ChapterLeafPlan",
+          "#/$defs/ChapterProjection",
+          "#/$defs/ChapterSelector",
+          "#/$defs/ChapterSettings",
+          "#/$defs/DisplayTimecode",
+          "#/$defs/ExactFramesChapterSelector",
+          "#/$defs/ExactSeconds",
+          "#/$defs/ExactTimesChapterSelector",
+          "#/$defs/LeafProjection",
+          "#/$defs/MappedCutPoint",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation",
+          "#/$defs/Timecode"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "discriminator",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "maximum",
+          "minItems",
+          "minLength",
+          "minimum",
+          "oneOf",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.overlap.split.leaves.2",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "AdmittedTimeline": {
+            "additionalProperties": false,
+            "description": "由服务注入的直接产物时间轴，不是允许客户端自报的 probe 或 admission。",
+            "properties": {
+              "artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              }
+            },
+            "required": [
+              "artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "AdmittedTimeline",
+            "type": "object"
+          },
+          "AverageChapterSelector": {
+            "additionalProperties": false,
+            "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+            "properties": {
+              "count": {
+                "default": 1,
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "mode": {
+                "const": "average",
+                "default": "average",
+                "title": "Mode",
+                "type": "string"
+              }
+            },
+            "title": "AverageChapterSelector",
+            "type": "object"
+          },
+          "ChapterLeafPlan": {
+            "additionalProperties": false,
+            "description": "可重算的严格只读预览；持久化/运行时仍须从当前直接输入重新检查。",
+            "properties": {
+              "chapter_count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Chapter Count",
+                "type": "integer"
+              },
+              "chapters": {
+                "items": {
+                  "$ref": "#/$defs/ChapterProjection"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "title": "Chapters",
+                "type": "array"
+              },
+              "cut_points": {
+                "items": {
+                  "$ref": "#/$defs/MappedCutPoint"
+                },
+                "maxItems": 999,
+                "title": "Cut Points",
+                "type": "array"
+              },
+              "leaf_count": {
+                "const": 2,
+                "maximum": 10000,
+                "minimum": 1,
+                "title": "Leaf Count",
+                "type": "integer"
+              },
+              "leaf_frame_cap": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "profile_id": {
+                "const": "zniku.chapter-overlap-fi",
+                "default": "zniku.chapter-overlap-fi",
+                "title": "Profile Id",
+                "type": "string"
+              },
+              "profile_version": {
+                "const": "0.3.2",
+                "default": "0.3.2",
+                "title": "Profile Version",
+                "type": "string"
+              },
+              "settings": {
+                "$ref": "#/$defs/ChapterSettings"
+              },
+              "source": {
+                "$ref": "#/$defs/AdmittedTimeline"
+              }
+            },
+            "required": [
+              "source",
+              "settings",
+              "chapter_count",
+              "leaf_count",
+              "leaf_frame_cap",
+              "cut_points",
+              "chapters"
+            ],
+            "title": "ChapterLeafPlan",
+            "type": "object"
+          },
+          "ChapterProjection": {
+            "additionalProperties": false,
+            "description": "正式章节只组织已规划叶，不持有执行状态、媒体路径或隐藏拓扑。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "duration_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "duration_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "end_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "end_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "label": {
+                "pattern": "^[A-Z]+$",
+                "title": "Label",
+                "type": "string"
+              },
+              "leaves": {
+                "items": {
+                  "$ref": "#/$defs/LeafProjection"
+                },
+                "maxItems": 10000,
+                "minItems": 1,
+                "title": "Leaves",
+                "type": "array"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "start_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              }
+            },
+            "required": [
+              "start_frame",
+              "end_frame",
+              "frame_count",
+              "start_seconds",
+              "end_seconds",
+              "duration_seconds",
+              "start_timecode",
+              "end_timecode",
+              "duration_timecode",
+              "chapter_id",
+              "ordinal",
+              "label",
+              "leaves"
+            ],
+            "title": "ChapterProjection",
+            "type": "object"
+          },
+          "ChapterSelector": {
+            "discriminator": {
+              "mapping": {
+                "average": "#/$defs/AverageChapterSelector",
+                "exact_frames": "#/$defs/ExactFramesChapterSelector",
+                "exact_times": "#/$defs/ExactTimesChapterSelector"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AverageChapterSelector"
+              },
+              {
+                "$ref": "#/$defs/ExactFramesChapterSelector"
+              },
+              {
+                "$ref": "#/$defs/ExactTimesChapterSelector"
+              }
+            ]
+          },
+          "ChapterSettings": {
+            "additionalProperties": false,
+            "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+            "properties": {
+              "chapter_selector": {
+                "$ref": "#/$defs/ChapterSelector"
+              },
+              "leaf_max_minutes": {
+                "default": 5,
+                "maximum": 60,
+                "minimum": 1,
+                "title": "Leaf Max Minutes",
+                "type": "integer"
+              }
+            },
+            "title": "ChapterSettings",
+            "type": "object"
+          },
+          "DisplayTimecode": {
+            "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}$",
+            "type": "string"
+          },
+          "ExactFramesChapterSelector": {
+            "additionalProperties": false,
+            "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+            "properties": {
+              "frames": {
+                "items": {
+                  "$ref": "#/$defs/PositiveInt"
+                },
+                "maxItems": 999,
+                "minItems": 1,
+                "title": "Frames",
+                "type": "array"
+              },
+              "mode": {
+                "const": "exact_frames",
+                "title": "Mode",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "frames"
+            ],
+            "title": "ExactFramesChapterSelector",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "ExactTimesChapterSelector": {
+            "additionalProperties": false,
+            "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+            "properties": {
+              "mode": {
+                "const": "exact_times",
+                "title": "Mode",
+                "type": "string"
+              },
+              "times": {
+                "items": {
+                  "$ref": "#/$defs/Timecode"
+                },
+                "maxItems": 999,
+                "minItems": 1,
+                "title": "Times",
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "times"
+            ],
+            "title": "ExactTimesChapterSelector",
+            "type": "object"
+          },
+          "LeafProjection": {
+            "additionalProperties": false,
+            "description": "叶身份全局有序，ordinal 在章内从零开始，区间仍是同一源坐标。",
+            "properties": {
+              "chapter_ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "duration_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "duration_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "end_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "end_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "global_ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "leaf_id": {
+                "pattern": "^leaf-[0-9]{4,}$",
+                "title": "Leaf Id",
+                "type": "string"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "start_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              }
+            },
+            "required": [
+              "start_frame",
+              "end_frame",
+              "frame_count",
+              "start_seconds",
+              "end_seconds",
+              "duration_seconds",
+              "start_timecode",
+              "end_timecode",
+              "duration_timecode",
+              "leaf_id",
+              "global_ordinal",
+              "chapter_ordinal",
+              "ordinal"
+            ],
+            "title": "LeafProjection",
+            "type": "object"
+          },
+          "MappedCutPoint": {
+            "additionalProperties": false,
+            "description": "原始用户切点和实际帧边界的并列展示，平均模式没有伪造的用户输入。",
+            "properties": {
+              "actual_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "actual_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "actual_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "requested_frame": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/PositiveInt"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "requested_time": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Timecode"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "ordinal",
+              "actual_frame",
+              "actual_seconds",
+              "actual_timecode"
+            ],
+            "title": "MappedCutPoint",
+            "type": "object"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          },
+          "Timecode": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "一次全源 Split 的严格 planner 投影以及直接准入/原音轨绑定。",
+        "properties": {
+          "plan": {
+            "$ref": "#/$defs/ChapterLeafPlan"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "plan",
+          "source"
+        ],
+        "title": "SplitParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "boolean",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/Label",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "maxLength",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_aligned.external.mp4",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "DeclaredContainer": {
+            "enum": [
+              "mp4",
+              "mov",
+              "mkv"
+            ],
+            "type": "string"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "外部 N→N 修复；声明容器必须由对应 exact definition 的 const 约束。",
+        "properties": {
+          "declared_container": {
+            "const": "mp4",
+            "default": "mp4",
+            "type": "string"
+          },
+          "model_name": {
+            "$ref": "#/$defs/Label"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Version"
+          },
+          "operator_frame_order_confirmed": {
+            "const": true,
+            "title": "Operator Frame Order Confirmed",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "model_name",
+          "operator_frame_order_confirmed",
+          "declared_container"
+        ],
+        "title": "ExternalParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "boolean",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/Label",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "maxLength",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_aligned.external.mov",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "DeclaredContainer": {
+            "enum": [
+              "mp4",
+              "mov",
+              "mkv"
+            ],
+            "type": "string"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "外部 N→N 修复；声明容器必须由对应 exact definition 的 const 约束。",
+        "properties": {
+          "declared_container": {
+            "const": "mov",
+            "default": "mov",
+            "type": "string"
+          },
+          "model_name": {
+            "$ref": "#/$defs/Label"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Version"
+          },
+          "operator_frame_order_confirmed": {
+            "const": true,
+            "title": "Operator Frame Order Confirmed",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "model_name",
+          "operator_frame_order_confirmed",
+          "declared_container"
+        ],
+        "title": "ExternalParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "boolean",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/Label",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "maxLength",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_aligned.external.mkv",
+        "version": "0.3.3"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "DeclaredContainer": {
+            "enum": [
+              "mp4",
+              "mov",
+              "mkv"
+            ],
+            "type": "string"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "外部 N→N 修复；声明容器必须由对应 exact definition 的 const 约束。",
+        "properties": {
+          "declared_container": {
+            "const": "mkv",
+            "default": "mkv",
+            "type": "string"
+          },
+          "model_name": {
+            "$ref": "#/$defs/Label"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Version"
+          },
+          "operator_frame_order_confirmed": {
+            "const": true,
+            "title": "Operator Frame Order Confirmed",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "model_name",
+          "operator_frame_order_confirmed",
+          "declared_container"
+        ],
+        "title": "ExternalParameters",
+        "type": "object"
+      }
+    }
+  ]
+}

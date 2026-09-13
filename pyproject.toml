@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zniku"
-version = "0.3.2"
+version = "0.3.3"
 description = "ZNIKU 的自由媒体图核心、SQLite Project Store、本地 Runtime 与 Studio Project Service"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -33,7 +33,8 @@ zniku = ["py.typed"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
-pythonpath = ["src"]
+# 测试会导入仓库 tools 合成验证器；CLI pytest 与 python -m pytest 使用相同搜索路径。
+pythonpath = ["src", "."]
 
 [tool.mypy]
 python_version = "3.12"

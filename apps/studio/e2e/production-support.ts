@@ -6,6 +6,7 @@ import { writeFile } from 'node:fs/promises'
 import type { ConsoleMessage, Page, Request, Response, TestInfo } from '@playwright/test'
 
 export interface SyntheticFixture {
+  readonly source_aligned_mr?: string
   readonly wizard_project: string
   readonly output_root: string
   readonly output_collision: string

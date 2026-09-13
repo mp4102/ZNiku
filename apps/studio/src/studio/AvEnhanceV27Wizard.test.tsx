@@ -5,6 +5,8 @@ import { AvEnhanceV27Wizard } from './AvEnhanceV27Wizard'
 import { StudioGatewayError } from './gateway'
 import { HostBridgeError } from './host-bridge'
 import overlapExample from './__fixtures__/overlap-preview.json'
+import sourceAlignedExample from './__fixtures__/source-aligned-preview.json'
+import { parseSourceAlignedFullEnvelope, type SourceAlignedFullIntent, type SourceAlignedProcessingRequest } from './source-aligned-contracts'
 import { parseOverlapFullEnvelope, type OverlapFullIntent, type OverlapProcessingRequest } from './chapter-overlap-contracts'
 import type {
   AvEnhanceV27ExpandRequestWire,
@@ -128,7 +130,7 @@ async function reachAnalysis(user: ReturnType<typeof userEvent.setup>, customOut
   await user.click(screen.getByRole('button', { name: /选择视频素材/ }))
   await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
   await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
-  await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
+  await user.click(screen.getByRole('button', { name: '下一步：处理与成片设置' }))
   await user.type(screen.getByLabelText('片名'), 'Movie')
   await user.type(screen.getByLabelText('年份'), '2026')
   if (customOutput) await chooseOutputParent(user)
@@ -143,12 +145,181 @@ function overlapProps() {
   }
 }
 
+function sourceAlignedProps() {
+  return { ...overlapProps(),
+    onPreviewSourceAlignedProcessing: vi.fn(async (request: SourceAlignedProcessingRequest) => ({ ...request, status: 'pending_real_acceptance' as const })),
+    onPreviewSourceAligned: vi.fn(async (request: SourceAlignedFullIntent) => ({ ...parseSourceAlignedFullEnvelope(sourceAlignedExample), preparation_run_id: request.preparation_run_id, processing: request.processing })),
+    onExpandSourceAligned: vi.fn(async (_request: SourceAlignedFullIntent) => true),
+    onOpenExternalTasks: vi.fn(async (_runId: string) => {}),
+  }
+}
+
+describe('0.3.3 原片规划与可返回向导', () => {
+  it.each(['create', 'resume'] as const)('%s 已创建工程返回第 1 页不猜测工作数据路径，仅指向正式数据面板', async (mode) => {
+    const user = userEvent.setup(), props = sourceAlignedProps()
+    render(<AvEnhanceV27Wizard {...props} mode={mode} currentSnapshot={mode === 'resume' ? snapshot() : null} runSummaries={[runSummary()]} />)
+    if (mode === 'create') {
+      await reachAnalysis(user)
+      await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+      await screen.findByRole('region', { name: '确认重叠补帧工作流' })
+    }
+    await user.click(screen.getByRole('button', { name: '查看选择素材' }))
+    await user.click(screen.getByText('高级选项（可选）'))
+    const section = screen.getByRole('region', { name: '工作数据位置' })
+    expect(section).toHaveTextContent('沿用已保存的工作数据位置，请在“工程 → 工程数据”查看')
+    expect(section).not.toHaveTextContent('使用工程旁默认位置')
+    expect(section).not.toHaveTextContent('创建工程时')
+    expect(section.querySelectorAll('button')).toHaveLength(0)
+    expect(props.onExpandSourceAligned).not.toHaveBeenCalled()
+  })
+
+  it('新能力目录迟到仅补新建默认，不覆盖已经明确选择的旧流程', async () => {
+    const user = userEvent.setup(), old = overlapProps(), next = sourceAlignedProps()
+    const view = render(<AvEnhanceV27Wizard {...old} />)
+    await user.click(screen.getByRole('button', { name: '选择视频素材' }))
+    await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    expect(screen.getByLabelText('工作流方案')).toHaveValue('av27')
+    view.rerender(<AvEnhanceV27Wizard {...old} onPreviewSourceAlignedProcessing={next.onPreviewSourceAlignedProcessing} onPreviewSourceAligned={next.onPreviewSourceAligned} onExpandSourceAligned={next.onExpandSourceAligned} />)
+    expect(screen.getByLabelText('工作流方案')).toHaveValue('source-aligned')
+    await user.selectOptions(screen.getByLabelText('工作流方案'), 'overlap')
+    view.rerender(<AvEnhanceV27Wizard {...old} />)
+    view.rerender(<AvEnhanceV27Wizard {...old} onPreviewSourceAlignedProcessing={next.onPreviewSourceAlignedProcessing} onPreviewSourceAligned={next.onPreviewSourceAligned} onExpandSourceAligned={next.onExpandSourceAligned} />)
+    expect(screen.getByLabelText('工作流方案')).toHaveValue('overlap')
+  })
+
+  it('音频起始延迟不支持时常驻说明，保留分析，不误导航输出目录或自动转码', async () => {
+    const user = userEvent.setup(), props = sourceAlignedProps()
+    props.onPreviewSourceAligned.mockRejectedValue(new StudioGatewayError('音频不可用', { code: 'E_SOURCE_ALIGNED_AUDIO_PRIMING_UNSUPPORTED', fieldPath: ['source'] }))
+    render(<AvEnhanceV27Wizard {...props} runSummaries={[runSummary()]} />)
+    await reachAnalysis(user)
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('不会自动转码、裁音或补偿')
+    expect(screen.getByRole('region', { name: '分析素材' })).toBeVisible()
+    expect(props.onStartPreparationRun).toHaveBeenCalledOnce()
+    expect(props.onExpandSourceAligned).not.toHaveBeenCalled()
+  })
+
+  it('新单视频默认原片规划且 MR 关闭，分析创建 Source-only，确认才应用新图', async () => {
+    const user = userEvent.setup(), props = sourceAlignedProps()
+    render(<AvEnhanceV27Wizard {...props} runSummaries={[runSummary()]} />)
+    await reachAnalysis(user)
+    expect(props.onPreviewSourceAlignedProcessing).toHaveBeenCalledWith(expect.objectContaining({ contract_version: '0.3.3', processing: expect.objectContaining({ mr: { mode: 'off' } }) }))
+    expect(props.onCreate).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    expect(await screen.findByRole('region', { name: '确认重叠补帧工作流' })).toHaveTextContent('0.3.3')
+    expect(props.onCreate.mock.calls[0]![0].mr).toEqual({ mode: 'off' })
+    expect(props.onPreviewOverlap).not.toHaveBeenCalled()
+    expect(props.onExpandSourceAligned).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '确认并创建工作流' }))
+    expect(props.onExpandSourceAligned).toHaveBeenCalledWith(props.onPreviewSourceAligned.mock.calls[0]![0])
+  })
+
+  it('第 0 项必要声明常驻；MR on 也先分析原片，容器和声明仅进入完整处理意图', async () => {
+    const user = userEvent.setup(), props = sourceAlignedProps()
+    render(<AvEnhanceV27Wizard {...props} runSummaries={[runSummary()]} />)
+    await reachAnalysis(user)
+    await user.click(screen.getByRole('button', { name: '上一步' }))
+    const mrSection = screen.getByRole('region', { name: '可选外部马赛克修复' })
+    expect(mrSection.closest('details')).toBeNull()
+    expect(screen.getByLabelText('启用外部马赛克修复')).not.toBeChecked()
+    await user.click(screen.getByLabelText('启用外部马赛克修复'))
+    expect(screen.getByLabelText('MR output container')).toHaveValue('mp4')
+    await user.selectOptions(screen.getByLabelText('MR output container'), 'mov')
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    expect(screen.getByLabelText('确认外部修复保留帧顺序')).toHaveFocus()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    await user.click(screen.getByLabelText('确认外部修复保留帧顺序'))
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    await screen.findByRole('region', { name: '确认重叠补帧工作流' })
+    expect(props.onCreate.mock.calls[0]![0].mr).toEqual({ mode: 'off' })
+    expect(props.onPreviewSourceAligned.mock.calls[0]![0].processing.mr).toEqual({ mode: 'external', model_name: 'Jasna', model_version: null, declared_container: 'mov', operator_frame_order_confirmed: true })
+    expect(props.onStartPreparationRun).toHaveBeenCalledOnce()
+    expect(props.onExpandSourceAligned).not.toHaveBeenCalled()
+  })
+
+  it('分析后返回方案与素材查看，身份只读；MR 草稿变更复用分析且只确认最后预览', async () => {
+    const user = userEvent.setup(), props = sourceAlignedProps()
+    render(<AvEnhanceV27Wizard {...props} runSummaries={[runSummary()]} />)
+    await reachAnalysis(user)
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    await screen.findByRole('region', { name: '确认重叠补帧工作流' })
+    await user.click(screen.getByRole('button', { name: '查看处理方案' }))
+    expect(screen.getByLabelText('工作流方案')).toHaveValue('source-aligned')
+    await user.selectOptions(screen.getByLabelText('工作流方案'), 'av27')
+    await user.selectOptions(screen.getByLabelText('工作流方案'), 'source-aligned')
+    await user.click(screen.getByRole('button', { name: '上一步' }))
+    expect(screen.getByLabelText('工程名称')).toBeDisabled()
+    expect(screen.getByLabelText('素材组织方式')).toBeDisabled()
+    expect(screen.getByRole('button', { name: '选择视频素材' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    await user.click(screen.getByRole('button', { name: '下一步：处理与成片设置' }))
+    await user.click(screen.getByLabelText('启用外部马赛克修复'))
+    await user.click(screen.getByLabelText('确认外部修复保留帧顺序'))
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    expect(props.onPreviewSourceAligned).toHaveBeenCalledOnce()
+    expect(props.onCreate).toHaveBeenCalledOnce()
+    expect(props.onStartPreparationRun).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole('button', { name: '生成工作流预览' }))
+    await screen.findByRole('region', { name: '确认重叠补帧工作流' })
+    expect(props.onPreviewSourceAligned).toHaveBeenCalledTimes(2)
+    await user.click(screen.getByRole('button', { name: '确认并创建工作流' }))
+    expect(props.onExpandSourceAligned).toHaveBeenCalledWith(props.onPreviewSourceAligned.mock.calls[1]![0])
+    expect(props.onExpandSourceAligned.mock.calls[0]![0].processing.mr?.mode).toBe('external')
+  })
+
+  it('旧 MR-on 重开显示正式配置与等待任务入口，不假关闭或隐迁新版本', async () => {
+    const user = userEvent.setup(), props = sourceAlignedProps(), prior = snapshot()
+    const oldMR = { node_id: 'mr.A', type_id: 'zniku.avenhance.v27.mosaic_restoration.external', definition_version: '0.2.1', parameters: { model_name: 'Old Jasna', model_version: 'old-version' }, ui_position: { x: 1, y: 1 } }
+    const waiting = { ...runSummary(runId, 'running'), requires_operator_action: true, state_counts: { pending: 0, running: 0, waiting_external: 1, completed: 2, failed: 0 } }
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={{ ...prior, project: { ...prior.project, graph: { ...prior.project.graph, nodes: [...prior.project.graph.nodes, oldMR] } } }} runSummaries={[waiting]} />)
+    expect(screen.getByLabelText('启用外部马赛克修复')).toBeChecked()
+    expect(screen.getByLabelText('启用外部马赛克修复')).toBeDisabled()
+    expect(screen.getByLabelText('MR model name')).toHaveValue('Old Jasna')
+    expect(screen.getByLabelText('MR model version')).toHaveValue('old-version')
+    expect(screen.getByLabelText('工作流方案')).toHaveValue('av27')
+    expect(screen.getByRole('option', { name: /0.3.3/ })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /打开外部任务/ }))
+    expect(props.onOpenExternalTasks).toHaveBeenCalledExactlyOnceWith(runId)
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onExpandSourceAligned).not.toHaveBeenCalled()
+  })
+
+  it('新 MR-on 草稿分析后切旧版，只读显示真实准备图 MR off，不伪称旧图含修复', async () => {
+    const user = userEvent.setup(), props = sourceAlignedProps()
+    render(<AvEnhanceV27Wizard {...props} runSummaries={[runSummary()]} />)
+    await reachAnalysis(user)
+    await user.click(screen.getByRole('button', { name: '上一步' }))
+    await user.click(screen.getByLabelText('启用外部马赛克修复'))
+    await user.click(screen.getByLabelText('确认外部修复保留帧顺序'))
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    await screen.findByRole('region', { name: '确认重叠补帧工作流' })
+    await user.click(screen.getByRole('button', { name: '查看处理方案' }))
+    await user.selectOptions(screen.getByLabelText('工作流方案'), 'av27')
+    await user.click(screen.getByRole('button', { name: '下一步：处理与成片设置' }))
+    expect(screen.getByLabelText('启用外部马赛克修复')).not.toBeChecked()
+    expect(screen.getByLabelText('启用外部马赛克修复')).toBeDisabled()
+    expect(props.onCreate).toHaveBeenCalledOnce()
+    expect(props.onExpandSourceAligned).not.toHaveBeenCalled()
+  })
+
+  it.each(['zniku.source_aligned.split.leaves.3', 'zniku.avenhance.v27.enhancement.external', 'plugin.custom.node'])('已有 %s 图只返回编辑，不执行向导整图覆盖', (typeId) => {
+    const props = sourceAlignedProps(), prior = snapshot()
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={{ ...prior, project: { ...prior.project, graph: { ...prior.project.graph, nodes: [...prior.project.graph.nodes, { ...prior.project.graph.nodes[0]!, node_id: 'custom', type_id: typeId }] } } }} />)
+    expect(screen.getByRole('button', { name: '返回当前节点图' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /下一步/ })).not.toBeInTheDocument()
+    expect(props.onPreviewSourceAligned).not.toHaveBeenCalled()
+  })
+})
+
 async function selectOverlap(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: '选择视频素材' }))
   await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
   await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
   await user.selectOptions(screen.getByLabelText('工作流方案'), 'overlap')
-  await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
+  await user.click(screen.getByRole('button', { name: '下一步：处理与成片设置' }))
   await user.type(screen.getByLabelText('片名'), 'Synthetic')
   await user.type(screen.getByLabelText('年份'), '2026')
 }
@@ -290,7 +461,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     const user = userEvent.setup()
     const props = baseProps()
     render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} currentProjectPath="D:\\Projects\\existing.zniku" />)
-    expect(screen.getByText('成片设置', { selector: 'ol strong' })).toBeVisible()
+    expect(screen.getByText('处理与成片设置', { selector: 'ol strong' })).toBeVisible()
     for (const label of ['片名', '年份', 'Chapter selector mode', 'Leaf duration minutes', 'Enhancement model name',
       'Enhancement model version', 'Enhancement actual scale factor', 'FI model name', 'FI model version', 'Program encoder']) {
       expect(screen.getByLabelText(label)).toBeVisible()
@@ -387,7 +558,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     await user.type(screen.getByLabelText('年份'), '2026')
     await user.click(screen.getByRole('button', { name: '下一步：分析' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('工程所在磁盘当前不可访问。')
-    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '处理与成片设置' })).toBeVisible()
     expect(screen.getByText('其他选项（可选）').closest('details')).toHaveAttribute('open')
     await waitFor(() => expect(screen.getByRole('button', { name: '更改成片父目录' })).toHaveFocus())
     expect(screen.queryByRole('button', { name: '选择工程保存位置' })).not.toBeInTheDocument()
@@ -431,7 +602,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     }
     await user.click(screen.getByRole('button', { name: '下一步：分析' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('处理设置未通过检查。工程、素材和已有分析均保持不变。合成参数未通过领域检查。')
-    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '处理与成片设置' })).toBeVisible()
     await waitFor(() => expect(screen.getByLabelText(field)).toHaveFocus())
     expect(props.onPreviewPublication).toHaveBeenLastCalledWith(expect.objectContaining({ processing: expect.objectContaining({
       chapter_selector: selector === 'exact_frames' ? { mode: selector, frames: [899, 899] }
@@ -858,7 +1029,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     render(<AvEnhanceV27Wizard {...props} />)
     await reachAnalysis(user)
     expect(await screen.findByRole('alert')).toHaveTextContent('输出位置未通过检查')
-    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '处理与成片设置' })).toBeVisible()
     expect(screen.queryByRole('button', { name: /开始分析素材/ })).not.toBeInTheDocument()
     expect(props.onPreview).not.toHaveBeenCalled()
     expect(props.onCreate).not.toHaveBeenCalled()
@@ -928,7 +1099,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
       rerender(<AvEnhanceV27Wizard {...options} open />)
     }
     await act(async () => { pending.forEach((resolve) => resolve({ contract_version: '0.3.0', layout: 'direct', resolved_output_root: 'D:\\Late', output_directory: 'D:\\Late', will_create_directory: false })) })
-    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '处理与成片设置' })).toBeVisible()
     expect(screen.queryByText('D:\\Late')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '下一步：分析' })).toBeEnabled()
     expect(props.onPreview).not.toHaveBeenCalled()
@@ -941,7 +1112,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     const user = userEvent.setup()
     const props = baseProps()
     render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} currentProjectPath="D:\\Projects\\existing.zniku" currentProjectId="project.av27" currentProjectName="Existing" runSummaries={[runSummary()]} />)
-    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '处理与成片设置' })).toBeVisible()
     await user.type(screen.getByLabelText('片名'), 'Movie')
     await user.type(screen.getByLabelText('年份'), '2026')
     await chooseOutputParent(user)
@@ -1036,7 +1207,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     await user.type(screen.getByLabelText('第 2 章名称'), '后篇')
     await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
     await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
-    await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
+    await user.click(screen.getByRole('button', { name: '下一步：处理与成片设置' }))
     await user.type(screen.getByLabelText('片名'), 'Movie')
     await user.type(screen.getByLabelText('年份'), '2026')
     await chooseOutputParent(user)
@@ -1205,7 +1376,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('工作流分析阶段不一致')
     expect(props.onExpand).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '修改设置' }))
-    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '处理与成片设置' })).toBeVisible()
     expect(props.onStartPreparationRun).toHaveBeenCalledTimes(1)
   })
 

@@ -27,6 +27,10 @@
 
 ## 产品与领域边界
 
+- `v0.3.3` 用户已批准连续实施，入口为`docs/v0.3.3-execution-plan.md`：原片规划、可选外部第0步、
+  新版本局部输入绑定与向导导航。只新增exact媒体合同，不自动迁移旧图或修改旧AV27/overlap定义。
+  用户已授权完成后commit/push，不包括PR、merge、tag、Release或操作真实工程/服务。
+
 - 正式命名固定为：品牌 `ZNIKU`、产品 `ZNIKU Studio`、执行核心 `ZNIKU Runtime`、扩展体系
   `ZNIKU Engine SDK`、仓库 `ZNiku`、CLI／Python package `zniku`、工程文件扩展名 `.zniku`。
 - 产品定位固定为：ZNIKU Studio 自由编辑和运行媒体节点图；Project Service 保存 `.zniku` 工程、Run、
