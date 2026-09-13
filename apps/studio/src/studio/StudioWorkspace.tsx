@@ -2749,6 +2749,22 @@ export function StudioWorkspace({
     setTaskTab('current'); setBottomOpen(true)
     requestAnimationFrame(() => document.getElementById('node-inspector')?.focus())
   }
+  const openTemplateAnalysisProblems = async (runId: string) => {
+    if (!changeSelection(new Set(), new Set())) return
+    selectRun(runId)
+    const generation = generationRef.current
+    const selected = await loadDetail(runId, generation)
+    if (!selected || generation !== generationRef.current || runId !== viewRunIdRef.current) return
+    // 只导航到用户明确选择的分析记录；重试仍由既有节点入口预览影响并创建新 attempt。
+    const failed = [...latestNodeRuns(selected.run).values()].filter((item) => item.state === 'failed')
+    setTemplateOpen(false)
+    setShowRunSnapshot(true)
+    setInspectorVisible(true)
+    setInspectorTab('settings')
+    if (failed.length === 1) changeSelection(new Set([failed[0]!.node_id]), new Set())
+    else changeSelection(new Set(), new Set())
+    setTaskTab('problems'); setBottomOpen(true)
+  }
   const blockedRunReason = health.status.stale ? '本机服务连接已中断；请重新连接。'
     : serviceBusy || homeActionBusy ? '当前操作尚未完成，请稍候。'
       : !draft ? '请先新建或打开工程。'
@@ -2886,6 +2902,8 @@ export function StudioWorkspace({
         onExpand={expandAvEnhanceV27}
         onLocateNode={locateTemplateNode}
         onOpenExternalTasks={openTemplateExternalTasks}
+        onOpenAnalysisProblems={openTemplateAnalysisProblems}
+        onSelectAnalysisRun={selectRun}
         onPickOutputDirectory={pickTemplateOutputDirectory}
         onPickDataDirectory={async () => (await pickHostPaths('select_directory', { title: '选择工作数据父目录（保留中间产物）' }))?.[0] ?? null}
         onRevealOutputDirectory={revealTemplateOutputDirectory}
@@ -2911,6 +2929,9 @@ export function StudioWorkspace({
         pickerAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file') && hostCapabilityAvailable('select_directory')}
         projectIdFactory={projectIdFactory}
         runSummaries={allSummaries}
+        analysisProblems={currentRun ? { run_id: currentRun.run_id,
+          problems: [...runLatestAttempts.values()].flatMap((item) => item.state === 'failed' && item.error ? [{ label: nodeLabel(item.node_id), error: item.error }] : []),
+        } : null}
         serviceError={boundaryError ? '本机工程服务暂时不可用；当前工程和媒体没有被修改。' : null}
       />
       <ProjectShell

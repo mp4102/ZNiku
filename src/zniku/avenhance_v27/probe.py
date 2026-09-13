@@ -756,9 +756,27 @@ def _timeline_confidence(
         and span_consistent
     )
     if not medium:
+        # 只补充这次判定已取得的有界诊断，不改变冻结阈值、不增加扫描或校正时间戳。
+        # cadence 达标仍可能因缺失时间戳、断裂或整体速率冲突失败，必须保留各项事实。
+        max_gap = (
+            f"{float(scan.max_positive_delta / expected_period):.4f}"
+            if scan.max_positive_delta is not None
+            else "unknown"
+        )
+        span_error = (
+            f"{abs(float(scan.timestamp_span_rate / rate) - 1.0):.4%}"
+            if scan.timestamp_span_rate is not None
+            else "unknown"
+        )
         raise Av27MediaError(
             "E_AV27_SOURCE_FPS_AMBIGUOUS",
-            "Source 全片 cadence 置信度不足",
+            "Source 全片 cadence 置信度不足；"
+            f"稳定间隔={scan.cadence_coverage:.4%} (要求>=98%)，"
+            f"时间戳覆盖={timestamp_ratio:.4%} (要求>=99%)，"
+            f"正向间隔={scan.positive_delta_coverage:.4%} (要求>=99%)，"
+            f"最大间隔={max_gap}帧周期 (要求<=5)，"
+            f"全片跨度帧率偏差={span_error} (要求<=0.1%)；"
+            "未修改素材，未执行时间轴校正或增删帧",
         )
     expected_duration = packet_count / float(rate)
     tolerance = max(2 / float(rate), 0.05)

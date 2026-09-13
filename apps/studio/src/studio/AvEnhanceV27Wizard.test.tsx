@@ -1288,6 +1288,103 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     expect(props.onPreview).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'expand', request: expect.objectContaining({ preparation_run_id: runId }) }))
   })
 
+  it.each([0, 1])('Run 仍 running 且失败时优先显示问题，%s 个外部等待不冒充 MR', async (waitingCount) => {
+    const user = userEvent.setup(), props = sourceAlignedProps()
+    const onOpenAnalysisProblems = vi.fn(async (_runId: string) => {})
+    const options = { ...props, onOpenAnalysisProblems }
+    const { rerender } = render(<AvEnhanceV27Wizard {...options} />)
+    await reachAnalysis(user)
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    const summary: RunSummaryWire = { ...runSummary(runId, 'running'), node_count: 2 + waitingCount,
+      requires_operator_action: true, state_counts: { pending: 1, running: 0, waiting_external: waitingCount, completed: 0, failed: 1 } }
+    const raw = 'E_RUNNER_VALIDATION_REJECTED: E_AV27_SOURCE_FPS_AMBIGUOUS: Source 全片 cadence 置信度不足'
+    rerender(<AvEnhanceV27Wizard {...options} runSummaries={[summary]} analysisProblems={{ run_id: runId,
+      problems: [{ label: '导入原片', error: { reason: 'validation_failed', message: raw } }] }} />)
+    expect(await screen.findByText('素材分析没有完成')).toBeVisible()
+    expect(screen.getByText('导入原片：原片帧率或时间轴未通过检查')).toBeVisible()
+    expect(screen.getByText(/应用不会自动改速、增加或删除帧/)).toBeVisible()
+    expect(screen.queryByText('需要完成一个外部处理步骤')).not.toBeInTheDocument()
+    expect(screen.queryByText('请返回工作区完成马赛克修复；文件出现不会自动提交。')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重新分析' })).not.toBeInTheDocument()
+    if (waitingCount) expect(screen.getByText(/另外还有 1 个外部步骤/)).toBeVisible()
+    else expect(screen.queryByRole('button', { name: '打开等待中的外部任务' })).not.toBeInTheDocument()
+    expect(screen.getByText(`validation_failed: ${raw}`)).not.toBeVisible()
+    await user.click(screen.getByText('高级详情 · 原始分析错误'))
+    expect(screen.getByText(`validation_failed: ${raw}`)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '查看分析问题' }))
+    expect(onOpenAnalysisProblems).toHaveBeenCalledExactlyOnceWith(runId)
+    expect(props.onOpenExternalTasks).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).toHaveBeenCalledOnce()
+    expect(props.onExpandSourceAligned).not.toHaveBeenCalled()
+  })
+
+  it('只有正式 waiting_external 才显示外部任务入口，且不猜测它一定是 MR', async () => {
+    const user = userEvent.setup(), props = sourceAlignedProps()
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
+    await reachAnalysis(user)
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    const waiting: RunSummaryWire = { ...runSummary(runId, 'running'), requires_operator_action: true,
+      state_counts: { pending: 0, running: 0, waiting_external: 1, completed: 1, failed: 0 } }
+    rerender(<AvEnhanceV27Wizard {...props} runSummaries={[waiting]} />)
+    expect(await screen.findByText('需要完成一个外部处理步骤')).toBeVisible()
+    expect(screen.getByText(/文件出现不会自动提交/)).toBeVisible()
+    expect(screen.queryByRole('button', { name: '查看分析问题' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/完成马赛克修复/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '打开等待中的外部任务' }))
+    expect(props.onOpenExternalTasks).toHaveBeenCalledExactlyOnceWith(runId)
+    expect(props.onStartPreparationRun).toHaveBeenCalledOnce()
+  })
+
+  it('旧 MR 图的失败记录没有 waiting_external 时不显示待交付 banner', () => {
+    const props = sourceAlignedProps(), prior = snapshot()
+    const oldMR = { ...prior.project.graph.nodes[0]!, node_id: 'mr', type_id: 'zniku.avenhance.v27.mosaic_restoration.external' }
+    const failed = { ...runSummary(runId, 'running'), requires_operator_action: true,
+      state_counts: { pending: 1, running: 0, waiting_external: 0, completed: 0, failed: 1 } }
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={{ ...prior, project: { ...prior.project,
+      graph: { ...prior.project.graph, nodes: [...prior.project.graph.nodes, oldMR] } } }} runSummaries={[failed]} />)
+    expect(screen.queryByRole('region', { name: '已创建的外部修复任务' })).not.toBeInTheDocument()
+  })
+
+  it('分析错误只展示 exact Run，重启失败仍保留原分析问题和恢复入口', async () => {
+    const user = userEvent.setup(), props = baseProps()
+    props.onStartPreparationRun.mockResolvedValueOnce(runId).mockRejectedValueOnce(new Error('合成重新启动失败'))
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
+    await reachAnalysis(user)
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    rerender(<AvEnhanceV27Wizard {...props} runSummaries={[runSummary(runId, 'failed')]} analysisProblems={{ run_id: secondRunId,
+      problems: [{ label: '别的记录', error: { reason: 'execution_error', message: '不能泄漏的旧详情' } }] }} />)
+    expect(screen.queryByText(/不能泄漏的旧详情/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '重新分析' }))
+    expect(await screen.findByText('合成重新启动失败')).toBeVisible()
+    expect(screen.getByText('素材分析没有完成')).toBeVisible()
+    expect(screen.getByRole('button', { name: '查看分析问题' })).toBeEnabled()
+  })
+
+  it('重开准备工程无需填写成片设置即可显式查看未完成分析，不猜最新、不展开或重跑', async () => {
+    const user = userEvent.setup(), props = sourceAlignedProps()
+    const onSelectAnalysisRun = vi.fn(), onOpenAnalysisProblems = vi.fn(async (_runId: string) => {})
+    const failed: RunSummaryWire = { ...runSummary(runId, 'running'), requires_operator_action: true,
+      state_counts: { pending: 1, running: 0, waiting_external: 0, completed: 0, failed: 1 } }
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()}
+      runSummaries={[failed, runSummary(secondRunId)]} onSelectAnalysisRun={onSelectAnalysisRun} onOpenAnalysisProblems={onOpenAnalysisProblems} />)
+    expect(screen.getByLabelText('片名')).toHaveValue('')
+    expect(screen.getByLabelText('年份')).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: '查看已有分析记录' }))
+    expect(screen.getByRole('button', { name: /查看未完成分析/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: /分析记录 1/ })).toBeVisible()
+    expect(onSelectAnalysisRun).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /查看未完成分析/ }))
+    expect(onSelectAnalysisRun).toHaveBeenCalledExactlyOnceWith(runId)
+    expect(screen.getByText('素材分析没有完成')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '查看分析问题' }))
+    expect(onOpenAnalysisProblems).toHaveBeenCalledExactlyOnceWith(runId)
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreviewPublication).not.toHaveBeenCalled()
+    expect(props.onPreviewSourceAligned).not.toHaveBeenCalled()
+    expect(props.onExpandSourceAligned).not.toHaveBeenCalled()
+  })
+
   it('同一分钟的完成记录仍可区分，错误绑定由 Python 拒绝后可改选 exact Run', async () => {
     const user = userEvent.setup()
     const props = baseProps()

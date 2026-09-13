@@ -41,6 +41,18 @@ describe('运行展示词汇', () => {
     expect(runHistoryLabel(summary)).toContain('需要处理问题')
     expect(summary.state).toBe('running')
   })
+  it('只翻译已知原片 cadence 错误，不要求重交 MR、换容器或自动改帧', () => {
+    const raw = 'E_RUNNER_VALIDATION_REJECTED: E_AV27_SOURCE_FPS_AMBIGUOUS: Source 全片 cadence 置信度不足'
+    const explanation = failurePresentation('validation_failed', raw)
+    expect(explanation.title).toBe('原片帧率或时间轴未通过检查')
+    expect(explanation.preserved).toContain('不会自动改速、增加或删除帧')
+    expect(explanation.recovery).toContain('不要仅改文件后缀或重复交付修复文件来绕过检查')
+    expect(failurePresentation('E_AV27_SOURCE_FPS_AMBIGUOUS')).toEqual(explanation)
+    for (const message of [`untrusted ${raw}`, raw.replace('FPS_AMBIGUOUS:', 'FPS_AMBIGUOUS_OTHER:'), '其他检查失败']) {
+      expect(failurePresentation('validation_failed', message).title).toBe('处理输出未通过检查')
+    }
+    expect(failurePresentation('execution_error', raw).title).toBe('这一步处理失败')
+  })
   it.each(['unexpected', 'toString', '__proto__'])('未知错误 %s 保守回退，不按原始消息猜测成功', (code) => {
     expect(failurePresentation(code)).toMatchObject({ known: false, title: '出现尚未识别的问题' })
     expect(failurePresentation(code).recovery).toContain('原始信息')

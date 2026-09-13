@@ -47,7 +47,12 @@ const unknownBinding = copy('工作流引用已失效', '节点、版本或连�
 const order = copy('合并输入顺序需要修正', '多路输入的次序不完整或重复，当前不能运行。', '定位合并步骤，在输入列表中重新整理顺序；必要时移除错误连接后重新连接。')
 const outdated = copy('工程内容已变化', '当前页面与保存的工程或外部任务不再一致，操作已被拒绝。', '先保留未保存的编辑，再重新打开工程并查看当前任务；不要重复提交旧页面的操作。')
 const busy = copy('已有处理正在进行', '当前操作与正在执行的任务冲突，暂时不能开始。', '先查看当前处理进度或完成正在等待的外部任务，再重试。')
+const sourceCadence = copy('原片帧率或时间轴未通过检查',
+  '原片的帧率、帧数或时间轴未通过一致性与稳定性检查，当前不能安全进行精确分章和补帧。',
+  '先检查素材的帧率与时间轴，或寻求时间轴处理帮助；不要仅改文件后缀或重复交付修复文件来绕过检查。',
+  '原片和已完成结果仍保留；应用不会自动改速、增加或删除帧。')
 const failures: Readonly<Record<string, FailurePresentation>> = {
+  E_AV27_SOURCE_FPS_AMBIGUOUS: sourceCadence,
   E_REQUIRED_INPUT_MISSING: missingInput, E_PARAMETERS_INVALID: parameters,
   E_NODE_DUPLICATE: unknownBinding, E_DEFINITION_UNKNOWN: unknownBinding,
   E_EDGE_SOURCE_NODE_UNKNOWN: unknownBinding, E_EDGE_TARGET_NODE_UNKNOWN: unknownBinding,
@@ -68,7 +73,9 @@ const failures: Readonly<Record<string, FailurePresentation>> = {
   interrupted: copy('处理被中断', '上次处理在完成前结束，不能接管中间进度。', '定位步骤，确认重试影响后从头重新运行；有效的已完成上游仍可复用。'),
   cancelled: copy('处理已取消', '这一步未完成，不能继续中间进度。', '需要继续时，定位步骤并确认重试影响后从头重新运行。'),
 }
-export function failurePresentation(code: string): FailurePresentation {
+export function failurePresentation(code: string, message?: string): FailurePresentation {
+  // 只翻译已知 validator 的稳定嵌套错误码；不从任意原始文本推导媒体结论或重试权限。
+  if (code === 'validation_failed' && /^E_RUNNER_VALIDATION_REJECTED: E_AV27_SOURCE_FPS_AMBIGUOUS(?::|$)/.test(message ?? '')) return sourceCadence
   return (Object.hasOwn(failures, code) ? failures[code] : undefined) ?? { known: false, title: '出现尚未识别的问题',
     cause: '当前无法可靠解释这个错误，不能据此认定操作成功或安全继续。',
     preserved: '原始错误信息已保留。界面不会因此改写运行状态或自动重试。',

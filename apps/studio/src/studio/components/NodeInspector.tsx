@@ -189,7 +189,7 @@ function NodeRuntimeSummary(props: NodeInspectorProps) {
   if (!nodeRun && !stale) return null
   const manual = props.selectedDefinition?.executor.kind === 'manual_external' || !!nodeRun?.external_handoff || nodeRun?.state === 'waiting_external'
   const error = nodeRun?.error
-  const problem = error ? failurePresentation(error.reason) : null
+  const problem = error ? failurePresentation(error.reason, error.message) : null
   return <section className="runtime-user-status" aria-label="步骤处理状态">
     {nodeRun && <div className={`runtime-status runtime-status--${nodeRun.state}`}>{nodeStateLabel(nodeRun.state)}</div>}
     {stale && <p className="runtime-preserved">当前工程的此步骤需要重新处理：设置、输入或输出有效性已变化。历史文件保留，但不能直接作为当前结果使用。</p>}

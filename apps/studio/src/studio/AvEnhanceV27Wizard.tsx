@@ -15,6 +15,7 @@ import { ChapterOverlapDraftError, chapterSettingsIntent, initialChapterOverlapS
 import { OverlapContractError, type OverlapFullEnvelope, type OverlapFullIntent, type OverlapProcessing, type OverlapProcessingEnvelope, type OverlapProcessingRequest } from './chapter-overlap-contracts'
 import type { SourceAlignedFullEnvelope, SourceAlignedFullIntent, SourceAlignedProcessing, SourceAlignedProcessingEnvelope, SourceAlignedProcessingRequest } from './source-aligned-contracts'
 import { formatHostBridgeError } from './host-error-presentation'
+import { failurePresentation } from './run-presentation'
 import type {
   AvEnhanceV27ChapterSelectorWire,
   AvEnhanceV27ExpandRequestWire,
@@ -26,6 +27,7 @@ import type {
   AvEnhanceV27TemplatePreviewEnvelope,
   AvEnhanceV27TemplatePreviewRequestWire,
   ProjectSnapshotWire,
+  FailureWire,
   RunSummaryWire,
 } from './contracts'
 
@@ -57,6 +59,8 @@ export interface AvEnhanceV27WizardProps {
   readonly currentProjectId: string
   readonly currentProjectName: string
   readonly runSummaries: ReadonlyArray<RunSummaryWire>
+  /** 既有 Run detail 的只读投影，只显示与当前分析身份精确匹配的最新失败。 */
+  readonly analysisProblems?: { readonly run_id: string; readonly problems: ReadonlyArray<{ readonly label: string; readonly error: FailureWire }> } | null
   readonly projectIdFactory?: () => string
   readonly pickerAvailable?: boolean
   readonly onClose: () => void
@@ -79,6 +83,8 @@ export interface AvEnhanceV27WizardProps {
   readonly onPreviewSourceAligned?: (request: SourceAlignedFullIntent) => Promise<SourceAlignedFullEnvelope>
   readonly onExpandSourceAligned?: (request: SourceAlignedFullIntent) => Promise<boolean>
   readonly onOpenExternalTasks?: (runId: string) => Promise<void>
+  readonly onOpenAnalysisProblems?: (runId: string) => Promise<void>
+  readonly onSelectAnalysisRun?: (runId: string) => void
   readonly onLocateNode: (nodeId: string) => void
 }
 
@@ -167,6 +173,7 @@ export function AvEnhanceV27Wizard({
   currentProjectId,
   currentProjectName,
   runSummaries,
+  analysisProblems = null,
   projectIdFactory = defaultProjectId,
   pickerAvailable = false,
   onClose,
@@ -187,6 +194,8 @@ export function AvEnhanceV27Wizard({
   onPreviewSourceAligned,
   onExpandSourceAligned,
   onOpenExternalTasks,
+  onOpenAnalysisProblems,
+  onSelectAnalysisRun,
   onLocateNode,
 }: AvEnhanceV27WizardProps) {
   const wasOpen = useRef(false)
@@ -299,6 +308,11 @@ export function AvEnhanceV27Wizard({
   const analysisSummary = analysisRunId
     ? runSummaries.find((summary) => summary.run_id === analysisRunId) ?? null
     : null
+  // Run 可以仍为 running，但某个最新 attempt 已失败；人工干预标记不等于外部等待。
+  const analysisFailed = analysisSummary?.state === 'failed' || (analysisSummary?.state_counts.failed ?? 0) > 0
+  const analysisWaiting = (analysisSummary?.state_counts.waiting_external ?? 0) > 0
+  const currentAnalysisProblems = analysisProblems?.run_id === analysisRunId ? analysisProblems.problems : []
+  const waitingRuns = runSummaries.filter((summary) => summary.state_counts.waiting_external > 0)
 
   useEffect(() => () => {
     responseEpochRef.current += 1
@@ -1091,13 +1105,13 @@ export function AvEnhanceV27Wizard({
   }
 
   const restartAnalysis = async () => {
-    if (serviceControlsDisabled) return
+    // 只有已终止的 Run 使用现有新 Run 路径；仍 running 的失败应进入节点重试并创建新 attempt。
+    if (serviceControlsDisabled || analysisSummary?.state !== 'failed') return
     const epoch = ++responseEpochRef.current
     pickerFlightRef.current += 1
     previewRequestRef.current = null
     expansionFlightRef.current = null
     setPreview(null)
-    setAnalysisRunId(null)
     setLocalError(null)
     setSubmitting(true)
     try {
@@ -1118,12 +1132,13 @@ export function AvEnhanceV27Wizard({
     }
   }
 
-  const selectCompletedAnalysis = (runId: string) => {
+  const selectAnalysisRun = (runId: string) => {
     if (serviceControlsDisabled) return
     invalidateExpansion()
     autoPreviewAllowedRef.current = true
     autoExpansionAllowedRef.current = true
     setAnalysisRunId(runId)
+    onSelectAnalysisRun?.(runId)
   }
 
   const returnToSettings = () => {
@@ -1137,6 +1152,16 @@ export function AvEnhanceV27Wizard({
     setSubmitting(true)
     try { await onOpenExternalTasks(runId) }
     catch (error) { if (epoch === responseEpochRef.current) setLocalError(error instanceof Error ? error.message : '无法打开外部任务；请返回工作区查看。') }
+    finally { if (epoch === responseEpochRef.current) setSubmitting(false) }
+  }
+
+  const openAnalysisProblems = async (runId: string) => {
+    if (serviceControlsDisabled) return
+    if (!onOpenAnalysisProblems) { onClose(); return }
+    const epoch = responseEpochRef.current
+    setSubmitting(true)
+    try { await onOpenAnalysisProblems(runId) }
+    catch (error) { if (epoch === responseEpochRef.current) setLocalError(error instanceof Error ? error.message : '无法打开分析问题；请返回工作区查看。') }
     finally { if (epoch === responseEpochRef.current) setSubmitting(false) }
   }
 
@@ -1211,7 +1236,7 @@ export function AvEnhanceV27Wizard({
             setDraftResetEpoch((value) => value + 1)
           }}>放弃保留的向导草稿</button>}
         </section>}
-          {preparationCreated && legacyMRPrepared && runSummaries.some((summary) => summary.requires_operator_action) && <section className="creator-setting-note" aria-label="已创建的外部修复任务"><p>旧版外部修复任务仍在等待交付。使用同一外部助手选择文件、检查并提交；返回向导不会改写或重建任务。</p>{runSummaries.filter((summary) => summary.requires_operator_action).map((summary) => <button type="button" className="button button--ghost" key={summary.run_id} disabled={serviceControlsDisabled || !onOpenExternalTasks} onClick={() => void openExternalTasks(summary.run_id)}>打开外部任务 · {humanRunTime(summary.created_at)}</button>)}</section>}
+          {preparationCreated && legacyMRPrepared && waitingRuns.length > 0 && <section className="creator-setting-note" aria-label="已创建的外部修复任务"><p>旧版外部修复任务仍在等待交付。使用同一外部助手选择文件、检查并提交；返回向导不会改写或重建任务。</p>{waitingRuns.map((summary) => <button type="button" className="button button--ghost" key={summary.run_id} disabled={serviceControlsDisabled || !onOpenExternalTasks} onClick={() => void openExternalTasks(summary.run_id)}>打开外部任务 · {humanRunTime(summary.created_at)}</button>)}</section>}
           {step === 1 && (
             <section className="creator-step" aria-label="选择素材">
               <header><span>01</span><div><h3>选择要处理的视频</h3><p>先选择素材，再为工程命名并选择保存位置。</p></div></header>
@@ -1381,7 +1406,32 @@ export function AvEnhanceV27Wizard({
             <section className="creator-step creator-analysis" aria-label="分析素材">
               <header><span>04</span><div><h3>分析素材并生成准确方案</h3><p>只有点击下方按钮后，ZNIKU 才会创建工程并开始分析；仅打开页面不会修改任何内容。</p></div></header>
               {publicationPreview && <div className="creator-target" aria-label="输出位置检查结果"><span>输出位置已检查</span><strong>{publicationPreview.output_directory}</strong><small>{publicationPreview.will_create_directory ? '将在开始处理后的输出步骤创建此文件夹；当前检查、分析和确认工作流均不创建目录。' : '成片将保存到此目录；已有文件仍需要明确允许覆盖。'}</small></div>}
-              {!preparationCreated ? <button className="creator-analysis-action" disabled={serviceControlsDisabled} onClick={() => void analyze()} type="button"><span>◎</span><strong>{submitting ? '正在准备素材分析…' : '开始分析素材'}</strong><small>先安全检查，再创建工程并分析真实媒体信息</small></button> : analysisRunId ? <div className={`creator-analysis-state is-${analysisSummary?.state ?? 'pending'}`} role="status"><strong>{analysisSummary?.state === 'completed' ? isPublicationError(previewFailure?.code) ? '素材分析已完成，输出位置尚未就绪' : previewFailure ? '素材分析已完成，工作流预览尚未就绪' : '素材分析完成' : analysisSummary?.state === 'failed' ? '素材分析没有完成' : analysisSummary?.requires_operator_action ? '需要完成一个外部处理步骤' : '正在分析素材'}</strong><p>{analysisSummary?.state === 'completed' ? submitting ? '正在从这次准确结果生成工作流预览。' : previewFailure ? '这次素材分析记录仍然保留；处理下方提示后即可重新检查，不需要重复分析素材。' : '可使用这次已完成分析生成工作流预览。' : analysisSummary?.state === 'failed' ? '工程和已完成结果仍保留；可返回工作区查看问题，或重新启动分析。' : analysisSummary?.requires_operator_action ? '请返回工作区完成马赛克修复；文件出现不会自动提交。' : `${analysisSummary?.state_counts.completed ?? 0} / ${analysisSummary?.node_count ?? '—'} 个分析步骤已完成`}</p>{analysisSummary?.state === 'failed' && <button className="button button--primary" disabled={serviceControlsDisabled} onClick={() => void restartAnalysis()} type="button">重新分析</button>}</div> : <div className="creator-analysis-records"><strong>选择一次已完成的素材分析</strong><p>恢复已有工程时请按时间明确选择；界面不会猜测“最新”记录。</p>{completedRuns.length === 0 ? <p>当前工程还没有可用的完成记录。请返回工作区先完成素材准备。</p> : completedRuns.map((summary, index) => <button disabled={serviceControlsDisabled} key={summary.run_id} onClick={() => selectCompletedAnalysis(summary.run_id)} type="button"><span>✓</span><strong>分析记录 {index + 1} · {humanRunTime(summary.created_at)} 完成</strong><small>{summary.node_count} 个步骤均已完成</small></button>)}</div>}
+              {!preparationCreated ? <button className="creator-analysis-action" disabled={serviceControlsDisabled} onClick={() => void analyze()} type="button"><span>◎</span><strong>{submitting ? '正在准备素材分析…' : '开始分析素材'}</strong><small>先安全检查，再创建工程并分析真实媒体信息</small></button> : analysisRunId ? <div className={`creator-analysis-state is-${analysisFailed ? 'failed' : analysisSummary?.state ?? 'pending'}`} role="status">
+                <strong>{analysisFailed ? '素材分析没有完成'
+                  : analysisSummary?.state === 'completed' ? isPublicationError(previewFailure?.code) ? '素材分析已完成，输出位置尚未就绪' : previewFailure ? '素材分析已完成，工作流预览尚未就绪' : '素材分析完成'
+                    : analysisWaiting ? '需要完成一个外部处理步骤'
+                      : analysisSummary?.requires_operator_action ? '素材分析需要检查' : '正在分析素材'}</strong>
+                <p>{analysisFailed ? '分析步骤发生错误；工程和已完成结果仍保留。请先查看具体问题，修正原因后再从头重试失败步骤。'
+                  : analysisSummary?.state === 'completed' ? submitting ? '正在从这次准确结果生成工作流预览。' : previewFailure ? '这次素材分析记录仍然保留；处理下方提示后即可重新检查，不需要重复分析素材。' : '可使用这次已完成分析生成工作流预览。'
+                    : analysisWaiting ? '当前确有步骤等待外部处理。请打开对应任务，按要求检查并显式提交；文件出现不会自动提交。'
+                      : analysisSummary?.requires_operator_action ? '请查看这次分析的问题与状态；界面不会把人工干预标记当作外部交付要求。'
+                        : `${analysisSummary?.state_counts.completed ?? 0} / ${analysisSummary?.node_count ?? '—'} 个分析步骤已完成`}</p>
+                {analysisFailed && currentAnalysisProblems.map((problem, index) => {
+                  const explanation = failurePresentation(problem.error.reason, problem.error.message)
+                  return <section aria-label="分析失败原因" key={index}>
+                    <strong>{problem.label}：{explanation.title}</strong>
+                    <p>{explanation.cause}</p><p>{explanation.preserved}</p><p>{explanation.recovery}</p>
+                    <details><summary>高级详情 · 原始分析错误</summary><pre>{problem.error.reason}: {problem.error.message}</pre></details>
+                  </section>
+                })}
+                {analysisFailed && currentAnalysisProblems.length === 0 && analysisSummary?.error && <details><summary>高级详情 · 原始分析错误</summary><pre>{analysisSummary.error.reason}: {analysisSummary.error.message}</pre></details>}
+                {(analysisFailed || (!analysisWaiting && analysisSummary?.requires_operator_action)) && <button className="button button--primary" disabled={serviceControlsDisabled} onClick={() => void openAnalysisProblems(analysisRunId)} type="button">查看分析问题</button>}
+                {analysisFailed && analysisWaiting && <p>另外还有 {analysisSummary?.state_counts.waiting_external} 个外部步骤等待处理；交付外部文件不会修复上述失败。</p>}
+                {analysisWaiting && <button className="button button--ghost" disabled={serviceControlsDisabled || !onOpenExternalTasks} onClick={() => void openExternalTasks(analysisRunId)} type="button">打开等待中的外部任务</button>}
+                {analysisSummary?.state === 'failed' && <><p>此分析记录已终止。原因修正后，“重新分析”会创建新记录；不会接管失败的中间进度。</p><button className="button button--ghost" disabled={serviceControlsDisabled} onClick={() => void restartAnalysis()} type="button">重新分析</button></>}
+              </div> : <div className="creator-analysis-records"><strong>选择一次素材分析记录</strong><p>恢复已有工程时请按时间明确选择；界面不会猜测“最新”记录。只有已完成分析才能生成工作流预览。</p>{completedRuns.length === 0 ? <p>{runSummaries.length > 0 ? '当前工程还没有可用的完成记录；可先查看下方未完成分析的问题与进度。' : '当前工程还没有素材分析记录；请返回工作区启动素材分析。'}</p> : completedRuns.map((summary, index) => <button disabled={serviceControlsDisabled} key={summary.run_id} onClick={() => selectAnalysisRun(summary.run_id)} type="button"><span>✓</span><strong>分析记录 {index + 1} · {humanRunTime(summary.created_at)} 完成</strong><small>{summary.node_count} 个步骤均已完成</small></button>)}
+                {runSummaries.filter((summary) => summary.state !== 'completed').map((summary) => <button disabled={serviceControlsDisabled} key={summary.run_id} onClick={() => selectAnalysisRun(summary.run_id)} type="button"><span>◎</span><strong>查看未完成分析 · {humanRunTime(summary.created_at)}</strong><small>{summary.state === 'failed' || summary.state_counts.failed > 0 ? '需要处理分析问题' : summary.state_counts.waiting_external > 0 ? '等待外部处理' : '查看当前进度'} · {summary.state_counts.completed} / {summary.node_count} 个步骤已完成</small></button>)}
+              </div>}
               {analysisSummary?.state === 'completed' && previewFailure && outputRoot && <button className="button button--ghost" disabled={serviceControlsDisabled || outputSelectionExpired || !onRevealOutputDirectory} onClick={() => void revealOutput()} type="button">打开所选输出文件夹</button>}
             </section>
           )}
@@ -1405,6 +1455,7 @@ export function AvEnhanceV27Wizard({
           <div className="creator-footer-actions">
             {step > 1 && step < 5 && <button className="button button--ghost" disabled={controlsDisabled} onClick={() => { invalidateExpansion(); setStep((step - 1) as WizardStep) }} type="button">上一步</button>}
             {step === 3 && checkingOutput && <button className="button button--ghost" onClick={invalidateExpansion} type="button">取消检查</button>}
+            {step === 3 && preparationCreated && runSummaries.length > 0 && <button className="button button--ghost" disabled={controlsDisabled || checkingOutput} onClick={() => { invalidateExpansion(); setStep(4) }} type="button">查看已有分析记录</button>}
             {step < 4 && <button className="button button--primary" disabled={controlsDisabled || checkingOutput || (step === 3 && serviceControlsDisabled)} onClick={() => void moveNext()} type="button">{checkingOutput ? '正在检查输出位置…' : `下一步：${(stepLabels as ReadonlyArray<string>)[step] ?? ''}`}</button>}
             {step === 4 && preparationCreated && <button className="button button--ghost" disabled={controlsDisabled} onClick={returnToSettings} type="button">修改设置</button>}
             {step === 4 && preparationCreated && analysisRunId && analysisSummary?.state === 'completed' && !submitting && !preview && <button className="button button--primary" disabled={serviceControlsDisabled} onClick={() => void previewExpansion(analysisRunId)} type="button">{isPublicationError(previewFailure?.code) ? '重新检查输出位置' : previewFailure ? '重新生成工作流预览' : '生成工作流预览'}</button>}

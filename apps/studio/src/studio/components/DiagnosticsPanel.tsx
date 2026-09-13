@@ -41,7 +41,7 @@ export function DiagnosticsPanel({ open, diagnostics, serviceError, hasOlderRuns
     {open && <div className="diagnostic-list">
       {problems.length === 0 && <div className="diagnostic-empty">目前没有需要处理的问题。</div>}
       {problems.map((problem, index) => {
-        const explanation = failurePresentation(problem.code)
+        const explanation = failurePresentation(problem.code, problem.message)
         return <article className="problem-card" key={`${problem.origin}-${problem.code}-${problem.node_id ?? problem.edge_id ?? 'project'}-${index}`}>
           {embedded && <p className="problem-context">{problem.origin === 'Graph Core' ? '当前编辑的工作流问题' : problem.origin === 'Runtime' ? '被查看的处理记录问题' : '工程服务问题'}</p>}
           <header><strong>{explanation.title}</strong>{problem.node_id && <span>{nodeLabel?.(problem.node_id) ?? '相关步骤'}</span>}</header>

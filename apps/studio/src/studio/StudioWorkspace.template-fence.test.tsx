@@ -10,7 +10,7 @@ import { App } from '../App'
 import type { AvEnhanceV27WizardProps } from './AvEnhanceV27Wizard'
 import type { AvEnhanceV27PrepareRequestWire, AvEnhanceV27TemplatePreviewEnvelope, StatusEnvelope, StudioCommand } from './contracts'
 import type { StudioGateway } from './gateway'
-import { studioEnvelope } from './test-fixtures'
+import { failedDetailEnvelope, failedStatusEnvelope, studioEnvelope } from './test-fixtures'
 import overlapExample from './__fixtures__/overlap-preview.json'
 import { parseOverlapFullEnvelope, type OverlapFullEnvelope, type OverlapFullIntent, type OverlapFullRequest } from './chapter-overlap-contracts'
 
@@ -66,6 +66,30 @@ function overlapGateway(): StudioGateway {
 }
 
 describe('Workspace 新候选 preview 与 mutation fences', () => {
+  it('向导查看失败分析精确加载该 Run 的问题并定位失败步骤，不新建 Run 或提交外部产物', async () => {
+    const failed = failedDetailEnvelope('interrupted'), status = failedStatusEnvelope('interrupted')
+    const raw = 'E_RUNNER_VALIDATION_REJECTED: E_AV27_SOURCE_FPS_AMBIGUOUS: Source 全片 cadence 置信度不足'
+    const detail = { ...failed, run: { ...failed.run, state: 'running' as const, ended_at: null, error: null,
+      node_runs: failed.run.node_runs.map((item) => item.state === 'failed' ? { ...item, error: { reason: 'validation_failed' as const, message: raw } } : item) } }
+    const gateway: StudioGateway = { ...overlapGateway(),
+      inspect: vi.fn(async () => ({ ...status, run_summaries: status.run_summaries.map((item) => ({ ...item,
+        state: 'running' as const, ended_at: null, error: null, requires_operator_action: true })) })),
+      inspectRun: vi.fn(async () => detail),
+    }
+    render(<App gateway={gateway} />)
+    await waitFor(() => expect(wizard().currentSnapshot).not.toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: '关闭工程首页' }))
+    await act(async () => { await wizard().onOpenAnalysisProblems!(detail.run.run_id) })
+    expect(gateway.inspectRun).toHaveBeenCalledWith(detail.run.run_id)
+    expect(screen.getByRole('tab', { name: /^问题/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getAllByText('原片帧率或时间轴未通过检查').length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('test.transform 节点')).toHaveClass('is-selected')
+    expect(wizard().analysisProblems).toEqual({ run_id: detail.run.run_id,
+      problems: [{ label: 'test.transform', error: { reason: 'validation_failed', message: raw } }] })
+    expect(gateway.command).not.toHaveBeenCalled()
+    expect(gateway.inspectReadiness).not.toHaveBeenCalled()
+  })
+
   it('仅通过对应独立 endpoint 写入，确认后不再复用旧 preview', async () => {
     const gateway = overlapGateway()
     render(<App gateway={gateway} />)

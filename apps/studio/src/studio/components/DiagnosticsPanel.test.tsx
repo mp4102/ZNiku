@@ -40,4 +40,16 @@ describe('问题与恢复卡片', () => {
     expect(historical).toHaveBeenCalledWith('old-node')
     expect(current).not.toHaveBeenCalled()
   })
+  it('原片 cadence 失败给具体原因和安全下一步，仍保留完整 Runtime 原文', () => {
+    const raw = 'E_RUNNER_VALIDATION_REJECTED: E_AV27_SOURCE_FPS_AMBIGUOUS: Source 全片 cadence 置信度不足'
+    const historical = vi.fn()
+    render(<DiagnosticsPanel {...props({ runtimeProblems: [{ code: 'validation_failed', message: raw, node_id: 'source' }], onLocateRuntimeNode: historical })} />)
+    expect(screen.getByText('原片帧率或时间轴未通过检查')).toBeVisible()
+    expect(screen.getByText(/应用不会自动改速、增加或删除帧/)).toBeVisible()
+    expect(screen.getByText(raw)).not.toBeVisible()
+    fireEvent.click(screen.getByText('高级详情'))
+    expect(screen.getByText(raw)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '定位步骤与设置' }))
+    expect(historical).toHaveBeenCalledExactlyOnceWith('source')
+  })
 })
