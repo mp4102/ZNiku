@@ -1,0 +1,16 @@
+.overlap-chapter-settings { display: grid; gap: 12px; min-width: 0; }
+.overlap-cut-editor { display: grid; gap: 10px; min-width: 0; }
+.overlap-cut-editor p { margin: 0; }
+.overlap-cut-count { font-size: 12px; }
+.overlap-cut-rows { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.overlap-cut-rows li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.overlap-cut-rows label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.overlap-cut-rows label > span { width: 3ch; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.overlap-cut-rows input { width: 100%; min-width: 0; }
+.overlap-cut-actions, .overlap-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.overlap-pagination { margin-inline-start: auto; font-size: 12px; }
+.overlap-pagination button { min-height: 30px; padding: 4px 7px; color: inherit; background: transparent; border: 1px solid var(--border, #3b424b); border-radius: 5px; }
+.overlap-pagination button:disabled { opacity: .45; }
+.overlap-leaf-setting { display: grid; gap: 6px; }
+.overlap-leaf-setting > input { width: min(100%, 180px); }
+.overlap-chapter-settings small { line-height: 1.6; }

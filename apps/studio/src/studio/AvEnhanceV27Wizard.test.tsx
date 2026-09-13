@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AvEnhanceV27Wizard } from './AvEnhanceV27Wizard'
 import { StudioGatewayError } from './gateway'
 import { HostBridgeError } from './host-bridge'
+import overlapExample from './__fixtures__/overlap-preview.json'
+import { parseOverlapFullEnvelope, type OverlapFullIntent, type OverlapProcessingRequest } from './chapter-overlap-contracts'
 import type {
   AvEnhanceV27ExpandRequestWire,
   AvEnhanceV27PrepareRequestWire,
@@ -132,6 +134,78 @@ async function reachAnalysis(user: ReturnType<typeof userEvent.setup>, customOut
   if (customOutput) await chooseOutputParent(user)
   await user.click(screen.getByRole('button', { name: '下一步：分析' }))
 }
+
+function overlapProps() {
+  return { ...baseProps(),
+    onPreviewOverlapProcessing: vi.fn(async (request: OverlapProcessingRequest) => ({ ...request, status: 'pending_real_acceptance' as const })),
+    onPreviewOverlap: vi.fn(async (request: OverlapFullIntent) => ({ ...parseOverlapFullEnvelope(overlapExample), preparation_run_id: request.preparation_run_id, processing: request.processing })),
+    onExpandOverlap: vi.fn(async (_request: OverlapFullIntent) => true),
+  }
+}
+
+async function selectOverlap(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: '选择视频素材' }))
+  await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
+  await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+  await user.selectOptions(screen.getByLabelText('工作流方案'), 'overlap')
+  await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
+  await user.type(screen.getByLabelText('片名'), 'Synthetic')
+  await user.type(screen.getByLabelText('年份'), '2026')
+}
+
+describe('独立重叠 FI 候选向导', () => {
+  it('明确选择后默认 1 章 / 5 分钟 / Aion v1.0，复用分析后写入新普通图', async () => {
+    const user = userEvent.setup(), props = overlapProps()
+    render(<AvEnhanceV27Wizard {...props} runSummaries={[runSummary()]} />)
+    await selectOverlap(user)
+    expect(screen.getByLabelText('平均章数')).toHaveValue('1')
+    expect(screen.getByLabelText('每段最长时长（分叶）')).toHaveValue('5')
+    expect(screen.queryByLabelText('FI model version')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    expect(props.onPreviewOverlapProcessing).toHaveBeenCalledWith(expect.objectContaining({ processing: expect.objectContaining({ settings: { chapter_selector: { mode: 'average', count: 1 }, leaf_max_minutes: 5 }, fi_profile: expect.objectContaining({ software_version: 'v1.0', model_name: 'Aion', status: 'pending_real_acceptance', left_context_frames: 32, right_context_frames: 32, minimum_input_frames: 2 }) }) }))
+    expect(props.onPreviewPublication.mock.calls.every(([value]) => value.processing === undefined)).toBe(true)
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    expect(await screen.findByRole('region', { name: '确认重叠补帧工作流' })).toBeVisible()
+    expect(props.onPreview).toHaveBeenCalledTimes(1)
+    expect(props.onCreate).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: '确认并创建工作流' }))
+    expect(props.onExpand).not.toHaveBeenCalled()
+    expect(props.onExpandOverlap).toHaveBeenCalledWith(props.onPreviewOverlap.mock.calls[0]![0])
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+  it.each(['exact_times', 'exact_frames'] as const)('%s 不转换或重排切点，服务行错误回到原行', async (mode) => {
+    const user = userEvent.setup(), props = overlapProps()
+    const field = mode === 'exact_times' ? 'times' : 'frames'
+    props.onPreviewOverlapProcessing.mockRejectedValue(new StudioGatewayError('切点不合法', { code: 'E_CHAPTER_SELECTOR_ORDER', serviceMessage: '切点必须递增', fieldPath: ['processing', 'settings', 'chapter_selector', field, 1] }))
+    render(<AvEnhanceV27Wizard {...props} />)
+    await selectOverlap(user)
+    await user.selectOptions(screen.getByLabelText('章节切分方式'), mode)
+    const label = mode === 'exact_times' ? '时间' : '帧'
+    await user.type(screen.getByLabelText(`第 1 个${label}切分点`), mode === 'exact_times' ? '00:00:02' : '899')
+    await user.click(screen.getByRole('button', { name: '添加切分点' }))
+    await user.type(screen.getByLabelText(`第 2 个${label}切分点`), mode === 'exact_times' ? '00:00:01' : '10')
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    await waitFor(() => expect(screen.getByLabelText(`第 2 个${label}切分点`)).toHaveFocus())
+    expect(props.onPreviewOverlapProcessing.mock.calls[0]![0].processing.settings.chapter_selector).toEqual(mode === 'exact_times' ? { mode, times: ['00:00:02', '00:00:01'] } : { mode, frames: [899, 10] })
+    expect(props.onCreate).not.toHaveBeenCalled()
+  })
+  it('已分章输入不可选候选，不改变旧默认分叶', async () => {
+    const user = userEvent.setup(), props = overlapProps()
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot('pre_chaptered')} />)
+    expect(screen.getByRole('option', { name: /ZNIKU 重叠 FI/ })).toBeDisabled()
+    expect(screen.getByLabelText('Leaf duration minutes')).toHaveValue('1')
+    expect(props.onPreviewOverlap).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '关闭模板向导' }))
+  })
+  it('已展开新图只提示去节点图配置，不再次展开或迁移结果', () => {
+    const props = overlapProps(), existing = snapshot()
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={{ ...existing, project: { ...existing.project, graph: { ...existing.project.graph, nodes: [{ ...existing.project.graph.nodes[0]!, type_id: 'zniku.overlap.fi_context' }] } } }} />)
+    expect(screen.getByRole('button', { name: '返回当前节点图' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /下一步/ })).not.toBeInTheDocument()
+    expect(props.onPreviewOverlap).not.toHaveBeenCalled()
+    expect(props.onExpandOverlap).not.toHaveBeenCalled()
+  })
+})
 
 async function reachResumeAnalysis(user: ReturnType<typeof userEvent.setup>, customOutput = false): Promise<void> {
   await user.type(screen.getByLabelText('片名'), 'Movie')

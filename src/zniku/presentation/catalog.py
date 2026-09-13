@@ -28,10 +28,12 @@ from zniku.avenhance_v27 import (
     built_in_av27_definitions,
     is_av27_definition,
 )
+from zniku.chapter_overlap.definitions import built_in_overlap_definitions
 from zniku.graph import NodeDefinition, PortSpec
 from zniku.media import built_in_media_definitions
 from zniku.media.definitions import is_supported_output_file_definition
 
+from . import chapter_overlap as overlap_presentation
 from .models import (
     PRESENTATION_CONTRACT_VERSION,
     PRESENTATION_LOCALE,
@@ -74,6 +76,12 @@ class _NodeMetadata:
 
 
 _CATEGORIES = (
+    CategoryPresentation(
+        category_id="overlap",
+        title="ZNIKU 重叠 FI 候选",
+        description="独立的 0.3.2 分章与重叠补帧处理链；Aion 软件 v1.0 待真实验收。",
+        order=60,
+    ),
     CategoryPresentation(
         category_id="input",
         title="导入素材",
@@ -454,6 +462,13 @@ _ADVANCED_PARAMETERS = _BINDING_PARAMETERS | {
 
 def _builtin_metadata(definition: NodeDefinition) -> _NodeMetadata:
     key = (definition.type_id, definition.version)
+    if definition.type_id.startswith("zniku.overlap."):
+        try:
+            return _NodeMetadata(*overlap_presentation.metadata(definition))
+        except ValueError as error:
+            raise PresentationCatalogError(
+                "E_PRESENTATION_BUILTIN_DEFINITION_DRIFT", str(error)
+            ) from error
     if definition.type_id.startswith("zniku.media."):
         expected = _GENERIC_DEFINITIONS.get(key)
         # 历史工程仍持有原始 OutputFile definition；只接受已冻结的旧/新完整 shape，
@@ -498,7 +513,7 @@ def _builtin_metadata(definition: NodeDefinition) -> _NodeMetadata:
 def _is_builtin_definition(definition: NodeDefinition) -> bool:
     """按受控 namespace 识别必须失败关闭的仓库内 definition。"""
 
-    return definition.type_id.startswith(("zniku.media.", "zniku.avenhance.v27."))
+    return definition.type_id.startswith(("zniku.media.", "zniku.avenhance.v27.", "zniku.overlap."))
 
 
 def _schema_properties(definition: NodeDefinition) -> Mapping[str, object]:
@@ -566,8 +581,11 @@ def _parameter_presentations(
 ) -> tuple[tuple[ParameterGroupPresentation, ...], tuple[ParameterPresentation, ...]]:
     parameters: list[ParameterPresentation] = []
     groups_in_use: set[str] = set()
+    overlap = definition.type_id.startswith("zniku.overlap.")
     for order, (name, raw_schema) in enumerate(_schema_properties(definition).items(), start=1):
-        label = _PARAMETER_LABELS.get(name)
+        label = (
+            overlap_presentation.PARAMETER_LABELS.get(name) if overlap else None
+        ) or _PARAMETER_LABELS.get(name)
         if label is None:
             raise PresentationCatalogError(
                 "E_PRESENTATION_BUILTIN_PARAMETER",
@@ -579,7 +597,8 @@ def _parameter_presentations(
                 f"/{name} 的 Schema 必须是 object",
             )
         schema = cast(Mapping[str, object], raw_schema)
-        group_id = _parameter_group(name)
+        overlap_binding = overlap and name in overlap_presentation.BINDING_PARAMETERS
+        group_id = "binding" if overlap_binding else _parameter_group(name)
         groups_in_use.add(group_id)
         control_hint = _control_hint(name, schema)
         picker = None
@@ -595,11 +614,12 @@ def _parameter_presentations(
             ParameterPresentation(
                 parameter_pointer=f"/{name.replace('~', '~0').replace('/', '~1')}",
                 label=label,
+                description=overlap_presentation.PARAMETER_HELP.get(name) if overlap else None,
                 group_id=group_id,
                 order=order,
                 importance=(
                     ParameterImportance.ADVANCED
-                    if name in _ADVANCED_PARAMETERS
+                    if name in _ADVANCED_PARAMETERS or overlap_binding
                     else ParameterImportance.PRIMARY
                 ),
                 control_hint=control_hint,
@@ -656,7 +676,12 @@ def _port_presentations(definition: NodeDefinition) -> tuple[PortPresentation, .
             PortPresentation(
                 direction=cast(Any, direction),
                 port_id=port.port_id,
-                label=_port_label(port, direction=direction, ordinal=ordinal),
+                label=(
+                    overlap_presentation.port_label(definition, direction, port.port_id)
+                    if definition.type_id.startswith("zniku.overlap.")
+                    else None
+                )
+                or _port_label(port, direction=direction, ordinal=ordinal),
             )
             for ordinal, port in enumerate(ports)
         )
@@ -858,7 +883,11 @@ def build_builtin_presentation_catalog(
     """构建内建中文目录；任何身份、字段、端口或 Schema 漂移都失败关闭。"""
 
     values = (
-        (*built_in_media_definitions(), *built_in_av27_definitions())
+        (
+            *built_in_media_definitions(),
+            *built_in_av27_definitions(),
+            *built_in_overlap_definitions(),
+        )
         if definitions is None
         else tuple(definitions)
     )

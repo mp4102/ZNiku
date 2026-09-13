@@ -18,6 +18,7 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 from pydantic import BaseModel
 
+from .chapter_overlap import CHAPTER_OVERLAP_PREVIEW_ROUTE, ChapterOverlapPreviewError
 from .handoff_import import HandoffImportManager
 from .handoff_inbox import HandoffInboxManager
 from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
@@ -26,6 +27,7 @@ from .service import ProjectServiceApplication, ProjectServiceError
 from .storage_api import StorageApi
 
 _MAX_BODY_BYTES: Final = 4 * 1024 * 1024
+_MAX_GRAPH_SAVE_BYTES: Final = 32 * 1024 * 1024
 _MAX_HOST_BODY_BYTES: Final = 64 * 1024
 _DEFAULT_PORT: Final = 18_765
 _HOST_BRIDGE_PREFIX: Final = "/api/host-bridge"
@@ -280,8 +282,13 @@ def make_project_service_handler(
                 or parsed.path
                 not in {
                     "/api/studio/command",
+                    "/api/studio/graph-save",
                     "/api/studio/templates/av-enhance-v27/preview",
                     "/api/studio/templates/av-enhance-v27/publication-preview",
+                    CHAPTER_OVERLAP_PREVIEW_ROUTE,
+                    "/api/studio/templates/chapter-overlap-fi/processing-preview",
+                    "/api/studio/templates/chapter-overlap-fi/full-preview",
+                    "/api/studio/templates/chapter-overlap-fi/expand",
                     "/api/studio/rerun-preview",
                 }
             ):
@@ -302,7 +309,14 @@ def make_project_service_handler(
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
                 length = 0
-            if not 1 <= length <= _MAX_BODY_BYTES:
+            # 仅保存普通Graph的专属传输允许较大body；旧命令/新模板参数仍保持4MiB。
+            # 在读取body前拒绝超限，不能用截断节点或无限制上传支持大型图。
+            body_limit = (
+                _MAX_GRAPH_SAVE_BYTES
+                if parsed.path == "/api/studio/graph-save"
+                else _MAX_BODY_BYTES
+            )
+            if not 1 <= length <= body_limit:
                 self._error(
                     HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
                     "E_PROJECT_SERVICE_BODY_SIZE",
@@ -311,15 +325,41 @@ def make_project_service_handler(
                 return
             try:
                 payload = _load_json(self.rfile.read(length))
+                if parsed.path == "/api/studio/graph-save" and (
+                    not isinstance(payload, dict) or payload.get("operation") != "save_project"
+                ):
+                    raise ProjectServiceError(
+                        "E_PROJECT_SERVICE_OPERATION",
+                        "graph-save只接受save_project",
+                        http_status=422,
+                    )
                 envelope: BaseModel
                 if parsed.path == "/api/studio/templates/av-enhance-v27/preview":
                     envelope = application.preview_av_enhance_v27(payload)
                 elif parsed.path == "/api/studio/templates/av-enhance-v27/publication-preview":
                     envelope = application.preview_av27_publication(payload)
+                elif parsed.path == CHAPTER_OVERLAP_PREVIEW_ROUTE:
+                    envelope = application.preview_chapter_overlap(payload)
+                elif parsed.path == "/api/studio/templates/chapter-overlap-fi/processing-preview":
+                    from .overlap_application import processing_preview
+
+                    envelope = processing_preview(payload)
+                elif parsed.path in {
+                    "/api/studio/templates/chapter-overlap-fi/full-preview",
+                    "/api/studio/templates/chapter-overlap-fi/expand",
+                }:
+                    from .overlap_application import full_overlap
+
+                    envelope = full_overlap(
+                        application, payload, expand=parsed.path.endswith("/expand")
+                    )
                 elif parsed.path == "/api/studio/rerun-preview":
                     envelope = application.preview_rerun(payload)
                 else:
                     envelope = application.command(payload)
+            except ChapterOverlapPreviewError as error:
+                self._json(HTTPStatus(error.http_status), error.envelope.model_dump(mode="json"))
+                return
             except _JsonPayloadError as error:
                 self._error(HTTPStatus.BAD_REQUEST, "E_PROJECT_SERVICE_JSON", str(error))
                 return

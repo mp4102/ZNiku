@@ -40,7 +40,7 @@ def resources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pa
     repository = tmp_path / "repo"
     sources = repository / "src/zniku"
     sources.mkdir(parents=True)
-    (sources / "__init__.py").write_text('__version__ = "0.3.1"\n', encoding="utf-8")
+    (sources / "__init__.py").write_text('__version__ = "0.3.2"\n', encoding="utf-8")
     (sources / "py.typed").touch()
     (sources / "module.py").write_text('def value():\n    return "current"\n', encoding="utf-8")
     studio = repository / "apps/studio"
@@ -49,14 +49,14 @@ def resources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pa
         '<script src="assets/app.js"></script>', encoding="utf-8"
     )
     (studio / "dist/assets/app.js").write_text('document.title="synthetic";', encoding="utf-8")
-    (studio / "package.json").write_text('{"version":"0.3.1"}', encoding="utf-8")
+    (studio / "package.json").write_text('{"version":"0.3.2"}', encoding="utf-8")
     (studio / "package-lock.json").write_text(
-        '{"version":"0.3.1","packages":{"":{"version":"0.3.1"}}}', encoding="utf-8"
+        '{"version":"0.3.2","packages":{"":{"version":"0.3.2"}}}', encoding="utf-8"
     )
-    (repository / "VERSION").write_text("0.3.1\n", encoding="utf-8")
-    (repository / "pyproject.toml").write_text('[project]\nversion="0.3.1"\n', encoding="utf-8")
+    (repository / "VERSION").write_text("0.3.2\n", encoding="utf-8")
+    (repository / "pyproject.toml").write_text('[project]\nversion="0.3.2"\n', encoding="utf-8")
     (repository / "uv.lock").write_text(
-        'version = 1\n[[package]]\nname = "zniku"\nversion = "0.3.1"\n', encoding="utf-8"
+        'version = 1\n[[package]]\nname = "zniku"\nversion = "0.3.2"\n', encoding="utf-8"
     )
     (repository / "tools").mkdir()
     (repository / "tools/desktop_entry.py").write_text('print("synthetic")\n', encoding="utf-8")
@@ -74,10 +74,10 @@ def _wheel(
     repository: Path, target: Path, changes: Mapping[str, bytes | None] | None = None
 ) -> Path:
     entries = {name: path.read_bytes() for name, path in audit.source_files(repository).items()}
-    metadata = "zniku-0.3.1.dist-info"
+    metadata = "zniku-0.3.2.dist-info"
     entries.update(
         {
-            f"{metadata}/METADATA": b"Metadata-Version: 2.4\nName: zniku\nVersion: 0.3.1\n",
+            f"{metadata}/METADATA": b"Metadata-Version: 2.4\nName: zniku\nVersion: 0.3.2\n",
             f"{metadata}/WHEEL": b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
             f"{metadata}/top_level.txt": b"zniku\n",
         }
@@ -136,12 +136,12 @@ class _SyntheticArchive:
 def _package(repository: Path, media: Path, target: Path) -> Path:
     target.mkdir()
     (target / "ZNIKU Studio.exe").write_bytes(b"synthetic, never executed")
-    (target / "开始使用.txt").write_text("v0.3.1 验收候选", encoding="utf-8")
+    (target / "开始使用.txt").write_text("v0.3.2 合成审计测试包", encoding="utf-8")
     shutil.copytree(repository / "src/zniku", target / "_internal/zniku")
     shutil.copytree(repository / "apps/studio/dist", target / "_internal/studio")
-    metadata = target / "_internal/zniku-0.3.1.dist-info"
+    metadata = target / "_internal/zniku-0.3.2.dist-info"
     metadata.mkdir()
-    (metadata / "METADATA").write_bytes(b"Name: zniku\nVersion: 0.3.1\n")
+    (metadata / "METADATA").write_bytes(b"Name: zniku\nVersion: 0.3.2\n")
     (metadata / "WHEEL").write_bytes(b"Wheel-Version: 1.0\n")
     (metadata / "top_level.txt").write_bytes(b"zniku\n")
     for name, source in audit._media_inputs(media).items():
@@ -154,7 +154,7 @@ def _package(repository: Path, media: Path, target: Path) -> Path:
 def _write_info(repository: Path, media: Path, target: Path) -> None:
     info = {
         "product": "ZNIKU Studio",
-        "product_version": "0.3.1",
+        "product_version": "0.3.2",
         "python_version": sys.version.split()[0],
         **audit.build_source_info(repository, media),
     }
@@ -170,7 +170,7 @@ def test_wheel_matches_exact_source_and_record(
     result = audit.audit_wheel(wheel, repository)
     assert result == {
         "kind": "wheel",
-        "product_version": "0.3.1",
+        "product_version": "0.3.2",
         "package_files_exact": 3,
         "total_entries": 7,
         "source_bytes_exact": True,
@@ -185,7 +185,7 @@ def test_wheel_matches_exact_source_and_record(
         ("zniku/py.typed", None, "精确文件集合"),
         ("zniku/module.py", b"obsolete = True\n", "源码字节"),
         ("zniku/legacy.py", b"old = True\n", "精确文件集合"),
-        ("zniku-0.3.1.dist-info/METADATA", b"Name: zniku\nVersion: 0.2.0\n", "身份/版本"),
+        ("zniku-0.3.2.dist-info/METADATA", b"Name: zniku\nVersion: 0.2.0\n", "身份/版本"),
         ("extra.zniku", b"private", "禁止内容"),
         ("secret.pem", b"private", "禁止内容"),
         ("../escaped.py", b"private", "非相对"),
@@ -211,7 +211,7 @@ def test_wheel_record_tamper_is_rejected(resources: tuple[Path, Path], tmp_path:
     wheel = _wheel(repository, tmp_path / "bad.whl")
     with zipfile.ZipFile(wheel) as archive:
         entries = {name: archive.read(name) for name in archive.namelist()}
-    entries["zniku-0.3.1.dist-info/RECORD"] = entries["zniku-0.3.1.dist-info/RECORD"].replace(
+    entries["zniku-0.3.2.dist-info/RECORD"] = entries["zniku-0.3.2.dist-info/RECORD"].replace(
         b"sha256=", b"sha512=", 1
     )
     with zipfile.ZipFile(wheel, "w") as archive:
@@ -278,9 +278,9 @@ def test_desktop_rejects_changed_source_asset_or_original_tool(
         "_internal/debug.log",
         "_internal/.env.production",
         "_internal/user.pem",
-        "_internal/zniku-0.3.1.dist-info/direct_url.json",
-        "_internal/zniku-0.3.1.dist-info/uv_build.json",
-        "_internal/zniku-0.3.1.dist-info/uv_cache.json",
+        "_internal/zniku-0.3.2.dist-info/direct_url.json",
+        "_internal/zniku-0.3.2.dist-info/uv_build.json",
+        "_internal/zniku-0.3.2.dist-info/uv_cache.json",
         "_internal/user.zniku-wal",
         "_internal/user.sqlite.bak",
     ],
@@ -358,7 +358,7 @@ def test_version_gate_is_product_only(resources: tuple[Path, Path]) -> None:
     (repository / "src/zniku/module.py").write_text(
         'wire_version = "0.3.0"\ndefinition_version = "0.2.1"\nschema_version = 4', encoding="utf-8"
     )
-    assert audit.product_version(repository) == "0.3.1"
+    assert audit.product_version(repository) == "0.3.2"
     (repository / "VERSION").write_text("0.3.0", encoding="utf-8")
     with pytest.raises(audit.PackageAuditError, match="不一致"):
         audit.product_version(repository)

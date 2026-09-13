@@ -1,4 +1,4 @@
-# ZNIKU Studio（v0.3.1 验收候选）
+# ZNIKU Studio（v0.3.2 开发线）
 
 Studio 以一张自由媒体节点图同时承担编辑和 Runtime 状态展示。React 应用只维护未保存的画布 Draft；
 `.zniku` Project、Graph 校验、Run、Artifact、日志及 external handoff 的正式语义全部来自 Python Project
@@ -9,7 +9,7 @@ Graph 与 Runtime 的唯一上位架构权威是
 易用性从属于 [`studio-ux-baseline.md`](../../docs/architecture/studio-ux-baseline.md)。本应用不得恢复
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-当前 package/product 版本为 `0.3.1`；wire/Presentation/StudioState 仍为 `0.3.0`，SQLite schema 4 和
+当前 package/product 版本为 `0.3.2`；已有wire/Presentation/StudioState 仍为 `0.3.0`，SQLite schema 4 和
 NodeDefinition exact version 不变。v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
 创作者建项、HostBridge、Undo/Redo、兼容连接、纯展示分组与 CAS 自动保存。Phase 4 已实现创作者运行中心、
 外部处理助手与只读重跑影响预览，完整门禁与合成浏览器闭环已通过，见 [Phase 4 验收记录](../../docs/v0.3.0-phase4-acceptance.md)。
@@ -18,6 +18,12 @@ Phase 5 已加入双击桌面候选、轻量预览、无障碍与有界性能门
 后续顺序已由 [v0.3.1 A/B/C 执行方案](../../docs/v0.3.1-ui-optimization-plan.md)承接。A/B 已完成，
 C 的具体技术候选、原生操作及首次用户证据见[本轮验收](../../docs/v0.3.1-desktop-candidate-acceptance.md)，
 不沿用旧包或旧成品替代新界面验收。
+
+本工作树按 [v0.3.2 执行计划](../../docs/v0.3.2-execution-plan.md)开发；新向导可显式选择重叠FI候选，
+三种章节切分与独立1–60分钟分叶(默认5)均由Python规划，GUI只显示预览，不改变旧AV27精确定义。
+FI软件v1.0、模型Aion已通过首轮1080p三章及操作者对照；4K本轮暂缓，其他能力范围仍待验，
+候选标记不变，详情见[Phase 5统一真实验收](../../docs/v0.3.2-phase5-acceptance.md)。
+旧v0.3.1候选留在独立维护工作树；新桌面候选使用独立`Studio-v0.3.2-candidate`本机状态通道。
 
 当前 0.2.0 Phase 1–5 与 v0.2.1 Phase 1–5 已实现产品面：
 
@@ -43,6 +49,10 @@ Runtime。Project Service 不可用或响应不符合 Python 生成 Schema 时�
 
 ## 开发运行
 
+以下是单实例通用开发方式。与v0.3.1验收环境并行时，不直接复用默认端口/状态目录/工程；必须先按
+[v0.3.2隔离门禁](../../docs/v0.3.2-execution-plan.md#3-双线服务与数据隔离)配置独立实例。本轮自动化只使用
+隔离的合成fixture服务，未提供可双击运行的新候选，也未把新分章方式接入下述旧向导。
+
 确保 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。先在仓库根目录启动 loopback Project
 Service（默认 `127.0.0.1:18765`），再启动 Vite：
 
@@ -64,8 +74,8 @@ npm run dev
 - 参数表单必须显式“应用设置”。缺必填参数或 required input 的安全草稿可自动保存，但创建 Run 前仍由
   Python 完整校验；其余错误不允许写入工程；
 - 冲突时保留本地编辑并停止自动保存；不要连续强制覆盖，使用“重新载入磁盘版本”明确放弃本地更改后恢复；
-- 新工程使用 schema 3；旧 schema 2 首次保存时在工程旁保留 `.zniku-schema2-backup-<UUID>.zniku` 一致
-  备份。别名、分组、折叠和 viewport 不进入 Run snapshot，普通刷新／重开保留已保存内容但清空撤销历史；
+- 新工程使用 schema 4；受支持的旧 schema 2/3 在需要写入升级时先保留一致备份；本版分章预览不触发迁移。
+  别名、分组、折叠和 viewport 不进入 Run snapshot，刷新／重开保留已保存内容但清空撤销历史；
 - 前后端需要同时更新；save、expand 与三个运行入口要求 exact session 和 storage revision，旧请求失败关闭。
 
 ## 运行与外部处理

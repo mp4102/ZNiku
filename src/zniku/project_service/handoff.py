@@ -15,6 +15,7 @@ from zniku.runtime import Artifact, NodeRunState, Run
 
 from .av27_handoff import project_av27_handoff_contracts
 from .models import ExternalHandoffContractProjection, HandoffContractField
+from .overlap_handoff import project_overlap_handoff_contracts
 
 
 def project_handoff_contracts(
@@ -22,7 +23,10 @@ def project_handoff_contracts(
 ) -> tuple[ExternalHandoffContractProjection, ...]:
     """只投影最新 waiting attempt，未知插件不冒认 generic 或 AV27 合同。"""
 
-    contracts = list(project_av27_handoff_contracts(run, artifacts))
+    contracts = [
+        *project_av27_handoff_contracts(run, artifacts),
+        *project_overlap_handoff_contracts(run, artifacts),
+    ]
     covered = {item.node_run_id for item in contracts}
     nodes = {item.node_id: item for item in run.graph_snapshot.nodes}
     definitions = {(item.type_id, item.version): item for item in run.definitions_snapshot}

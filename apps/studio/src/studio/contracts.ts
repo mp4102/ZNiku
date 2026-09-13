@@ -696,7 +696,7 @@ const schemaDocument = projectServiceSchema as unknown as SchemaDocument
 const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: true })
 addFormats(ajv)
 
-function compileDefinition(name: string): ValidateFunction {
+export function compileDefinition(name: string): ValidateFunction {
   if (!schemaDocument.$defs || !(name in schemaDocument.$defs)) {
     throw new Error(`Python Project Service Schema 缺少 $defs/${name}`)
   }

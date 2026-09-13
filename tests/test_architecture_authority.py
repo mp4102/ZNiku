@@ -50,10 +50,12 @@ def test_graph_core_is_the_upper_authority_and_designs_are_subordinate() -> None
 
     assert active_files == {
         Path("av-enhance-flow-v2.7-template-contract.md"),
+        Path("chapter-overlap-fi-baseline.md"),
         Path("graph-core-baseline.md"),
         Path("host-bridge-prototype.md"),
         Path("media-node-contract.md"),
         Path("studio-schema-corpus.json"),
+        Path("studio-overlap-schema-corpus.json"),
         Path("studio-run-observability.md"),
         Path("studio-ux-baseline.md"),
     }
@@ -87,6 +89,28 @@ def test_graph_core_is_the_upper_authority_and_designs_are_subordinate() -> None
         assert "上位架构权威" in subordinate_design
 
 
+def test_v032_planning_preserves_old_acceptance_and_core_authority() -> None:
+    """新规划可实施，但不得把生产FI待验能力、旧候选或Core authority混为一谈。"""
+
+    overlap = (ACTIVE_ARCHITECTURE / "chapter-overlap-fi-baseline.md").read_text("utf-8")
+    plan = (ROOT / "docs" / "v0.3.2-execution-plan.md").read_text("utf-8")
+    agents = (ROOT / "AGENTS.md").read_text("utf-8")
+    readme = (ROOT / "README.md").read_text("utf-8")
+    for document in (overlap, plan):
+        assert "graph-core-baseline.md" in document
+        assert "上位架构" in document
+    assert "下位设计" in overlap
+    assert "真实Aion能力待Phase 5验收" in overlap
+    assert "pending_real_acceptance" in overlap
+    assert "leaf_max_minutes" in overlap and "1\u201360分钟" in overlap
+    assert "只读预览" in plan and "execution_available=false" in plan
+    assert "999 是**切点数**" in overlap
+    assert "旧精确" in overlap
+    assert "v0.3.1-acceptance-baseline.md" in plan
+    assert "docs/v0.3.2-execution-plan.md" in agents
+    assert "docs/v0.3.2-execution-plan.md" in readme
+
+
 def test_all_legacy_architecture_documents_are_archived() -> None:
     for relative_path in LEGACY_ARCHITECTURE_PATHS:
         assert not (ACTIVE_ARCHITECTURE / relative_path).exists()
@@ -110,10 +134,10 @@ def test_active_guidance_preserves_core_authority_and_ux_subordination() -> None
     assert "docs/architecture/studio-ux-baseline.md" in agents
     assert "正式下位设计" in agents
     assert "多个 Source、多个 Output、零 Output" in agents
-    assert "目标版本：`ZNIKU Studio v0.3.1`" in readme
+    assert "目标版本：`ZNIKU Studio v0.3.2`" in readme
     assert "docs/v0.3.1-ui-optimization-plan.md" in agents
     assert "docs/v0.3.1-ui-optimization-plan.md" in readme
-    assert "当前实现版本：`0.3.1`" in readme
+    assert "当前实现版本：`0.3.2`" in readme
     assert "`v0.2.1` Phase 0\u20135 已完成" in readme
     assert "docs/architecture/studio-ux-baseline.md" in readme
     assert "docs/v0.3.0-execution-plan.md" in readme
@@ -168,6 +192,7 @@ def test_legacy_python_implementation_is_not_shipped_as_product_code() -> None:
         "desktop",
         "graph",
         "avenhance_v27",
+        "chapter_overlap",
         "media",
         "project",
         "project_service",

@@ -34,8 +34,16 @@ import {
   type StudioCommand,
   type StudioServiceError,
 } from './contracts'
+import {
+  overlapProcessingMatches, parseOverlapFailure, parseOverlapFullEnvelope, parseOverlapFullRequest,
+  parseOverlapProcessingEnvelope, parseOverlapProcessingRequest,
+  type OverlapFailureEnvelope, type OverlapFullEnvelope, type OverlapFullRequest, type OverlapProcessingEnvelope, type OverlapProcessingRequest,
+} from './chapter-overlap-contracts'
 
 export interface StudioGateway {
+  previewOverlapProcessing?(request: OverlapProcessingRequest): Promise<OverlapProcessingEnvelope>
+  previewOverlap?(request: OverlapFullRequest): Promise<OverlapFullEnvelope>
+  expandOverlap?(request: OverlapFullRequest): Promise<StatusEnvelope>
   /** 正式 gateway 必须提供无媒体 I/O 的输出检查；缺失的旧测试 double/服务不能绕过该检查。 */
   previewAvEnhanceV27Publication?(request: AvEnhanceV27PublicationPreviewRequestWire): Promise<AvEnhanceV27PublicationPreviewEnvelope>
   /** 可选仅用于兼容测试 double；正式 Fetch gateway 始终实现独立展示目录读取。 */
@@ -62,6 +70,7 @@ export class StudioGatewayError extends Error {
   readonly serviceMessage: string | null
   readonly relatedRunIds: ReadonlyArray<string>
   readonly httpStatus: number | null
+  readonly fieldPath: ReadonlyArray<string | number>
 
   constructor(
     message: string,
@@ -70,6 +79,7 @@ export class StudioGatewayError extends Error {
       readonly serviceMessage?: string | null
       readonly relatedRunIds?: ReadonlyArray<string>
       readonly httpStatus?: number | null
+      readonly fieldPath?: ReadonlyArray<string | number>
     } = {},
   ) {
     super(message)
@@ -78,6 +88,7 @@ export class StudioGatewayError extends Error {
     this.serviceMessage = options.serviceMessage ?? null
     this.relatedRunIds = options.relatedRunIds ?? []
     this.httpStatus = options.httpStatus ?? null
+    this.fieldPath = options.fieldPath ?? []
   }
 }
 
@@ -137,6 +148,36 @@ export class FetchStudioGateway implements StudioGateway {
     private readonly baseUrl =
       window.__ZNIKU_STUDIO_API_BASE__ ?? 'http://127.0.0.1:18765',
   ) {}
+
+  async previewOverlapProcessing(request: OverlapProcessingRequest): Promise<OverlapProcessingEnvelope> {
+    const payload = parseOverlapProcessingRequest(request)
+    const preview = await this.request('/api/studio/templates/chapter-overlap-fi/processing-preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parseOverlapProcessingEnvelope, true)
+    if (!overlapProcessingMatches(payload.processing, preview.processing)) throw new StudioContractError('设置检查回显与当前请求不一致')
+    return preview
+  }
+
+  async previewOverlap(request: OverlapFullRequest): Promise<OverlapFullEnvelope> {
+    const payload = parseOverlapFullRequest(request)
+    const preview = await this.request('/api/studio/templates/chapter-overlap-fi/full-preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parseOverlapFullEnvelope, true)
+    if (preview.project_session_id !== request.project_session_id || preview.storage_revision !== request.expected_storage_revision ||
+        preview.preparation_run_id !== request.preparation_run_id || !overlapProcessingMatches(payload.processing, preview.processing)) throw new StudioContractError('重叠补帧预览与当前工程、存储版本、分析记录或处理设置不一致')
+    return preview
+  }
+
+  async expandOverlap(request: OverlapFullRequest): Promise<StatusEnvelope> {
+    const payload = parseOverlapFullRequest(request)
+    const status = await this.request('/api/studio/templates/chapter-overlap-fi/expand', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parseStatusEnvelope, true)
+    if (status.project_session_id !== request.project_session_id || status.storage_revision !== request.expected_storage_revision + 1) {
+      throw new StudioContractError('重叠补帧展开响应与当前工程或存储版本不一致')
+    }
+    return status
+  }
 
   async inspectPresentations(): Promise<PresentationCatalogEnvelopeWire> {
     return this.request(
@@ -258,7 +299,7 @@ export class FetchStudioGateway implements StudioGateway {
   async command(command: StudioCommand): Promise<StatusEnvelope> {
     const payload = parseStudioCommand(command)
     return this.request(
-      '/api/studio/command',
+      payload.operation === 'save_project' ? '/api/studio/graph-save' : '/api/studio/command',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -268,7 +309,7 @@ export class FetchStudioGateway implements StudioGateway {
     )
   }
 
-  private async request<T>(path: string, init: RequestInit, parser: Parser<T>): Promise<T> {
+  private async request<T>(path: string, init: RequestInit, parser: Parser<T>, overlap = false): Promise<T> {
     let response: Response
     try {
       response = await fetch(`${this.baseUrl}${path}`, init)
@@ -288,12 +329,13 @@ export class FetchStudioGateway implements StudioGateway {
     }
 
     if (!response.ok) {
-      const error = parseErrorEnvelope(value)
+      const error = overlap ? parseOverlapFailure(value).error : parseErrorEnvelope(value)
       throw new StudioGatewayError(`Project Service command 失败：${error.code}: ${error.message}`, {
         code: error.code,
         serviceMessage: error.message,
         relatedRunIds: error.related_run_ids,
         httpStatus: response.status,
+        fieldPath: overlap ? (error as OverlapFailureEnvelope['error']).field_path : [],
       })
     }
 

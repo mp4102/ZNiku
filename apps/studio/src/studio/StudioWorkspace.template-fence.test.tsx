@@ -11,6 +11,8 @@ import type { AvEnhanceV27WizardProps } from './AvEnhanceV27Wizard'
 import type { AvEnhanceV27PrepareRequestWire, AvEnhanceV27TemplatePreviewEnvelope, StatusEnvelope, StudioCommand } from './contracts'
 import type { StudioGateway } from './gateway'
 import { studioEnvelope } from './test-fixtures'
+import overlapExample from './__fixtures__/overlap-preview.json'
+import { parseOverlapFullEnvelope, type OverlapFullEnvelope, type OverlapFullIntent, type OverlapFullRequest } from './chapter-overlap-contracts'
 
 const probe = vi.hoisted(() => ({ props: null as AvEnhanceV27WizardProps | null }))
 vi.mock('./AvEnhanceV27Wizard', () => ({
@@ -42,6 +44,74 @@ function preparationPreview(): AvEnhanceV27TemplatePreviewEnvelope {
     creator: { analyzed: false, sources: [], estimated_step_count: 2, estimated_steps: '预计 2 个步骤' },
   }
 }
+
+function overlapIntent(): OverlapFullIntent {
+  const preview = parseOverlapFullEnvelope(overlapExample)
+  return { contract_version: '0.3.2', processing: preview.processing, preparation_run_id: preview.preparation_run_id,
+    publication: { output_root: 'C:\\synthetic', title: 'Synthetic', year: '2026', overwrite: false } }
+}
+function overlapEnvelope(request: OverlapFullRequest): OverlapFullEnvelope {
+  const graph = studioEnvelope().snapshot!.project.graph
+  return { ...parseOverlapFullEnvelope(overlapExample), project_session_id: request.project_session_id,
+    storage_revision: request.expected_storage_revision, preparation_run_id: request.preparation_run_id,
+    processing: request.processing, node_count: graph.nodes.length, edge_count: graph.edges.length }
+}
+function overlapGateway(): StudioGateway {
+  return { inspect: vi.fn(async () => studioEnvelope()), command: vi.fn(), inspectRun: vi.fn(), inspectLog: vi.fn(), inspectReadiness: vi.fn(),
+    listRuns: vi.fn(async () => ({ contract_version: '0.3.0' as const, run_summaries: [], next_run_cursor: null })),
+    previewAvEnhanceV27: vi.fn(), previewOverlapProcessing: vi.fn(async (request) => ({ ...request, status: 'pending_real_acceptance' as const })),
+    previewOverlap: vi.fn(async (request) => overlapEnvelope(request)),
+    expandOverlap: vi.fn(async (request) => ({ ...studioEnvelope(), project_session_id: request.project_session_id, storage_revision: request.expected_storage_revision + 1 })),
+  }
+}
+
+describe('Workspace 新候选 preview 与 mutation fences', () => {
+  it('仅通过对应独立 endpoint 写入，确认后不再复用旧 preview', async () => {
+    const gateway = overlapGateway()
+    render(<App gateway={gateway} />)
+    await waitFor(() => expect(wizard().currentSnapshot).not.toBeNull())
+    const intent = overlapIntent()
+    await act(async () => { await wizard().onPreviewOverlap!(intent) })
+    let result = false
+    await act(async () => { result = await wizard().onExpandOverlap!(intent) })
+    expect(result).toBe(true)
+    expect(gateway.expandOverlap).toHaveBeenCalledTimes(1)
+    expect(gateway.command).not.toHaveBeenCalled()
+    await act(async () => { result = await wizard().onExpandOverlap!(intent) })
+    expect(result).toBe(false)
+    expect(gateway.expandOverlap).toHaveBeenCalledTimes(1)
+  })
+  it('参数变化不能复用已经展示的 preview', async () => {
+    const gateway = overlapGateway()
+    render(<App gateway={gateway} />)
+    await waitFor(() => expect(wizard().currentSnapshot).not.toBeNull())
+    const intent = overlapIntent()
+    await act(async () => { await wizard().onPreviewOverlap!(intent) })
+    let result = true
+    await act(async () => { result = await wizard().onExpandOverlap!({ ...intent, processing: { ...intent.processing, settings: { ...intent.processing.settings, leaf_max_minutes: 6 } } }) })
+    expect(result).toBe(false)
+    expect(gateway.expandOverlap).not.toHaveBeenCalled()
+  })
+  it('连接变化后迟到的 full preview 不恢复确认权限', async () => {
+    const gateway = overlapGateway()
+    let resolve!: (value: OverlapFullEnvelope) => void
+    let sent!: OverlapFullRequest
+    gateway.previewOverlap = vi.fn(async (request: OverlapFullRequest) => { sent = request; return new Promise<OverlapFullEnvelope>((done) => { resolve = done }) })
+    render(<App gateway={gateway} />)
+    await waitFor(() => expect(wizard().currentSnapshot).not.toBeNull())
+    const intent = overlapIntent()
+    let pending!: Promise<unknown>
+    act(() => { pending = wizard().onPreviewOverlap!(intent).then((value) => value, (error: unknown) => error) })
+    await waitFor(() => expect(gateway.previewOverlap).toHaveBeenCalledTimes(1))
+    act(() => wizard().onReconnect!())
+    await waitFor(() => expect(wizard().connectionEpoch).toBe(1))
+    let result: unknown
+    await act(async () => { resolve(overlapEnvelope(sent)); result = await pending })
+    expect(result).toBeInstanceOf(Error)
+    await act(async () => { expect(await wizard().onExpandOverlap!(intent)).toBe(false) })
+    expect(gateway.expandOverlap).not.toHaveBeenCalled()
+  })
+})
 
 describe('Workspace 向导等待保存期间的连接 fence', () => {
   it.each([

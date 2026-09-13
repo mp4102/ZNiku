@@ -82,17 +82,23 @@ function displayValue(value: unknown): string {
 }
 
 export function ArtifactMediaSummary({ artifact, label }: { readonly artifact: ArtifactWire; readonly label?: string }) {
-  const metadata = objectValue(artifact.media_info['zniku.avenhance.v27'])
+  const overlap = objectValue(artifact.media_info['zniku.chapter.overlap'])
+  const metadata = overlap ?? objectValue(artifact.media_info['zniku.avenhance.v27'])
+  const roles: Readonly<Record<string, string>> = { context: '包含邻章上下文的补帧输入', fi: '外部原始补帧结果（保留）', crop: '精确裁边后正式章节', split: '正式章内处理段', enhancement: '已增强处理段', merge: '章内合并增强视频', program: '连续编码视频', final: '最终封装媒体' }
+  const role = typeof overlap?.role === 'string' && Object.hasOwn(roles, overlap.role) ? roles[overlap.role] : null
+  const fiProfile = objectValue(overlap?.fi_profile)
   return (
     <section className="artifact-media-summary" aria-label={`媒体信息：${label ?? fileName(artifact.path)}`}>
       <h4>媒体信息</h4>
       {metadata && <dl>
+        {role && <div><dt>产物角色</dt><dd>{role}</dd></div>}
+        {fiProfile && <div><dt>补帧候选声明</dt><dd>{displayValue(fiProfile.model_name)} · 软件 {displayValue(fiProfile.software_version)} · {fiProfile.status === 'pending_real_acceptance' ? '待真实验收' : displayValue(fiProfile.status)}</dd></div>}
         <div><dt>精确帧数</dt><dd>{displayValue(metadata.frame_count)}</dd></div>
         <div><dt>精确帧率</dt><dd>{displayValue(metadata.frame_rate)}</dd></div>
         <div><dt>画面尺寸</dt><dd>{displayValue(metadata.geometry)}</dd></div>
-        <div><dt>探测时长（秒）</dt><dd>{displayValue(metadata.duration_seconds)}</dd></div>
+        {!overlap && <div><dt>探测时长（秒）</dt><dd>{displayValue(metadata.duration_seconds)}</dd></div>}
         <div><dt>色彩信号</dt><dd>{displayValue(metadata.signal)}</dd></div>
-        <div><dt>原始音轨</dt><dd>{displayValue(metadata.audio_tracks)}</dd></div>
+        {!overlap && <div><dt>原始音轨</dt><dd>{displayValue(metadata.audio_tracks)}</dd></div>}
       </dl>}
       <details><summary>高级 → 完整媒体登记信息（只读）</summary><code>{artifact.artifact_id}</code><pre>{JSON.stringify(artifact.media_info, null, 2)}</pre></details>
     </section>

@@ -11,7 +11,9 @@ import type { JsonObject, JsonValue } from './contracts'
 
 export interface ParameterSchema {
   readonly $schema?: string
-  readonly type?: 'object' | 'array' | 'string' | 'integer' | 'number' | 'boolean'
+  readonly $defs?: Readonly<Record<string, ParameterSchema>>
+  readonly $ref?: string
+  readonly type?: 'object' | 'array' | 'string' | 'integer' | 'number' | 'boolean' | 'null'
   readonly title?: string
   readonly description?: string
   readonly properties?: Readonly<Record<string, ParameterSchema>>
@@ -22,6 +24,8 @@ export interface ParameterSchema {
   readonly default?: JsonValue
   readonly minimum?: number
   readonly maximum?: number
+  readonly exclusiveMinimum?: number
+  readonly exclusiveMaximum?: number
   readonly minLength?: number
   readonly maxLength?: number
   readonly pattern?: string
@@ -32,6 +36,8 @@ export interface ParameterSchema {
   readonly uniqueItems?: boolean
   readonly allOf?: ReadonlyArray<ParameterSchema>
   readonly oneOf?: ReadonlyArray<ParameterSchema>
+  readonly anyOf?: ReadonlyArray<ParameterSchema>
+  readonly discriminator?: { readonly propertyName: string; readonly mapping?: Readonly<Record<string, string>> }
   readonly not?: ParameterSchema
   readonly if?: ParameterSchema
   readonly then?: ParameterSchema
@@ -223,6 +229,8 @@ const supportedKeywords = new Set([
   'default',
   'minimum',
   'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
   'minLength',
   'maxLength',
   'pattern',
@@ -233,11 +241,55 @@ const supportedKeywords = new Set([
   'uniqueItems',
   'allOf',
   'oneOf',
+  'anyOf',
   'not',
   'if',
   'then',
   'else',
 ])
+
+const renderSchemaCache = new WeakMap<object, ParameterSchema | Error>()
+/** 只展开文档内部的非递归 $defs；不访问网络，不改原 Schema 或任何参数值。 */
+export function resolveLocalRenderSchema(schema: ParameterSchema): ParameterSchema {
+  const cached = renderSchemaCache.get(schema)
+  if (cached instanceof Error) throw cached
+  if (cached) return cached
+  let remaining = 20_000
+  const visit = (node: ParameterSchema, refs: ReadonlySet<string>, depth: number): ParameterSchema => {
+    if (remaining-- <= 0 || depth > 48) throw new Error('Schema 引用或嵌套超过有界展示限制')
+    let base = node
+    if (node.$ref !== undefined) {
+      if (!/^#\/\$defs\/[^/]+$/.test(node.$ref) || refs.has(node.$ref)) throw new Error('只支持非递归的本地 #/$defs 引用')
+      const key = unescapePointerPart(node.$ref.slice('#/$defs/'.length))
+      const target = schema.$defs && Object.hasOwn(schema.$defs, key) ? schema.$defs[key] : undefined
+      if (!target) throw new Error('Schema 本地引用不存在')
+      if (Object.keys(node).some((name) => !['$ref', 'title', 'description', 'default', 'const'].includes(name))) throw new Error('Schema 引用含尚未支持的并列约束')
+      const { $ref: ignored, ...annotations } = node
+      void ignored
+      base = { ...visit(target, new Set([...refs, node.$ref]), depth + 1), ...annotations }
+    }
+    if (base.discriminator && (
+      typeof base.discriminator.propertyName !== 'string' || !base.oneOf ||
+      Object.keys(base.discriminator).some((key) => !['propertyName', 'mapping'].includes(key)) ||
+      Object.values(base.discriminator.mapping ?? {}).some((value) => !/^#\/\$defs\/[^/]+$/.test(value))
+    )) throw new Error('Schema discriminator 不是受支持的本地 oneOf 注解')
+    const { $defs: definitions, discriminator, ...view } = base
+    void definitions; void discriminator
+    const mapped: Record<string, unknown> = { ...view }
+    if (view.properties) mapped.properties = Object.fromEntries(Object.entries(view.properties).map(([key, value]) => [key, visit(value, refs, depth + 1)]))
+    for (const key of ['items', 'additionalProperties', 'not', 'if', 'then', 'else'] as const) if (typeof view[key] === 'object') mapped[key] = visit(view[key] as ParameterSchema, refs, depth + 1)
+    for (const key of ['prefixItems', 'allOf', 'oneOf', 'anyOf'] as const) if (view[key]) mapped[key] = view[key]!.map((value) => visit(value, refs, depth + 1))
+    return mapped as ParameterSchema
+  }
+  try { const result = visit(schema, new Set(), 0); renderSchemaCache.set(schema, result); return result }
+  catch (error) { const failure = error instanceof Error ? error : new Error('无法解析本地 Schema'); renderSchemaCache.set(schema, failure); throw failure }
+}
+
+export function nullableScalar(schema: ParameterSchema): ParameterSchema | null {
+  if (schema.anyOf?.length !== 2 || schema.anyOf.filter((branch) => branch.type === 'null').length !== 1) return null
+  const scalar = schema.anyOf.find((branch) => ['string', 'integer', 'number', 'boolean'].includes(branch.type ?? ''))
+  return scalar ?? null
+}
 
 /**
  * 判断当前局部是否属于 Phase 0 corpus 冻结的可视化子集。
@@ -251,6 +303,7 @@ export function localRenderIssue(
   if (unknown.length > 0) {
     return `包含尚未冻结的 Schema keyword：${unknown.join(', ')}`
   }
+  if (schema.anyOf && !nullableScalar(schema)) return 'anyOf 仅支持一个明确 scalar 与 null 的可空联合'
   const objectLike = schema.type === 'object' || schema.properties !== undefined
   if (objectLike && requireClosedObject && schema.additionalProperties !== false) {
     return 'object 未声明 additionalProperties: false'
@@ -263,6 +316,7 @@ export function localRenderIssue(
     schema.enum === undefined &&
     !('const' in schema) &&
     schema.oneOf === undefined &&
+    schema.anyOf === undefined &&
     schema.properties === undefined &&
     schema.items === undefined &&
     schema.prefixItems === undefined
@@ -287,6 +341,7 @@ function renderIssueAt(
   if (typeof schema.items === 'object') children.push([schema.items, `${location}/items`, true])
   schema.prefixItems?.forEach((child, index) => children.push([child, `${location}/prefixItems/${index}`, true]))
   schema.oneOf?.forEach((child, index) => children.push([child, `${location}/oneOf/${index}`, true]))
+  schema.anyOf?.forEach((child, index) => children.push([child, `${location}/anyOf/${index}`, true]))
   // 条件和组合分支只增加断言；最终可编辑 object 仍由其所在字段的闭合 Schema 负责。
   schema.allOf?.forEach((child, index) => children.push([child, `${location}/allOf/${index}`, false]))
   if (schema.not) children.push([schema.not, `${location}/not`, false])
@@ -301,7 +356,8 @@ function renderIssueAt(
 }
 
 export function directRenderIssue(schema: ParameterSchema): string | null {
-  return renderIssueAt(schema, '/', true)
+  try { return renderIssueAt(resolveLocalRenderSchema(schema), '/', true) }
+  catch (error) { return error instanceof Error ? error.message : 'Schema 引用无法展示' }
 }
 
 function validatorFor(schema: ParameterSchema): ValidateFunction | Error {

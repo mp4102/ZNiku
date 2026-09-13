@@ -5,7 +5,7 @@
  * 回退到“高级 → 原始参数”，不会按节点类型猜测值、条件或媒体业务规则。
  */
 
-import { useId, useMemo, useRef, type ChangeEvent, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import type {
   JsonObject,
   JsonValue,
@@ -28,6 +28,8 @@ import {
   selectedOneOfIndex,
   setPointer,
   switchOneOfBranch,
+  nullableScalar,
+  resolveLocalRenderSchema,
   type ParameterDraftValidation,
   type ParameterFieldError,
   type ParameterSchema,
@@ -132,6 +134,8 @@ function FieldHelp({
   const constraints = [
     schema.minimum === undefined ? null : `最小 ${schema.minimum}`,
     schema.maximum === undefined ? null : `最大 ${schema.maximum}`,
+    schema.exclusiveMinimum === undefined ? null : `必须大于 ${schema.exclusiveMinimum}`,
+    schema.exclusiveMaximum === undefined ? null : `必须小于 ${schema.exclusiveMaximum}`,
     schema.minLength === undefined ? null : `最短 ${schema.minLength} 字符`,
     schema.maxLength === undefined ? null : `最长 ${schema.maxLength} 字符`,
     schema.pattern === undefined ? null : `格式 ${schema.pattern}`,
@@ -495,7 +499,10 @@ function ObjectField(props: FieldProps) {
 }
 
 function ArrayField(props: FieldProps) {
+  const [page, setPage] = useState(0)
   const value = getPointer(props.root, props.pointer)
+  const errorRow = props.errors.find((error) => error.pointer.startsWith(`${props.pointer}/`))?.pointer.slice(props.pointer.length + 1).split('/')[0]
+  useEffect(() => { if (errorRow && /^[0-9]+$/.test(errorRow)) setPage(Math.floor(Number(errorRow) / 20)) }, [errorRow])
   if (value !== undefined && !Array.isArray(value)) {
     return <UnsupportedField pointer={props.pointer} reason="当前值不是 Schema 声明的 array" />
   }
@@ -508,10 +515,14 @@ function ArrayField(props: FieldProps) {
   const maxItems = Math.min(props.schema.maxItems ?? Number.POSITIVE_INFINITY, maxFromTuple)
   const canAdd = items.length < maxItems && (items.length < prefix.length || homogeneous !== null)
   const ownErrors = errorsForPointer(props.errors, props.pointer)
+  const pages = Math.max(1, Math.ceil(items.length / 20))
+  const currentPage = Math.min(page, pages - 1)
   return (
     <fieldset className={`parameter-array ${hasErrorsBelow(props.errors, props.pointer) ? 'has-error' : ''}`}>
       <legend>{fieldLabel(props.name, presentation)}{props.required && <em>必填</em>}</legend>
-      {items.map((_, index) => {
+      {pages > 1 && <nav aria-label={`${fieldLabel(props.name, presentation)}项目分页`}><button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</button><span>第 {currentPage + 1} / {pages} 页 · {items.length} 项</span><button type="button" disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}>下一页</button></nav>}
+      {items.slice(currentPage * 20, (currentPage + 1) * 20).map((_, pageIndex) => {
+        const index = currentPage * 20 + pageIndex
         const itemSchema = prefix[index] ?? homogeneous
         if (!itemSchema) {
           return <UnsupportedField key={index} pointer={joinPointer(props.pointer, index)} reason="Schema 不允许此数组位置" />
@@ -530,7 +541,7 @@ function ArrayField(props: FieldProps) {
         disabled={props.readOnly || !canAdd}
         onClick={() => {
           const schema = prefix[items.length] ?? homogeneous
-          if (schema) updateAtPointer(props, props.pointer, [...items, seedForSchema(schema)])
+          if (schema) { updateAtPointer(props, props.pointer, [...items, seedForSchema(schema)]); setPage(Math.floor(items.length / 20)) }
         }}
       >
         添加项目
@@ -567,6 +578,12 @@ function ArrayField(props: FieldProps) {
 function SchemaField(props: FieldProps): ReactNode {
   const issue = localRenderIssue(props.schema)
   if (issue) return <UnsupportedField pointer={props.pointer} reason={issue} />
+  const nullable = nullableScalar(props.schema)
+  if (nullable) return <div className="parameter-nullable"><ScalarField {...props} schema={nullable} />
+    <small>{getPointer(props.root, props.pointer) === null ? '当前明确未声明 (null)' : '可填写具体值，或明确设为未声明。'}</small>
+    <button type="button" disabled={props.readOnly} onClick={() => updateAtPointer(props, props.pointer, null)}>将 {fieldLabel(props.name, props.presentations.get(props.pointer))} 设为未声明</button>
+    <FieldErrors errors={errorsForPointer(props.errors, props.pointer)} />
+  </div>
   if (props.schema.oneOf) return <OneOfField {...props} />
   const value = getPointer(props.root, props.pointer)
   const schema = effectiveRenderSchema(props.schema, value)
@@ -620,7 +637,7 @@ function groupFields(
 }
 
 export function SchemaParameterForm({
-  schema,
+  schema: sourceSchema,
   draft,
   validation,
   presentation,
@@ -629,7 +646,12 @@ export function SchemaParameterForm({
   onPickError,
   onChange,
 }: SchemaParameterFormProps) {
-  const renderIssue = localRenderIssue(schema)
+  const resolved = useMemo(() => {
+    try { return { schema: resolveLocalRenderSchema(sourceSchema), issue: null } }
+    catch (error) { return { schema: sourceSchema, issue: error instanceof Error ? error.message : 'Schema 引用无法展示' } }
+  }, [sourceSchema])
+  const schema = resolved.schema
+  const renderIssue = resolved.issue ?? localRenderIssue(schema)
   const deepRenderIssue = directRenderIssue(schema)
   const presentations = useMemo(
     () => new Map(presentation?.parameters.map((item) => [item.parameter_pointer, item]) ?? []),

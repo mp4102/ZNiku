@@ -7,9 +7,11 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from enum import StrEnum
+from functools import lru_cache
 from pathlib import PureWindowsPath
 from typing import Annotated, Any, Literal, Never, Self, cast
 
@@ -66,6 +68,7 @@ NonBlankText = Annotated[str, StringConstraints(min_length=1, max_length=4096)]
 type JsonObject = dict[str, JsonValue]
 
 JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+_SCHEMA_CACHE_KEY_MAX_BYTES = 256 * 1024
 
 
 class FrozenJsonDict(dict[str, Any]):
@@ -183,6 +186,16 @@ def _ensure_non_blank(value: str, *, field_name: str) -> str:
     return value
 
 
+@lru_cache(maxsize=32)
+def _check_parameter_schema_cached(serialized_schema: bytes) -> None:
+    """只缓存成功的 Schema 语法检查，最多 32 个有界的进程内精确 JSON 键。
+
+    这不是 digest、持久化或新的领域 authority。解析副本避免引用调用者可变字典；失败不进入
+    lru_cache，跨线程同时 miss 最多重复做检查，不共享可变 validator 或验证结论对象。
+    """
+    Draft202012Validator.check_schema(json.loads(serialized_schema))
+
+
 def _validate_parameter_schema(schema: JsonObject) -> JsonObject:
     if schema.get("$schema") not in (None, JSON_SCHEMA_DIALECT):
         raise ValueError(
@@ -191,7 +204,17 @@ def _validate_parameter_schema(schema: JsonObject) -> JsonObject:
     if schema.get("type") != "object":
         raise ValueError("E_PARAMETER_SCHEMA_ROOT: parameter_schema 根 type 必须为 object")
     try:
-        Draft202012Validator.check_schema(schema)
+        try:
+            serialized = json.dumps(
+                schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+            ).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError):
+            # 序列化不支持的输入仍交给原检查路径；性能优化不新增 Core 准入限制。
+            serialized = None
+        if serialized is not None and len(serialized) <= _SCHEMA_CACHE_KEY_MAX_BYTES:
+            _check_parameter_schema_cached(serialized)
+        else:
+            Draft202012Validator.check_schema(schema)
     except SchemaError as error:
         raise ValueError(f"E_PARAMETER_SCHEMA_INVALID: {error.message}") from error
     return schema

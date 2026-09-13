@@ -15,6 +15,13 @@
 - `docs/brand-baseline.md` 只负责正式命名与品牌语义，不另行定义运行架构。
 - `v0.3.0` 与 `v0.3.1` 开发线只重构 Studio 创作者体验，继续复用已经验收的 `0.2.0` Core 与 `v0.2.1` Runtime／
   AVEnhanceFlow v2.7.0 能力；不得以 UX 改造为由重新引入 `0.1.0` legacy architecture。
+- `v0.3.2` 已批准执行入口为 `docs/v0.3.2-execution-plan.md`，业务下位设计为
+  `docs/architecture/chapter-overlap-fi-baseline.md`；分章与独立分叶一起实施，按 Phase 0–5 门禁推进。
+  不覆盖 Graph Core 权威，不改旧 AV27 exact definitions 的含义，不把重叠 FI 称为 AVEnhanceFlow 2.7.0 原有行为。
+  v0.3.1 的候选、人工验收和必要修复独立保留；未冻结的外部能力按新计划实验，不以推测放行真实处理。
+  分叶默认5分钟、严格1–60分钟，章内最少叶数均分；旧精确定义不改。只读预览不是可运行新链或第二张Graph。
+  2026-09-13用户批准继续开发，真实外部验收统一在Phase 5；FI软件`v1.0`、模型`Aion`只作声明，
+  候选明确`pending_real_acceptance`，不得把合成媒体测试说成模型能力证明。
 
 ## 产品与领域边界
 

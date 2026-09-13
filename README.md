@@ -6,9 +6,26 @@
 
 ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用已完成结果的 GUI Studio。
 
-## v0.3.1 UI 优化执行（当前）
+## v0.3.2 分章与重叠 FI（当前开发线）
 
-- 当前分支：`v0.3.1`，从已推送检查点 `v0.3.0@62d643f` 创建。
+- 当前工作树分支：`v0.3.2`；起点为 v0.3.1 修复提交 `d867344`，独立目录，不切换原验收checkout。
+- 目标版本：`ZNIKU Studio v0.3.2`；平均分章默认1、最多999个时间/帧切点；独立分叶默认5分钟、1–60分钟。
+- Phase 0、Phase 1已完成：`zniku.chapter_overlap` 严格Python规划及绑定已分析Artifact的只读预览。
+  Phase 2数学与短合成无重编码实验通过，Phase 3–4新节点及GUI已实现，独立Phase 5候选已构建。
+  Phase 5首轮1080p三章真实链及操作者观感/音画同步/对照已通过；4K本轮暂缓，其余专项待验。
+  软件 `v1.0`、模型 `Aion` 的候选能力范围尚未全部冻结；不冒充AVEnhanceFlow 2.7既有行为。
+- 入口：[v0.3.2 执行计划](docs/v0.3.2-execution-plan.md)与
+  [分章/重叠FI业务合同](docs/architecture/chapter-overlap-fi-baseline.md)。Graph Core上位权威不变。
+- 当前实现版本：`0.3.2`（开发源码），旧wire/Presentation仍为`0.3.0`；新预览独立wire为`0.3.2`。
+  本机受测候选构建时来自未提交工作树，源码检查点提交不会改变其来源，也不表示已正式发行。
+  实际入口与验收边界见下方操作文档。
+- 原v0.3.1候选继续验收，本分支不修改其包、服务、工程和媒体；未完成项与原门槛继续保留。
+- 操作与真实退出门禁：[Phase 5统一真实验收](docs/v0.3.2-phase5-acceptance.md)。候选默认状态目录
+  `ZNIKU/Studio-v0.3.2-candidate`，与旧实例、最近工程和偏好隔离。
+
+## v0.3.1 UI 优化（独立验收维护线）
+
+- 验收维护分支：`v0.3.1`，从已推送检查点 `v0.3.0@62d643f` 创建，最新修复固化于`d867344`。
 - 目标版本：`ZNIKU Studio v0.3.1`；用户已批准“画布优先、精简常驻、按任务渐进展开”的详细方案。
 - 当前范围：实施前门禁和批次 A/B 已完成；批次 C 已交付可测试技术候选，原生专项和创作者验收仍待完成，
   见[批次 B 验收](docs/v0.3.1-graph-routing-acceptance.md)与[批次 C 验收](docs/v0.3.1-desktop-candidate-acceptance.md)。
@@ -18,7 +35,7 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - 本轮证据：[UI 验收记录与合成截图](docs/v0.3.1-ui-acceptance.md)、
   [图形实施前试验报告](docs/v0.3.1-graph-preflight.md)。
 - v0.3.0 的原生窗口、工程数据新候选与首次用户待验项由新方案明确承接，不因新分支自动算作通过。
-- 当前实现版本：`0.3.1`；按批次 C 统一 package/product，wire/Presentation/StudioState 仍为 `0.3.0`，
+- 独立验收线实现版本：`0.3.1`；按批次 C 统一 package/product，wire/Presentation/StudioState 仍为 `0.3.0`，
   SQLite schema 4 和 NodeDefinition exact version 不变。候选不等于正式发行。
 - 首次用户与操作者使用[候选验收任务包](docs/v0.3.1-creator-acceptance-kit.md)分别记录，自动化或作者不能冒充首次用户。
 - 当前固定测试包为 `ZNIKU-Studio-0.3.1-step3-settings`，来源、修复、已知限制和维护边界见
@@ -246,7 +263,8 @@ ZNiku/
 │   ├── runtime/                 # 0.2.0 Scheduler、Node Runner 与运行历史
 │   ├── project_service/         # 0.2.0 Studio DTO、application 与 loopback host
 │   ├── media/                   # 0.2.0 首批媒体 definitions、adapters、probe 与 validators
-│   ├── avenhance_v27/           # 0.2.1 v2.7 专用节点包；不含模板或第二套 Runtime
+│   ├── avenhance_v27/           # 0.2.1 v2.7 专用节点及模板；无第二套 Runtime
+│   ├── chapter_overlap/        # 0.3.2 章叶规划、普通节点、无重编码上下文与裁边
 ├── apps/studio/
 │   └── src/studio/              # 0.2.0 唯一正式 Designer 与 Runtime overlay
 ├── tests/                       # 0.2.0 Core 与 v0.2.1 增量单元、集成和架构权威门禁
@@ -269,10 +287,13 @@ ZNiku/
 │   ├── v0.3.0-phase4-acceptance.md # v0.3.0 Phase 4 创作者运行与外部处理证据
 │   └── brand-baseline.md
 ├── AGENTS.md
-└── VERSION                      # 0.3.1 产品候选版本，独立于 wire/definition
+└── VERSION                      # 0.3.2 开发产品版本，独立于 wire/definition
 ```
 
 ## 本地运行与验证
+
+v0.3.2当前以自动化验证和纯数学/短合成实验为主；新GUI尚未接入。下述通用交互启动命令不能直接与原
+v0.3.1实例共用状态、端口和工程，先遵守[v0.3.2隔离要求](docs/v0.3.2-execution-plan.md#3-双线服务与数据隔离)。
 
 Python 需要 3.12 或更高版本及 `uv`；媒体节点还要求 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。以下门禁
 验证 0.2.0 Graph Core、Project Store、Runtime 和媒体节点，以及 v0.3.0 Project Service wire 与

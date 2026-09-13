@@ -55,6 +55,12 @@ from zniku.avenhance_v27.template import (
     build_preparation,
     validate_prepare_paths,
 )
+from zniku.chapter_overlap import (
+    AdmittedTimeline,
+    ChapterPlanningError,
+    plan_chapters_and_leaves,
+)
+from zniku.chapter_overlap.naming import overlap_output_paths
 from zniku.graph import (
     ExecutionMode,
     Graph,
@@ -98,6 +104,11 @@ from zniku.runtime import (
 from zniku.runtime.progress import MonotonicClock, WallClock
 from zniku.runtime.runner import MediaProbe, NodeValidator, OutputPathSpec
 
+from .chapter_overlap import (
+    ChapterOverlapPreviewEnvelope,
+    ChapterOverlapPreviewError,
+    ChapterOverlapPreviewRequest,
+)
 from .handoff import project_handoff_contracts
 from .handoff_import import HandoffImportBinding, ImportAuthority
 from .models import (
@@ -524,6 +535,119 @@ class ProjectServiceApplication:
                 raise self._translate_av27_failure(error) from error
             except (ProjectStoreError, RuntimeRepositoryError, ValidationError) as error:
                 raise self._translate_failure(error) from error
+
+    def preview_chapter_overlap(self, payload: object) -> ChapterOverlapPreviewEnvelope:
+        """从精确 preparation 结果只读规划新章节/均分叶，不创建或更新任何 Graph/Run。
+
+        会话和存储计数防止旧页面借用切换后的工程。只做有界元数据/文件 stat 核对，不扫描或解码媒体；
+        预览不是未来执行保证，后续正式展开仍必须重新绑定和验证。
+        """
+
+        try:
+            request = ChapterOverlapPreviewRequest.model_validate(payload, strict=True)
+        except ValidationError as error:
+            first = error.errors(include_url=False, include_input=False)[0]
+            # Pydantic discriminated union 的标签不是实际 JSON 属性；表单定位保留真实字段路径。
+            location = tuple(
+                part
+                for part in first["loc"]
+                if part not in {"average", "exact_frames", "exact_times"}
+            )
+            raise ChapterOverlapPreviewError(
+                "E_OVERLAP_REQUEST_INVALID", first["msg"], field_path=location
+            ) from error
+
+        with self._state:
+            try:
+                self._assert_idle()
+                self.assert_preview_session(request.project_session_id)
+                store, _runtime = self._require_session()
+                current = store.load_authoring()
+                if current.storage_revision != request.expected_storage_revision:
+                    raise ProjectServiceError(
+                        "E_PROJECT_STORAGE_CONFLICT",
+                        "工程已变更，请刷新后重新预览",
+                        http_status=409,
+                    )
+                _preparation, binding = self._resolve_av27_preparation_run(
+                    request.preparation_run_id
+                )
+                if binding.source_mode != "program" or len(binding.sources) != 1:
+                    raise ChapterOverlapPreviewError(
+                        "E_OVERLAP_SOURCE_MODE",
+                        "新分章预览仅支持单一 program；已有多源章节继续使用旧明确标识流程",
+                    )
+                source = binding.sources[0]
+                effective = source.effective_video_artifact
+                # 不凭现有文件名认定来源，也不读入 payload 计算另一个媒体 authority。
+                for artifact in (
+                    source.source_media_artifact,
+                    effective,
+                    binding.admission_artifact,
+                ):
+                    try:
+                        current_stat = Path(artifact.path).stat()
+                    except OSError as error:
+                        raise ChapterOverlapPreviewError(
+                            "E_OVERLAP_INPUT_CHANGED",
+                            "分析输入或结果已不可用，请重新检查并运行分析",
+                            http_status=409,
+                        ) from error
+                    if (
+                        not stat.S_ISREG(current_stat.st_mode)
+                        or current_stat.st_size != artifact.size
+                        or current_stat.st_mtime_ns != artifact.mtime_ns
+                    ):
+                        raise ChapterOverlapPreviewError(
+                            "E_OVERLAP_INPUT_CHANGED",
+                            "分析输入或结果已变化，不能沿用旧帧数规划",
+                            http_status=409,
+                        )
+                frames = metadata_frame_count(effective.media_info)
+                rate = metadata_rate(effective.media_info)
+                if frames != metadata_frame_count(
+                    source.source_media_artifact.media_info
+                ) or rate != metadata_rate(source.source_media_artifact.media_info):
+                    raise ChapterOverlapPreviewError(
+                        "E_OVERLAP_EFFECTIVE_VIDEO", "有效视频与原始接纳的帧数/帧率不一致"
+                    )
+                timeline = AdmittedTimeline(
+                    artifact_id=effective.artifact_id,
+                    frame_count=frames,
+                    frame_rate=canonical_fraction(rate),
+                )
+                plan = plan_chapters_and_leaves(timeline, request.settings)
+                return ChapterOverlapPreviewEnvelope(
+                    project_session_id=request.project_session_id,
+                    storage_revision=current.storage_revision,
+                    preparation_run_id=binding.preparation_run_id,
+                    admission_artifact_id=binding.admission_artifact.artifact_id,
+                    plan=plan,
+                )
+            except ChapterOverlapPreviewError:
+                raise
+            except ChapterPlanningError as error:
+                raise ChapterOverlapPreviewError(
+                    error.code,
+                    error.message,
+                    field_path=("settings", *error.field_path),
+                ) from error
+            except ProjectServiceError as error:
+                raise ChapterOverlapPreviewError(
+                    error.code,
+                    error.message,
+                    http_status=error.http_status,
+                    related_run_ids=error.related_run_ids,
+                ) from error
+            except Av27TemplateError as error:
+                raise ChapterOverlapPreviewError(error.code, error.message) from error
+            except Av27MediaError as error:
+                raise ChapterOverlapPreviewError(error.code, str(error)) from error
+            except (ProjectStoreError, RuntimeRepositoryError, ValidationError) as error:
+                failure = self._translate_failure(error)
+                raise ChapterOverlapPreviewError(
+                    failure.code, failure.message, http_status=failure.http_status
+                ) from error
 
     def inspect(self, view_run_id: str | None = None) -> StatusEnvelope:
         """返回当前 Project、有限 RunSummary 与进程内后台 operation。"""
@@ -1403,6 +1527,13 @@ class ProjectServiceApplication:
         self,
         request: ExpandRequest,
     ) -> tuple[ProjectSnapshot, PreparationBinding]:
+        """保留旧 expand 请求入口；新只读规划复用同一精确 Run 绑定检查。"""
+
+        return self._resolve_av27_preparation_run(request.preparation_run_id)
+
+    def _resolve_av27_preparation_run(
+        self, preparation_run_id: str, *, overlap: bool = False
+    ) -> tuple[ProjectSnapshot, PreparationBinding]:
         """只从显式 Run/current latest/result/Artifact 建立 expand binding。
 
         这里不使用 active、view 或 newest Run 猜测 authority。指定 Run 可以是初次 preparation Run，
@@ -1412,7 +1543,7 @@ class ProjectServiceApplication:
 
         store, runtime = self._require_session()
         current = store.load()
-        run = runtime.repository.get_run(request.preparation_run_id)
+        run = runtime.repository.get_run(preparation_run_id)
         if run.project_id != current.project.project_id:
             raise ProjectServiceError(
                 "E_AV27_EXPAND_PROJECT",
@@ -1573,7 +1704,7 @@ class ProjectServiceApplication:
             sources=tuple(bindings),
         )
         current_profile = preflight_av27_profile(
-            current,
+            current_preparation if overlap else current,
             binding_facts=self._binding_facts(binding),
             publication_facts=self._publication_facts(current.project),
         )
@@ -1812,7 +1943,9 @@ class ProjectServiceApplication:
         ) -> tuple[OutputPathSpec, ...]:
             if storage is None or storage.media_basename is None:
                 return ()
-            return descriptive_output_paths(
+            return overlap_output_paths(
+                node, definition, media_basename=storage.media_basename
+            ) or descriptive_output_paths(
                 node, definition, media_basename=storage.media_basename, graph=run.graph_snapshot
             )
 

@@ -10,6 +10,7 @@ import pytest
 from pydantic import JsonValue, ValidationError
 
 from zniku.avenhance_v27 import atomic_split_definition, built_in_av27_definitions
+from zniku.chapter_overlap.definitions import built_in_overlap_definitions
 from zniku.graph import (
     ExecutionMode,
     Graph,
@@ -142,13 +143,17 @@ def _all_mapping_keys(value: object) -> set[str]:
     return set()
 
 
-def test_builtin_catalog_covers_all_generic_and_av27_definitions() -> None:
-    definitions = (*built_in_media_definitions(), *built_in_av27_definitions())
+def test_builtin_catalog_covers_all_generic_av27_and_overlap_definitions() -> None:
+    definitions = (
+        *built_in_media_definitions(),
+        *built_in_av27_definitions(),
+        *built_in_overlap_definitions(),
+    )
     catalog = build_builtin_presentation_catalog()
 
     assert catalog.contract_version == "0.3.0"
     assert catalog.locale == "zh-CN"
-    assert len(catalog.nodes) == 23
+    assert len(catalog.nodes) == 31
     assert tuple((node.type_id, node.definition_version) for node in catalog.nodes) == tuple(
         (definition.type_id, definition.version) for definition in definitions
     )

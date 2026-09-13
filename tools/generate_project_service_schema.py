@@ -16,6 +16,15 @@ from zniku.desktop.contracts import (
     DesktopPreferencesRequest,
     DesktopSessionEnvelope,
 )
+from zniku.project_service.chapter_overlap import (
+    ChapterOverlapFailureEnvelope,
+    ChapterOverlapFullEnvelope,
+    ChapterOverlapFullRequest,
+    ChapterOverlapPreviewEnvelope,
+    ChapterOverlapPreviewRequest,
+    ChapterOverlapProcessingEnvelope,
+    ChapterOverlapProcessingRequest,
+)
 from zniku.project_service.handoff_import import (
     HandoffImportConfirmEnvelope,
     HandoffImportConfirmRequest,
@@ -143,6 +152,10 @@ def render_schema() -> str:
         ExternalHandoffReadiness,
         PresentationCatalogEnvelope,
         TemplatePreviewEnvelope,
+        ChapterOverlapPreviewEnvelope,
+        ChapterOverlapFailureEnvelope,
+        ChapterOverlapProcessingEnvelope,
+        ChapterOverlapFullEnvelope,
         PublicationPreviewEnvelope,
         HostCapabilitiesEnvelope,
         HostUserActionEnvelope,
@@ -194,6 +207,9 @@ def render_schema() -> str:
     envelope_definitions["TemplatePreviewRequest"] = preview_schema
 
     host_request_models = (
+        ChapterOverlapPreviewRequest,
+        ChapterOverlapProcessingRequest,
+        ChapterOverlapFullRequest,
         PublicationPreviewRequest,
         HostUserActionRequest,
         HostInvokeRequest,

@@ -128,7 +128,7 @@ async function assertDragPersistence(page: Page) {
   const before = (await readStatus(page)).snapshot!.project.graph
   const saves: GraphWire[] = []
   const observeSave = (request: import('@playwright/test').Request) => {
-    if (request.method() !== 'POST' || request.url() !== `${origin}/api/studio/command`) return
+    if (request.method() !== 'POST' || request.url() !== `${origin}/api/studio/graph-save`) return
     const command = request.postDataJSON() as { operation: string; project?: { graph: GraphWire } }
     if (command.operation === 'save_project' && command.project) saves.push(command.project.graph)
   }
@@ -498,7 +498,7 @@ test('生产向导：四组常用设置与工程旁默认输出，改选取消�
   })
   page.on('request', (request) => {
     if (request.method() !== 'POST') return
-    if (request.url() === `${origin}/api/studio/command`) commands.push((request.postDataJSON() as { operation: string }).operation)
+    if ([`${origin}/api/studio/command`, `${origin}/api/studio/graph-save`].includes(request.url())) commands.push((request.postDataJSON() as { operation: string }).operation)
     if (request.url() === checkUrl) checks.push(request.postDataJSON() as typeof checks[number])
   })
   const automaticChecks: Promise<unknown>[] = []
@@ -690,7 +690,7 @@ test('生产向导：显式直存与片名子目录预览不落盘，布局变�
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   page.on('request', (request) => {
     if (request.method() !== 'POST') return
-    if (request.url() === `${origin}/api/studio/command`) commands.push((request.postDataJSON() as { operation: string }).operation)
+    if ([`${origin}/api/studio/command`, `${origin}/api/studio/graph-save`].includes(request.url())) commands.push((request.postDataJSON() as { operation: string }).operation)
     if (request.url() === previewUrl) {
       const payload = request.postDataJSON() as { action: string; request: { preparation_run_id: string; publication: { layout: string } } }
       if (payload.action === 'expand') previews.push(payload)
@@ -812,7 +812,7 @@ test('生产外部任务：同名节点不串目标，选择确认导入不提�
   })
   page.on('request', (request) => {
     if (request.method() !== 'POST') return
-    if (request.url() === `${origin}/api/studio/command`) commands.push((request.postDataJSON() as { operation: string }).operation)
+    if ([`${origin}/api/studio/command`, `${origin}/api/studio/graph-save`].includes(request.url())) commands.push((request.postDataJSON() as { operation: string }).operation)
     if (request.url() === previewUrl) previewBindings.push(request.postDataJSON() as { node_run_id: string })
   })
   // 初始化仍走正式 Project Service，只给本测试 TemporaryDirectory 中的合成工程；不碰真实操作者工程。
@@ -1039,7 +1039,7 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   page.on('request', (request) => {
-    if (request.url() === `${origin}/api/studio/command` && request.method() === 'POST') {
+    if ([`${origin}/api/studio/command`, `${origin}/api/studio/graph-save`].includes(request.url()) && request.method() === 'POST') {
       commands.push((request.postDataJSON() as { operation: string }).operation)
     }
   })

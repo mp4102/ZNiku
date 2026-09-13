@@ -1,6 +1,6 @@
 name: ZNIKU Core CI
 
-# 验证 0.2.0 Core、v0.2.1 增量 Runtime 接线与专用媒体节点。
+# 验证 0.2.0 Core、v0.2.1 与 v0.3.2 普通专用媒体节点及 Runtime 接线。
 # 媒体测试只在临时目录生成极短合成 payload，不读取用户媒体或旧 Real Acceptance 数据。
 
 on:
@@ -55,8 +55,14 @@ jobs:
       - name: Run AV27 template and external-submit synthetic E2E
         run: uv run --locked --extra dev python tools/run_av27_smoke.py
 
+      - name: Run overlap FI synthetic Graph and explicit-submit E2E
+        run: uv run --locked --extra dev python tools/run_overlap_smoke.py --output .test-tmp-overlap-smoke-ci
+
       - name: Verify Project Service Studio schema
         run: uv run --locked --extra dev python tools/generate_project_service_schema.py --check
+
+      - name: Verify overlap Presentation corpus and Python preview fixture
+        run: uv run --locked --extra dev python tools/generate_overlap_studio_corpus.py
 
       - name: Typecheck
         run: uv run --locked --extra dev mypy --no-incremental src tests tools

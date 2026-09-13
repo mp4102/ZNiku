@@ -218,6 +218,14 @@ def test_http_routes_cors_and_strict_json_fail_closed(tmp_path: Path) -> None:
                         "description": "由模板生成的精确 AVEnhanceFlow v2.7.0 节点。",
                         "order": 50,
                     },
+                    {
+                        "category_id": "overlap",
+                        "title": "ZNIKU 重叠 FI 候选",
+                        "description": (
+                            "独立的 0.3.2 分章与重叠补帧处理链；Aion 软件 v1.0 待真实验收。"
+                        ),
+                        "order": 60,
+                    },
                 ],
                 "nodes": [],
             },

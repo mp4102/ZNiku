@@ -9,6 +9,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { dialogFocusTargets } from './components/focus-management'
 import { StudioGatewayError } from './gateway'
+import { ChapterOverlapSettingsForm } from './ChapterOverlapSettingsForm'
+import { ChapterOverlapPreview } from './ChapterOverlapPreview'
+import { ChapterOverlapDraftError, chapterSettingsIntent, initialChapterOverlapSettings, type ChapterOverlapFieldIssue } from './chapter-overlap-form'
+import { OverlapContractError, type OverlapFullEnvelope, type OverlapFullIntent, type OverlapProcessing, type OverlapProcessingEnvelope, type OverlapProcessingRequest } from './chapter-overlap-contracts'
 import { formatHostBridgeError } from './host-error-presentation'
 import type {
   AvEnhanceV27ChapterSelectorWire,
@@ -65,6 +69,9 @@ export interface AvEnhanceV27WizardProps {
   readonly onCreate: (request: AvEnhanceV27PrepareRequestWire, storage?: { readonly data_parent_directory?: string; readonly media_basename: string }) => Promise<boolean>
   readonly onStartPreparationRun?: () => Promise<string | null>
   readonly onExpand: (request: AvEnhanceV27ExpandRequestWire) => Promise<boolean>
+  readonly onPreviewOverlapProcessing?: (request: OverlapProcessingRequest) => Promise<OverlapProcessingEnvelope>
+  readonly onPreviewOverlap?: (request: OverlapFullIntent) => Promise<OverlapFullEnvelope>
+  readonly onExpandOverlap?: (request: OverlapFullIntent) => Promise<boolean>
   readonly onLocateNode: (nodeId: string) => void
 }
 
@@ -164,6 +171,9 @@ export function AvEnhanceV27Wizard({
   onCreate,
   onStartPreparationRun,
   onExpand,
+  onPreviewOverlapProcessing,
+  onPreviewOverlap,
+  onExpandOverlap,
   onLocateNode,
 }: AvEnhanceV27WizardProps) {
   const wasOpen = useRef(false)
@@ -175,6 +185,7 @@ export function AvEnhanceV27Wizard({
   const chapterNameRefs = useRef<Array<HTMLInputElement | null>>([])
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const previewRequestRef = useRef<AvEnhanceV27TemplatePreviewRequestWire | null>(null)
+  const overlapRequestRef = useRef<OverlapFullIntent | null>(null)
   const responseEpochRef = useRef(0)
   const pickerFlightRef = useRef(0)
   const expansionFlightRef = useRef<{ readonly runId: string; readonly token: symbol } | null>(null)
@@ -196,6 +207,13 @@ export function AvEnhanceV27Wizard({
   const [step, setStep] = useState<WizardStep>(1)
   const [dataParent, setDataParent] = useState<string | null>(null)
   const [preview, setPreview] = useState<AvEnhanceV27TemplatePreviewEnvelope | null>(null)
+  const [overlapPreview, setOverlapPreview] = useState<OverlapFullEnvelope | null>(null)
+  const [workflowProfile, setWorkflowProfile] = useState<'av27' | 'overlap'>('av27')
+  const [overlapSettings, setOverlapSettings] = useState(initialChapterOverlapSettings)
+  const [overlapIssue, setOverlapIssue] = useState<ChapterOverlapFieldIssue | null>(null)
+  const [contextLeft, setContextLeft] = useState('32')
+  const [contextRight, setContextRight] = useState('32')
+  const [contextMinimum, setContextMinimum] = useState('2')
   const [localError, setLocalError] = useState<string | null>(null)
   const [missingProjectField, setMissingProjectField] = useState<{ readonly field: 'name' | 'path' } | null>(null)
   const [missingChapter, setMissingChapter] = useState<{ readonly index: number } | null>(null)
@@ -249,6 +267,9 @@ export function AvEnhanceV27Wizard({
   const currentSourceMode = mode === 'resume'
     ? sourceModeFromSnapshot(currentSnapshot) ?? sourceMode
     : sourceMode
+  const overlapEnabled = workflowProfile === 'overlap' && currentSourceMode === 'program'
+  const overlapAvailable = Boolean(onPreviewOverlapProcessing && onPreviewOverlap && onExpandOverlap)
+  const alreadyOverlap = mode === 'resume' && Boolean(currentSnapshot?.project.graph.nodes.some((node) => node.type_id.startsWith('zniku.overlap.')))
   const completedRuns = useMemo(
     () => runSummaries.filter((summary) => summary.state === 'completed'),
     [runSummaries],
@@ -290,6 +311,12 @@ export function AvEnhanceV27Wizard({
       const continuing = mode === 'resume'
       setStep(continuing ? 3 : 1)
       setPreview(null)
+      setOverlapPreview(null)
+      overlapRequestRef.current = null
+      setWorkflowProfile('av27')
+      setOverlapSettings(initialChapterOverlapSettings())
+      setOverlapIssue(null)
+      setContextLeft('32'); setContextRight('32'); setContextMinimum('2')
       previewRequestRef.current = null
       expansionFlightRef.current = null
       responseEpochRef.current += 1
@@ -367,6 +394,8 @@ export function AvEnhanceV27Wizard({
     publicationAutoFlightRef.current = null
     previewRequestRef.current = null
     autoPreviewAllowedRef.current = false
+    overlapRequestRef.current = null
+    setOverlapPreview(null)
     setConnectionInterrupted(true)
     setOutputSelectionExpired(true)
     if (mutationFlightRef.current) setMutationInterrupted(true)
@@ -440,12 +469,26 @@ export function AvEnhanceV27Wizard({
     target?.focus()
   }, [invalidSetting, open, step])
 
+  useEffect(() => {
+    if (!open || step !== 3 || !overlapIssue) return
+    const name = overlapIssue.fieldPath.at(-1)
+    const labels: Record<string, string> = { left_context_frames: '前置上下文帧数', right_context_frames: '后置上下文帧数', minimum_input_frames: '最短补帧输入帧数', model_name: 'Enhancement model name', model_version: 'Enhancement model version', actual_scale_factor: 'Enhancement actual scale factor', encoder: 'Program encoder' }
+    const label = typeof name === 'string' ? labels[name] : undefined
+    const target = label ? dialogRef.current?.querySelector<HTMLElement>(`[aria-label="${label}"]`) : null
+    const entry = target?.closest('details')
+    if (entry) entry.open = true
+    target?.focus()
+  }, [open, step, overlapIssue])
+
   const invalidateExpansion = () => {
     responseEpochRef.current += 1
     pickerFlightRef.current += 1
     expansionFlightRef.current = null
     previewRequestRef.current = null
     setPreview(null)
+    overlapRequestRef.current = null
+    setOverlapPreview(null)
+    setOverlapIssue(null)
     setLocalError(null)
     setMissingProjectField(null)
     setMissingChapter(null)
@@ -552,6 +595,33 @@ export function AvEnhanceV27Wizard({
     return { profile_version: '2.7.0', preparation_run_id: preparationRunId, ...buildProcessingRequest(), publication: buildPublicationRequest() }
   }
 
+  const buildOverlapProcessing = (): OverlapProcessing => {
+    try {
+      const contextInteger = (value: string, field: string): number => {
+        if (!/^(0|[1-9][0-9]*)$/.test(value) || !Number.isSafeInteger(Number(value))) {
+          throw new ChapterOverlapDraftError({ fieldPath: ['processing', 'fi_profile', field], message: '上下文设置必须是严格非负整数。' })
+        }
+        return Number(value)
+      }
+      return {
+        settings: chapterSettingsIntent(overlapSettings),
+        enhancement: { model_name: enhancementModelName, model_version: optionalText(enhancementModelVersion) ?? null, actual_scale_factor: positiveInteger(actualScaleFactor, '增强倍率') },
+        fi_profile: { software_version: 'v1.0', model_name: 'Aion', status: 'pending_real_acceptance', phase: 'even-input-2m-minus-1', left_context_frames: contextInteger(contextLeft, 'left_context_frames'), right_context_frames: contextInteger(contextRight, 'right_context_frames'), minimum_input_frames: contextInteger(contextMinimum, 'minimum_input_frames') },
+        program_encode: { encoder },
+      }
+    } catch (error) {
+      if (error instanceof ChapterOverlapDraftError) setOverlapIssue(error.issue)
+      throw error
+    }
+  }
+
+  const applyOverlapIssue = (error: unknown) => {
+    const issue = error instanceof OverlapContractError || error instanceof ChapterOverlapDraftError ? error.issue
+      : error instanceof StudioGatewayError && error.fieldPath.length ? { fieldPath: error.fieldPath, message: error.serviceMessage ?? error.message } : null
+    if (issue) { setOverlapIssue(issue); setStep(3) }
+    return issue !== null
+  }
+
   const buildPublicationRequest = (): AvEnhanceV27PublicationRequestWire => {
     const root = outputOrigin === 'custom' ? outputRoot : resolvedProjectOutput?.projectPath === projectPath ? resolvedProjectOutput.root : ''
     if (!root) throw new Error('请返回成片设置，重新检查工程目录。')
@@ -571,11 +641,12 @@ export function AvEnhanceV27Wizard({
     }
     check('片名', () => { if (!title.trim()) throw new Error('请填写片名。') })
     check('年份', () => { if (!/^[0-9]{4}$/.test(year)) throw new Error('年份必须是四位数字。') })
-    if (currentSourceMode !== 'pre_chaptered') {
+    if (overlapEnabled) buildOverlapProcessing()
+    if (!overlapEnabled && currentSourceMode !== 'pre_chaptered') {
       if (selectorMode === 'exact_frames') check('Exact chapter frames', () => parseFrames(selectorFrames))
       if (selectorMode === 'exact_times') check('Exact chapter times', () => parseTimes(selectorTimes))
     }
-    check('Leaf duration minutes', () => positiveInteger(leafDurationMinutes, '单段处理时长'))
+    if (!overlapEnabled) check('Leaf duration minutes', () => positiveInteger(leafDurationMinutes, '单段处理时长'))
     check('Enhancement model name', () => { if (!enhancementModelName.trim()) throw new Error('请填写画质增强使用的模型名称。') })
     check('Enhancement actual scale factor', () => positiveInteger(actualScaleFactor, '增强倍率'))
     check('FI model name', () => { if (!fiModelName.trim()) throw new Error('请填写补帧使用的模型名称。') })
@@ -632,6 +703,18 @@ export function AvEnhanceV27Wizard({
     setLocalError(null)
     setPreviewFailure(null)
     try {
+      if (overlapEnabled) {
+        if (!onPreviewOverlap) throw new Error('当前服务没有重叠补帧候选接口。')
+        validateSettings()
+        const request: OverlapFullIntent = { contract_version: '0.3.2', preparation_run_id: runId, processing: buildOverlapProcessing(), publication: buildPublicationRequest() }
+        const next = await onPreviewOverlap(request)
+        if (epoch !== responseEpochRef.current || !open) return
+        if (next.preparation_run_id !== runId) throw new Error('重叠补帧预览与分析记录不一致。')
+        overlapRequestRef.current = request
+        setOverlapPreview(next)
+        setStep(5)
+        return
+      }
       const request: AvEnhanceV27TemplatePreviewRequestWire = {
         action: 'expand',
         request: buildExpandRequest(runId),
@@ -652,6 +735,9 @@ export function AvEnhanceV27Wizard({
       if (epoch === responseEpochRef.current) {
         previewRequestRef.current = null
         setPreview(null)
+        overlapRequestRef.current = null
+        setOverlapPreview(null)
+        applyOverlapIssue(error)
         const code = error instanceof StudioGatewayError ? error.code : null
         setPreviewFailure({ code, message: error instanceof Error ? error.message : '无法生成工作流预览。',
           // Python 提供精确位置；这里只展示原文，绝不解析、拼接或把它提升为系统动作 authority。
@@ -675,6 +761,7 @@ export function AvEnhanceV27Wizard({
       analysisRunIdRef.current !== analysisRunId ||
       analysisSummary?.state !== 'completed' ||
       previewRequestRef.current?.action === 'expand' ||
+      overlapRequestRef.current !== null ||
       expansionFlightRef.current?.runId === analysisRunId
     ) return
     void previewExpansion(analysisRunId)
@@ -683,9 +770,15 @@ export function AvEnhanceV27Wizard({
   }, [analysisRunId, analysisSummary?.state, open])
 
   if (!open) return null
+  if (alreadyOverlap) return <div className="template-wizard-backdrop"><section className="template-wizard creator-wizard" role="dialog" aria-modal="true" aria-label="重叠补帧工程已创建" ref={dialogRef}><h2>这个工程已经包含重叠补帧工作流</h2><p>请在节点图中配置或运行已有节点。向导不会重新展开或覆盖已编辑的工作流，也不会迁移旧结果。</p><p>Aion · 软件 v1.0 · 待真实验收。上下文输入、外部原始结果和裁边结果分别保留。</p><button type="button" className="button button--primary" onClick={onClose} ref={closeButtonRef}>返回当前节点图</button></section></div>
 
   const controlsDisabled = !serviceUnavailable && ((busy && !connectionInterrupted) || submitting || openingOutput)
   const serviceControlsDisabled = busy || submitting || openingOutput || serviceUnavailable || reconnecting || mutationInterrupted
+  const profileChoice = <section className="creator-settings-group" aria-label="工作流版本">
+    <h4>处理链</h4><label>工作流方案<select aria-label="工作流方案" disabled={controlsDisabled} value={overlapEnabled ? 'overlap' : 'av27'} onChange={(event) => { setWorkflowProfile(event.target.value as 'av27' | 'overlap'); invalidateExpansion() }}><option value="av27">AVEnhanceFlow v2.7.0 · 既有流程</option><option value="overlap" disabled={!overlapAvailable || currentSourceMode !== 'program'}>ZNIKU 重叠 FI · 0.3.2 候选</option></select></label>
+    {currentSourceMode === 'pre_chaptered' ? <p>已经分章的素材沿用既有流程，不会自动迁移为重叠补帧。</p> : overlapEnabled ? <p>支持平均 / 精确时间 / 精确帧分章和章内均衡分叶。Aion 软件 v1.0 尚待真实验收；这是 ZNIKU 新处理链，不是 AVEnhanceFlow 2.7.0 原有行为。</p> : <p>保留既有分章和逐章补帧语义；不会自动升级已有工程或结果。</p>}
+    {!overlapAvailable && currentSourceMode === 'program' && <p>当前连接未提供新候选接口；升级本机服务后才能显式选择。</p>}
+  </section>
 
   const reportPickerError = (error: unknown, fallback: string) => {
     const rawMessage = error instanceof Error ? error.message : fallback
@@ -810,7 +903,12 @@ export function AvEnhanceV27Wizard({
         setCheckingOutput(true)
         try {
           // 此检查不依赖媒体、不保存工程、不创建目录。输入变化或取消立即撤销迟到响应的展示资格。
-          const checked = await onPreviewPublication({ ...publicationIntent, processing: buildProcessingRequest() })
+          if (overlapEnabled) {
+            if (!onPreviewOverlapProcessing) throw new Error('当前服务没有重叠补帧候选设置接口。')
+            await onPreviewOverlapProcessing({ contract_version: '0.3.2', processing: buildOverlapProcessing() })
+            if (epoch !== responseEpochRef.current || publicationFlightRef.current !== token) return
+          }
+          const checked = await onPreviewPublication(overlapEnabled ? publicationIntent : { ...publicationIntent, processing: buildProcessingRequest() })
           if (epoch !== responseEpochRef.current || publicationFlightRef.current !== token) return
           if (checked.layout !== outputLayout) throw new Error('输出检查与当前整理方式不一致，请重试。')
           setPublicationPreview(checked)
@@ -818,6 +916,10 @@ export function AvEnhanceV27Wizard({
           setStep(4)
         } catch (error) {
           if (epoch === responseEpochRef.current && publicationFlightRef.current === token) {
+            if (overlapEnabled && applyOverlapIssue(error)) {
+              setLocalError(error instanceof Error ? error.message : '重叠处理设置未通过检查。')
+              return
+            }
             const code = error instanceof StudioGatewayError ? error.code : null
             // Python 的稳定错误码只负责导航同一表单；不从错误文案猜测路径、时间或执行权限。
             const processingFields: Record<string, SettingsField> = {
@@ -942,7 +1044,7 @@ export function AvEnhanceV27Wizard({
     if (serviceControlsDisabled) return
     const epoch = responseEpochRef.current
     const authority = previewRequestRef.current
-    if (!preview?.profile.compatible || !authority || authority.action !== 'expand') {
+    if (overlapEnabled ? !overlapPreview || !overlapRequestRef.current || !onExpandOverlap : !preview?.profile.compatible || !authority || authority.action !== 'expand') {
       invalidateExpansion()
       setLocalError('当前设置没有可确认的 Python 工作流预览；请使用已完成的素材分析重新生成预览。')
       setStep(4)
@@ -952,12 +1054,16 @@ export function AvEnhanceV27Wizard({
     setLocalError(null)
     try {
       mutationFlightRef.current = Symbol('expand-workflow')
-      const applied = await onExpand(authority.request)
+      const applied = overlapEnabled && overlapRequestRef.current && onExpandOverlap
+        ? await onExpandOverlap(overlapRequestRef.current)
+        : authority?.action === 'expand' ? await onExpand(authority.request) : false
       if (epoch !== responseEpochRef.current) return
       previewRequestRef.current = null
+      overlapRequestRef.current = null
       if (applied) { interruptedDraftModeRef.current = null; onClose() }
       else {
         setPreview(null)
+        setOverlapPreview(null)
         setLocalError('工作流未写入工程；预览需要重新检查，已完成的素材分析仍保留。')
         setStep(4)
       }
@@ -965,6 +1071,8 @@ export function AvEnhanceV27Wizard({
       if (epoch !== responseEpochRef.current) return
       previewRequestRef.current = null
       setPreview(null)
+      overlapRequestRef.current = null
+      setOverlapPreview(null)
       setLocalError(error instanceof Error ? error.message : '工作流创建失败。')
       setStep(4)
     } finally {
@@ -1008,6 +1116,7 @@ export function AvEnhanceV27Wizard({
                 <label className="creator-setup-row"><span>素材组织方式</span><select aria-label="素材组织方式" disabled={controlsDisabled || preparationCreated} onChange={(event) => {
                   const next = event.target.value as AvEnhanceV27SourceMode
                   setSourceMode(next)
+                  if (next === 'pre_chaptered') setWorkflowProfile('av27')
                   // 默认章名只是可编辑表单值；切换后不应逼操作者展开高级区补内部必填项。
                   setSources((current) => next === 'program' ? current.slice(0, 1) : current.map((source, index) => source.chapter_label.trim() ? source : { ...source, chapter_label: `章节 ${index + 1}` }))
                   invalidateExpansion()
@@ -1059,6 +1168,7 @@ export function AvEnhanceV27Wizard({
           {step === 2 && (
             <section className="creator-step" aria-label="处理方案">
               <header><span>02</span><div><h3>选择处理方案</h3><p>标准流程会先增强每段画面，合并章节后再统一补帧和编码。</p></div></header>
+              {profileChoice}
               <article className="creator-plan-card is-selected"><span>推荐</span><h4>完整增强流程</h4><p>画质增强 → 合并 → 补帧 → 连续 Main10 编码 → 保留原始音频。</p><ul><li>节点仍可在创建后自由调整</li><li>外部工具步骤会逐项引导</li><li>同一工程可随时切换到节点图继续编辑</li></ul></article>
               <details className="creator-settings-advanced"><summary>马赛克修复（高级）</summary><label className="template-check"><input aria-label="启用外部马赛克修复" checked={mrMode === 'external'} disabled={controlsDisabled || preparationCreated} onChange={(event) => { setMrMode(event.target.checked ? 'external' : 'off'); invalidateExpansion() }} type="checkbox" />素材分析前先在 Jasna 等外部工具中修复马赛克</label>{mrMode === 'external' && <div className="template-form-grid"><label>工具/模型<input aria-label="MR model name" disabled={controlsDisabled || preparationCreated} onChange={(event) => { setMrModelName(event.target.value); invalidateExpansion() }} value={mrModelName} /></label><label>实际版本<input aria-label="MR model version" disabled={controlsDisabled || preparationCreated} onChange={(event) => { setMrModelVersion(event.target.value); invalidateExpansion() }} value={mrModelVersion} /></label></div>}</details>
             </section>
@@ -1067,6 +1177,7 @@ export function AvEnhanceV27Wizard({
           {step === 3 && (
             <section className="creator-step" aria-label="设置">
               <header><span>03</span><div><h3>成片设置</h3><p>先确定成片名称，再按处理顺序确认参数。已有默认值可以直接使用；需要填写的项目始终可见。</p></div></header>
+              {mode === 'resume' && profileChoice}
               <section className="creator-settings-group" aria-label="成片命名">
                 <h4>成片名称与位置</h4>
                 <div className="creator-basic-settings">
@@ -1085,12 +1196,12 @@ export function AvEnhanceV27Wizard({
                 <section className="creator-settings-group" aria-label="章节与分段">
                   <h4><span>1</span>章节与分段</h4>
                   <p>先划分章节，再把每章拆成便于外部处理的小段。</p>
-                  <div className="template-form-grid">
+                  {overlapEnabled ? <ChapterOverlapSettingsForm value={overlapSettings} disabled={controlsDisabled} issue={overlapIssue} onChange={(next) => { setOverlapSettings(next); invalidateExpansion() }} /> : <div className="template-form-grid">
                     {currentSourceMode === 'pre_chaptered' ? <p className="creator-setting-note">沿用所选素材章节，不再次切分章节；仍可调整每章内的单段时长。</p> : <label>章节切分<select aria-label="Chapter selector mode" disabled={controlsDisabled} onChange={(event) => { setSelectorMode(event.target.value as SelectorMode); invalidateExpansion() }} value={selectorMode}><option value="single">整片作为一章</option><option value="exact_frames">按精确帧切分</option><option value="exact_times">按精确时间切分</option></select></label>}
                     <label>单段处理时长<input aria-label="Leaf duration minutes" aria-invalid={invalidSetting?.field === 'Leaf duration minutes' || undefined} disabled={controlsDisabled} inputMode="numeric" onChange={(event) => { setLeafDurationMinutes(event.target.value); invalidateExpansion() }} value={leafDurationMinutes} /><small>分钟；仅在章节内部划分处理段，不改变章节边界。</small></label>
                     {selectorMode === 'exact_frames' && currentSourceMode !== 'pre_chaptered' && <label className="creator-setting-wide">下一章首帧<textarea aria-label="Exact chapter frames" aria-invalid={invalidSetting?.field === 'Exact chapter frames' || undefined} disabled={controlsDisabled} onChange={(event) => { setSelectorFrames(event.target.value); invalidateExpansion() }} placeholder="899" value={selectorFrames} /><small>帧号从 0 开始，多个切分点用逗号分隔。例如 1801 帧素材填写 899，分成 899 + 902 帧两章；不是每 899 帧切一段。</small></label>}
                     {selectorMode === 'exact_times' && currentSourceMode !== 'pre_chaptered' && <label className="creator-setting-wide">切分时间（秒）<textarea aria-label="Exact chapter times" aria-invalid={invalidSetting?.field === 'Exact chapter times' || undefined} disabled={controlsDisabled} onChange={(event) => { setSelectorTimes(event.target.value); invalidateExpansion() }} placeholder="1800, 7207200/1001" value={selectorTimes} /><small>使用秒数或精确分数，多个切分点用逗号分隔；准确帧边界由分析结果校验。</small></label>}
-                  </div>
+                  </div>}
                 </section>
                 <section className="creator-settings-group" aria-label="画质增强">
                   <h4><span>2</span>画质增强</h4>
@@ -1103,11 +1214,15 @@ export function AvEnhanceV27Wizard({
                 </section>
                 <section className="creator-settings-group" aria-label="章节补帧">
                   <h4><span>3</span>章节补帧</h4>
-                  <p>先合并同一章的增强段，再对完整章节补帧；当前流程固定为两倍帧率。</p>
-                  <div className="template-form-grid">
+                  <p>{overlapEnabled ? '先章内合并增强段，再收集相邻章节上下文进行两倍补帧，最后精确裁边。需要等待所引用的相邻章节增强完成。' : '先合并同一章的增强段，再对完整章节补帧；当前流程固定为两倍帧率。'}</p>
+                  {overlapEnabled ? <><p><strong>Aion · 软件 v1.0 · 待真实验收</strong></p><p>外部原始结果按 2M−1 帧检查，裁边另存；不保证与整片单次 AI 处理像素一致。</p><details><summary>补帧上下文设置（高级，可使用默认值）</summary><p>以下是候选工程默认值，不是已经证实的模型最低要求；最终以短真实测试验收为准。</p><div className="template-form-grid">
+                    <label>前置上下文帧数<input aria-label="前置上下文帧数" inputMode="numeric" disabled={controlsDisabled} value={contextLeft} onChange={(event) => { setContextLeft(event.target.value); invalidateExpansion() }} /></label>
+                    <label>后置上下文帧数<input aria-label="后置上下文帧数" inputMode="numeric" disabled={controlsDisabled} value={contextRight} onChange={(event) => { setContextRight(event.target.value); invalidateExpansion() }} /></label>
+                    <label>最短补帧输入帧数<input aria-label="最短补帧输入帧数" inputMode="numeric" disabled={controlsDisabled} value={contextMinimum} onChange={(event) => { setContextMinimum(event.target.value); invalidateExpansion() }} /></label>
+                  </div>{overlapIssue?.fieldPath.includes('fi_profile') && <p role="alert">{overlapIssue.message}</p>}</details></> : <div className="template-form-grid">
                     <label>补帧模型<input aria-label="FI model name" aria-invalid={invalidSetting?.field === 'FI model name' || undefined} disabled={controlsDisabled} onChange={(event) => { setFiModelName(event.target.value); invalidateExpansion() }} value={fiModelName} /></label>
                     <label>补帧模型版本（可选）<input aria-label="FI model version" aria-invalid={invalidSetting?.field === 'FI model version' || undefined} disabled={controlsDisabled} onChange={(event) => { setFiModelVersion(event.target.value); invalidateExpansion() }} value={fiModelVersion} /><small>可留空；请按外部工具实际使用版本填写。</small></label>
-                  </div>
+                  </div>}
                 </section>
                 <section className="creator-settings-group" aria-label="成片编码">
                   <h4><span>4</span>成片编码</h4>
@@ -1148,7 +1263,8 @@ export function AvEnhanceV27Wizard({
             </section>
           )}
 
-          {step === 5 && preview && (
+          {step === 5 && overlapEnabled && overlapPreview && <ChapterOverlapPreview preview={overlapPreview} />}
+          {step === 5 && !overlapEnabled && preview && (
             <section className="creator-step creator-confirm" aria-label="确认工作流">
               <header><span>05</span><div><h3>确认工作流</h3><p>以下结构、媒体信息和输出名称均来自本次准确分析；确认前不会改动当前工作流。</p></div></header>
               <div className={`creator-profile-result ${preview.profile.compatible ? 'is-compatible' : 'is-incompatible'}`} role="status"><strong>{preview.profile.compatible ? '工作流已就绪' : '工作流需要修正'}</strong><span>{preview.project.graph.nodes.length} 个节点 · {preview.creator.estimated_steps} · {preview.plan.chapter_count} 章 · {preview.plan.leaf_count} 个处理段</span></div>
@@ -1171,7 +1287,7 @@ export function AvEnhanceV27Wizard({
             {step === 4 && preparationCreated && analysisRunId && analysisSummary?.state === 'completed' && !submitting && !preview && <button className="button button--primary" disabled={serviceControlsDisabled} onClick={() => void previewExpansion(analysisRunId)} type="button">{isPublicationError(previewFailure?.code) ? '重新检查输出位置' : previewFailure ? '重新生成工作流预览' : '生成工作流预览'}</button>}
             {step === 4 && mode === 'resume' && analysisRunId && !submitting && <button className="button button--ghost" disabled={controlsDisabled} onClick={() => { invalidateExpansion(); setAnalysisRunId(null) }} type="button">改选分析记录</button>}
             {step === 5 && <button className="button button--ghost" disabled={controlsDisabled} onClick={returnToSettings} type="button">返回设置</button>}
-            {step === 5 && <button className="button button--primary" disabled={serviceControlsDisabled || !preview?.profile.compatible} onClick={() => void confirmWorkflow()} type="button">确认并创建工作流</button>}
+            {step === 5 && <button className="button button--primary" disabled={serviceControlsDisabled || (overlapEnabled ? !overlapPreview : !preview?.profile.compatible)} onClick={() => void confirmWorkflow()} type="button">确认并创建工作流</button>}
           </div>
         </footer>
       </section>

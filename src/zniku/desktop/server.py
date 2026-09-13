@@ -18,6 +18,11 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from zniku.avenhance_v27 import av27_python_adapters, av27_validators, built_in_av27_definitions
+from zniku.chapter_overlap.definitions import (
+    built_in_overlap_definitions,
+    overlap_python_adapters,
+    overlap_validators,
+)
 from zniku.media import (
     built_in_media_definitions,
     media_artifact_quick_probe,
@@ -52,9 +57,17 @@ def build_desktop_application(work_root: Path) -> ProjectServiceApplication:
     return ProjectServiceApplication(
         work_root=work_root,
         project_data_default=True,
-        definition_catalog=(*built_in_media_definitions(), *built_in_av27_definitions()),
-        python_adapters={**media_python_adapters(), **av27_python_adapters()},
-        validators={**media_validators(), **av27_validators()},
+        definition_catalog=(
+            *built_in_media_definitions(),
+            *built_in_av27_definitions(),
+            *built_in_overlap_definitions(),
+        ),
+        python_adapters={
+            **media_python_adapters(),
+            **av27_python_adapters(),
+            **overlap_python_adapters(),
+        },
+        validators={**media_validators(), **av27_validators(), **overlap_validators()},
         media_probe=runner_media_probe,
         artifact_quick_probe=media_artifact_quick_probe,
     )

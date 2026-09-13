@@ -53,7 +53,7 @@ function evidence(page: Page, expected: ReadonlyArray<{ path: string; status: nu
     else errors.push(message.text())
   })
   page.on('request', (request) => {
-    if (request.url() === `${host.origin}/api/studio/command` && request.method() === 'POST') commands.push(request.postDataJSON() as Record<string, unknown>)
+    if ([`${host.origin}/api/studio/command`, `${host.origin}/api/studio/graph-save`].includes(request.url()) && request.method() === 'POST') commands.push(request.postDataJSON() as Record<string, unknown>)
   })
   return { errors, accepted, commands }
 }
@@ -302,7 +302,7 @@ test('C1 工程数据取消不迁移，明确复制后保留原件并重新打�
 })
 
 test('C2 未应用草稿阻止历史覆盖，真实 CAS 冲突只在明确放弃后载入', async ({ page }, info) => {
-  const proof = evidence(page, [{ path: '/api/studio/command', status: 409 }])
+  const proof = evidence(page, [{ path: '/api/studio/graph-save', status: 409 }])
   await open(page, host.fixture.geometry_project)
   const runId = await run(page)
   await expect.poll(async () => (await detail(page, runId)).run.node_runs.some((node) => node.node_id === 'publish' && node.state === 'failed'), { timeout: 45_000 }).toBe(true)
@@ -333,7 +333,7 @@ test('C2 未应用草稿阻止历史覆盖，真实 CAS 冲突只在明确放弃
   const gate = new Promise<void>((done) => { releaseSave = done })
   const held = new Promise<void>((done) => { intercepted = done })
   let firstSave = true
-  await page.route(`${host.origin}/api/studio/command`, async (route) => {
+  await page.route(`${host.origin}/api/studio/graph-save`, async (route) => {
     if (firstSave && (route.request().postDataJSON() as { operation?: string }).operation === 'save_project') {
       firstSave = false; intercepted(); await gate
     }
@@ -350,7 +350,7 @@ test('C2 未应用草稿阻止历史覆盖，真实 CAS 冲突只在明确放弃
       project: remoteProject, studio_state: remote.studio_state,
     } })
     expect(saved.status()).toBe(200)
-    const conflictResponse = page.waitForResponse((response) => response.url() === `${host.origin}/api/studio/command` && response.status() === 409)
+    const conflictResponse = page.waitForResponse((response) => response.url() === `${host.origin}/api/studio/graph-save` && response.status() === 409)
     releaseSave()
     expect(await (await conflictResponse).json()).toMatchObject({ error: { code: 'E_PROJECT_STORAGE_CONFLICT' } })
     await expect(page.getByRole('button', { name: '重新载入磁盘版本', exact: true })).toBeVisible()
@@ -367,9 +367,9 @@ test('C2 未应用草稿阻止历史覆盖，真实 CAS 冲突只在明确放弃
     await expect(page.getByRole('button', { name: '重新载入磁盘版本', exact: true })).toHaveCount(0)
     expect(await detail(page, runId)).toEqual(history)
     expect(proof.commands.filter((item) => ['run_all', 'rerun_from_here', 'submit_external'].includes(String(item.operation)))).toHaveLength(1)
-    expect(proof.accepted).toEqual(['/api/studio/command:409'])
+    expect(proof.accepted).toEqual(['/api/studio/graph-save:409'])
     expect(proof.errors).toEqual([])
-  } finally { releaseSave(); await page.unroute(`${host.origin}/api/studio/command`) }
+  } finally { releaseSave(); await page.unroute(`${host.origin}/api/studio/graph-save`) }
 })
 
 test('C2 菜单焦点不删除节点，迟到旧轮询不覆盖新编辑或抢焦点', async ({ page }, info) => {

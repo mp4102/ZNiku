@@ -40,7 +40,7 @@ def build_resources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Pa
     for name in ("LICENSE", "README.txt"):
         (media / name).write_text("synthetic source metadata", encoding="utf-8")
     monkeypatch.setattr(build_desktop, "ROOT", root)
-    metadata = tmp_path / "zniku-0.3.1.dist-info"
+    metadata = tmp_path / "zniku-0.3.2.dist-info"
     metadata.mkdir()
     for name in ("METADATA", "WHEEL", "top_level.txt"):
         (metadata / name).write_text("synthetic metadata", encoding="utf-8")
@@ -48,7 +48,7 @@ def build_resources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Pa
         build_desktop,
         "metadata_files",
         lambda: {
-            f"zniku-0.3.1.dist-info/{name}": metadata / name
+            f"zniku-0.3.2.dist-info/{name}": metadata / name
             for name in ("METADATA", "WHEEL", "top_level.txt")
         },
     )
@@ -103,7 +103,7 @@ def test_metadata_collection_excludes_editable_source_paths_and_cache(
 ) -> None:
     """构建时按清单选择，不在成包之后删除或隐藏已泄漏的安装元数据。"""
 
-    metadata = tmp_path / "zniku-0.3.1.dist-info"
+    metadata = tmp_path / "zniku-0.3.2.dist-info"
     metadata.mkdir()
     names = (
         "METADATA",
@@ -115,15 +115,15 @@ def test_metadata_collection_excludes_editable_source_paths_and_cache(
     )
     for name in names:
         (metadata / name).write_text("synthetic local metadata", encoding="utf-8")
-    (metadata / "METADATA").write_text("Name: zniku\nVersion: 0.3.1\n", encoding="utf-8")
+    (metadata / "METADATA").write_text("Name: zniku\nVersion: 0.3.2\n", encoding="utf-8")
     (metadata / "RECORD").write_text(
-        "".join(f"zniku-0.3.1.dist-info/{name},,\n" for name in names), encoding="utf-8"
+        "".join(f"zniku-0.3.2.dist-info/{name},,\n" for name in names), encoding="utf-8"
     )
     distribution = PathDistribution(metadata)
     monkeypatch.setattr(importlib.metadata, "distribution", lambda _: distribution)
     assert set(build_desktop.metadata_files()) == {
-        "zniku-0.3.1.dist-info/METADATA",
-        "zniku-0.3.1.dist-info/WHEEL",
-        "zniku-0.3.1.dist-info/top_level.txt",
+        "zniku-0.3.2.dist-info/METADATA",
+        "zniku-0.3.2.dist-info/WHEEL",
+        "zniku-0.3.2.dist-info/top_level.txt",
     }
     assert all((metadata / name).is_file() for name in names)

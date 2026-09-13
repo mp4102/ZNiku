@@ -18,6 +18,7 @@ import {
   type OnSelectionChangeParams,
 } from '@xyflow/react'
 import { AvEnhanceV27Wizard, type AvEnhanceV27WizardMode } from './AvEnhanceV27Wizard'
+import type { OverlapFullEnvelope, OverlapFullIntent, OverlapFullRequest, OverlapProcessingRequest } from './chapter-overlap-contracts'
 import type {
   WorkflowEdge,
   WorkflowNode,
@@ -108,6 +109,8 @@ import { failurePresentation } from './run-presentation'
 import { RetryImpactDialog } from './components/RetryImpactDialog'
 import './workspace-shell.css'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
+/** 仅用于复用 UI 请求互斥；expand_overlap 从不发送到旧 command wire。 */
+type WorkspaceOperation = StudioCommand | { readonly operation: 'expand_overlap'; readonly request: OverlapFullRequest; readonly preview: OverlapFullEnvelope }
 
 // 仅决定能否继续展示“模板已就绪”标签，不进入 Run 绑定、执行或存储版本。
 const graphPresentationComparison = (graph: GraphWire) => JSON.stringify({
@@ -590,11 +593,13 @@ export function StudioWorkspace({
     readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
     readonly precondition: AuthoringPrecondition | null
   } | null>(null)
+  const latestOverlapPreviewRef = useRef<{ readonly intentJson: string; readonly request: OverlapFullRequest; readonly envelope: OverlapFullEnvelope; readonly precondition: AuthoringPrecondition } | null>(null)
   const templateConnectionEpochRef = useRef(0)
   useEffect(() => {
     // 断线与显式重连撤销旧会话的预览资格，迟到响应也不能再次提升为 mutation authority。
     templateConnectionEpochRef.current += 1
     latestTemplatePreviewRef.current = null
+    latestOverlapPreviewRef.current = null
   }, [effectiveGateway, reconnectEpoch, statusHealth.stale])
 
   useEffect(() => () => {
@@ -714,6 +719,7 @@ export function StudioWorkspace({
         inboxSubmissionFencesRef.current = new Set()
         setInboxSubmissionFences(new Set())
         latestTemplatePreviewRef.current = null
+        latestOverlapPreviewRef.current = null
         setTemplateProfile(null)
         setLastFullPrecheckFailures(new Map())
         updateCheckedOutputs(() => new Map())
@@ -1901,7 +1907,7 @@ export function StudioWorkspace({
 
   const executeCommands = useCallback(
     async (
-      commands: ReadonlyArray<StudioCommand>,
+      commands: ReadonlyArray<WorkspaceOperation>,
       options: { readonly preferCreatedRun?: boolean; readonly discardLocal?: boolean; readonly templatePreview?: AvEnhanceV27TemplatePreviewEnvelope; readonly templateConnectionEpoch?: number } = {},
     ): Promise<StatusEnvelope | null> => {
       if (busyRef.current) return null
@@ -1929,8 +1935,20 @@ export function StudioWorkspace({
           if (options.templateConnectionEpoch !== undefined && options.templateConnectionEpoch !== templateConnectionEpochRef.current) {
             throw new Error('连接在等待保存期间已变化；未发送后续向导命令，请重新检查工程。')
           }
-          next = await effectiveGateway.command(command)
+          if (command.operation === 'expand_overlap') {
+            if (!effectiveGateway.expandOverlap) throw new Error('当前服务不支持重叠補帧展开。')
+            next = await effectiveGateway.expandOverlap(command.request)
+          } else next = await effectiveGateway.command(command)
           if (generation !== generationRef.current) return null
+          if (command.operation === 'expand_overlap' && (
+            next.project_session_id !== command.request.project_session_id || next.project_path !== previousPath ||
+            next.storage_revision !== command.request.expected_storage_revision + 1 ||
+            !next.snapshot || next.snapshot.project.graph.nodes.length !== command.preview.node_count || next.snapshot.project.graph.edges.length !== command.preview.edge_count
+          )) {
+            const message = '重叠处理链写入响应与确认的工程、存储版本或节点计数不一致；请重新载入磁盘版本。'
+            blockAuthoring(message)
+            throw new Error(message)
+          }
           if (options.templatePreview && (command.operation === 'create_av_enhance_v27' || command.operation === 'expand_av_enhance_v27')) {
             const preview = options.templatePreview
             const identityMatches = command.operation !== 'expand_av_enhance_v27' ||
@@ -1944,20 +1962,23 @@ export function StudioWorkspace({
               throw new Error(message)
             }
           }
-          acceptStatus(next, {
+          const accepted = acceptStatus(next, {
             replaceProject:
               command.operation === 'open_project' ||
               command.operation === 'create_project' ||
               command.operation === 'save_project' ||
               command.operation === 'create_av_enhance_v27' ||
+              command.operation === 'expand_overlap' ||
               command.operation === 'expand_av_enhance_v27',
-            macroLabel: command.operation === 'expand_av_enhance_v27' ? '展开处理链' : undefined,
+            macroLabel: command.operation === 'expand_overlap' ? '展开重叠补帧处理链' : command.operation === 'expand_av_enhance_v27' ? '展开处理链' : undefined,
             clearGraphSelection:
               command.operation === 'open_project' ||
               command.operation === 'create_project' ||
               command.operation === 'create_av_enhance_v27' ||
+              command.operation === 'expand_overlap' ||
               command.operation === 'expand_av_enhance_v27',
           })
+          if (command.operation === 'expand_overlap' && !accepted) throw new Error('重叠处理链响应未被当前工程接受，请重新载入磁盘版本。')
         }
         if (!next) return null
 
@@ -1969,6 +1990,7 @@ export function StudioWorkspace({
             last?.operation === 'create_project' ||
             last?.operation === 'save_project' ||
             last?.operation === 'create_av_enhance_v27' ||
+            last?.operation === 'expand_overlap' ||
             last?.operation === 'expand_av_enhance_v27')
         ) {
           const recent = { path: next.project_path, name: next.snapshot.project.name }
@@ -1986,6 +2008,7 @@ export function StudioWorkspace({
           last?.operation === 'open_project' ||
           last?.operation === 'create_project' ||
           last?.operation === 'create_av_enhance_v27' ||
+          last?.operation === 'expand_overlap' ||
           last?.operation === 'expand_av_enhance_v27'
         ) {
           const knownSummaries = mergeSummaries(
@@ -2102,6 +2125,43 @@ export function StudioWorkspace({
     // 输出检查不保存 Graph，不创建工程或 Run，不能借用媒体 preview 的 mutation 授权。
     return effectiveGateway.previewAvEnhanceV27Publication(request)
   }, [effectiveGateway])
+
+  const previewOverlapProcessing = useCallback(async (request: OverlapProcessingRequest) => {
+    if (!effectiveGateway.previewOverlapProcessing) throw new Error('当前服务不支持重叠补帧设置检查。')
+    return effectiveGateway.previewOverlapProcessing(request)
+  }, [effectiveGateway])
+
+  const previewOverlap = useCallback(async (intent: OverlapFullIntent) => {
+    latestOverlapPreviewRef.current = null
+    if (!effectiveGateway.previewOverlap) throw new Error('当前服务不支持重叠补帧工作流预览。')
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置。')
+    const connectionEpoch = templateConnectionEpochRef.current
+    const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间连接或设置发生变化，请重新检查。')
+    const request: OverlapFullRequest = { ...intent, ...binding }
+    const envelope = await effectiveGateway.previewOverlap(request)
+    if (connectionEpoch !== templateConnectionEpochRef.current || JSON.stringify(binding) !== JSON.stringify(precondition())) throw new Error('工程在预览期间发生变化，请重新预览。')
+    if (envelope.project_session_id !== binding.project_session_id || envelope.storage_revision !== binding.expected_storage_revision || envelope.preparation_run_id !== intent.preparation_run_id) throw new Error('工作流预览与当前工程或分析记录不一致。')
+    latestOverlapPreviewRef.current = { intentJson: JSON.stringify(intent), request, envelope, precondition: binding }
+    return envelope
+  }, [effectiveGateway, flushAuthoring, precondition])
+
+  const expandOverlap = useCallback(async (intent: OverlapFullIntent): Promise<boolean> => {
+    const current = latestOverlapPreviewRef.current
+    if (!current || current.intentJson !== JSON.stringify(intent) || parameterDraftDirty || dirty || JSON.stringify(current.precondition) !== JSON.stringify(precondition())) {
+      latestOverlapPreviewRef.current = null
+      setClientHint('工程或设置已变化；请重新取得重叠补帧预览。')
+      return false
+    }
+    const next = await executeCommands([{ operation: 'expand_overlap', request: current.request, preview: current.envelope }], { templateConnectionEpoch: templateConnectionEpochRef.current })
+    latestOverlapPreviewRef.current = null
+    if (!next) return false
+    setTemplateProfile(null)
+    setShowRunSnapshot(false)
+    setSelectedNodeIds(new Set()); setSelectedEdgeIds(new Set())
+    setFitViewEpoch((value) => value + 1)
+    return true
+  }, [dirty, executeCommands, parameterDraftDirty, precondition])
 
   const applyAvEnhanceV27Mutation = useCallback(
     async (
@@ -2796,6 +2856,9 @@ export function StudioWorkspace({
         )}
         onPreview={previewAvEnhanceV27}
         onPreviewPublication={previewAvEnhanceV27Publication}
+        onPreviewOverlapProcessing={effectiveGateway.previewOverlapProcessing ? previewOverlapProcessing : undefined}
+        onPreviewOverlap={effectiveGateway.previewOverlap ? previewOverlap : undefined}
+        onExpandOverlap={effectiveGateway.expandOverlap ? expandOverlap : undefined}
         onStartPreparationRun={startPreparationRun}
         open={templateOpen}
         pickerAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file') && hostCapabilityAvailable('select_directory')}

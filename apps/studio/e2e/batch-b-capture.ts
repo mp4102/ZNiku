@@ -169,7 +169,7 @@ test('B 整理取消 / 单步撤销 / SQLite 重开 / 同 ID 历史视图不改�
   await expect(page.locator('.context-mode')).toHaveText('当前编辑')
   const saves: string[] = []
   page.on('request', (request) => {
-    if (request.method() === 'POST' && request.url() === `${service.origin}/api/studio/command`)
+    if (request.method() === 'POST' && [`${service.origin}/api/studio/command`, `${service.origin}/api/studio/graph-save`].includes(request.url()))
       saves.push((request.postDataJSON() as { operation: string }).operation)
   })
   await arrange(page, false)
