@@ -4508,6 +4508,229 @@
       "title": "PickerSelectionReference",
       "type": "object"
     },
+    "Host_PublicationPreviewRequest_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "exact_frames": "#/$defs/Host_PublicationPreviewRequest_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Host_PublicationPreviewRequest_ExactTimesChapterSelector",
+          "single": "#/$defs/Host_PublicationPreviewRequest_SingleChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_PublicationPreviewRequest_SingleChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_PublicationPreviewRequest_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_PublicationPreviewRequest_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Host_PublicationPreviewRequest_EnhancementDeclaration": {
+      "additionalProperties": false,
+      "description": "声明全节目 Enhancement 模型和规范化整数 scale。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "default": null,
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "EnhancementDeclaration",
+      "type": "object"
+    },
+    "Host_PublicationPreviewRequest_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "声明每个后续章的零基首帧。",
+      "properties": {
+        "frames": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Host_PublicationPreviewRequest_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "声明 canonical rational 秒形式的 program 章边界。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Host_PublicationPreviewRequest_FrameInterpolationDeclaration": {
+      "additionalProperties": false,
+      "description": "声明全节目 Frame Interpolation 模型。",
+      "properties": {
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "default": null,
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "FrameInterpolationDeclaration",
+      "type": "object"
+    },
+    "Host_PublicationPreviewRequest_ProcessingSettingsPreview": {
+      "additionalProperties": false,
+      "description": "在创建工程/分析前验证处理参数；复用 AV27 的现有字段模型，不推断媒体事实。\n\n这里只检查切分输入自身的规范形式和顺序、模型声明、编码器与正整数段长。切分点是否处于\n实际视频范围仍要等分析后的同一模板检查；本 DTO 不持有 Run、Graph 或执行授权。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Host_PublicationPreviewRequest_ChapterSelector",
+          "default": null,
+          "title": "Chapter Selector"
+        },
+        "enhancement": {
+          "$ref": "#/$defs/Host_PublicationPreviewRequest_EnhancementDeclaration"
+        },
+        "frame_interpolation": {
+          "$ref": "#/$defs/Host_PublicationPreviewRequest_FrameInterpolationDeclaration"
+        },
+        "leaf_duration_minutes": {
+          "exclusiveMinimum": 0,
+          "title": "Leaf Duration Minutes",
+          "type": "integer"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Host_PublicationPreviewRequest_ProgramEncodeDeclaration"
+        }
+      },
+      "required": [
+        "leaf_duration_minutes",
+        "enhancement",
+        "frame_interpolation",
+        "program_encode"
+      ],
+      "title": "ProcessingSettingsPreview",
+      "type": "object"
+    },
+    "Host_PublicationPreviewRequest_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Host_PublicationPreviewRequest_ProjectDirectoryPublicationPreview": {
+      "additionalProperties": false,
+      "description": "仅为只读预览声明工程旁输出；正式发布仍使用 PublicationRequest 的显式目录。\n\n该分支与显式 ``output_root`` 请求互斥，不接受工作数据目录或任何目录创建指令。片名与年份\n只是待验证输入，Service 在解析工程父目录后交还既有 PublicationRequest 和命名函数检查。",
+      "properties": {
+        "layout": {
+          "default": "direct",
+          "enum": [
+            "direct",
+            "title_subdirectory"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "project_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Project Path",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 4,
+          "minLength": 4,
+          "title": "Year",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_path",
+        "title",
+        "year",
+        "overwrite"
+      ],
+      "title": "ProjectDirectoryPublicationPreview",
+      "type": "object"
+    },
     "Host_PublicationPreviewRequest_PublicationRequest": {
       "additionalProperties": false,
       "description": "声明发布目录、可选片名子目录及显式覆盖；省略 layout 时直接写入所选目录。",
@@ -4551,6 +4774,22 @@
         "overwrite"
       ],
       "title": "PublicationRequest",
+      "type": "object"
+    },
+    "Host_PublicationPreviewRequest_SingleChapterSelector": {
+      "additionalProperties": false,
+      "description": "声明 program 的唯一 ``[0,N)`` 章。",
+      "properties": {
+        "mode": {
+          "const": "single",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "SingleChapterSelector",
       "type": "object"
     },
     "Host_Reference_ArtifactPathReference": {
@@ -6894,8 +7133,21 @@
           "title": "Contract Version",
           "type": "string"
         },
+        "processing": {
+          "$ref": "#/$defs/Host_PublicationPreviewRequest_ProcessingSettingsPreview",
+          "default": null,
+          "title": "Processing"
+        },
         "request": {
-          "$ref": "#/$defs/Host_PublicationPreviewRequest_PublicationRequest"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Host_PublicationPreviewRequest_PublicationRequest"
+            },
+            {
+              "$ref": "#/$defs/Host_PublicationPreviewRequest_ProjectDirectoryPublicationPreview"
+            }
+          ],
+          "title": "Request"
         }
       },
       "required": [

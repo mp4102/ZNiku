@@ -609,31 +609,33 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     render(<App gateway={gateway} hostBridge={hostBridge} />)
     const enterSettings = async () => {
       await user.click(await screen.findByRole('button', { name: /新建视频工程/ }))
+      await user.click(screen.getByText('高级选项（可选）'))
       fireEvent.change(screen.getByLabelText('模板工程路径'), { target: { value: 'D:\\Synthetic\\guided.zniku' } })
       fireEvent.change(screen.getByLabelText('Source 1 path'), { target: { value: 'D:\\Synthetic\\source.mkv' } })
       await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
-      await user.click(screen.getByRole('button', { name: '下一步：设置' }))
+      await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
+      await user.click(screen.getByText('其他选项（可选）'))
     }
     await enterSettings()
-    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await user.click(screen.getByRole('button', { name: '更改成片父目录' }))
     await user.click(screen.getByRole('button', { name: '打开所选输出文件夹' }))
     expect(launch).toHaveBeenLastCalledWith('reveal_in_file_manager', {
       kind: 'picker_selection', selection_handle: selection.selection_handle,
     })
     expect(JSON.stringify(launch.mock.calls)).not.toContain(selection.path)
-    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await user.click(screen.getByRole('button', { name: '更改成片父目录' }))
     await user.click(screen.getByRole('button', { name: '打开所选输出文件夹' }))
     expect(launch).toHaveBeenCalledTimes(2)
     fireEvent.change(screen.getByLabelText('Publication output root'), { target: { value: 'D:\\Synthetic\\Different' } })
+    expect(screen.getByRole('button', { name: '打开所选输出文件夹' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: '打开所选输出文件夹' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('请重新选择输出目录后再试')
     expect(launch).toHaveBeenCalledTimes(2)
     await user.click(screen.getByRole('button', { name: '关闭模板向导' }))
     await user.click(projectButton('工程首页'))
     await enterSettings()
     fireEvent.change(screen.getByLabelText('Publication output root'), { target: { value: selection.path } })
+    expect(screen.getByRole('button', { name: '打开所选输出文件夹' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: '打开所选输出文件夹' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('请重新选择输出目录后再试')
     expect(launch).toHaveBeenCalledTimes(2)
     expect(gateway.commands).toEqual([])
   })
@@ -858,14 +860,16 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
 
     expect(await screen.findByText('尚未打开工程')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /新建视频工程/ }))
+    await user.click(screen.getByText('高级选项（可选）'))
     fireEvent.change(screen.getByLabelText('模板工程路径'), { target: { value: targetPath } })
     fireEvent.change(screen.getByLabelText('Source 1 path'), {
       target: { value: 'C:\\synthetic\\source.mkv' },
     })
     await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
-    await user.click(screen.getByRole('button', { name: '下一步：设置' }))
+    await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
     await user.type(screen.getByLabelText('片名'), 'Movie')
     await user.type(screen.getByLabelText('年份'), '2026')
+    await user.click(screen.getByText('其他选项（可选）'))
     fireEvent.change(screen.getByLabelText('Publication output root'), {
       target: { value: 'D:\\Library' },
     })

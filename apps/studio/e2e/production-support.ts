@@ -9,6 +9,7 @@ export interface SyntheticFixture {
   readonly wizard_project: string
   readonly output_root: string
   readonly output_collision: string
+  readonly data_parent?: string
   readonly external_project: string
   readonly small_project: string
   readonly large_project: string

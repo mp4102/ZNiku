@@ -48,6 +48,7 @@ from zniku.avenhance_v27.template import (
     ExpandRequest,
     PreparationBinding,
     PreparationSourceBinding,
+    PublicationRequest,
     SourceMode,
     TemplateBuild,
     build_expanded,
@@ -116,6 +117,7 @@ from .models import (
     NodeProgressProjection,
     OpenProjectCommand,
     PresentationCatalogEnvelope,
+    ProjectDirectoryPublicationPreview,
     ProjectServiceFailure,
     PublicationPreviewEnvelope,
     PublicationPreviewRequest,
@@ -416,6 +418,33 @@ class ProjectServiceApplication:
         try:
             envelope = PublicationPreviewRequest.model_validate(payload, strict=True)
             request = envelope.request
+            if isinstance(request, ProjectDirectoryPublicationPreview):
+                # 工程文件可以尚未创建，也可以是准备阶段已保存的同一个工程。只解析其父目录，
+                # 不打开 SQLite、不读取媒体、不使用 .data 设置，更不提前创建成片子目录。
+                project_path = Path(request.project_path)
+                if not project_path.is_absolute() or project_path.suffix != ".zniku":
+                    raise Av27TemplateError(
+                        "E_AV27_NAMING_PROJECT_PATH",
+                        "请选择有效的 .zniku 工程保存位置，成片默认保存在工程所在文件夹。",
+                    )
+                try:
+                    parent = project_path.parent.resolve(strict=True)
+                    if not parent.is_dir() or (
+                        project_path.exists() and not project_path.is_file()
+                    ):
+                        raise OSError("工程文件或父目录类型无效")
+                except (OSError, RuntimeError) as error:
+                    raise Av27TemplateError(
+                        "E_AV27_NAMING_PROJECT_PATH",
+                        "工程所在文件夹不存在或无法访问，请重新选择工程保存位置。",
+                    ) from error
+                request = PublicationRequest.model_validate(
+                    {
+                        **request.model_dump(exclude={"project_path"}),
+                        "output_root": str(parent),
+                    },
+                    strict=True,
+                )
             directory = publication_directory(request)
             return PublicationPreviewEnvelope(
                 layout=request.layout,
@@ -424,6 +453,36 @@ class ProjectServiceApplication:
                 will_create_directory=not directory.exists(),
             )
         except ValidationError as error:
+            # 只使用 Pydantic 的机器字段位置映射可定位错误；不解析本地化 message。未传处理
+            # 参数的旧客户端保持原有错误合同，未知字段/整体结构错误不会猜测应修改哪个控件。
+            processing_codes = {
+                ("chapter_selector",): "E_AV27_SETTINGS_CHAPTER_SELECTOR",
+                ("leaf_duration_minutes",): "E_AV27_SETTINGS_LEAF_DURATION",
+                ("enhancement", "model_name"): "E_AV27_SETTINGS_ENHANCEMENT_MODEL_NAME",
+                ("enhancement", "model_version"): "E_AV27_SETTINGS_ENHANCEMENT_MODEL_VERSION",
+                ("enhancement", "actual_scale_factor"): "E_AV27_SETTINGS_ENHANCEMENT_SCALE",
+                ("frame_interpolation", "model_name"): "E_AV27_SETTINGS_FI_MODEL_NAME",
+                ("frame_interpolation", "model_version"): "E_AV27_SETTINGS_FI_MODEL_VERSION",
+                ("program_encode", "encoder"): "E_AV27_SETTINGS_ENCODER",
+            }
+            for detail in error.errors():
+                location = detail["loc"]
+                if location[:1] != ("processing",):
+                    continue
+                # 可选 union 的 loc 第 2 项是 Pydantic 分支标识，不是客户端字段；跳过 None
+                # 分支，并从模型分支中的真实字段位置投影，避免依赖验证器名称或错误文案。
+                if len(location) < 2 or location[1] == "none":
+                    continue
+                field_location = location[2:]
+                code = next(
+                    (
+                        value
+                        for prefix, value in processing_codes.items()
+                        if field_location[: len(prefix)] == prefix
+                    ),
+                    "E_AV27_SETTINGS_INVALID",
+                )
+                raise ProjectServiceError(code, detail["msg"], http_status=422) from error
             raise ProjectServiceError(
                 "E_AV27_TEMPLATE_REQUEST_INVALID", str(error), http_status=422
             ) from error

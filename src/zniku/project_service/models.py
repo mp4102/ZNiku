@@ -20,12 +20,17 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic.json_schema import SkipJsonSchema
 
 from zniku.avenhance_v27.preflight import Av27ProfilePreflightResult
 from zniku.avenhance_v27.template import (
     AV27_PROFILE_VERSION,
+    ChapterSelector,
+    EnhancementDeclaration,
     ExpandRequest,
+    FrameInterpolationDeclaration,
     PrepareRequest,
+    ProgramEncodeDeclaration,
     PublicationRequest,
     TemplatePhase,
     TemplatePlanSummary,
@@ -448,11 +453,59 @@ class CreatorTemplateSummary(ProjectServiceModel):
         return self
 
 
+class ProjectDirectoryPublicationPreview(ProjectServiceModel):
+    """仅为只读预览声明工程旁输出；正式发布仍使用 PublicationRequest 的显式目录。
+
+    该分支与显式 ``output_root`` 请求互斥，不接受工作数据目录或任何目录创建指令。片名与年份
+    只是待验证输入，Service 在解析工程父目录后交还既有 PublicationRequest 和命名函数检查。
+    """
+
+    project_path: LocalPath
+    title: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    year: Annotated[str, StringConstraints(min_length=4, max_length=4)]
+    overwrite: bool
+    layout: Literal["direct", "title_subdirectory"] = "direct"
+
+    @field_validator("project_path", "title", "year")
+    @classmethod
+    def reject_boundary_whitespace_or_nul(cls, value: str) -> str:
+        if "\x00" in value or value.strip() != value:
+            raise ValueError("E_AV27_NAMING_TEXT: publication 文本含 NUL 或边界空白")
+        return value
+
+
+class ProcessingSettingsPreview(ProjectServiceModel):
+    """在创建工程/分析前验证处理参数；复用 AV27 的现有字段模型，不推断媒体事实。
+
+    这里只检查切分输入自身的规范形式和顺序、模型声明、编码器与正整数段长。切分点是否处于
+    实际视频范围仍要等分析后的同一模板检查；本 DTO 不持有 Run、Graph 或执行授权。
+    """
+
+    chapter_selector: ChapterSelector | SkipJsonSchema[None] = None
+    leaf_duration_minutes: Annotated[int, Field(gt=0)]
+    enhancement: EnhancementDeclaration
+    frame_interpolation: FrameInterpolationDeclaration
+    program_encode: ProgramEncodeDeclaration
+
+    @model_validator(mode="after")
+    def reject_explicit_null_selector(self) -> ProcessingSettingsPreview:
+        if "chapter_selector" in self.model_fields_set and self.chapter_selector is None:
+            raise ValueError("E_AV27_TEMPLATE_SELECTOR_UNSUPPORTED: chapter_selector 不接受 null")
+        return self
+
+
 class PublicationPreviewRequest(ProjectServiceModel):
     """在媒体分析前只读检查输出设置；不授予创建目录或发布权限。"""
 
     contract_version: Literal["0.3.0"]
-    request: PublicationRequest
+    request: PublicationRequest | ProjectDirectoryPublicationPreview
+    processing: ProcessingSettingsPreview | SkipJsonSchema[None] = None
+
+    @model_validator(mode="after")
+    def reject_explicit_null_processing(self) -> PublicationPreviewRequest:
+        if "processing" in self.model_fields_set and self.processing is None:
+            raise ValueError("E_AV27_SETTINGS_INVALID: processing 不接受 null")
+        return self
 
 
 class PublicationPreviewEnvelope(ProjectServiceModel):

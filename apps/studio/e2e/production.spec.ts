@@ -1,10 +1,11 @@
 /** 生产资源 + 真 Python/SQLite/Runtime；仅原生选择窗口使用显式的合成测试平台。 */
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { copyFile, readFile, readdir, stat } from 'node:fs/promises'
+import { copyFile, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, sep } from 'node:path'
 import axe from 'axe-core'
 import type { GraphWire, RunDetailEnvelope, StatusEnvelope } from '../src/studio/contracts'
-import { ProductionJournal, SyntheticFixtureHost, type SyntheticFixture } from './production-support'
+import type { StorageInspection } from '../src/studio/host-bridge'
+import { maskedScreenshot, ProductionJournal, SyntheticFixtureHost, type SyntheticFixture } from './production-support'
 
 const service = new SyntheticFixtureHost()
 let origin: string
@@ -309,23 +310,183 @@ async function wizardSettings(page: Page): Promise<Locator> {
   await wizard.getByRole('button', { name: /选择视频素材/ }).click()
   await expect(wizard.getByText('av27-source.mkv', { exact: true })).toBeVisible()
   await wizard.getByLabel('工程名称', { exact: true }).fill('合成输出布局工程')
-  await wizard.getByRole('button', { name: '选择 .zniku 保存位置', exact: true }).click()
+  await wizard.getByRole('button', { name: '选择工程保存位置', exact: true }).click()
   await wizard.getByRole('button', { name: '下一步：处理方案', exact: true }).click()
-  await wizard.getByRole('button', { name: '下一步：设置', exact: true }).click()
+  await wizard.getByRole('button', { name: '下一步：成片设置', exact: true }).click()
+  if (!await wizard.getByLabel('片名', { exact: true }).isVisible()) await openOutputOptions(wizard)
   await wizard.getByLabel('片名', { exact: true }).fill('Synthetic Wizard Output')
   await wizard.getByLabel('年份', { exact: true }).fill('2026')
-  await wizard.getByRole('button', { name: '选择成片文件夹', exact: true }).click()
-  await wizard.getByText('高级设置', { exact: true }).click()
   // 正式 CPU profile 不依赖测试机器的 NVIDIA 驱动；测试只分析/展开，不运行外部增强或成片编码。
   await wizard.getByLabel('Program encoder', { exact: true }).selectOption('cpu')
+  const options = wizard.locator('summary').filter({ hasText: '其他选项（可选）' })
+  if (await options.locator('..').evaluate((item) => (item as HTMLDetailsElement).open)) await options.click()
   return wizard
 }
 
-test('生产向导：输出冲突在设置阶段拦截，布局切换、返回和取消均不创建目录或分析', async ({ page }, info) => {
+async function openOutputOptions(wizard: Locator): Promise<Locator> {
+  const summary = wizard.locator('summary').filter({ hasText: '其他选项（可选）' })
+  if (!await summary.locator('..').evaluate((item) => (item as HTMLDetailsElement).open)) await summary.click()
+  return summary
+}
+
+test('生产向导：首步四项设置，高级统一折叠、取消与恢复均不写工程', async ({ page }, info) => {
+  // 明确挂载已有自由图，避免单独运行时空工程未挂载 ReactFlow 而漏掉其全局快捷键冲突。
+  const opened = await page.request.post(`${origin}/api/studio/command`, {
+    headers: { Origin: origin }, data: { operation: 'open_project', path: fixture.media_project },
+  })
+  expect(opened.status()).toBe(200)
+  const errors: string[] = [], studioPosts: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().startsWith(`${origin}/api/studio/`)) {
+      studioPosts.push(new URL(request.url()).pathname)
+    }
+  })
+  if (!fixture.data_parent) throw new Error('合成存储门禁必须提供隔离专用磁盘目录')
+  await page.goto(origin)
+  const productionEntry = await page.locator('script[type="module"][src]').getAttribute('src')
+  const productionEntryPath = info.outputPath('storage-ui-production-entry.txt')
+  await writeFile(productionEntryPath, productionEntry?.split('/').at(-1) ?? 'missing', 'utf8')
+  await info.attach('storage-ui-production-entry', { path: productionEntryPath, contentType: 'text/plain' })
+  await page.getByRole('button', { name: /新建视频工程/ }).click()
+  const wizard = page.getByRole('dialog', { name: 'AVEnhanceFlow v2.7.0 创作者向导' })
+  const advanced = wizard.locator('summary').filter({ hasText: '高级选项（可选）' })
+  const dataPicker = wizard.getByRole('button', { name: '选择工作数据父目录', exact: true })
+  const storage = wizard.getByRole('region', { name: '工作数据位置', exact: true })
+  const next = wizard.getByRole('button', { name: '下一步：处理方案', exact: true })
+  await expect(dataPicker).not.toBeVisible()
+  await expect(advanced.locator('..')).not.toHaveAttribute('open')
+  await expect(storage).not.toBeVisible()
+  await expect(wizard.locator('details')).toHaveCount(1)
+  const primaryFields = [
+    wizard.getByLabel('素材组织方式', { exact: true }),
+    wizard.getByRole('button', { name: /选择视频素材/ }),
+    wizard.getByLabel('工程名称', { exact: true }),
+    wizard.getByRole('button', { name: '选择工程保存位置', exact: true }),
+  ]
+  for (const width of [1920, 960]) {
+    await page.setViewportSize({ width, height: width === 1920 ? 1080 : 540 })
+    // summary 只是披露开关；首步正常表单只能有这四项，不能藏在首屏外再增加必填操作。
+    await expect(wizard.locator('.creator-wizard-body input:visible, .creator-wizard-body select:visible, .creator-wizard-body button:visible')).toHaveCount(4)
+    for (const field of primaryFields) {
+      await expect(field).toBeVisible()
+      const bounds = await field.boundingBox()
+      expect(bounds!.width).toBeGreaterThanOrEqual(200)
+      expect(bounds!.height).toBeGreaterThanOrEqual(32)
+      expect(bounds!.height).toBeLessThanOrEqual(100)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await expect(next).toBeInViewport()
+    await accessibility(page, `首步四项设置 ${width}`)
+    await maskedScreenshot(page, info.outputPath(`wizard-four-fields-${width}.png`))
+    if (width === 960) {
+      await primaryFields[3]!.scrollIntoViewIfNeeded()
+      await expect(primaryFields[3]!).toBeInViewport()
+      await maskedScreenshot(page, info.outputPath('wizard-four-fields-project-960.png'))
+    }
+  }
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  // 由真实 Chromium 执行 summary 默认键盘行为；不能手动设置 open 来冒充可访问性。
+  await advanced.focus()
+  await advanced.press('Enter')
+  await expect(dataPicker).toBeVisible()
+  await advanced.press('Tab')
+  await expect(dataPicker).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(advanced).toBeFocused()
+  await advanced.press('Enter')
+  await expect(dataPicker).not.toBeVisible()
+  await advanced.press('Tab')
+  await expect(next).toBeFocused()
+  await advanced.focus()
+  await expect(advanced).toBeFocused()
+  await advanced.press('Space')
+  await expect(dataPicker).toBeVisible()
+  await advanced.press('Space')
+  await expect(dataPicker).not.toBeVisible()
+  await advanced.press('Tab')
+  await expect(next).toBeFocused()
+  await wizard.getByRole('button', { name: /选择视频素材/ }).click()
+  await expect(wizard.getByText('av27-source.mkv', { exact: true })).toBeVisible()
+  await wizard.getByLabel('工程名称', { exact: true }).fill('合成单位置工程')
+  await wizard.getByRole('button', { name: '选择工程保存位置', exact: true }).click()
+  const before = await readStatus(page)
+  const rootListing = await readdir(dirname(fixture.wizard_project))
+  const sourceBytes = await readFile(join(dirname(fixture.wizard_project), 'av27-source.mkv'))
+  expect(await exists(fixture.wizard_project)).toBe(false)
+  expect(await readdir(fixture.data_parent)).toEqual([])
+  // 不碰可选磁盘 picker 也可继续；默认位置不能成为另一道必答题。
+  await wizard.getByRole('button', { name: '下一步：处理方案', exact: true }).click()
+  await expect(wizard.getByRole('button', { name: '下一步：成片设置', exact: true })).toBeVisible()
+  await wizard.getByRole('button', { name: '上一步', exact: true }).click()
+  await maskedScreenshot(page, info.outputPath('wizard-storage-default-1920.png'))
+
+  // 固定测试平台按真实按钮请求依次返回取消、已选路径、取消，不截获生产 HostBridge 的合同。
+  await advanced.click()
+  await expect(storage).toContainText('工程旁')
+  await expect(wizard.getByRole('region', { name: '手动路径（开发用）', exact: true })).toBeVisible()
+  for (const width of [1920, 960]) {
+    await page.setViewportSize({ width, height: width === 1920 ? 1080 : 540 })
+    await dataPicker.scrollIntoViewIfNeeded()
+    const pickerBounds = await dataPicker.boundingBox()
+    expect(pickerBounds!.width).toBeGreaterThanOrEqual(112)
+    expect(pickerBounds!.height).toBeLessThanOrEqual(60)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await accessibility(page, `统一高级选项展开 ${width}`)
+    await maskedScreenshot(page, info.outputPath(`wizard-advanced-expanded-${width}.png`))
+    await wizard.getByLabel('Source 1 path', { exact: true }).scrollIntoViewIfNeeded()
+    await expect(wizard.getByLabel('Source 1 path', { exact: true })).toBeInViewport()
+    await maskedScreenshot(page, info.outputPath(`wizard-advanced-manual-paths-${width}.png`))
+  }
+  await dataPicker.click()
+  await expect(storage).toContainText('工程旁')
+  await expect(wizard.getByRole('button', { name: '恢复工程旁默认', exact: true })).not.toBeVisible()
+  await dataPicker.click()
+  await expect(storage).toContainText(fixture.data_parent)
+  await advanced.click()
+  await expect(dataPicker).not.toBeVisible()
+  await expect(storage).not.toBeVisible()
+  await expect(advanced).toContainText('已自定义工作数据位置')
+  await expect(advanced).not.toContainText(fixture.data_parent)
+  for (const width of [1920, 960]) {
+    await page.setViewportSize({ width, height: width === 1920 ? 1080 : 540 })
+    await advanced.scrollIntoViewIfNeeded()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await accessibility(page, `工程高级存储折叠摘要 ${width}`)
+    await maskedScreenshot(page, info.outputPath(`wizard-storage-custom-collapsed-${width}.png`))
+  }
+  await advanced.click()
+  await expect(storage).toContainText(fixture.data_parent)
+  await dataPicker.click()
+  await expect(storage).toContainText(fixture.data_parent)
+  await wizard.getByRole('button', { name: '恢复工程旁默认', exact: true }).click()
+  await expect(storage).toContainText('工程旁')
+  await expect(storage).not.toContainText(fixture.data_parent)
+  await advanced.click()
+  await expect(storage).not.toBeVisible()
+  await expect(advanced).not.toContainText('已自定义工作数据位置')
+  await expect(dataPicker).not.toBeVisible()
+  await wizard.getByRole('button', { name: '下一步：处理方案', exact: true }).click()
+  await expect(wizard.getByRole('button', { name: '下一步：成片设置', exact: true })).toBeVisible()
+  expect(await readStatus(page)).toEqual(before)
+  expect(await readdir(dirname(fixture.wizard_project))).toEqual(rootListing)
+  expect(await exists(fixture.wizard_project)).toBe(false)
+  expect(await readdir(fixture.data_parent)).toEqual([])
+  expect(await readFile(join(dirname(fixture.wizard_project), 'av27-source.mkv'))).toEqual(sourceBytes)
+  expect(studioPosts).toEqual([])
+  expect(errors).toEqual([])
+})
+
+test('生产向导：四组常用设置与工程旁默认输出，改选取消及路径拒绝均无写入', async ({ page }, info) => {
+  const opened = await page.request.post(`${origin}/api/studio/command`, {
+    headers: { Origin: origin }, data: { operation: 'open_project', path: fixture.media_project },
+  })
+  expect(opened.status()).toBe(200)
   const errors: string[] = []
   const expectedConsoleErrors: string[] = []
   const commands: string[] = []
-  const checks: { request: { layout: string } }[] = []
+  const checks: { request: { layout: string; project_path?: string; output_root?: string } }[] = []
   const checkUrl = `${origin}/api/studio/templates/av-enhance-v27/publication-preview`
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (message) => {
@@ -338,30 +499,134 @@ test('生产向导：输出冲突在设置阶段拦截，布局切换、返回�
   page.on('request', (request) => {
     if (request.method() !== 'POST') return
     if (request.url() === `${origin}/api/studio/command`) commands.push((request.postDataJSON() as { operation: string }).operation)
-    if (request.url() === checkUrl) checks.push(request.postDataJSON() as { request: { layout: string } })
+    if (request.url() === checkUrl) checks.push(request.postDataJSON() as typeof checks[number])
+  })
+  const automaticChecks: Promise<unknown>[] = []
+  page.on('response', (response) => {
+    if (response.url() === checkUrl && response.status() === 200 &&
+        response.request().postDataJSON().request.project_path === fixture.wizard_project &&
+        response.request().postDataJSON().request.title === 'Synthetic Wizard Output' &&
+        !response.request().postDataJSON().processing) automaticChecks.push(response.json())
   })
   const wizard = await wizardSettings(page)
   const before = await readWizardStatus(page)
+  const rootBefore = await readdir(dirname(fixture.wizard_project))
+  const defaultDirectory = join(dirname(fixture.wizard_project), 'Synthetic Wizard Output (2026)')
+  await expect.poll(() => automaticChecks.length).toBeGreaterThan(0)
+  expect(await automaticChecks[0]).toMatchObject({ layout: 'title_subdirectory',
+    resolved_output_root: dirname(fixture.wizard_project), output_directory: defaultDirectory, will_create_directory: true })
+  const options = wizard.locator('summary').filter({ hasText: '其他选项（可选）' })
+  const other = options.locator('..')
+  const outputPicker = wizard.getByRole('button', { name: '更改成片父目录', exact: true })
+  const outputPath = wizard.getByLabel('Publication output root', { exact: true })
+  await expect(other).not.toHaveAttribute('open')
+  await expect(outputPicker).not.toBeVisible()
+  await expect(wizard.locator('.creator-wizard-body details')).toHaveCount(1)
+  const groups = ['章节与分段', '画质增强', '章节补帧', '成片编码'].map((name) => wizard.getByRole('region', { name, exact: true }))
+  const fields = ['Enhancement model name', 'FI model name', 'Chapter selector mode', 'Leaf duration minutes', 'Program encoder']
+    .map((name) => wizard.getByLabel(name, { exact: true }))
+  for (const width of [1920, 960]) {
+    await page.setViewportSize({ width, height: width === 1920 ? 1080 : 540 })
+    for (const group of groups) { await expect(group).toBeVisible(); expect((await group.boundingBox())!.width).toBeGreaterThanOrEqual(260) }
+    for (const field of fields) { await expect(field).toBeVisible(); expect((await field.boundingBox())!.width).toBeGreaterThanOrEqual(120) }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await wizard.getByRole('heading', { name: '成片设置', exact: true }).scrollIntoViewIfNeeded()
+    await maskedScreenshot(page, info.outputPath(`wizard-step3-primary-${width}.png`))
+    await fields.at(-1)!.scrollIntoViewIfNeeded()
+    await expect(wizard.getByRole('button', { name: '下一步：分析', exact: true })).toBeInViewport()
+    await accessibility(page, `第3步四组常用设置 ${width}`)
+    await maskedScreenshot(page, info.outputPath(`wizard-step3-encoding-${width}.png`))
+  }
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await wizard.getByLabel('Chapter selector mode', { exact: true }).selectOption('exact_frames')
+  await expect(wizard.getByLabel('Exact chapter frames', { exact: true })).toBeVisible()
+  await wizard.getByLabel('Exact chapter frames', { exact: true }).fill('899')
+  await wizard.getByLabel('Exact chapter frames', { exact: true }).fill('899,899')
+  const duplicateFrames = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 422 && response.request().postDataJSON().processing !== undefined)
+  await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
+  expect((await (await duplicateFrames).json()).error.code).toBe('E_AV27_SETTINGS_CHAPTER_SELECTOR')
+  await expect(wizard.getByLabel('Exact chapter frames', { exact: true })).toBeFocused()
+  await expect(wizard.getByRole('region', { name: '设置', exact: true })).toBeVisible()
+  expect(commands).toEqual([])
+  await wizard.getByLabel('Exact chapter frames', { exact: true }).fill('899')
+  await wizard.getByLabel('Chapter selector mode', { exact: true }).selectOption('exact_times')
+  await expect(wizard.getByLabel('Exact chapter times', { exact: true })).toBeVisible()
+  await expect(wizard.getByLabel('Exact chapter frames', { exact: true })).not.toBeVisible()
+  await wizard.getByLabel('Exact chapter times', { exact: true }).fill('abc')
+  const invalidTime = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 422 && response.request().postDataJSON().processing !== undefined)
+  await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
+  expect((await (await invalidTime).json()).error.code).toBe('E_AV27_SETTINGS_CHAPTER_SELECTOR')
+  await expect(wizard.getByLabel('Exact chapter times', { exact: true })).toBeFocused()
+  await expect(wizard.getByRole('region', { name: '设置', exact: true })).toBeVisible()
+  expect(commands).toEqual([])
+  await wizard.getByLabel('Exact chapter times', { exact: true }).fill('30')
+  await wizard.getByLabel('Chapter selector mode', { exact: true }).selectOption('single')
+  await expect(wizard.getByLabel('Exact chapter times', { exact: true })).not.toBeVisible()
+  // 用真正键盘展开默认关闭的其他选项；后台画布不得抢走 summary 的 Space。
+  await options.focus()
+  await expect(options).toBeFocused()
+  await options.press('Space')
+  await expect(outputPicker).toBeVisible()
+  await expect(wizard.getByLabel('按片名创建子文件夹', { exact: true })).toBeChecked()
+  await options.press('Enter')
+  await expect(outputPicker).not.toBeVisible()
+  await options.press('Tab')
+  await expect(wizard.getByRole('button', { name: '上一步', exact: true })).toBeFocused()
+  const repeatedDefault = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 200 &&
+    response.request().postDataJSON().processing !== undefined &&
+    response.request().postDataJSON().request.project_path === fixture.wizard_project &&
+    response.request().postDataJSON().request.title === 'Synthetic Wizard Output')
+  await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
+  expect(await (await repeatedDefault).json()).toMatchObject({ output_directory: defaultDirectory })
+  await expect(wizard.getByRole('button', { name: /开始分析素材/ })).toBeEnabled()
+  await wizard.getByRole('button', { name: '上一步', exact: true }).click()
+  await openOutputOptions(wizard)
+  await outputPicker.click()
+  await expect(outputPath).toHaveValue(fixture.output_root)
+  await outputPicker.click()
+  await expect(outputPath).toHaveValue(fixture.output_root)
+  await wizard.getByRole('button', { name: '恢复工程目录', exact: true }).click()
+  const restoredDefault = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 200 &&
+    response.request().postDataJSON().processing !== undefined &&
+    response.request().postDataJSON().request.project_path === fixture.wizard_project &&
+    response.request().postDataJSON().request.title === 'Synthetic Wizard Output')
+  await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
+  expect(await (await restoredDefault).json()).toMatchObject({ output_directory: defaultDirectory })
+  await wizard.getByRole('button', { name: '上一步', exact: true }).click()
+  await openOutputOptions(wizard)
+  await wizard.getByLabel('按片名创建子文件夹', { exact: true }).uncheck()
   expect(await readdir(fixture.output_root)).toEqual([])
   expect(await exists(fixture.wizard_project)).toBe(false)
+  expect(await exists(defaultDirectory)).toBe(false)
+  expect(await readdir(dirname(fixture.wizard_project))).toEqual(rootBefore)
   await expect(wizard.getByLabel('按片名创建子文件夹', { exact: true })).not.toBeChecked()
 
   // 固定合成 fixture 是普通文件而不是目录；正式 Python 检查拒绝，不用 HTTP mock 冒充。
+  const automaticRefusal = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 422 && response.request().postDataJSON().processing === undefined)
   await wizard.getByLabel('Publication output root', { exact: true }).fill(fixture.output_collision)
-  const refusedCheck = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 422)
+  await options.focus()
+  expect((await (await automaticRefusal).json()).error.code).toBe('E_AV27_NAMING_ROOT')
+  await expect(wizard.getByLabel('成片目录预览', { exact: true })).toContainText('目录暂未通过检查')
+  await expect(options).toBeFocused()
+  expect(commands).toEqual([])
+  await options.click()
+  await expect(outputPath).not.toBeVisible()
+  const refusedCheck = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 422 && response.request().postDataJSON().processing !== undefined)
   await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
   const refusal = await (await refusedCheck).json() as { error: { code: string; message: string } }
   expect(refusal.error.code).toBe('E_AV27_NAMING_ROOT')
   await expect(wizard.getByRole('region', { name: '设置', exact: true })).toBeVisible()
   await expect(wizard.getByRole('alert')).toBeVisible()
+  await expect(outputPath).toBeFocused()
+  await expect(other).toHaveAttribute('open')
   await expect(wizard.getByRole('button', { name: /开始分析素材/ })).toHaveCount(0)
   expect(await readWizardStatus(page)).toEqual(before)
   expect(commands).toEqual([])
   for (const size of [{ width: 1920, height: 1080 }, { width: 960, height: 540 }]) {
     await page.setViewportSize(size)
-    await wizard.getByRole('heading', { name: '设置成片目标', exact: true }).scrollIntoViewIfNeeded()
+    await wizard.getByRole('heading', { name: '成片设置', exact: true }).scrollIntoViewIfNeeded()
     // axe 不会报告“每个汉字都被挤成一行”；补布局几何门禁，覆盖长路径与新增选项。
-    const pickerBounds = await wizard.getByRole('button', { name: '选择成片文件夹', exact: true }).boundingBox()
+    const pickerBounds = await wizard.getByRole('button', { name: '更改成片父目录', exact: true }).boundingBox()
     const layoutBounds = await wizard.getByLabel('按片名创建子文件夹', { exact: true }).locator('..').boundingBox()
     const checkboxBounds = await wizard.getByLabel('按片名创建子文件夹', { exact: true }).boundingBox()
     expect(pickerBounds?.width).toBeGreaterThanOrEqual(112)
@@ -374,13 +639,16 @@ test('生产向导：输出冲突在设置阶段拦截，布局切换、返回�
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await accessibility(page, `输出位置在分析前拒绝 ${size.width}`)
     if (size.width === 960) await wizard.getByLabel('按片名创建子文件夹', { exact: true }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: info.outputPath(`wizard-output-precheck-${size.width}.png`), fullPage: false })
+    await maskedScreenshot(page, info.outputPath(`wizard-output-precheck-${size.width}.png`))
+    await outputPath.scrollIntoViewIfNeeded()
+    await expect(outputPath).toBeInViewport()
+    await maskedScreenshot(page, info.outputPath(`wizard-step3-other-options-${size.width}.png`))
   }
   await page.setViewportSize({ width: 1920, height: 1080 })
 
-  await wizard.getByRole('button', { name: '选择成片文件夹', exact: true }).click()
+  await wizard.getByRole('button', { name: '更改成片父目录', exact: true }).click()
   await wizard.getByLabel('按片名创建子文件夹', { exact: true }).check()
-  const groupedCheck = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 200)
+  const groupedCheck = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 200 && response.request().postDataJSON().processing !== undefined)
   await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
   expect(await (await groupedCheck).json()).toMatchObject({
     layout: 'title_subdirectory', resolved_output_root: fixture.output_root,
@@ -389,8 +657,9 @@ test('生产向导：输出冲突在设置阶段拦截，布局切换、返回�
   await expect(wizard.getByRole('button', { name: /开始分析素材/ })).toBeEnabled()
   expect(await readdir(fixture.output_root)).toEqual([])
   await wizard.getByRole('button', { name: '上一步', exact: true }).click()
+  await openOutputOptions(wizard)
   await wizard.getByLabel('按片名创建子文件夹', { exact: true }).uncheck()
-  const directCheck = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 200)
+  const directCheck = page.waitForResponse((response) => response.url() === checkUrl && response.status() === 200 && response.request().postDataJSON().processing !== undefined)
   await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
   expect(await (await directCheck).json()).toMatchObject({
     layout: 'direct', resolved_output_root: fixture.output_root,
@@ -401,13 +670,18 @@ test('生产向导：输出冲突在设置阶段拦截，布局切换、返回�
   expect(await readdir(fixture.output_root)).toEqual([])
   expect(await exists(fixture.wizard_project)).toBe(false)
   expect(await readWizardStatus(page)).toEqual(before)
-  expect(checks.map((check) => check.request.layout)).toEqual(['direct', 'title_subdirectory', 'direct'])
+  // 自动只读预览可以合并输入或多次重验，不锁定typing请求次数；每次只能有一种路径来源。
+  expect(checks.some((check) => check.request.project_path === fixture.wizard_project && check.request.layout === 'title_subdirectory')).toBe(true)
+  expect(checks.some((check) => check.request.output_root === fixture.output_collision && check.request.layout === 'direct')).toBe(true)
+  expect(checks.some((check) => check.request.output_root === fixture.output_root && check.request.layout === 'title_subdirectory')).toBe(true)
+  expect(checks.some((check) => check.request.output_root === fixture.output_root && check.request.layout === 'direct')).toBe(true)
+  expect(checks.every((check) => (check.request.project_path !== undefined) !== (check.request.output_root !== undefined))).toBe(true)
   expect(commands).toEqual([])
-  expect(expectedConsoleErrors).toHaveLength(1)
+  expect(expectedConsoleErrors.length).toBeGreaterThan(0)
   expect(errors).toEqual([])
 })
 
-test('生产向导：空输出目录默认直存，片名子目录预览不落盘，布局变化复用原分析后确认', async ({ page }, info) => {
+test('生产向导：显式直存与片名子目录预览不落盘，布局变化复用原分析后确认', async ({ page }, info) => {
   const errors: string[] = []
   const commands: string[] = []
   const previews: { request: { preparation_run_id: string; publication: { layout: string } } }[] = []
@@ -424,6 +698,9 @@ test('生产向导：空输出目录默认直存，片名子目录预览不落�
   })
   const wizard = await wizardSettings(page)
   expect(await readdir(fixture.output_root)).toEqual([])
+  await openOutputOptions(wizard)
+  await wizard.getByRole('button', { name: '更改成片父目录', exact: true }).click()
+  await wizard.getByLabel('按片名创建子文件夹', { exact: true }).uncheck()
   await expect(wizard.getByLabel('按片名创建子文件夹', { exact: true })).not.toBeChecked()
   await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
   const directPreview = page.waitForResponse((response) => response.url() === previewUrl && response.request().postDataJSON().action === 'expand')
@@ -448,10 +725,11 @@ test('生产向导：空输出目录默认直存，片名子目录预览不落�
   expect(detailBefore.run.node_runs.every((node) => node.state === 'completed' && node.attempt === 1)).toBe(true)
   expect(detailBefore.artifacts.length).toBeGreaterThan(0)
 
-  await accessibility(page, '默认直存成片确认')
+  await accessibility(page, '显式直存成片确认')
   await wizard.locator('.creator-target').scrollIntoViewIfNeeded()
-  await page.screenshot({ path: info.outputPath('wizard-direct-output.png'), fullPage: true })
+  await maskedScreenshot(page, info.outputPath('wizard-direct-output.png'))
   await wizard.getByRole('button', { name: '返回设置', exact: true }).click()
+  await openOutputOptions(wizard)
   await wizard.getByLabel('按片名创建子文件夹', { exact: true }).check()
   await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
   const groupedPreview = page.waitForResponse((response) => response.url() === previewUrl && response.request().postDataJSON().action === 'expand')
@@ -468,9 +746,10 @@ test('生产向导：空输出目录默认直存，片名子目录预览不落�
   expect(await (await page.request.get(detailUrl)).json()).toEqual(detailBefore)
   await accessibility(page, '可选片名子目录与显式创建说明')
   await wizard.locator('.creator-target').scrollIntoViewIfNeeded()
-  await page.screenshot({ path: info.outputPath('wizard-title-directory.png'), fullPage: true })
+  await maskedScreenshot(page, info.outputPath('wizard-title-directory.png'))
 
   await wizard.getByRole('button', { name: '返回设置', exact: true }).click()
+  await openOutputOptions(wizard)
   await wizard.getByLabel('按片名创建子文件夹', { exact: true }).uncheck()
   await wizard.getByRole('button', { name: '下一步：分析', exact: true }).click()
   await wizard.getByRole('button', { name: '生成工作流预览', exact: true }).click()
@@ -505,6 +784,17 @@ test('生产向导：空输出目录默认直存，片名子目录预览不落�
   await expect(page.locator('.react-flow__node')).toHaveCount(after.snapshot.project.graph.nodes.length)
   expect((await readWizardStatus(page)).snapshot.project.graph).toEqual(after.snapshot.project.graph)
   expect(await (await page.request.get(detailUrl)).json()).toEqual(detailBefore)
+  // 未选择高级磁盘时，正式 Python 创建相邻 .data 并长期保留；不是仅凭 UI 文案推测路径。
+  await page.getByRole('button', { name: '工程', exact: true }).click()
+  const storageResponse = page.waitForResponse((response) => response.url() === `${origin}/api/studio/storage/inspect`)
+  await page.getByRole('button', { name: '工程数据', exact: true }).click()
+  const inspected = await (await storageResponse).json() as StorageInspection
+  expect(inspected.storage).toMatchObject({
+    mode: 'adjacent', retention: 'keep',
+    data_root: fixture.wizard_project.replace(/\.zniku$/, '.data'),
+    attempts_root: join(fixture.wizard_project.replace(/\.zniku$/, '.data'), 'attempts'),
+  })
+  await page.getByRole('button', { name: '关闭工程数据与归档检查', exact: true }).click()
   expect(errors).toEqual([])
 })
 

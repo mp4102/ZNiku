@@ -91,6 +91,283 @@ def test_output_settings_reject_unknown_layout_and_missing_root_without_analysis
     assert not (tmp_path / "missing").exists()
 
 
+@pytest.mark.parametrize("project_exists", [False, True])
+@pytest.mark.parametrize("layout", [None, "direct", "title_subdirectory"])
+def test_output_settings_resolve_project_parent_without_reading_or_writing_project(
+    tmp_path: Path, project_exists: bool, layout: str | None
+) -> None:
+    """选择工程位置即可预览；已存在工程不需要打开，片名子目录仍不提前创建。"""
+
+    application, _ = _create_application(tmp_path)
+    parent = tmp_path / "project-directory"
+    parent.mkdir()
+    project_path = parent / "workflow.zniku"
+    if project_exists:
+        project_path.write_bytes(b"synthetic existing project; not a SQLite file")
+    request: dict[str, object] = {
+        "project_path": str(project_path),
+        "title": "Example",
+        "year": "2026",
+        "overwrite": False,
+    }
+    if layout is not None:
+        request["layout"] = layout
+    before = application.inspect()
+    files_before = {path.name: path.read_bytes() for path in parent.iterdir()}
+    preview = application.preview_av27_publication(
+        {"contract_version": "0.3.0", "request": request}
+    )
+    expected = parent / "Example (2026)" if layout == "title_subdirectory" else parent
+    assert preview.resolved_output_root == str(parent)
+    assert preview.output_directory == str(expected)
+    assert preview.layout == (layout or "direct")
+    assert preview.will_create_directory == (layout == "title_subdirectory")
+    assert application.inspect() == before
+    assert {path.name: path.read_bytes() for path in parent.iterdir()} == files_before
+
+
+@pytest.mark.parametrize(
+    "path_case",
+    ["relative", "extension", "missing_parent", "file_parent", "directory_target"],
+)
+def test_project_parent_publication_preview_rejects_invalid_path_without_mutation(
+    tmp_path: Path, path_case: str
+) -> None:
+    """工程默认目录不猜测相对位置或错误目标，不以创建文件夹修复输入。"""
+
+    application, _ = _create_application(tmp_path)
+    file_parent = tmp_path / "not-a-directory"
+    file_parent.write_bytes(b"untouched")
+    directory_target = tmp_path / "directory.zniku"
+    directory_target.mkdir()
+    paths = {
+        "relative": Path("workflow.zniku"),
+        "extension": tmp_path / "workflow.txt",
+        "missing_parent": tmp_path / "missing" / "workflow.zniku",
+        "file_parent": file_parent / "workflow.zniku",
+        "directory_target": directory_target,
+    }
+    before = application.inspect()
+    with pytest.raises(ProjectServiceError, match="E_AV27_NAMING_PROJECT_PATH"):
+        application.preview_av27_publication(
+            {
+                "contract_version": "0.3.0",
+                "request": {
+                    "project_path": str(paths[path_case]),
+                    "title": "Example",
+                    "year": "2026",
+                    "overwrite": False,
+                    "layout": "title_subdirectory",
+                },
+            }
+        )
+    assert application.inspect() == before
+    assert not (tmp_path / "missing").exists()
+    assert not (tmp_path / "Example (2026)").exists()
+    assert file_parent.read_bytes() == b"untouched"
+    assert tuple(directory_target.iterdir()) == ()
+
+
+@pytest.mark.parametrize(
+    "changes,remove_project_path",
+    [
+        ({"output_root": "other-root"}, False),
+        ({}, True),
+        ({"project_path": None}, False),
+        ({"project_path": 12}, False),
+        ({"project_path": " project.zniku"}, False),
+        ({"project_path": "project.zniku\x00"}, False),
+        ({"output_root": None}, False),
+        ({"data_root": "other-data-root"}, False),
+        ({"mkdir": True}, False),
+        ({"layout": "auto"}, False),
+        ({"title": " Example"}, False),
+        ({"year": 2026}, False),
+    ],
+)
+def test_project_parent_publication_preview_is_closed_and_sources_are_exclusive(
+    tmp_path: Path, changes: dict[str, object], remove_project_path: bool
+) -> None:
+    """默认工程位置和自定义目录不能同时成为路径来源；未知输入与宽松类型失败关闭。"""
+
+    application, _ = _create_application(tmp_path)
+    request: dict[str, object] = {
+        "project_path": str(tmp_path / "new-workflow.zniku"),
+        "title": "Example",
+        "year": "2026",
+        "overwrite": False,
+        "layout": "title_subdirectory",
+        **changes,
+    }
+    if remove_project_path:
+        request.pop("project_path")
+    with pytest.raises(ProjectServiceError, match="E_AV27_TEMPLATE_REQUEST_INVALID"):
+        application.preview_av27_publication({"contract_version": "0.3.0", "request": request})
+    assert not (tmp_path / "new-workflow.zniku").exists()
+    assert not (tmp_path / "Example (2026)").exists()
+
+
+@pytest.mark.parametrize(
+    "title,year,error", [("CON", "2026", "RESERVED"), ("Example", "abcd", "YEAR")]
+)
+def test_project_parent_preview_reuses_existing_publication_naming_validation(
+    tmp_path: Path, title: str, year: str, error: str
+) -> None:
+    """工程旁默认只补路径来源，片名/年份继续由同一 AV27 命名合同判断。"""
+
+    application, _ = _create_application(tmp_path)
+    with pytest.raises(ProjectServiceError, match=f"E_AV27_NAMING_{error}"):
+        application.preview_av27_publication(
+            {
+                "contract_version": "0.3.0",
+                "request": {
+                    "project_path": str(tmp_path / "new-workflow.zniku"),
+                    "title": title,
+                    "year": year,
+                    "overwrite": False,
+                    "layout": "title_subdirectory",
+                },
+            }
+        )
+    assert not (tmp_path / "new-workflow.zniku").exists()
+
+
+def _processing_preview_settings() -> dict[str, Any]:
+    return {
+        "chapter_selector": {"mode": "exact_frames", "frames": [899]},
+        "leaf_duration_minutes": 1,
+        "enhancement": {"model_name": "Starlight Precise", "actual_scale_factor": 2},
+        "frame_interpolation": {"model_name": "Aion"},
+        "program_encode": {"encoder": "gpu"},
+    }
+
+
+@pytest.mark.parametrize("omit_selector", [False, True])
+def test_processing_settings_preview_checks_existing_contracts_without_media_or_writes(
+    tmp_path: Path, omit_selector: bool
+) -> None:
+    """创建前可检查处理设置；已分章时可省略 selector，模型版本仍可不提供。"""
+
+    application, _ = _create_application(tmp_path)
+    processing = _processing_preview_settings()
+    if omit_selector:
+        processing.pop("chapter_selector")
+    before = application.inspect()
+    preview = application.preview_av27_publication(
+        {
+            "contract_version": "0.3.0",
+            "request": {
+                "project_path": str(tmp_path / "new-workflow.zniku"),
+                "title": "Example",
+                "year": "2026",
+                "overwrite": False,
+                "layout": "title_subdirectory",
+            },
+            "processing": processing,
+        }
+    )
+    assert preview.output_directory == str(tmp_path / "Example (2026)")
+    assert preview.will_create_directory
+    assert application.inspect() == before
+    assert not (tmp_path / "new-workflow.zniku").exists()
+    assert not (tmp_path / "Example (2026)").exists()
+
+
+@pytest.mark.parametrize(
+    "field,value,error_suffix",
+    [
+        ("chapter_selector", {"mode": "exact_times", "times": ["abc"]}, "CHAPTER_SELECTOR"),
+        ("chapter_selector", {"mode": "exact_times", "times": ["2/2"]}, "CHAPTER_SELECTOR"),
+        ("chapter_selector", {"mode": "exact_times", "times": ["2", "1"]}, "CHAPTER_SELECTOR"),
+        ("chapter_selector", {"mode": "exact_times", "times": []}, "CHAPTER_SELECTOR"),
+        ("chapter_selector", {"mode": "exact_frames", "frames": [899, 899]}, "CHAPTER_SELECTOR"),
+        ("chapter_selector", {"mode": "exact_frames", "frames": [902, 899]}, "CHAPTER_SELECTOR"),
+        ("chapter_selector", {"mode": "exact_frames", "frames": [0]}, "CHAPTER_SELECTOR"),
+        ("leaf_duration_minutes", 0, "LEAF_DURATION"),
+        ("leaf_duration_minutes", "1", "LEAF_DURATION"),
+        ("enhancement", {"model_name": " Starlight Precise"}, "ENHANCEMENT_MODEL_NAME"),
+        ("enhancement", {"model_name": "x" * 257}, "ENHANCEMENT_MODEL_NAME"),
+        (
+            "enhancement",
+            {"model_name": "Example", "model_version": " "},
+            "ENHANCEMENT_MODEL_VERSION",
+        ),
+        (
+            "enhancement",
+            {"model_name": "Example", "model_version": "x" * 129},
+            "ENHANCEMENT_MODEL_VERSION",
+        ),
+        ("enhancement", {"model_name": "Example", "actual_scale_factor": 0}, "ENHANCEMENT_SCALE"),
+        ("frame_interpolation", {"model_name": "Aion "}, "FI_MODEL_NAME"),
+        ("frame_interpolation", {"model_name": "Aion", "model_version": " "}, "FI_MODEL_VERSION"),
+        ("program_encode", {"encoder": "fallback"}, "ENCODER"),
+        ("unknown", True, "INVALID"),
+    ],
+)
+def test_processing_settings_preview_returns_machine_field_code_before_any_analysis(
+    tmp_path: Path, field: str, value: object, error_suffix: str
+) -> None:
+    """不从 message 猜测字段；原始 Python 时间、顺序和模型约束在创建分析前失败。"""
+
+    application, _ = _create_application(tmp_path)
+    before = application.inspect()
+    processing = _processing_preview_settings()
+    processing[field] = value
+    with pytest.raises(ProjectServiceError) as caught:
+        application.preview_av27_publication(
+            {
+                "contract_version": "0.3.0",
+                "request": {
+                    "project_path": str(tmp_path / "new-workflow.zniku"),
+                    "title": "Example",
+                    "year": "2026",
+                    "overwrite": False,
+                    "layout": "title_subdirectory",
+                },
+                "processing": processing,
+            }
+        )
+    assert caught.value.code == f"E_AV27_SETTINGS_{error_suffix}"
+    assert caught.value.http_status == 422
+    assert application.inspect() == before
+    assert not (tmp_path / "new-workflow.zniku").exists()
+    assert not (tmp_path / "Example (2026)").exists()
+
+
+@pytest.mark.parametrize("processing", [None, {}, {"chapter_selector": None}])
+def test_processing_settings_preview_rejects_null_or_partial_settings(
+    tmp_path: Path, processing: object
+) -> None:
+    application, _ = _create_application(tmp_path)
+    with pytest.raises(ProjectServiceError):
+        application.preview_av27_publication(
+            {
+                "contract_version": "0.3.0",
+                "request": {
+                    "output_root": str(tmp_path),
+                    "title": "Example",
+                    "year": "2026",
+                    "overwrite": False,
+                },
+                "processing": processing,
+            }
+        )
+
+
+def test_processing_preview_fields_do_not_drift_from_existing_expand_contract() -> None:
+    """只读 DTO 不另设时间/模型/倍率语义，也不让复制的正整数与可选性约束漂移。"""
+
+    from zniku.avenhance_v27.template import ExpandRequest
+    from zniku.project_service.models import ProcessingSettingsPreview
+
+    for name, field in ProcessingSettingsPreview.model_fields.items():
+        source_field = ExpandRequest.model_fields[name]
+        assert field.annotation == source_field.annotation
+        assert field.metadata == source_field.metadata
+        assert field.default == source_field.default
+        assert field.is_required() == source_field.is_required()
+
+
 @pytest.mark.parametrize(
     "display_name",
     [

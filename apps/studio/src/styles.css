@@ -2643,6 +2643,97 @@ button {
   gap: 12px;
 }
 
+.creator-setup-group {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: #0d1721;
+}
+
+.creator-setup-group h4 { font-size: 14px; }
+
+.creator-setup-row {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  min-width: 0;
+  color: #b8c4d0;
+  font-size: 13px;
+}
+
+.creator-setup-row > span { padding-top: 10px; }
+
+.creator-setup-control {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.creator-setup-control > button { min-height: 38px; }
+
+.creator-setup-sources:empty { display: none; }
+
+.creator-setup-sources {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.creator-setup-sources > div {
+  display: grid;
+  gap: 3px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.creator-setup-sources span { color: var(--muted); }
+
+.creator-project-path {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.creator-advanced-section {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.creator-advanced-section p { color: var(--muted); line-height: 1.6; }
+
+.creator-advanced-section label { display: grid; gap: 6px; color: #b8c4d0; }
+
+.creator-advanced-badge { margin-left: 12px; color: var(--amber); font-size: 11px; }
+
+@media (max-width: 600px) {
+  .creator-setup-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .creator-setup-row > span { padding-top: 0; }
+}
+
+.creator-storage-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.creator-setup-row input[aria-invalid='true'] { border-color: var(--amber); }
+
+.creator-setup-row input:focus-visible,
+.creator-setup-control button:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 3px;
+}
+
 .creator-selected-path,
 .creator-output-picker span {
   align-self: center;
@@ -2674,6 +2765,39 @@ button {
   line-height: 1.5;
 }
 
+.creator-settings-group {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: #0d1721;
+  display: grid;
+  gap: 14px;
+}
+
+.creator-settings-group h4 { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.creator-settings-group h4 > span { color: var(--amber); font-size: 12px; }
+.creator-settings-group > p,
+.creator-setting-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.creator-processing-settings { display: grid; gap: 14px; }
+.creator-settings-group .template-form-grid { align-items: start; }
+.creator-settings-group .creator-setting-wide { grid-column: 1 / -1; }
+.creator-settings-group .creator-directory-preview { margin: 0; padding: 14px; }
+.creator-directory-preview { overflow-wrap: anywhere; }
+.creator-directory-preview strong { font-size: 14px; }
+.creator-step [aria-invalid='true'] { border-color: var(--amber); }
+.creator-settings-advanced > section + section { padding-top: 14px; border-top: 1px solid var(--border-soft); }
+.creator-settings-group input:focus-visible,
+.creator-settings-group select:focus-visible,
+.creator-settings-group textarea:focus-visible,
+.creator-settings-advanced input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+@media (max-width: 760px) {
+  .creator-settings-group { padding: 14px; }
+  .creator-settings-group .template-form-grid,
+  .creator-settings-group .creator-basic-settings { grid-template-columns: minmax(0, 1fr); }
+}
+
 .creator-step .template-check input[type='checkbox'] {
   flex: 0 0 18px;
   width: 18px;
@@ -2684,6 +2808,7 @@ button {
 }
 
 .creator-advanced-entry,
+.creator-setup-advanced,
 .creator-settings-advanced,
 .creator-technical-preview,
 .creator-media-summary details {
@@ -2694,6 +2819,7 @@ button {
 }
 
 .creator-advanced-entry summary,
+.creator-setup-advanced summary,
 .creator-settings-advanced summary,
 .creator-technical-preview summary,
 .project-developer-entry summary,
@@ -2705,6 +2831,7 @@ button {
 }
 
 .creator-advanced-entry[open],
+.creator-setup-advanced[open],
 .creator-settings-advanced[open],
 .creator-technical-preview[open] {
   display: grid;

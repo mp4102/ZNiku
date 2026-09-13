@@ -1,11 +1,12 @@
 /** Batch C 用真实 Workspace 验证键盘意图与草稿边界；gateway 只返回合成内存数据。 */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../App'
 import { StudioGatewayError, type StudioGateway } from './gateway'
 import type { StudioCommand } from './contracts'
 import { studioEnvelope } from './test-fixtures'
+import type { HostBridge, HostCapabilitiesEnvelope } from './host-bridge'
 
 afterEach(() => { cleanup(); window.localStorage.clear(); vi.restoreAllMocks() })
 
@@ -27,6 +28,49 @@ function syntheticGateway(saveFailure?: Error) {
 }
 
 describe('Workspace 键盘操作只作用于当前焦点的意图', () => {
+  it('真实 status inspect 断线时向导可关闭并重开草稿，显式重连只读取服务不创建工程', async () => {
+    const user = userEvent.setup()
+    const { gateway, command } = syntheticGateway()
+    const capabilities: HostCapabilitiesEnvelope = { contract_version: '0.3.0', capabilities:
+      (['open_file', 'open_files', 'select_directory', 'save_file'] as const)
+        .map((capability) => ({ capability, available: true, unavailable_reason: null })) }
+    const host: HostBridge = { configured: true, inspectCapabilities: vi.fn(async () => capabilities),
+      pick: vi.fn(async () => [{ path: 'E:\\synthetic-parent', selection_handle: 'synthetic-selection-handle' }]), launch: vi.fn() }
+    const { rerender } = render(<App gateway={gateway} hostBridge={host} />)
+    await user.click(await screen.findByRole('button', { name: /新建视频工程/ }))
+    await user.clear(screen.getByRole('textbox', { name: '工程名称' }))
+    await user.type(screen.getByRole('textbox', { name: '工程名称' }), '离线保留工程名')
+    await user.click(screen.getByText('高级选项（可选）'))
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    expect(await screen.findByText('专用磁盘父目录：E:\\synthetic-parent')).toBeVisible()
+
+    const inspect = vi.fn<StudioGateway['inspect']>().mockRejectedValue(new Error('Failed to fetch'))
+    const reconnectGateway = { ...gateway, inspect }
+    rerender(<App gateway={reconnectGateway} hostBridge={host} />)
+    expect(await screen.findByText(/本机服务连接已中断。填写内容已保留/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '恢复工程旁默认' }))
+    expect(screen.getByText('使用工程旁默认位置')).toBeVisible()
+    const dialog = screen.getByRole('dialog', { name: /创作者向导/ })
+    expect(within(dialog).getByRole('button', { name: '关闭模板向导' })).toBeEnabled()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: /创作者向导/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '工程' }))
+    await user.click(screen.getByRole('button', { name: '新建工程…' }))
+    inspect.mockResolvedValue(studioEnvelope())
+    await user.click(within(screen.getByRole('dialog', { name: 'ZNIKU Studio 工程首页' })).getByRole('button', { name: '重新连接' }))
+    await user.click(await screen.findByRole('button', { name: /新建视频工程/ }))
+    expect(screen.getByRole('textbox', { name: '工程名称' })).toHaveValue('离线保留工程名')
+    await user.click(screen.getByRole('button', { name: '重新连接本机服务' }))
+    expect(await screen.findByText(/连接已恢复，填写内容已保留/)).toBeVisible()
+    expect(screen.getByRole('textbox', { name: '工程名称' })).toHaveValue('离线保留工程名')
+    expect(inspect).toHaveBeenCalledTimes(3)
+    expect(host.inspectCapabilities).toHaveBeenCalledTimes(3)
+    expect(command).not.toHaveBeenCalled()
+    expect(gateway.previewAvEnhanceV27).not.toHaveBeenCalled()
+    expect(host.pick).toHaveBeenCalledTimes(1)
+    expect(host.launch).not.toHaveBeenCalled()
+  })
+
   it('菜单与工具按钮的 Delete/Backspace/复制不会改画布选区；回到画布才允许删除', async () => {
     const { gateway, command } = syntheticGateway()
     render(<App gateway={gateway} />)

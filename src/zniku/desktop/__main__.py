@@ -6,6 +6,8 @@ import os
 import sys
 from pathlib import Path
 
+from zniku.project_service import native_picker
+
 from .instance import InstanceLock, InstanceRecord, check_health
 from .server import DesktopServer, build_desktop_application
 from .windows import DesktopWindowsPlatform, install_process_job, is_windows, open_studio_browser
@@ -43,6 +45,10 @@ def configure_bundled_media_tools() -> None:
 def main() -> int:
     """二次启动只打开现有实例；取消原生 picker 不会影响此处生命周期。"""
 
+    # 固定私有标记只走一次性管道协议，先于单实例、浏览器、媒体工具与服务初始化。
+    # 非法请求直接返回非零，不进入桌面启动错误窗口，也不继承 Project 或 host token。
+    if sys.argv[1:] == [native_picker.HELPER_ARGUMENT]:
+        return native_picker.main()
     lock: InstanceLock | None = None
     server: DesktopServer | None = None
     try:

@@ -8,6 +8,7 @@ mutation。所有有副作用动作必须经过精确 Origin、launcher session 
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import secrets
@@ -16,7 +17,6 @@ import sys
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import suppress
 from dataclasses import dataclass
 from http import HTTPStatus
 from ipaddress import ip_address
@@ -39,6 +39,8 @@ from pydantic import (
 from zniku.media.probe import MediaNodeError, probe_media, require_media_kind
 from zniku.runtime import NodeRunState
 from zniku.runtime.paths import incoming_directory_name
+
+from .native_picker import run_picker_process
 
 HOST_BRIDGE_CONTRACT_VERSION: Literal["0.3.0"] = "0.3.0"
 HOST_TOKEN_HEADER: Final = "X-ZNIKU-Host-Token"
@@ -874,24 +876,22 @@ def _running_on_windows() -> bool:
 
 
 class WindowsHostPlatform:
-    """使用临时置顶 owner 的 Windows Tk picker 与固定系统命令，不接管浏览器窗口。"""
+    """串行委派隔离的 Windows picker 与固定系统命令，不在服务线程创建 Tk。"""
 
     def __init__(self) -> None:
         self._dialog_lock = threading.Lock()
 
     def capability_states(self) -> Mapping[HostCapability, str | None]:
-        """在不创建窗口的前提下报告 Windows/Tk 能力。"""
+        """只检查模块存在；不在 HTTP 请求线程导入或初始化 Tk 原生扩展。"""
 
         if not _running_on_windows():
             reason = "v0.3.0 HostBridge 只正式支持 Windows"
             return dict.fromkeys(HOST_CAPABILITIES, reason)
         picker_reason: str | None = None
         try:
-            import tkinter  # noqa: F401
-            from tkinter import filedialog
-
-            _ = filedialog.askopenfilename
-        except (ImportError, RuntimeError) as error:
+            if importlib.util.find_spec("tkinter") is None:
+                picker_reason = "当前 Python 环境缺少原生路径选择组件"
+        except (ImportError, RuntimeError, ValueError) as error:
             picker_reason = (str(error) or type(error).__name__)[:4096]
         return {
             capability: picker_reason if capability in _DIALOG_CAPABILITIES else None
@@ -903,12 +903,7 @@ class WindowsHostPlatform:
         capability: HostCapability,
         arguments: HostDialogArguments,
     ) -> Sequence[str] | None:
-        """串行打开置顶 picker，取消或失败都销毁 owner 并释放互斥。
-
-        隐藏 root 不等于前台窗口；Windows 原生对话框只保证在 owner 上方，不保证高于
-        浏览器。临时透明 toolwindow 必须实际映射，使其 native topmost 属性生效，并由
-        owned dialog 继承。只在用户点击时请求一次焦点，不循环抢焦点或更改系统前台策略。
-        """
+        """每次显式动作启动独立 helper；取消、Python 异常或原生崩溃均释放互斥。"""
 
         if not self._dialog_lock.acquire(blocking=False):
             raise HostBridgeFailure(
@@ -917,65 +912,7 @@ class WindowsHostPlatform:
                 http_status=HTTPStatus.CONFLICT,
             )
         try:
-            import tkinter as tk
-            from tkinter import filedialog
-
-            filetypes: list[tuple[str, str]] = [("所有文件", "*.*")]
-            if arguments.extensions:
-                filetypes = [("允许的文件", " ".join(f"*{item}" for item in arguments.extensions))]
-            root = tk.Tk()
-            try:
-                root.withdraw()
-                root.title("ZNIKU Studio")
-                root.geometry(
-                    f"1x1+{max(0, root.winfo_screenwidth() // 2)}"
-                    f"+{max(0, root.winfo_screenheight() // 2)}"
-                )
-                root.attributes("-alpha", 0.0)
-                root.attributes("-toolwindow", True)
-                root.attributes("-topmost", True)
-                root.deiconify()
-                root.update_idletasks()
-                root.lift()
-                # Windows 可拒绝前台请求；这不能取消已生效的置顶或扩大为强制抢焦点。
-                with suppress(tk.TclError):
-                    root.focus_force()
-                if capability == "open_file":
-                    value = filedialog.askopenfilename(
-                        parent=root,
-                        title=arguments.title,
-                        filetypes=filetypes,
-                    )
-                    return (value,) if value else None
-                if capability == "open_files":
-                    values = filedialog.askopenfilenames(
-                        parent=root,
-                        title=arguments.title,
-                        filetypes=filetypes,
-                    )
-                    return tuple(values) or None
-                if capability == "select_directory":
-                    value = filedialog.askdirectory(
-                        parent=root,
-                        title=arguments.title,
-                        mustexist=True,
-                    )
-                    return (value,) if value else None
-                if capability == "save_file":
-                    value = filedialog.asksaveasfilename(
-                        parent=root,
-                        title=arguments.title,
-                        initialfile=arguments.suggested_name,
-                        filetypes=filetypes,
-                    )
-                    return (value,) if value else None
-                raise AssertionError("非 picker capability 进入 choose_paths")
-            finally:
-                # 撤销置顶失败也必须尝试销毁；销毁失败仍由最外层 finally 释放选择器锁。
-                try:
-                    root.attributes("-topmost", False)
-                finally:
-                    root.destroy()
+            return run_picker_process(capability, arguments)
         finally:
             self._dialog_lock.release()
 

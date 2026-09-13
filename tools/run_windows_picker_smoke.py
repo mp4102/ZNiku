@@ -1,9 +1,11 @@
 """显式 opt-in 的 Windows 原生选择器自检，不是通用桌面控制工具。
 
-每种固定 picker 在独立子进程中调用正式 WindowsHostPlatform。观察器只枚举该子进程创建
+每种固定 picker 在独立子进程主线程中调用正式 native primitive。观察器只枚举该子进程创建
 picker 的线程窗口，核对自身 PID、固定标题和 owner 后读取 TOPMOST，再用 WM_CLOSE 取消
 本次测试对话框；不枚举其他进程，不发送输入，不选择文件，也不改变系统焦点策略。
 父进程给每个子进程硬超时，失败即停止后续弹窗。普通调用和 pytest 默认绝不创建窗口。
+本工具只证明 native primitive 的 owner/置顶/取消，不代表生产 HTTP 子进程隔离已验收；
+跨请求崩溃隔离另由 test_picker_http_isolation.py 验证，最终包仍需真实点击回归。
 """
 
 from __future__ import annotations
@@ -25,8 +27,8 @@ from typing import Any, cast
 from zniku.project_service.host_bridge import (
     HostCapability,
     HostDialogArguments,
-    WindowsHostPlatform,
 )
+from zniku.project_service.native_picker import choose_paths_native
 
 PICKERS: tuple[HostCapability, ...] = (
     "open_file",
@@ -58,7 +60,7 @@ class PickerResult:
     owner_topmost: bool = False
     dialog_topmost: bool = False
     cancelled: bool = False
-    lock_released: bool = False
+    main_thread_verified: bool = False
     owner_destroyed: bool = False
     error: str | None = None
 
@@ -72,7 +74,7 @@ class PickerResult:
                 self.owner_topmost,
                 self.dialog_topmost,
                 self.cancelled,
-                self.lock_released,
+                self.main_thread_verified,
                 self.owner_destroyed,
             )
         )
@@ -210,16 +212,15 @@ class _OwnThreadObserver:
 
 
 def run_native_child(capability: HostCapability) -> PickerResult:
-    """一个子进程只创建一个正式 picker；返回后核对取消语义及同一 platform 的锁释放。"""
+    """一个子进程主线程只创建一个正式 native picker；不跨进程枚举或关闭窗口。"""
     observer = _OwnThreadObserver(capability)
-    platform = WindowsHostPlatform()
     finished = threading.Event()
     watcher = threading.Thread(target=observer.observe_and_cancel, args=(finished,), daemon=True)
     watcher.start()
     cancelled = False
     error: str | None = None
     try:
-        selected = platform.choose_paths(
+        selected = choose_paths_native(
             capability,
             HostDialogArguments(title=_TITLE_PREFIX + capability),
         )
@@ -231,9 +232,6 @@ def run_native_child(capability: HostCapability) -> PickerResult:
     finally:
         finished.set()
         watcher.join(1)
-    released = platform._dialog_lock.acquire(blocking=False)
-    if released:
-        platform._dialog_lock.release()
     return PickerResult(
         capability,
         observer.dialog_observed,
@@ -241,7 +239,7 @@ def run_native_child(capability: HostCapability) -> PickerResult:
         observer.owner_topmost,
         observer.dialog_topmost,
         cancelled,
-        released,
+        threading.current_thread() is threading.main_thread(),
         observer.owner_destroyed(),
         error or observer.error,
     )

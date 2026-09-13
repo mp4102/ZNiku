@@ -19,6 +19,10 @@ afterEach(cleanup)
 
 const runId = '00000000-0000-4000-8000-000000000027'
 const secondRunId = '00000000-0000-4000-8000-000000000028'
+const defaultProcessing = {
+  chapter_selector: { mode: 'single' }, leaf_duration_minutes: 1,
+  enhancement: { model_name: 'Starlight Precise' }, frame_interpolation: { model_name: 'Aion' }, program_encode: { encoder: 'gpu' },
+} as const
 
 function runSummary(id = runId, state: RunSummaryWire['state'] = 'completed'): RunSummaryWire {
   return {
@@ -96,15 +100,18 @@ function preview(
 function baseProps() {
   return {
     open: true, mode: 'create' as const, busy: false, currentSnapshot: null,
-    currentProjectPath: '', currentProjectId: '', currentProjectName: '',
+    currentProjectPath: 'D:\\Projects\\guided.zniku', currentProjectId: '', currentProjectName: '',
     runSummaries: [] as ReadonlyArray<RunSummaryWire>, projectIdFactory: () => 'project.hidden-session-id', pickerAvailable: true,
     onPickProjectPath: vi.fn(async () => 'D:\\Projects\\guided.zniku'),
     onPickSources: vi.fn<(_multiple: boolean) => Promise<ReadonlyArray<string> | null>>(async () => ['D:\\Media\\source.mkv']),
     onPickOutputDirectory: vi.fn(async () => 'D:\\Library'), onClose: vi.fn(),
-    onPreviewPublication: vi.fn(async (request: AvEnhanceV27PublicationPreviewRequestWire): Promise<AvEnhanceV27PublicationPreviewEnvelope> => ({
-      contract_version: '0.3.0', layout: request.request.layout ?? 'direct', resolved_output_root: 'D:\\Library',
-      output_directory: 'D:\\Library', will_create_directory: false,
-    })),
+    onPreviewPublication: vi.fn(async (request: AvEnhanceV27PublicationPreviewRequestWire): Promise<AvEnhanceV27PublicationPreviewEnvelope> => {
+      const root = typeof request.request.output_root === 'string' ? request.request.output_root : 'D:\\Projects'
+      const layout = request.request.layout ?? 'title_subdirectory'
+      return { contract_version: '0.3.0', layout, resolved_output_root: root,
+        output_directory: layout === 'title_subdirectory' ? `${root}\\${request.request.title} (${request.request.year})` : root,
+        will_create_directory: layout === 'title_subdirectory' }
+    }),
     onPreview: vi.fn(async (request: AvEnhanceV27TemplatePreviewRequestWire) => preview(
       request.action === 'prepare' ? 'preparation' : 'expanded',
       request.action === 'expand' ? request.request.preparation_run_id : runId,
@@ -115,31 +122,570 @@ function baseProps() {
   }
 }
 
-async function reachAnalysis(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+async function reachAnalysis(user: ReturnType<typeof userEvent.setup>, customOutput = false): Promise<void> {
   await user.click(screen.getByRole('button', { name: /选择视频素材/ }))
-  await user.click(screen.getByRole('button', { name: '选择 .zniku 保存位置' }))
+  await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
   await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
-  await user.click(screen.getByRole('button', { name: '下一步：设置' }))
+  await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
   await user.type(screen.getByLabelText('片名'), 'Movie')
   await user.type(screen.getByLabelText('年份'), '2026')
-  await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+  if (customOutput) await chooseOutputParent(user)
   await user.click(screen.getByRole('button', { name: '下一步：分析' }))
 }
 
-async function reachResumeAnalysis(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+async function reachResumeAnalysis(user: ReturnType<typeof userEvent.setup>, customOutput = false): Promise<void> {
   await user.type(screen.getByLabelText('片名'), 'Movie')
   await user.type(screen.getByLabelText('年份'), '2026')
-  await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+  if (customOutput) await chooseOutputParent(user)
   await user.click(screen.getByRole('button', { name: '下一步：分析' }))
   await user.click(screen.getByRole('button', { name: /分析记录 1/ }))
 }
 
+async function openOutputOptions(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const summary = screen.getByText('其他选项（可选）')
+  if (!summary.closest('details')?.open) await user.click(summary)
+}
+
+async function chooseOutputParent(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await openOutputOptions(user)
+  await user.click(screen.getByRole('button', { name: '更改成片父目录' }))
+}
+
 describe('AVEnhanceFlow v2.7 创作者向导', () => {
+  it('默认仅依次显示四项基础设置，其余收进统一高级且开合不触发任何操作', async () => {
+    const user = userEvent.setup()
+    const props = { ...baseProps(), onPickDataDirectory: vi.fn(async () => 'E:\\archive-parent') }
+    render(<AvEnhanceV27Wizard {...props} />)
+    const summary = screen.getByText('高级选项（可选）')
+    const details = summary.closest('details')!
+    expect(details).not.toHaveAttribute('open')
+    const basicControls = [
+      screen.getByRole('combobox', { name: '素材组织方式' }),
+      screen.getByRole('button', { name: /选择视频素材/ }),
+      screen.getByLabelText('工程名称'),
+      screen.getByRole('button', { name: '选择工程保存位置' }),
+    ]
+    for (const [index, control] of basicControls.entries()) {
+      expect(control).toBeVisible()
+      if (index > 0) expect(basicControls[index - 1]!.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    expect(screen.getByRole('region', { name: '素材设置' }).querySelectorAll('.creator-setup-row')).toHaveLength(2)
+    expect(screen.getByRole('region', { name: '工程设置' }).querySelectorAll('.creator-setup-row')).toHaveLength(2)
+    expect(details.querySelectorAll('details')).toHaveLength(0)
+    expect(screen.queryByText('高级存储设置（可选）')).not.toBeInTheDocument()
+    expect(screen.queryByText('开发浏览器高级入口')).not.toBeInTheDocument()
+    expect(screen.getByText('选择工作数据父目录')).not.toBeVisible()
+    expect(screen.getByText('使用工程旁默认位置')).not.toBeVisible()
+    expect(screen.getByLabelText('模板工程路径')).not.toBeVisible()
+    expect(screen.getByLabelText('Source 1 path')).not.toBeVisible()
+    expect(screen.getByRole('button', { name: '选择工程保存位置' })).toBeEnabled()
+    await user.click(summary)
+    expect(details).toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: '选择工作数据父目录' })).toBeVisible()
+    expect(screen.getByRole('region', { name: '工作数据位置' })).toHaveTextContent('创建工程时，将在工程文件旁建立同名 .data 文件夹。')
+    expect(screen.getByRole('region', { name: '工作数据位置' })).toHaveTextContent('中间产物和外部处理结果会长期保留，完成或退出不会自动清除。')
+    expect(screen.getByLabelText('模板工程路径')).toBeVisible()
+    expect(screen.getByLabelText('Source 1 path')).toBeVisible()
+    await user.click(summary)
+    expect(details).not.toHaveAttribute('open')
+    expect(screen.getByText('使用工程旁默认位置')).not.toBeVisible()
+    expect(props.onPickProjectPath).not.toHaveBeenCalled()
+    expect(props.onPickDataDirectory).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onPreviewPublication).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+  })
+
+  it('默认流程只选一次工程文件位置，不调用数据选择器且创建不传 data_parent_directory', async () => {
+    const user = userEvent.setup()
+    const props = { ...baseProps(), onPickDataDirectory: vi.fn(async () => 'E:\\not-requested') }
+    render(<AvEnhanceV27Wizard {...props} />)
+    await reachAnalysis(user)
+    expect(props.onPickProjectPath).toHaveBeenCalledOnce()
+    expect(props.onPickDataDirectory).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    await waitFor(() => expect(props.onCreate).toHaveBeenCalledWith(expect.objectContaining({
+      project_path: 'D:\\Projects\\guided.zniku',
+    }), { media_basename: 'Movie (2026)' }))
+    expect(props.onPickDataDirectory).not.toHaveBeenCalled()
+  })
+
+  it('成片设置常驻基础信息与四组处理参数，仅输出例外项折叠且不触发创建或运行', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} currentProjectPath="D:\\Projects\\existing.zniku" />)
+    expect(screen.getByText('成片设置', { selector: 'ol strong' })).toBeVisible()
+    for (const label of ['片名', '年份', 'Chapter selector mode', 'Leaf duration minutes', 'Enhancement model name',
+      'Enhancement model version', 'Enhancement actual scale factor', 'FI model name', 'FI model version', 'Program encoder']) {
+      expect(screen.getByLabelText(label)).toBeVisible()
+    }
+    for (const name of ['章节与分段', '画质增强', '章节补帧', '成片编码']) {
+      const group = screen.getByRole('region', { name })
+      expect(group).toBeVisible()
+      expect(group.closest('details')).toBeNull()
+    }
+    const summary = screen.getByText('其他选项（可选）')
+    const details = summary.closest('details')!
+    expect(details).not.toHaveAttribute('open')
+    expect(screen.getByText('更改成片父目录')).not.toBeVisible()
+    expect(screen.getByLabelText('按片名创建子文件夹')).toBeChecked()
+    expect(screen.getByLabelText('按片名创建子文件夹')).not.toBeVisible()
+    expect(screen.getByLabelText('允许覆盖发布目标')).not.toBeChecked()
+    expect(screen.getByLabelText('允许覆盖发布目标')).not.toBeVisible()
+    expect(screen.getByLabelText('Publication output root')).not.toBeVisible()
+    await user.click(summary)
+    expect(screen.getByRole('button', { name: '更改成片父目录' })).toBeVisible()
+    expect(screen.getByLabelText('Publication output root')).toBeVisible()
+    await user.click(summary)
+    expect(details).not.toHaveAttribute('open')
+    expect(props.onPickOutputDirectory).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+  })
+
+  it('默认工程目录自动只读预览，下一步仍重验且正式扩展只使用 Python 返回的输出根', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    props.onPreviewPublication.mockResolvedValue({ contract_version: '0.3.0', layout: 'title_subdirectory',
+      resolved_output_root: 'P:\\Python-resolved', output_directory: 'P:\\Python-resolved\\Movie (2026)', will_create_directory: true })
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} runSummaries={[runSummary()]} />)
+    await user.type(screen.getByLabelText('片名'), 'Movie')
+    await user.type(screen.getByLabelText('年份'), '2026')
+    await waitFor(() => expect(props.onPreviewPublication).toHaveBeenCalledWith({ contract_version: '0.3.0', request: {
+      project_path: 'D:\\Projects\\guided.zniku', title: 'Movie', year: '2026', overwrite: false, layout: 'title_subdirectory',
+    } }))
+    expect(await screen.findByText('P:\\Python-resolved\\Movie (2026)', { exact: true })).toBeVisible()
+    expect(props.onPickOutputDirectory).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    const checksBeforeNext = props.onPreviewPublication.mock.calls.length
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    expect(props.onPreviewPublication).toHaveBeenCalledTimes(checksBeforeNext + 1)
+    expect(props.onPreviewPublication).toHaveBeenLastCalledWith(expect.objectContaining({ processing: defaultProcessing }))
+    await user.click(screen.getByRole('button', { name: /分析记录 1/ }))
+    await waitFor(() => expect(props.onPreview).toHaveBeenCalledWith({ action: 'expand', request: expect.objectContaining({
+      publication: { output_root: 'P:\\Python-resolved', title: 'Movie', year: '2026', overwrite: false, layout: 'title_subdirectory' },
+    }) }))
+    const expansion = props.onPreview.mock.calls.find(([request]) => request.action === 'expand')![0]
+    expect(expansion.request).not.toHaveProperty('project_path')
+    expect(expansion.request).not.toHaveProperty('publication.project_path')
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+  })
+
+  it.each(['resolve', 'reject'] as const)('恢复工程目录后拒绝迟到输出父目录 %s，不覆盖默认选择或产生副作用', async (result) => {
+    const user = userEvent.setup()
+    let finish!: (path: string | null) => void
+    let fail!: (error: Error) => void
+    const props = { ...baseProps(), onPickOutputDirectory: vi.fn<() => Promise<string | null>>()
+      .mockResolvedValueOnce('E:\\chosen-output')
+      .mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject })) }
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} />)
+    await chooseOutputParent(user)
+    expect(screen.getByText('已选择输出目录：E:\\chosen-output')).toBeVisible()
+    await chooseOutputParent(user)
+    await user.click(screen.getByRole('button', { name: '恢复工程目录' }))
+    await act(async () => { if (result === 'resolve') finish('E:\\late-output'); else fail(new Error('late output picker failure')) })
+    expect(screen.queryByText(/chosen-output|late-output|late output picker failure/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Publication output root')).toHaveValue('')
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+  })
+
+  it('恢复已有工程的父目录失败留在成片设置，定位自定义目录并复用已有准确分析', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    const successfulPreview = props.onPreviewPublication.getMockImplementation()!
+    props.onPreviewPublication.mockImplementation(async (request) => {
+      if (typeof request.request.project_path === 'string') throw new StudioGatewayError('E_AV27_NAMING_PROJECT_PATH', {
+        code: 'E_AV27_NAMING_PROJECT_PATH', serviceMessage: '工程所在磁盘当前不可访问。',
+      })
+      return successfulPreview(request)
+    })
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} runSummaries={[runSummary()]} />)
+    await user.type(screen.getByLabelText('片名'), 'Movie')
+    await user.type(screen.getByLabelText('年份'), '2026')
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('工程所在磁盘当前不可访问。')
+    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
+    expect(screen.getByText('其他选项（可选）').closest('details')).toHaveAttribute('open')
+    await waitFor(() => expect(screen.getByRole('button', { name: '更改成片父目录' })).toHaveFocus())
+    expect(screen.queryByRole('button', { name: '选择工程保存位置' })).not.toBeInTheDocument()
+    await chooseOutputParent(user)
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    await user.click(screen.getByRole('button', { name: /分析记录 1/ }))
+    await waitFor(() => expect(props.onPreview).toHaveBeenCalledWith({ action: 'expand', request: expect.objectContaining({
+      preparation_run_id: runId, publication: expect.objectContaining({ output_root: 'D:\\Library' }),
+    }) }))
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['CHAPTER_SELECTOR', 'Chapter selector mode', 'single', ''],
+    ['CHAPTER_SELECTOR', 'Exact chapter frames', 'exact_frames', '899,899'],
+    ['CHAPTER_SELECTOR', 'Exact chapter times', 'exact_times', 'abc'],
+    ['LEAF_DURATION', 'Leaf duration minutes', 'single', ''],
+    ['ENHANCEMENT_MODEL_NAME', 'Enhancement model name', 'single', ''],
+    ['ENHANCEMENT_MODEL_VERSION', 'Enhancement model version', 'single', ''],
+    ['ENHANCEMENT_SCALE', 'Enhancement actual scale factor', 'single', ''],
+    ['FI_MODEL_NAME', 'FI model name', 'single', ''],
+    ['FI_MODEL_VERSION', 'FI model version', 'single', ''],
+    ['ENCODER', 'Program encoder', 'single', ''],
+  ] as const)('Python 处理设置错误 %s 定位 %s，不创建或启动分析', async (suffix, field, selector, value) => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    const successfulPreview = props.onPreviewPublication.getMockImplementation()!
+    const code = `E_AV27_SETTINGS_${suffix}`
+    props.onPreviewPublication.mockImplementation(async (request) => {
+      if (request.processing) throw new StudioGatewayError(code, { code, serviceMessage: '合成参数未通过领域检查。' })
+      return successfulPreview(request)
+    })
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} runSummaries={[runSummary()]} />)
+    await user.type(screen.getByLabelText('片名'), 'Movie')
+    await user.type(screen.getByLabelText('年份'), '2026')
+    if (selector !== 'single') {
+      await user.selectOptions(screen.getByLabelText('Chapter selector mode'), selector)
+      await user.type(screen.getByLabelText(field), value)
+    }
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('处理设置未通过检查。工程、素材和已有分析均保持不变。合成参数未通过领域检查。')
+    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
+    await waitFor(() => expect(screen.getByLabelText(field)).toHaveFocus())
+    expect(props.onPreviewPublication).toHaveBeenLastCalledWith(expect.objectContaining({ processing: expect.objectContaining({
+      chapter_selector: selector === 'exact_frames' ? { mode: selector, frames: [899, 899] }
+        : selector === 'exact_times' ? { mode: selector, times: ['abc'] } : { mode: 'single' },
+    }) }))
+    expect(screen.getByLabelText('片名')).toHaveValue('Movie')
+    expect(screen.getByLabelText('年份')).toHaveValue('2026')
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+  })
+
+  it.each(['resolve', 'reject'] as const)('自动目录预览的旧请求 %s 不覆盖更新后的片名和 Python 目录', async (result) => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    const pending: Array<{ resolve: (value: AvEnhanceV27PublicationPreviewEnvelope) => void; reject: (error: Error) => void }> = []
+    props.onPreviewPublication.mockImplementation(() => new Promise((resolve, reject) => { pending.push({ resolve, reject }) }))
+    render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} />)
+    await user.type(screen.getByLabelText('片名'), 'Movie')
+    await user.type(screen.getByLabelText('年份'), '2026')
+    await waitFor(() => expect(pending).toHaveLength(1))
+    await user.type(screen.getByLabelText('片名'), ' New')
+    await waitFor(() => expect(pending).toHaveLength(2))
+    await act(async () => { pending[1]!.resolve({ contract_version: '0.3.0', layout: 'title_subdirectory',
+      resolved_output_root: 'D:\\Projects', output_directory: 'D:\\Projects\\Current by Python', will_create_directory: true }) })
+    expect(screen.getByText('D:\\Projects\\Current by Python', { exact: true })).toBeVisible()
+    await act(async () => {
+      if (result === 'resolve') pending[0]!.resolve({ contract_version: '0.3.0', layout: 'title_subdirectory',
+        resolved_output_root: 'D:\\Old', output_directory: 'D:\\Old\\late-old-directory', will_create_directory: true })
+      else pending[0]!.reject(new Error('late old directory error'))
+    })
+    expect(screen.getByLabelText('片名')).toHaveValue('Movie New')
+    expect(screen.getByText('D:\\Projects\\Current by Python', { exact: true })).toBeVisible()
+    expect(screen.queryByText(/late-old-directory|late old directory error/)).not.toBeInTheDocument()
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+  })
+
+  it('只选工作数据不能代替工程位置，错误单独说明缺项并聚焦工程保存按钮', async () => {
+    const user = userEvent.setup()
+    const props = { ...baseProps(), onPickDataDirectory: vi.fn(async () => 'E:\\archive-parent') }
+    render(<AvEnhanceV27Wizard {...props} />)
+    await user.click(screen.getByRole('button', { name: /选择视频素材/ }))
+    await user.click(screen.getByText('高级选项（可选）'))
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    await user.click(screen.getByText('高级选项（可选）'))
+    expect(screen.getByText('专用磁盘父目录：E:\\archive-parent')).not.toBeVisible()
+    expect(screen.getByText('已自定义工作数据位置')).toBeVisible()
+    expect(screen.getByText('已自定义工作数据位置').closest('summary')).toHaveTextContent('高级选项（可选）')
+    expect(screen.getByText('选择工作数据父目录')).not.toBeVisible()
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('请选择工程保存位置。工作数据位置不能代替工程文件位置。')
+    expect(screen.getByRole('heading', { name: '选择要处理的视频' })).toBeVisible()
+    await waitFor(() => expect(screen.getByRole('button', { name: '选择工程保存位置' })).toHaveFocus())
+    expect(screen.getByRole('button', { name: '选择工程保存位置' })).toHaveAccessibleDescription('请选择工程保存位置。工作数据位置不能代替工程文件位置。')
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '选择工程保存位置' })).toHaveFocus())
+    expect(screen.getByLabelText('工程名称')).toHaveValue('未命名视频工程')
+    expect(props.onPickProjectPath).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+  })
+
+  it('已选工程位置但缺工程名称只提示名称并聚焦输入框，不要求重选位置', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    render(<AvEnhanceV27Wizard {...props} />)
+    await user.click(screen.getByRole('button', { name: /选择视频素材/ }))
+    await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
+    await user.clear(screen.getByLabelText('工程名称'))
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('请填写工程名称。')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('请选择工程保存位置')
+    await waitFor(() => expect(screen.getByLabelText('工程名称')).toHaveFocus())
+    expect(screen.getByLabelText('工程名称')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('工程名称')).toHaveAccessibleDescription('请填写工程名称。')
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    await waitFor(() => expect(screen.getByLabelText('工程名称')).toHaveFocus())
+    expect(screen.getByText('已选择：guided.zniku')).toBeVisible()
+    expect(props.onPickProjectPath).toHaveBeenCalledOnce()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+  })
+
+  it('开发环境无选择器时缺位置定位到展开后的手输入口，修正只更新本地表单', async () => {
+    const user = userEvent.setup()
+    const props = { ...baseProps(), pickerAvailable: false }
+    render(<AvEnhanceV27Wizard {...props} />)
+    const projectPath = screen.getByLabelText('模板工程路径')
+    const advanced = screen.getByText('高级选项（可选）').closest('details')!
+    expect(advanced).not.toHaveAttribute('open')
+    expect(projectPath).not.toBeVisible()
+    expect(screen.getByRole('button', { name: '选择工程保存位置' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    await waitFor(() => expect(projectPath).toHaveFocus())
+    expect(advanced).toHaveAttribute('open')
+    expect(projectPath).toBeVisible()
+    expect(projectPath).toHaveAccessibleDescription('请选择工程保存位置。工作数据位置不能代替工程文件位置。')
+    await user.type(projectPath, 'D:\\Projects\\typed.zniku')
+    await user.type(screen.getByLabelText('Source 1 path'), 'D:\\Media\\source.mkv')
+    expect(projectPath).not.toHaveAttribute('aria-invalid')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    expect(screen.getByRole('heading', { name: '选择处理方案' })).toBeVisible()
+    expect(props.onPickProjectPath).not.toHaveBeenCalled()
+    expect(props.onPickSources).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+  })
+
+  it('取消工程或数据选择保留原位置和名称，收起高级只显示自定义提示而隐藏存储详情', async () => {
+    const user = userEvent.setup()
+    const props = { ...baseProps(),
+      onPickProjectPath: vi.fn<() => Promise<string | null>>().mockResolvedValueOnce('D:\\Projects\\guided.zniku').mockResolvedValueOnce(null),
+      onPickDataDirectory: vi.fn<() => Promise<string | null>>().mockResolvedValueOnce('E:\\archive-parent').mockResolvedValueOnce(null),
+    }
+    render(<AvEnhanceV27Wizard {...props} />)
+    await user.clear(screen.getByLabelText('工程名称'))
+    await user.type(screen.getByLabelText('工程名称'), '我的工程')
+    await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
+    expect(props.onPickDataDirectory).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
+    await user.click(screen.getByText('高级选项（可选）'))
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    await user.click(screen.getByText('高级选项（可选）'))
+    expect(screen.getByLabelText('工程名称')).toHaveValue('我的工程')
+    expect(screen.getByText('已选择：guided.zniku')).toBeVisible()
+    expect(screen.getByText('专用磁盘父目录：E:\\archive-parent')).not.toBeVisible()
+    expect(screen.getByText('已自定义工作数据位置')).toBeVisible()
+    expect(screen.getByText('选择工作数据父目录')).not.toBeVisible()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+  })
+
+  it('断线不是忙碌：允许关闭/Escape/本地默认位置，并保留重开草稿，不自动重试', async () => {
+    const user = userEvent.setup()
+    const props = { ...baseProps(), onPickDataDirectory: vi.fn(async () => 'E:\\synthetic-data'), onReconnect: vi.fn() }
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
+    await user.clear(screen.getByLabelText('工程名称'))
+    await user.type(screen.getByLabelText('工程名称'), '断线前草稿')
+    await user.click(screen.getByRole('button', { name: /选择视频素材/ }))
+    await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
+    await user.click(screen.getByText('高级选项（可选）'))
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    rerender(<AvEnhanceV27Wizard {...props} busy serviceUnavailable />)
+    expect(screen.getByRole('button', { name: '关闭模板向导' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '选择工作数据父目录' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: '恢复工程旁默认' }))
+    expect(screen.getByText('使用工程旁默认位置')).toBeVisible()
+    await user.keyboard('{Escape}')
+    expect(props.onClose).toHaveBeenCalledOnce()
+    rerender(<AvEnhanceV27Wizard {...props} busy serviceUnavailable open={false} />)
+    rerender(<AvEnhanceV27Wizard {...props} busy serviceUnavailable />)
+    expect(screen.getByLabelText('工程名称')).toHaveValue('断线前草稿')
+    expect(screen.getByText('source.mkv')).toBeVisible()
+    expect(screen.getByText('已选择：guided.zniku')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '重新连接本机服务' }))
+    expect(props.onReconnect).toHaveBeenCalledOnce()
+    rerender(<AvEnhanceV27Wizard {...props} connectionEpoch={1} />)
+    expect(screen.getByLabelText('工程名称')).toHaveValue('断线前草稿')
+    await user.click(screen.getByRole('button', { name: '关闭模板向导' }))
+    expect(props.onClose).toHaveBeenCalledTimes(2)
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onPreviewPublication).not.toHaveBeenCalled()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+  })
+
+  it('服务仍在线且显式写入进行中时，不允许关闭向导或 Escape', async () => {
+    const props = baseProps()
+    render(<AvEnhanceV27Wizard {...props} busy />)
+    expect(screen.getByRole('button', { name: '关闭模板向导' })).toBeDisabled()
+    await userEvent.keyboard('{Escape}')
+    expect(props.onClose).not.toHaveBeenCalled()
+  })
+
+  it('重连已成功但旧请求仍未结算时，不会再次锁住关闭与 Escape', async () => {
+    const props = baseProps()
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} busy />)
+    rerender(<AvEnhanceV27Wizard {...props} busy serviceUnavailable />)
+    rerender(<AvEnhanceV27Wizard {...props} busy connectionEpoch={1} />)
+    expect(screen.getByRole('button', { name: '关闭模板向导' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /选择视频素材/ })).toBeDisabled()
+    await userEvent.keyboard('{Escape}')
+    expect(props.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('可以显式放弃断线草稿；取消确认保留内容，确认后只重置表单', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
+    await user.clear(screen.getByLabelText('工程名称'))
+    await user.type(screen.getByLabelText('工程名称'), '保留草稿')
+    rerender(<AvEnhanceV27Wizard {...props} serviceUnavailable />)
+    await user.click(screen.getByRole('button', { name: '放弃保留的向导草稿' }))
+    expect(screen.getByLabelText('工程名称')).toHaveValue('保留草稿')
+    await user.click(screen.getByRole('button', { name: '放弃保留的向导草稿' }))
+    expect(screen.getByLabelText('工程名称')).toHaveValue('未命名视频工程')
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
+  it('中断的 resume 草稿不会带到另一个工程', async () => {
+    const user = userEvent.setup()
+    const props = { ...baseProps(), mode: 'resume' as const, currentSnapshot: snapshot() }
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
+    await user.type(screen.getByLabelText('片名'), '旧工程输出')
+    rerender(<AvEnhanceV27Wizard {...props} serviceUnavailable />)
+    rerender(<AvEnhanceV27Wizard {...props} serviceUnavailable open={false} />)
+    rerender(<AvEnhanceV27Wizard {...props} currentSnapshot={arbitrarySnapshot()} connectionEpoch={1} open={false} />)
+    rerender(<AvEnhanceV27Wizard {...props} currentSnapshot={arbitrarySnapshot()} connectionEpoch={1} />)
+    expect(screen.getByLabelText('片名')).toHaveValue('')
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+  })
+
+  it('断线后仍可返回前一步，设置草稿与数据位置只在当前页面内存保留', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
+    await reachAnalysis(user)
+    const checksBeforeDisconnect = props.onPreviewPublication.mock.calls.length
+    expect(checksBeforeDisconnect).toBeGreaterThan(0)
+    rerender(<AvEnhanceV27Wizard {...props} serviceUnavailable />)
+    expect(screen.getByLabelText('片名')).toHaveValue('Movie')
+    expect(screen.getByRole('button', { name: '下一步：分析' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: '上一步' }))
+    expect(screen.getByRole('heading', { name: '选择处理方案' })).toBeVisible()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreviewPublication).toHaveBeenCalledTimes(checksBeforeDisconnect)
+  })
+
+  it.each(['resolve', 'reject'] as const)('恢复默认后迟到的数据目录 %s 不覆盖本地选择', async (result) => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    let finish!: (path: string | null) => void
+    let fail!: (error: Error) => void
+    const onPickDataDirectory = vi.fn<() => Promise<string | null>>()
+      .mockResolvedValueOnce('E:\\chosen')
+      .mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+    render(<AvEnhanceV27Wizard {...props} onPickDataDirectory={onPickDataDirectory} />)
+    await user.click(screen.getByText('高级选项（可选）'))
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
+    await user.click(screen.getByRole('button', { name: '恢复工程旁默认' }))
+    await act(async () => { if (result === 'resolve') finish('E:\\late'); else fail(new Error('late picker failure')) })
+    expect(screen.getByText('使用工程旁默认位置')).toBeVisible()
+    expect(screen.queryByText(/late/)).not.toBeInTheDocument()
+    expect(props.onCreate).not.toHaveBeenCalled()
+  })
+
+  it('断线与重连撤销迟到 picker 以及旧输出打开句柄，不自动执行系统动作', async () => {
+    const user = userEvent.setup()
+    let finish!: (path: string | null) => void
+    const props = { ...baseProps(), mode: 'resume' as const, currentSnapshot: snapshot(),
+      onRevealOutputDirectory: vi.fn(async () => undefined),
+      onPickOutputDirectory: vi.fn<() => Promise<string | null>>().mockResolvedValueOnce('D:\\chosen')
+        .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve })) }
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
+    await chooseOutputParent(user)
+    await chooseOutputParent(user)
+    rerender(<AvEnhanceV27Wizard {...props} serviceUnavailable />)
+    rerender(<AvEnhanceV27Wizard {...props} connectionEpoch={1} />)
+    await act(async () => finish('D:\\late'))
+    expect(screen.getByText('已选择输出目录：D:\\chosen')).toBeVisible()
+    expect(screen.queryByText(/D:\\late/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开所选输出文件夹' })).toBeDisabled()
+    expect(props.onRevealOutputDirectory).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+  })
+
+  it('断线清除确认预览，重连/重开不自动获取 preview 或确认旧工作流', async () => {
+    const user = userEvent.setup()
+    const props = { ...baseProps(), mode: 'resume' as const, currentSnapshot: snapshot(), runSummaries: [runSummary()] }
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
+    await reachResumeAnalysis(user)
+    expect(await screen.findByRole('button', { name: '确认并创建工作流' })).toBeEnabled()
+    const checksBeforeDisconnect = props.onPreviewPublication.mock.calls.length
+    rerender(<AvEnhanceV27Wizard {...props} serviceUnavailable />)
+    expect(screen.queryByRole('button', { name: '确认并创建工作流' })).not.toBeInTheDocument()
+    rerender(<AvEnhanceV27Wizard {...props} connectionEpoch={1} open={false} />)
+    rerender(<AvEnhanceV27Wizard {...props} connectionEpoch={1} />)
+    expect(screen.getByLabelText('片名')).toHaveValue('Movie')
+    expect(props.onPreview).toHaveBeenCalledTimes(1)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)) })
+    expect(props.onPreviewPublication).toHaveBeenCalledTimes(checksBeforeDisconnect)
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onExpand).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '下一步：分析' }))
+    await user.click(await screen.findByRole('button', { name: '生成工作流预览' }))
+    expect(await screen.findByRole('button', { name: '确认并创建工作流' })).toBeEnabled()
+    expect(props.onPreview).toHaveBeenCalledTimes(2)
+  })
+
+  it('创建中断线后允许离开，但迟到创建成功不得自动接着运行或重放创建', async () => {
+    const user = userEvent.setup()
+    let finish!: (created: boolean) => void
+    const props = { ...baseProps(), onCreate: vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve })) }
+    const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
+    await reachAnalysis(user)
+    await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
+    await waitFor(() => expect(props.onCreate).toHaveBeenCalledOnce())
+    expect(screen.getByRole('button', { name: '关闭模板向导' })).toBeDisabled()
+    rerender(<AvEnhanceV27Wizard {...props} serviceUnavailable />)
+    expect(screen.getByRole('button', { name: '关闭模板向导' })).toBeEnabled()
+    expect(screen.getByText(/上次创建或运行请求的结果尚未确认/)).toBeVisible()
+    rerender(<AvEnhanceV27Wizard {...props} connectionEpoch={1} />)
+    await act(async () => finish(true))
+    expect(props.onCreate).toHaveBeenCalledOnce()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '下一步：分析' })).toBeDisabled()
+  })
+
   it('专用数据父目录只在显式开始分析后随media_basename交给创建命令', async () => {
     const user = userEvent.setup()
     const props = baseProps()
     const onPickDataDirectory = vi.fn(async () => 'E:\\archive-parent')
     render(<AvEnhanceV27Wizard {...props} onPickDataDirectory={onPickDataDirectory} />)
+    await user.click(screen.getByText('高级选项（可选）'))
     await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
     expect(screen.getByText('专用磁盘父目录：E:\\archive-parent')).toBeVisible()
     expect(props.onCreate).not.toHaveBeenCalled()
@@ -158,12 +704,19 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     const props = baseProps()
     const onPickDataDirectory = vi.fn<() => Promise<string | null>>().mockResolvedValueOnce(null).mockResolvedValueOnce('E:\\old-choice')
     render(<AvEnhanceV27Wizard {...props} onPickDataDirectory={onPickDataDirectory} />)
+    await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
+    await user.clear(screen.getByLabelText('工程名称'))
+    await user.type(screen.getByLabelText('工程名称'), '保留工程身份')
+    await user.click(screen.getByText('高级选项（可选）'))
     await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
     expect(screen.getByText('使用工程旁默认位置')).toBeVisible()
     expect(props.onCreate).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
     expect(screen.getByText('专用磁盘父目录：E:\\old-choice')).toBeVisible()
     await user.click(screen.getByRole('button', { name: '恢复工程旁默认' }))
+    expect(screen.getByText('已选择：guided.zniku')).toBeVisible()
+    expect(screen.getByLabelText('工程名称')).toHaveValue('保留工程身份')
+    expect(props.onPickProjectPath).toHaveBeenCalledOnce()
     await reachAnalysis(user)
     await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
     await waitFor(() => expect(props.onCreate).toHaveBeenCalledWith(expect.anything(), { media_basename: 'Movie (2026)' }))
@@ -175,6 +728,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     let finish!: (value: string | null) => void
     const onPickDataDirectory = vi.fn<() => Promise<string | null>>(() => new Promise((resolve) => { finish = resolve }))
     const { rerender } = render(<AvEnhanceV27Wizard {...props} onPickDataDirectory={onPickDataDirectory} />)
+    await user.click(screen.getByText('高级选项（可选）'))
     await user.click(screen.getByRole('button', { name: '选择工作数据父目录' }))
     if (action === 'edit') await user.type(screen.getByLabelText('工程名称'), '已变化')
     else {
@@ -182,7 +736,8 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
       rerender(<AvEnhanceV27Wizard {...props} open onPickDataDirectory={onPickDataDirectory} />)
     }
     await act(async () => finish('E:\\late-disk'))
-    expect(screen.getByText('使用工程旁默认位置')).toBeVisible()
+    if (action === 'close') expect(screen.getByText('使用工程旁默认位置')).not.toBeVisible()
+    else expect(screen.getByText('使用工程旁默认位置')).toBeVisible()
     expect(screen.queryByText(/late-disk/)).not.toBeInTheDocument()
     expect(props.onCreate).not.toHaveBeenCalled()
     expect(props.onPreview).not.toHaveBeenCalled()
@@ -196,8 +751,8 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     expect(screen.getByRole('dialog', { name: 'AVEnhanceFlow v2.7.0 创作者向导' })).toBeVisible()
     expect(screen.queryByText('project.hidden-session-id')).not.toBeInTheDocument()
     await reachAnalysis(user)
-    expect(props.onPreviewPublication).toHaveBeenCalledExactlyOnceWith({ contract_version: '0.3.0', request: {
-      output_root: 'D:\\Library', title: 'Movie', year: '2026', overwrite: false, layout: 'direct',
+    expect(props.onPreviewPublication).toHaveBeenLastCalledWith({ contract_version: '0.3.0', processing: defaultProcessing, request: {
+      project_path: 'D:\\Projects\\guided.zniku', title: 'Movie', year: '2026', overwrite: false, layout: 'title_subdirectory',
     } })
     expect(props.onCreate).not.toHaveBeenCalled()
     expect(props.onStartPreparationRun).not.toHaveBeenCalled()
@@ -222,20 +777,23 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
   it('目录检查失败留在设置，开始分析前明确阻断且不创建工程', async () => {
     const user = userEvent.setup()
     const props = baseProps()
-    props.onPreviewPublication.mockRejectedValueOnce(new StudioGatewayError('E_AV27_NAMING_PARENT', {
+    const workingPreview = props.onPreviewPublication.getMockImplementation()!
+    props.onPreviewPublication.mockRejectedValue(new StudioGatewayError('E_AV27_NAMING_PARENT', {
       code: 'E_AV27_NAMING_PARENT', serviceMessage: '所选目录不可访问，请选择可写目录。',
     }))
     render(<AvEnhanceV27Wizard {...props} />)
     await reachAnalysis(user)
     expect(await screen.findByRole('alert')).toHaveTextContent('输出位置未通过检查')
-    expect(screen.getByRole('heading', { name: '设置成片目标' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
     expect(screen.queryByRole('button', { name: /开始分析素材/ })).not.toBeInTheDocument()
     expect(props.onPreview).not.toHaveBeenCalled()
     expect(props.onCreate).not.toHaveBeenCalled()
     expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+    const checksBeforeRetry = props.onPreviewPublication.mock.calls.length
+    props.onPreviewPublication.mockImplementation(workingPreview)
     await user.click(screen.getByRole('button', { name: '下一步：分析' }))
     expect(await screen.findByRole('button', { name: /开始分析素材/ })).toBeEnabled()
-    expect(props.onPreviewPublication).toHaveBeenCalledTimes(2)
+    expect(props.onPreviewPublication).toHaveBeenCalledTimes(checksBeforeRetry + 1)
     expect(props.onCreate).not.toHaveBeenCalled()
   })
 
@@ -254,9 +812,12 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
         : result
     })
     render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} runSummaries={[runSummary()]} />)
-    expect(screen.getByLabelText('按片名创建子文件夹')).not.toBeChecked()
+    expect(screen.getByLabelText('按片名创建子文件夹')).toBeChecked()
+    await openOutputOptions(user)
+    await user.click(screen.getByLabelText('按片名创建子文件夹'))
     await reachResumeAnalysis(user)
     await user.click(screen.getByRole('button', { name: '返回设置' }))
+    await openOutputOptions(user)
     await user.click(screen.getByLabelText('按片名创建子文件夹'))
     expect(screen.queryByRole('button', { name: '确认并创建工作流' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '下一步：分析' }))
@@ -277,13 +838,13 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
   it.each(['cancel', 'change', 'close'] as const)('输出检查 %s 后拒绝迟到结果，不开始分析或创建目录', async (action) => {
     const user = userEvent.setup()
     const props = baseProps()
-    let resolveOld!: (value: AvEnhanceV27PublicationPreviewEnvelope) => void
-    props.onPreviewPublication.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
+    const pending: Array<(value: AvEnhanceV27PublicationPreviewEnvelope) => void> = []
+    props.onPreviewPublication.mockImplementation(() => new Promise((resolve) => { pending.push(resolve) }))
     const options = { ...props, mode: 'resume' as const, currentSnapshot: snapshot(), runSummaries: [runSummary()] }
     const { rerender } = render(<AvEnhanceV27Wizard {...options} />)
     await user.type(screen.getByLabelText('片名'), 'Movie')
     await user.type(screen.getByLabelText('年份'), '2026')
-    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await chooseOutputParent(user)
     await user.click(screen.getByRole('button', { name: '下一步：分析' }))
     expect(screen.getByRole('button', { name: '正在检查输出位置…' })).toBeDisabled()
     if (action === 'cancel') await user.click(screen.getByRole('button', { name: '取消检查' }))
@@ -292,8 +853,8 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
       rerender(<AvEnhanceV27Wizard {...options} open={false} />)
       rerender(<AvEnhanceV27Wizard {...options} open />)
     }
-    await act(async () => { resolveOld({ contract_version: '0.3.0', layout: 'direct', resolved_output_root: 'D:\\Late', output_directory: 'D:\\Late', will_create_directory: false }) })
-    expect(screen.getByRole('heading', { name: '设置成片目标' })).toBeVisible()
+    await act(async () => { pending.forEach((resolve) => resolve({ contract_version: '0.3.0', layout: 'direct', resolved_output_root: 'D:\\Late', output_directory: 'D:\\Late', will_create_directory: false })) })
+    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
     expect(screen.queryByText('D:\\Late')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '下一步：分析' })).toBeEnabled()
     expect(props.onPreview).not.toHaveBeenCalled()
@@ -306,10 +867,10 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     const user = userEvent.setup()
     const props = baseProps()
     render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} currentProjectPath="D:\\Projects\\existing.zniku" currentProjectId="project.av27" currentProjectName="Existing" runSummaries={[runSummary()]} />)
-    expect(screen.getByRole('heading', { name: '设置成片目标' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
     await user.type(screen.getByLabelText('片名'), 'Movie')
     await user.type(screen.getByLabelText('年份'), '2026')
-    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await chooseOutputParent(user)
     await user.click(screen.getByRole('button', { name: '下一步：分析' }))
     expect(screen.queryByText(runId)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /2026.*完成/ }))
@@ -324,6 +885,68 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     expect(screen.queryByText('project.other')).not.toBeInTheDocument()
   })
 
+  it('预选素材后切为多章节会补齐空白章名，默认可继续且不要求打开高级填写', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    render(<AvEnhanceV27Wizard {...props} />)
+    await user.click(screen.getByRole('button', { name: '选择视频素材' }))
+    await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
+    await user.selectOptions(screen.getByLabelText('素材组织方式'), 'pre_chaptered')
+    expect(screen.getByLabelText('第 1 章名称')).toHaveValue('章节 1')
+    expect(screen.getByLabelText('第 1 章名称')).not.toBeVisible()
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    expect(screen.getByRole('heading', { name: '选择处理方案' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '上一步' }))
+    await user.click(screen.getByText('高级选项（可选）'))
+    await user.clear(screen.getByLabelText('第 1 章名称'))
+    await user.type(screen.getByLabelText('第 1 章名称'), '   ')
+    await user.selectOptions(screen.getByLabelText('素材组织方式'), 'program')
+    await user.selectOptions(screen.getByLabelText('素材组织方式'), 'pre_chaptered')
+    expect(screen.getByLabelText('第 1 章名称')).toHaveValue('章节 1')
+    await user.click(screen.getByText('高级选项（可选）'))
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    expect(screen.getByRole('heading', { name: '选择处理方案' })).toBeVisible()
+    expect(props.onPickSources).toHaveBeenCalledOnce()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+  })
+
+  it('切换模式保留已填章名，主动清空后错误展开统一高级并重复聚焦具体章节', async () => {
+    const user = userEvent.setup()
+    const props = baseProps()
+    render(<AvEnhanceV27Wizard {...props} />)
+    await user.selectOptions(screen.getByLabelText('素材组织方式'), 'pre_chaptered')
+    await user.click(screen.getByRole('button', { name: '选择全部章节视频' }))
+    await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
+    const advanced = screen.getByText('高级选项（可选）').closest('details')!
+    await user.click(screen.getByText('高级选项（可选）'))
+    await user.clear(screen.getByLabelText('第 1 章名称'))
+    await user.type(screen.getByLabelText('第 1 章名称'), '自定义前篇')
+    await user.selectOptions(screen.getByLabelText('素材组织方式'), 'program')
+    await user.selectOptions(screen.getByLabelText('素材组织方式'), 'pre_chaptered')
+    const chapterName = screen.getByLabelText('第 1 章名称')
+    expect(chapterName).toHaveValue('自定义前篇')
+    await user.clear(chapterName)
+    await user.click(screen.getByText('高级选项（可选）'))
+    expect(advanced).not.toHaveAttribute('open')
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('请填写第 1 段的章节名称。')
+    expect(advanced).toHaveAttribute('open')
+    await waitFor(() => expect(chapterName).toHaveFocus())
+    expect(chapterName).toHaveAttribute('aria-invalid', 'true')
+    expect(chapterName).toHaveAccessibleDescription('请填写第 1 段的章节名称。')
+    await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
+    await waitFor(() => expect(chapterName).toHaveFocus())
+    await user.type(chapterName, '已修正前篇')
+    expect(chapterName).not.toHaveAttribute('aria-invalid')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(props.onCreate).not.toHaveBeenCalled()
+    expect(props.onPreview).not.toHaveBeenCalled()
+    expect(props.onStartPreparationRun).not.toHaveBeenCalled()
+  })
+
   it('pre_chaptered 多素材保持 picker 顺序与连续 ordinal', async () => {
     const user = userEvent.setup()
     const props = baseProps()
@@ -331,16 +954,18 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     const { rerender } = render(<AvEnhanceV27Wizard {...props} />)
     await user.selectOptions(screen.getByLabelText('素材组织方式'), 'pre_chaptered')
     await user.click(screen.getByRole('button', { name: /选择全部章节视频/ }))
+    expect(screen.getByLabelText('第 1 章名称')).not.toBeVisible()
+    await user.click(screen.getByText('高级选项（可选）'))
     await user.clear(screen.getByLabelText('第 1 章名称'))
     await user.type(screen.getByLabelText('第 1 章名称'), '前篇')
     await user.clear(screen.getByLabelText('第 2 章名称'))
     await user.type(screen.getByLabelText('第 2 章名称'), '后篇')
-    await user.click(screen.getByRole('button', { name: '选择 .zniku 保存位置' }))
+    await user.click(screen.getByRole('button', { name: '选择工程保存位置' }))
     await user.click(screen.getByRole('button', { name: '下一步：处理方案' }))
-    await user.click(screen.getByRole('button', { name: '下一步：设置' }))
+    await user.click(screen.getByRole('button', { name: '下一步：成片设置' }))
     await user.type(screen.getByLabelText('片名'), 'Movie')
     await user.type(screen.getByLabelText('年份'), '2026')
-    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await chooseOutputParent(user)
     await user.click(screen.getByRole('button', { name: '下一步：分析' }))
     await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
     await waitFor(() => expect(props.onCreate).toHaveBeenCalledWith(expect.objectContaining({
@@ -372,7 +997,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
       .mockImplementationOnce(() => new Promise((resolve) => { resolveLate = resolve }))
     render(<AvEnhanceV27Wizard {...props} />)
     await user.click(screen.getByRole('button', { name: /选择视频素材/ }))
-    expect(screen.getByText('尚未选择')).toBeVisible()
+    expect(screen.getByLabelText('Source 1 path')).toHaveValue('')
     await user.click(screen.getByRole('button', { name: /选择视频素材/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('选择器暂时不可用')
     await user.click(screen.getByRole('button', { name: /选择视频素材/ }))
@@ -380,7 +1005,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     resolveLate(['D:\\Media\\late.mkv'])
     await Promise.resolve()
     expect(screen.queryByText('late.mkv')).not.toBeInTheDocument()
-    expect(screen.getByText('尚未选择')).toBeVisible()
+    expect(screen.getByLabelText('Source 1 path')).toHaveValue('')
   })
 
   it.each(['source', 'project', 'output'] as const)('%s 选择窗口忙碌统一提示已有窗口，保留高级原文且不发起分析', async (kind) => {
@@ -391,7 +1016,8 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     const pick = kind === 'source' ? props.onPickSources : kind === 'project' ? props.onPickProjectPath : props.onPickOutputDirectory
     pick.mockRejectedValueOnce(error)
     render(<AvEnhanceV27Wizard {...props} {...(kind === 'output' ? { mode: 'resume', currentSnapshot: snapshot() } : {})} />)
-    await user.click(screen.getByRole('button', { name: kind === 'source' ? /选择视频素材/ : kind === 'project' ? '选择 .zniku 保存位置' : '选择成片文件夹' }))
+    if (kind === 'output') await openOutputOptions(user)
+    await user.click(screen.getByRole('button', { name: kind === 'source' ? /选择视频素材/ : kind === 'project' ? '选择工程保存位置' : '更改成片父目录' }))
     const message = '已有文件/文件夹选择窗口打开，请先完成或取消；它可能在浏览器后面。'
     expect(await screen.findByText(message)).toBeVisible()
     expect(screen.getByText(rawMessage)).not.toBeVisible()
@@ -446,7 +1072,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} currentProjectPath="D:\\Projects\\existing.zniku" currentProjectId="project.av27" currentProjectName="Existing" runSummaries={[first, second]} />)
     await user.type(screen.getByLabelText('片名'), 'Movie')
     await user.type(screen.getByLabelText('年份'), '2026')
-    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await chooseOutputParent(user)
     await user.click(screen.getByRole('button', { name: '下一步：分析' }))
 
     const records = screen.getAllByRole('button', { name: /分析记录 [12]/ })
@@ -505,7 +1131,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('工作流分析阶段不一致')
     expect(props.onExpand).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '修改设置' }))
-    expect(screen.getByRole('heading', { name: '设置成片目标' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '成片设置' })).toBeVisible()
     expect(props.onStartPreparationRun).toHaveBeenCalledTimes(1)
   })
 
@@ -537,7 +1163,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     const { rerender } = render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} />)
     await user.type(screen.getByLabelText('片名'), 'Old title')
     await user.type(screen.getByLabelText('年份'), '2026')
-    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await chooseOutputParent(user)
     expect(screen.getByText('已选择输出目录：D:\\Library')).toBeVisible()
     rerender(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} open={false} />)
     rerender(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} open />)
@@ -565,11 +1191,11 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
       runSummaries: mode === 'resume' ? [runSummary()] : [] }
     const { rerender } = render(<AvEnhanceV27Wizard {...options} />)
     if (mode === 'create') {
-      await reachAnalysis(user)
+      await reachAnalysis(user, true)
       await user.click(screen.getByRole('button', { name: /开始分析素材/ }))
       await waitFor(() => expect(props.onStartPreparationRun).toHaveBeenCalledTimes(1))
       rerender(<AvEnhanceV27Wizard {...options} runSummaries={[runSummary()]} />)
-    } else await reachResumeAnalysis(user)
+    } else await reachResumeAnalysis(user, true)
     expect(await screen.findByText('素材分析已完成，输出位置尚未就绪')).toBeVisible()
     expect(screen.getByText(serviceMessage, { exact: true })).toBeVisible()
     expect(screen.getByText(raw, { exact: true })).not.toBeVisible()
@@ -622,6 +1248,7 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     expect(await screen.findByText('素材分析已完成，输出位置尚未就绪')).toBeVisible()
     await user.click(screen.getByRole('button', { name: '修改设置' }))
     expect(screen.getByLabelText('允许覆盖发布目标')).not.toBeChecked()
+    await openOutputOptions(user)
     await user.click(screen.getByLabelText('允许覆盖发布目标'))
     await user.click(screen.getByRole('button', { name: '下一步：分析' }))
     await user.click(screen.getByRole('button', { name: '生成工作流预览' }))
@@ -640,11 +1267,11 @@ describe('AVEnhanceFlow v2.7 创作者向导', () => {
     const reveal = vi.fn(async (_path: string) => { throw new Error('native unavailable') })
     render(<AvEnhanceV27Wizard {...props} mode="resume" currentSnapshot={snapshot()} onPickOutputDirectory={pick} onRevealOutputDirectory={reveal} />)
     expect(screen.getByText('引导式视频工作流')).toBeVisible()
-    expect(screen.getByText(/默认直接保存到所选目录，无需预先创建片名文件夹/)).toBeVisible()
+    expect(screen.getByLabelText('成片目录预览')).toHaveTextContent('工程目录')
     expect(screen.queryByRole('button', { name: '打开所选输出文件夹' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await chooseOutputParent(user)
     expect(screen.queryByRole('button', { name: '打开所选输出文件夹' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '选择成片文件夹' }))
+    await chooseOutputParent(user)
     expect(reveal).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '打开所选输出文件夹' }))
     expect(reveal).toHaveBeenCalledExactlyOnceWith('D:\\Library')

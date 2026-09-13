@@ -512,7 +512,7 @@ export function StudioWorkspace({
     templateOutputSelectionRef.current = null
     templateOutputPickerFlightRef.current += 1
     return () => { templateOutputPickerFlightRef.current += 1 }
-  }, [templateOpen, effectiveHostBridge, reconnectEpoch])
+  }, [templateOpen, effectiveHostBridge, reconnectEpoch, statusHealth.stale])
   useEffect(() => {
     const desktop = window.__ZNIKU_DESKTOP__
     if (!desktop || !effectiveHostBridge.saveDesktopPreferences) return
@@ -590,6 +590,12 @@ export function StudioWorkspace({
     readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
     readonly precondition: AuthoringPrecondition | null
   } | null>(null)
+  const templateConnectionEpochRef = useRef(0)
+  useEffect(() => {
+    // 断线与显式重连撤销旧会话的预览资格，迟到响应也不能再次提升为 mutation authority。
+    templateConnectionEpochRef.current += 1
+    latestTemplatePreviewRef.current = null
+  }, [effectiveGateway, reconnectEpoch, statusHealth.stale])
 
   useEffect(() => () => {
     homeActionEpochRef.current += 1
@@ -1896,7 +1902,7 @@ export function StudioWorkspace({
   const executeCommands = useCallback(
     async (
       commands: ReadonlyArray<StudioCommand>,
-      options: { readonly preferCreatedRun?: boolean; readonly discardLocal?: boolean; readonly templatePreview?: AvEnhanceV27TemplatePreviewEnvelope } = {},
+      options: { readonly preferCreatedRun?: boolean; readonly discardLocal?: boolean; readonly templatePreview?: AvEnhanceV27TemplatePreviewEnvelope; readonly templateConnectionEpoch?: number } = {},
     ): Promise<StatusEnvelope | null> => {
       if (busyRef.current) return null
       busyRef.current = true
@@ -1919,6 +1925,9 @@ export function StudioWorkspace({
             if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置，再切换工程。')
             if (statusRef.current?.snapshot && !options.discardLocal) await flushAuthoring()
             if (selectionGuardRef.current.parameterDraftDirty) throw new Error('保存等待期间节点设置已变化；请先应用或放弃，再切换工程。')
+          }
+          if (options.templateConnectionEpoch !== undefined && options.templateConnectionEpoch !== templateConnectionEpochRef.current) {
+            throw new Error('连接在等待保存期间已变化；未发送后续向导命令，请重新检查工程。')
           }
           next = await effectiveGateway.command(command)
           if (generation !== generationRef.current) return null
@@ -2070,10 +2079,12 @@ export function StudioWorkspace({
       request: AvEnhanceV27TemplatePreviewRequestWire,
     ): Promise<AvEnhanceV27TemplatePreviewEnvelope | null> => {
       latestTemplatePreviewRef.current = null
+      const connectionEpoch = templateConnectionEpochRef.current
       setClientHint(null)
       setBoundaryError(null)
       const binding = request.action === 'expand' ? await flushAuthoring() : null
       const next = await effectiveGateway.previewAvEnhanceV27(request)
+      if (connectionEpoch !== templateConnectionEpochRef.current) return null
       latestTemplatePreviewRef.current = {
         requestJson: JSON.stringify(request),
         envelope: next,
@@ -2122,7 +2133,9 @@ export function StudioWorkspace({
         return false
       }
       const next = await executeCommands([command.operation === 'expand_av_enhance_v27'
-        ? { ...command, ...authority.precondition! } : command], { templatePreview: authority.envelope })
+        ? { ...command, ...authority.precondition! } : command], {
+          templatePreview: authority.envelope, templateConnectionEpoch: templateConnectionEpochRef.current,
+        })
       if (!next) {
         latestTemplatePreviewRef.current = null
         return false
@@ -2195,7 +2208,7 @@ export function StudioWorkspace({
   const pickTemplateOutputDirectory = useCallback(async (): Promise<string | null> => {
     if (!hostCapabilityAvailable('select_directory')) throw new Error('文件夹选择器当前不可用，请重新连接。')
     const flight = ++templateOutputPickerFlightRef.current
-    const selected = await effectiveHostBridge.pick('select_directory', { title: '选择成片输出目录' })
+    const selected = await effectiveHostBridge.pick('select_directory', { title: '选择成片父目录' })
     if (flight !== templateOutputPickerFlightRef.current || !selected?.length) return null
     if (selected.length !== 1) throw new Error('输出位置只能选择一个文件夹。')
     templateOutputSelectionRef.current = selected[0]!
@@ -2213,9 +2226,13 @@ export function StudioWorkspace({
   }, [effectiveHostBridge, hostCapabilityAvailable])
 
   const startPreparationRun = useCallback(async (): Promise<string | null> => {
+    const connectionEpoch = templateConnectionEpochRef.current
     const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current) throw new Error('连接在等待保存期间已变化；未启动素材分析，请检查工程后重试。')
     if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置，再运行。')
-    const next = await executeCommands([{ operation: 'run_all', ...binding }], { preferCreatedRun: true })
+    const next = await executeCommands([{ operation: 'run_all', ...binding }], {
+      preferCreatedRun: true, templateConnectionEpoch: connectionEpoch,
+    })
     // 只绑定本次 command response 明确返回的 active_run_id；不得从历史、时间或节点形状猜测。
     return next?.active_run_id ?? null
   }, [executeCommands, flushAuthoring])
@@ -2751,7 +2768,11 @@ export function StudioWorkspace({
         serviceUnavailable={!loading && statusHealth.stale}
       />
       <AvEnhanceV27Wizard
-        busy={serviceBusy || homeActionBusy || health.status.stale}
+        busy={serviceBusy || homeActionBusy}
+        serviceUnavailable={health.status.stale}
+        reconnecting={loading}
+        connectionEpoch={reconnectEpoch}
+        onReconnect={() => setReconnectEpoch((value) => value + 1)}
         currentProjectId={projectId}
         currentProjectName={projectName}
         currentProjectPath={projectPath}
@@ -2879,6 +2900,7 @@ export function StudioWorkspace({
 
       <GraphCanvas
         key={status?.project_session_id ?? 'empty'}
+        keyboardEnabled={!homeOpen && !templateOpen && !storageOpen && !retryOpen}
         viewKey={`${status?.project_session_id ?? 'empty'}:${showRunSnapshot && currentRun ? currentRun.run_id : 'current'}`}
         graph={graph}
         definitions={definitions}

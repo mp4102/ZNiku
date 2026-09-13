@@ -13,12 +13,22 @@ from types import ModuleType
 
 import pytest
 
+from zniku.project_service import host_bridge
 from zniku.project_service.host_bridge import (
     HostBridgeFailure,
     HostCapability,
     HostDialogArguments,
     WindowsHostPlatform,
 )
+from zniku.project_service.native_picker import choose_paths_native
+
+
+@pytest.fixture(autouse=True)
+def native_primitive_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """仅在 fake Tk 单测中直连 primitive；真实进程隔离由独立 IPC/HTTP 测试覆盖。"""
+
+    monkeypatch.setattr(host_bridge, "run_picker_process", choose_paths_native)
+
 
 _PICKERS: dict[HostCapability, str] = {
     "open_file": "askopenfilename",

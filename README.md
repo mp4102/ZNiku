@@ -21,6 +21,8 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 - 当前实现版本：`0.3.1`；按批次 C 统一 package/product，wire/Presentation/StudioState 仍为 `0.3.0`，
   SQLite schema 4 和 NodeDefinition exact version 不变。候选不等于正式发行。
 - 首次用户与操作者使用[候选验收任务包](docs/v0.3.1-creator-acceptance-kit.md)分别记录，自动化或作者不能冒充首次用户。
+- 当前固定测试包为 `ZNIKU-Studio-0.3.1-step3-settings`，来源、修复、已知限制和维护边界见
+  [v0.3.1 验收基点](docs/v0.3.1-acceptance-baseline.md)。后续分章/FI 新处理合同不进入本验收线。
 
 ## 0.2.0 Core、v0.2.1 验收与 v0.3.0 实现检查点（历史）
 

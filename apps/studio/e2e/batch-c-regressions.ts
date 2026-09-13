@@ -58,6 +58,48 @@ function evidence(page: Page, expected: ReadonlyArray<{ path: string; status: nu
   return { errors, accepted, commands }
 }
 
+test('C3 向导断线可退出、重连保留本页草稿且不自动创建或运行', async ({ page }, info) => {
+  const proof = evidence(page, [{ path: '/api/studio/status', status: 503 }])
+  await open(page, host.fixture.small_project)
+  const before = await status(page)
+  const commandCount = proof.commands.length
+  await page.getByRole('button', { name: '工程', exact: true }).click()
+  await page.getByRole('button', { name: '新建工程…', exact: true }).click()
+  await page.getByRole('button', { name: /新建视频工程/ }).click()
+  const wizard = page.getByRole('dialog', { name: /创作者向导/ })
+  await wizard.getByRole('textbox', { name: '工程名称', exact: true }).fill('合成断线保留草稿')
+  // 原生选择由此 fixture 的显式替身返回取消；本用例只测生产 UI 的网络中断恢复，不声称原生崩溃复现。
+  await wizard.locator('summary').filter({ hasText: '高级选项（可选）' }).click()
+  await wizard.getByRole('button', { name: '选择工作数据父目录', exact: true }).click()
+  await page.route('**/api/studio/status', (route) => route.fulfill({ status: 503, contentType: 'application/json',
+    body: JSON.stringify({ error: { code: 'E_SYNTHETIC_DISCONNECTED', message: 'synthetic status transport interruption' } }) }))
+  await expect(wizard.getByRole('status', { name: '向导连接恢复' })).toContainText('填写内容已保留')
+  await expect(wizard.getByRole('button', { name: '关闭模板向导', exact: true })).toBeEnabled()
+  await expect(wizard.getByRole('button', { name: '选择工作数据父目录', exact: true })).toBeDisabled()
+  await wizard.getByRole('button', { name: '关闭模板向导', exact: true }).focus()
+  await page.keyboard.press('Escape')
+  await expect(wizard).not.toBeVisible()
+  await page.getByRole('button', { name: '工程', exact: true }).click()
+  await page.getByRole('button', { name: '新建工程…', exact: true }).click()
+  const home = page.getByRole('dialog', { name: 'ZNIKU Studio 工程首页', exact: true })
+  await page.unroute('**/api/studio/status')
+  await home.getByRole('button', { name: '重新连接', exact: true }).click()
+  await home.getByRole('button', { name: /新建视频工程/ }).click()
+  await expect(wizard.getByRole('textbox', { name: '工程名称', exact: true })).toHaveValue('合成断线保留草稿')
+  await wizard.getByRole('button', { name: '重新连接本机服务', exact: true }).click()
+  await expect(wizard.getByRole('status', { name: '向导连接恢复' })).toContainText('连接已恢复')
+  expect(proof.commands.length).toBe(commandCount)
+  const after = await status(page)
+  expect(after.project_session_id).toBe(before.project_session_id)
+  expect(after.storage_revision).toBe(before.storage_revision)
+  expect(after.snapshot).toEqual(before.snapshot)
+  expect(after.run_summaries).toEqual(before.run_summaries)
+  expect(proof.errors).toEqual([])
+  expect(proof.accepted.length).toBeGreaterThan(0)
+  await report(page, info, 'wizard-offline-recovery', { same_project: true, preserved_in_page_draft: true,
+    new_commands: proof.commands.length - commandCount, simulated_status_transport_failure: true, console_errors: proof.errors })
+})
+
 test('C1 收件确认换代拒绝、旧产物保留、重复票据失效和精确提交', async ({ page }, info) => {
   const confirmPath = '/api/studio/handoff-inbox/confirm'
   const proof = evidence(page, [{ path: confirmPath, status: 409 }])

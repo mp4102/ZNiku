@@ -2,6 +2,7 @@
 
 本文件只替换测试工具的子进程入口，不调用 Windows API、Tk 或真实选择器。原生窗口置顶
 是否成立仍必须由操作者显式运行 tools/run_windows_picker_smoke.py --native-windows 验证。
+工具只覆盖 native primitive，不能将其结果视为生产 HTTP 或最终安装包隔离证据。
 """
 
 from __future__ import annotations
@@ -10,9 +11,10 @@ import importlib.util
 import json
 import subprocess
 import sys
+import threading
 from dataclasses import asdict, replace
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -69,7 +71,7 @@ def test_non_windows_opt_in_is_rejected_without_native_code(
         "owner_topmost",
         "dialog_topmost",
         "cancelled",
-        "lock_released",
+        "main_thread_verified",
         "owner_destroyed",
     ),
 )
@@ -165,3 +167,35 @@ def test_main_reports_only_native_boolean_results(
     assert result["kind"] == "native_windows_picker_self_test"
     assert result["status"] == "passed" and len(result["results"]) == 4
     assert all("hwnd" not in row and "path" not in row for row in result["results"])
+
+
+@pytest.mark.parametrize("outcome", ["cancelled", "selected", "exception"])
+def test_native_child_uses_main_thread_primitive_without_launching_nested_picker(
+    monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    """原生工具只测当前子进程 primitive，不能再启动不可见于其 observer 的孙进程。"""
+    observer = SimpleNamespace(
+        dialog_observed=True,
+        own_process_verified=True,
+        owner_topmost=True,
+        dialog_topmost=True,
+        error=None,
+        observe_and_cancel=lambda finished: None,
+        owner_destroyed=lambda: True,
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(smoke, "_OwnThreadObserver", lambda capability: observer)
+
+    def choose(capability: str, arguments: object) -> tuple[str, ...] | None:
+        assert threading.current_thread() is threading.main_thread()
+        calls.append(capability)
+        if outcome == "exception":
+            raise RuntimeError("synthetic primitive failure")
+        return ("synthetic.mov",) if outcome == "selected" else None
+
+    monkeypatch.setattr(smoke, "choose_paths_native", choose)
+    row = smoke.run_native_child("open_file")
+    assert calls == ["open_file"]
+    assert row.main_thread_verified
+    assert row.passed is (outcome == "cancelled")
+    assert "synthetic.mov" not in str(asdict(row))

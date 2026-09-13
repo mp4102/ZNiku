@@ -241,8 +241,13 @@ class SyntheticPlatform:
         self.wizard_project = root / "wizard-output-layout.zniku"
         self.output_root = root / "wizard-output"
         self.output_root.mkdir()
+        self.output_picker_calls = 0
         self.output_collision = root / "wizard-output-collision"
         self.output_collision.write_text("synthetic non-directory collision", encoding="utf-8")
+        self.data_parent = root / "synthetic-work-disk"
+        self.data_parent.mkdir()
+        # 独立的固定选择序列只用于向导存储 UX；不打开 OS 窗口，也不迁移任何数据。
+        self.data_candidates = iter((None, self.data_parent, None))
         # 每项对应一次真实点击原生选择；与工程/向导 picker 独立，取消不消费正式 import。
         self.external_candidates = iter(
             (
@@ -272,8 +277,18 @@ class SyntheticPlatform:
             return None if candidate is None else (str(candidate),)
         if capability == "save_file" and arguments.title == "保存 ZNIKU 视频工程":
             return (str(self.wizard_project),)
-        if capability == "select_directory" and arguments.title == "选择成片输出目录":
+        if capability == "select_directory" and arguments.title == "选择成片父目录":
+            # 独立序列：选中后第二次取消，后续明确选择仍返回本次合成目录。
+            self.output_picker_calls += 1
+            if self.output_picker_calls == 2:
+                return None
             return (str(self.output_root),)
+        if (
+            capability == "select_directory"
+            and arguments.title == "选择工作数据父目录（保留中间产物）"  # noqa: RUF001
+        ):
+            candidate = next(self.data_candidates, None)
+            return None if candidate is None else (str(candidate),)
         return None
 
     def launch(self, command: HostLaunchCommand) -> None:
@@ -310,6 +325,7 @@ def main() -> None:
                     "wizard_project": str(platform.wizard_project),
                     "output_root": str(platform.output_root),
                     "output_collision": str(platform.output_collision),
+                    "data_parent": str(platform.data_parent),
                     "external_project": str(external),
                     "small_project": str(small),
                     "large_project": str(large),

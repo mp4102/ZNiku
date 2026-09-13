@@ -230,7 +230,13 @@ export interface AvEnhanceV27PublicationRequestWire {
 
 export interface AvEnhanceV27PublicationPreviewRequestWire {
   readonly contract_version: '0.3.0'
-  readonly request: AvEnhanceV27PublicationRequestWire
+  readonly processing?: Omit<AvEnhanceV27ExpandRequestWire, 'profile_version' | 'preparation_run_id' | 'publication'>
+  readonly request:
+    | (AvEnhanceV27PublicationRequestWire & { readonly project_path?: never })
+    | (Omit<AvEnhanceV27PublicationRequestWire, 'output_root'> & {
+        readonly project_path: string
+        readonly output_root?: never
+      })
 }
 
 export interface AvEnhanceV27PublicationPreviewEnvelope {

@@ -44,6 +44,7 @@ export interface AddConnectedNodesRequest {
 
 export interface GraphCanvasProps {
   readonly advanced?: boolean
+  readonly keyboardEnabled?: boolean
   readonly showingSnapshot?: boolean
   readonly nodes: WorkflowNode[]
   readonly edges: WorkflowEdge[]
@@ -83,7 +84,7 @@ export interface GraphCanvasProps {
 }
 
 export function GraphCanvas({
-  advanced = true, showingSnapshot,
+  advanced = true, keyboardEnabled = true, showingSnapshot,
   nodes, edges, editable, busy, modeLabel, contextLabel, snapshotChanged,
   canToggleSnapshot, loading, boundaryError, hasProject, overlays,
   graph, definitions = emptyDefinitions, groups = emptyGroups, viewport, definitionLabel, portLabel,
@@ -149,6 +150,7 @@ export function GraphCanvas({
     readonly sources: ReadonlyArray<ConnectionSource>
     readonly position: { readonly x: number; readonly y: number }
   } | null>(null)
+  const keyboardActive = keyboardEnabled && !connectOpen && !suggestion && !layoutState?.positions
   const selectedNodes = nodes.filter((node) => node.selected)
   const selectedFocus: PathFocus | null = selectedNodes.length === 1 ? { nodeId: selectedNodes[0].id } : null
   const focus = keyboardFocus ?? pointerFocus ?? selectedFocus
@@ -315,7 +317,11 @@ export function GraphCanvas({
           }}
           onMoveEnd={(event, next) => { if (event && editable) onViewportChange?.(next) }}
           nodesDraggable={!disabled} nodesConnectable={!disabled} edgesReconnectable={false}
-          deleteKeyCode={null} selectionOnDrag multiSelectionKeyCode={['Control', 'Meta']}
+          deleteKeyCode={null} selectionOnDrag multiSelectionKeyCode={keyboardActive ? ['Control', 'Meta'] : null}
+          // ReactFlow 在 document 上监听 Space；模态界面拥有焦点时，后台画布不得拦截原生 summary 的按键。
+          {...(!keyboardActive && {
+            panActivationKeyCode: null, selectionKeyCode: null, zoomActivationKeyCode: null, disableKeyboardA11y: true,
+          })}
           fitView={!viewport} defaultViewport={viewport ?? undefined} minZoom={0.02} maxZoom={1.8}
           colorMode="dark" proOptions={{ hideAttribution: true }}
         >

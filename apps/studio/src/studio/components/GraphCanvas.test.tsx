@@ -68,7 +68,67 @@ function props(overrides: Partial<GraphCanvasProps> = {}): GraphCanvasProps {
     ...overrides }
 }
 
+function keyboardBindings() {
+  return {
+    panActivationKeyCode: flowProps.panActivationKeyCode,
+    selectionKeyCode: flowProps.selectionKeyCode,
+    zoomActivationKeyCode: flowProps.zoomActivationKeyCode,
+    multiSelectionKeyCode: flowProps.multiSelectionKeyCode,
+    disableKeyboardA11y: flowProps.disableKeyboardA11y,
+  }
+}
+
+const pausedKeyboardBindings = {
+  panActivationKeyCode: null,
+  selectionKeyCode: null,
+  zoomActivationKeyCode: null,
+  multiSelectionKeyCode: null,
+  disableKeyboardA11y: true,
+}
+
 describe('Phase 3 自由画布', () => {
+  it('父级模态暂停全部 ReactFlow 全局键位，关闭后恢复原默认且不改变图或选区', () => {
+    const initial = props()
+    const beforeGraph = JSON.stringify(graph)
+    const { rerender } = render(<GraphCanvas {...initial} />)
+    const originalBindings = keyboardBindings()
+    expect(originalBindings.multiSelectionKeyCode).toEqual(['Control', 'Meta'])
+    expect(originalBindings.disableKeyboardA11y).not.toBe(true)
+    rerender(<GraphCanvas {...initial} keyboardEnabled={false} />)
+    expect(keyboardBindings()).toEqual(pausedKeyboardBindings)
+    expect(flowProps.deleteKeyCode).toBeNull()
+    rerender(<GraphCanvas {...initial} keyboardEnabled />)
+    expect(keyboardBindings()).toEqual(originalBindings)
+    expect(JSON.stringify(graph)).toBe(beforeGraph)
+    expect(initial.onNodesChange).not.toHaveBeenCalled()
+    expect(initial.onEdgesChange).not.toHaveBeenCalled()
+    expect(initial.onSelectionChange).not.toHaveBeenCalled()
+    expect(initial.onConnect).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['连接节点', '连接节点'],
+    ['为所有输出添加下一步', '添加下一步'],
+    ['整理布局', '整理布局'],
+  ])('%s 内部模态也暂停后台全局键位，Escape 关闭恢复且不产生编辑副作用', async (trigger, dialogName) => {
+    const user = userEvent.setup()
+    const initial = props({ onAddConnectedNodes: vi.fn(), onAutoLayout: vi.fn() })
+    render(<GraphCanvas {...initial} />)
+    const originalBindings = keyboardBindings()
+    await user.click(screen.getByRole('button', { name: trigger }))
+    expect(await screen.findByRole('dialog', { name: dialogName })).toBeVisible()
+    expect(keyboardBindings()).toEqual(pausedKeyboardBindings)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: dialogName })).not.toBeInTheDocument()
+    expect(keyboardBindings()).toEqual(originalBindings)
+    expect(initial.onNodesChange).not.toHaveBeenCalled()
+    expect(initial.onEdgesChange).not.toHaveBeenCalled()
+    expect(initial.onSelectionChange).not.toHaveBeenCalled()
+    expect(initial.onConnect).not.toHaveBeenCalled()
+    expect(initial.onAddConnectedNodes).not.toHaveBeenCalled()
+    expect(initial.onAutoLayout).not.toHaveBeenCalled()
+  })
+
   it.each(['position', 'shape'] as const)('同视图 %s 意图先于测量到达时立即拒绝迟到整理', (kind) => {
     let serial = 0
     const frames = new Map<number, FrameRequestCallback>()
