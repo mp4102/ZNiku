@@ -32,6 +32,7 @@ from zniku.graph import (
     ValidatorSpec,
 )
 from zniku.project import Project, ProjectStore
+from zniku.project.storage import new_project_storage
 from zniku.project_service import (
     HostBridgeFailure,
     HostBridgeSession,
@@ -45,6 +46,7 @@ from zniku.project_service.handoff_import import (
     HandoffImportPreviewEnvelope,
     HandoffImportPreviewRequest,
 )
+from zniku.project_service.storage_paths import prepare_storage_location
 from zniku.runtime import NodeRun, NodeValidatorContext, NodeValidatorResult, RunnerError
 from zniku.runtime.runner import RunnerFailureReason
 
@@ -111,7 +113,13 @@ def _validator(context: NodeValidatorContext) -> NodeValidatorResult:
     return NodeValidatorResult(passed=True)
 
 
-def _setup(tmp_path: Path, *, validator: Any = _validator, multiple_outputs: bool = False) -> Setup:
+def _setup(
+    tmp_path: Path,
+    *,
+    validator: Any = _validator,
+    multiple_outputs: bool = False,
+    readable: bool = False,
+) -> Setup:
     definition = NodeDefinition(
         type_id="test.import.external",
         version="0.2.0",
@@ -147,7 +155,10 @@ def _setup(tmp_path: Path, *, validator: Any = _validator, multiple_outputs: boo
             )
         ),
     )
-    store = ProjectStore.create(tmp_path / "project.zniku", project, (definition,))
+    config = new_project_storage(tmp_path / "project.zniku") if readable else None
+    if config is not None:
+        prepare_storage_location(config, current=None)
+    store = ProjectStore.create(tmp_path / "project.zniku", project, (definition,), storage=config)
     app = ProjectServiceApplication(
         work_root=tmp_path / "attempts",
         definition_catalog=(definition,),

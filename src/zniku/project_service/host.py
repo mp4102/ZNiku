@@ -45,7 +45,15 @@ _DATA_ROUTES: Final = frozenset(
         *[f"{_INBOX_PREFIX}/{action}" for action in ("observe", "preview", "confirm")],
         *[
             f"{_STORAGE_PREFIX}/{action}"
-            for action in ("inspect", "configure", "preview", "confirm")
+            for action in (
+                "inspect",
+                "configure",
+                "preview",
+                "confirm",
+                "organize-preview",
+                "restore-preview",
+                "index",
+            )
         ],
     )
 )

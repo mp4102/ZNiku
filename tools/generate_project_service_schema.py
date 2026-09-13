@@ -63,12 +63,18 @@ from zniku.project_service.models import (
     TemplatePreviewEnvelope,
 )
 from zniku.project_service.preview import MediaPreviewEnvelope, MediaPreviewRequest
-from zniku.project_service.storage import StorageInspection, StorageMigrationPreview
+from zniku.project_service.storage import (
+    StorageInspection,
+    StorageMigrationPreview,
+    StoragePathMapping,
+)
 from zniku.project_service.storage_api import (
+    StorageIndexRequest,
     StorageInspectRequest,
     StorageLocationRequest,
     StorageMigrationConfirmRequest,
 )
+from zniku.project_service.storage_index import StorageIndexResult
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "apps" / "studio" / "src" / "service" / "project-service.schema.json"
@@ -167,6 +173,8 @@ def render_schema() -> str:
         HandoffInboxConfirmEnvelope,
         StorageInspection,
         StorageMigrationPreview,
+        StoragePathMapping,
+        StorageIndexResult,
         MediaPreviewEnvelope,
         DesktopSessionEnvelope,
         DesktopCloseEnvelope,
@@ -222,6 +230,7 @@ def render_schema() -> str:
         HandoffInboxPreviewRequest,
         HandoffInboxConfirmRequest,
         StorageInspectRequest,
+        StorageIndexRequest,
         StorageLocationRequest,
         StorageMigrationConfirmRequest,
         DesktopCloseRequest,

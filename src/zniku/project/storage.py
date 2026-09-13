@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Annotated, Literal
+from uuid import UUID, uuid4
 
-from pydantic import StringConstraints, field_validator, model_validator
+from pydantic import Field, StringConstraints, field_validator, model_validator
 
 from .models import ProjectModel
 from .paths import MEDIA_BASENAME_MAX_UNITS, validate_filename_component
+from .storage_layout import StorageLayoutState
 
 StoragePath = Annotated[str, StringConstraints(min_length=1, max_length=32767)]
 
@@ -29,12 +31,26 @@ def _absolute_path(value: str) -> PurePosixPath | PureWindowsPath:
 class ProjectStorage(ProjectModel):
     """保存工程资产位置；keep 表示完成、退出和重跑均不会自动删除已存资产。"""
 
-    contract_version: Literal["0.3.0"] = "0.3.0"
+    contract_version: Literal["0.3.0", "0.3.2"] = "0.3.0"
     mode: Literal["adjacent", "custom", "legacy"]
     data_root: StoragePath
     attempts_root: StoragePath
     retention: Literal["keep"] = "keep"
     media_basename: Annotated[str, StringConstraints(min_length=1, max_length=180)] | None = None
+    layout: Literal["uuid", "readable"] = "uuid"
+    layout_state: StorageLayoutState = Field(default_factory=StorageLayoutState)
+    data_id: str | None = None
+
+    @field_validator("data_id")
+    @classmethod
+    def validate_data_id(cls, value: str | None) -> str | None:
+        """数据根随机定位标识只用于跨盘找回，不是媒体摘要或 Graph 身份。"""
+
+        if value is not None:
+            parsed = UUID(value)
+            if parsed.version != 4 or str(parsed) != value:
+                raise ValueError("E_PROJECT_STORAGE_DATA_ID: data_id 必须是规范 UUIDv4")
+        return value
 
     @field_validator("data_root", "attempts_root")
     @classmethod
@@ -57,6 +73,15 @@ class ProjectStorage(ProjectModel):
 
     @model_validator(mode="after")
     def validate_roots(self) -> ProjectStorage:
+        if self.contract_version == "0.3.0" and (
+            self.layout != "uuid"
+            or self.layout_state.nodes
+            or self.layout_state.runs
+            or self.data_id is not None
+        ):
+            raise ValueError("E_PROJECT_STORAGE_VERSION: 可读目录及数据根身份仅允许 0.3.2 存储合同")
+        if self.layout == "uuid" and (self.layout_state.nodes or self.layout_state.runs):
+            raise ValueError("E_PROJECT_STORAGE_LAYOUT: UUID 布局不能携带可读目录映射")
         root, attempts = _absolute_path(self.data_root), _absolute_path(self.attempts_root)
         if (
             type(root) is not type(attempts)
@@ -80,6 +105,9 @@ def new_project_storage(
     project = Path(project_path).absolute()
     root = Path(data_root).absolute() if data_root is not None else project.with_suffix(".data")
     return ProjectStorage(
+        contract_version="0.3.2",
+        layout="readable",
+        data_id=str(uuid4()),
         mode="custom" if data_root is not None else "adjacent",
         data_root=str(root),
         attempts_root=str(root / "attempts"),

@@ -13,6 +13,7 @@ from zniku.project import ProjectStoreError
 from zniku.project.storage import ProjectStorage
 
 from .storage import _safe_path
+from .storage_owner import create_storage_owner
 
 
 def existing_storage_root(storage: ProjectStorage) -> Path:
@@ -47,6 +48,7 @@ def prepare_storage_location(storage: ProjectStorage, *, current: ProjectStorage
         with tempfile.TemporaryFile(dir=attempts) as stream:
             stream.write(b"ZNIKU storage check")
             stream.flush()
+        create_storage_owner(storage)
     except OSError as error:
         raise ProjectStoreError(
             "E_PROJECT_STORAGE_UNWRITABLE", "无法准备工程数据目录；请检查磁盘、权限和可用空间"

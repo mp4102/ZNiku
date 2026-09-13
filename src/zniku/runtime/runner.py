@@ -29,6 +29,7 @@ from zniku.graph import (
     NodeInstance,
     PythonExecutorSpec,
 )
+from zniku.project.storage_layout import safe_attempt_directory
 from zniku.runtime.models import FrameRange
 
 from .paths import incoming_directory_name
@@ -174,6 +175,7 @@ class NodeExecutionRequest:
     node: NodeInstance
     inputs: tuple[RunnerInput, ...] = ()
     output_paths: tuple[OutputPathSpec, ...] = ()
+    work_dir: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -526,7 +528,7 @@ class NodeRunner:
         ordered_inputs = self._validate_request(request)
         if request.definition.execution_mode is not ExecutionMode.AUTOMATIC:
             raise self._configuration_error("E_RUNNER_MODE_INVALID", "节点不是 automatic")
-        layout = self._create_layout(request.node_run_id)
+        layout = self._create_layout(request)
         targets = self._output_targets(request, layout)
         self._create_output_parents(targets, layout)
         executor = request.definition.executor
@@ -598,7 +600,7 @@ class NodeRunner:
             executor, ManualExternalExecutorSpec
         ):
             raise self._configuration_error("E_RUNNER_MODE_INVALID", "节点不是 manual_external")
-        layout = self._create_layout(request.node_run_id)
+        layout = self._create_layout(request)
         targets = self._output_targets(request, layout)
         self._create_output_parents(targets, layout)
         # 收件目录按 attempt 与输出端口隔离；创建失败不得发布 waiting handoff。
@@ -644,7 +646,7 @@ class NodeRunner:
             executor, ManualExternalExecutorSpec
         ):
             raise self._configuration_error("E_RUNNER_MODE_INVALID", "节点不是 manual_external")
-        layout = self._existing_layout(request.node_run_id)
+        layout = self._existing_layout(request)
         try:
             targets = self._output_targets(request, layout)
             self._assert_handoff_matches(
@@ -708,7 +710,7 @@ class NodeRunner:
             executor, ManualExternalExecutorSpec
         ):
             raise self._configuration_error("E_RUNNER_MODE_INVALID", "节点不是 manual_external")
-        layout = self._existing_layout(request.node_run_id)
+        layout = self._existing_layout(request)
         targets = self._output_targets(request, layout)
         self._assert_handoff_matches(
             request,
@@ -749,7 +751,7 @@ class NodeRunner:
             executor, ManualExternalExecutorSpec
         ):
             raise self._configuration_error("E_RUNNER_MODE_INVALID", "节点不是 manual_external")
-        layout = self._existing_layout(request.node_run_id)
+        layout = self._existing_layout(request)
         targets = self._output_targets(request, layout)
         self._assert_handoff_matches(
             request, handoff, layout, targets, ordered_inputs, executor.instructions
@@ -918,10 +920,25 @@ class NodeRunner:
             )
         return resolved
 
-    def _create_layout(self, node_run_id: str) -> _AttemptLayout:
-        run_uuid = self._node_run_uuid(node_run_id)
-        work_dir = self._resolve_inside(self._work_root, run_uuid.hex)
+    def _bound_work_dir(self, request: NodeExecutionRequest) -> Path:
+        """Service 使用已入库的位置；旧独立 Runner API 未绑定时仍保持 UUID 布局。"""
+
+        run_uuid = self._node_run_uuid(request.node_run_id)
+        if request.work_dir is None:
+            return self._resolve_inside(self._work_root, run_uuid.hex)
         try:
+            return safe_attempt_directory(self._work_root, request.work_dir)
+        except (OSError, ValueError) as error:
+            raise RunnerError(
+                "E_RUNNER_PATH_ESCAPE", RunnerFailureReason.PATH_INVALID, str(error)
+            ) from error
+
+    def _create_layout(self, request: NodeExecutionRequest) -> _AttemptLayout:
+        work_dir = self._bound_work_dir(request)
+        try:
+            # 分类和节点目录可共享，最末层 attempt 必须独占且不可恢复覆盖。
+            work_dir.parent.mkdir(parents=True, exist_ok=True)
+            self._bound_work_dir(request)
             work_dir.mkdir(exist_ok=False)
             output_dir = work_dir / "outputs"
             log_dir = work_dir / "logs"
@@ -945,9 +962,8 @@ class NodeRunner:
             ) from error
         return _AttemptLayout(work_dir, output_dir, stdout_path, stderr_path)
 
-    def _existing_layout(self, node_run_id: str) -> _AttemptLayout:
-        run_uuid = self._node_run_uuid(node_run_id)
-        work_dir = self._resolve_inside(self._work_root, run_uuid.hex)
+    def _existing_layout(self, request: NodeExecutionRequest) -> _AttemptLayout:
+        work_dir = self._bound_work_dir(request)
         output_dir = self._resolve_inside(work_dir, "outputs")
         stdout_path = self._resolve_inside(work_dir, "logs/stdout.log")
         stderr_path = self._resolve_inside(work_dir, "logs/stderr.log")
@@ -1020,7 +1036,7 @@ class NodeRunner:
                     "E_RUNNER_OUTPUT_PATH_INVALID", "output relative_path 不得为空"
                 )
             overrides[item.port_id] = item.relative_path
-        return tuple(
+        targets = tuple(
             OutputTarget(
                 port_id=port.port_id,
                 kind=port.data_type,
@@ -1034,6 +1050,15 @@ class NodeRunner:
             )
             for index, port in enumerate(request.definition.output_ports)
         )
+        if request.work_dir is not None and request.work_dir.parent != self._work_root:
+            for target in targets:
+                if len(str(target.path).encode("utf-16-le")) // 2 > 259:
+                    raise RunnerError(
+                        "E_RUNNER_PATH_BUDGET",
+                        RunnerFailureReason.PATH_INVALID,
+                        "可读输出路径超过外部工具兼容长度，请缩短数据父目录或媒体基础名",
+                    )
+        return targets
 
     @staticmethod
     def _create_output_parents(targets: tuple[OutputTarget, ...], layout: _AttemptLayout) -> None:

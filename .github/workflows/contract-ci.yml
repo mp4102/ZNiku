@@ -58,6 +58,9 @@ jobs:
       - name: Run overlap FI synthetic Graph and explicit-submit E2E
         run: uv run --locked --extra dev python tools/run_overlap_smoke.py --output .test-tmp-overlap-smoke-ci
 
+      - name: Run readable-storage overlap FI synthetic E2E
+        run: uv run --locked --extra dev python tools/run_overlap_smoke.py --output .test-tmp-readable-smoke-ci --readable-storage
+
       - name: Verify Project Service Studio schema
         run: uv run --locked --extra dev python tools/generate_project_service_schema.py --check
 

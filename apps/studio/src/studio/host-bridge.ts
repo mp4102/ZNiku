@@ -44,6 +44,7 @@ export interface HostSelection {
 
 export type HostPathReference =
   | { readonly kind: 'picker_selection'; readonly selection_handle: string }
+  | { readonly kind: 'storage_index'; readonly project_session_id: string }
   | { readonly kind: 'artifact'; readonly run_id: string; readonly artifact_id: string }
   | {
       readonly kind: 'handoff'
@@ -95,7 +96,10 @@ export interface HostBridge {
   inspectStorage?(projectSessionId: string): Promise<StorageInspection>
   configureStorage?(request: StorageLocationRequest): Promise<StorageInspection>
   previewStorageMigration?(request: StorageLocationRequest): Promise<StorageMigrationPreview>
+  previewStorageOrganization?(request: StorageLocationRequest): Promise<StorageMigrationPreview>
+  previewStorageRestore?(request: StorageLocationRequest): Promise<StorageMigrationPreview>
   confirmStorageMigration?(request: StorageMigrationConfirmRequest): Promise<StorageInspection>
+  generateStorageIndex?(request: StorageIndexRequest): Promise<StorageIndexResult>
   inspectDesktop?(): Promise<DesktopSessionEnvelope>
   closeDesktop?(instanceId: string): Promise<void>
   saveDesktopPreferences?(instanceId: string, preferences: DesktopPreferences): Promise<void>
@@ -199,12 +203,18 @@ export interface HandoffInboxConfirmEnvelope extends HandoffImportBinding {
   readonly status: 'collected'
 }
 export interface ProjectStorage {
-  readonly contract_version: '0.3.0'
+  readonly contract_version: '0.3.0' | '0.3.2'
   readonly mode: 'adjacent' | 'custom' | 'legacy'
   readonly data_root: string
   readonly attempts_root: string
   readonly retention: 'keep'
   readonly media_basename: string | null
+  readonly data_id?: string | null
+  readonly layout?: 'uuid' | 'readable'
+  readonly layout_state?: {
+    readonly nodes: Readonly<Record<string, { readonly number: number; readonly relative_dir: string }>>
+    readonly runs: Readonly<Record<string, number>>
+  }
 }
 export interface StorageDependency {
   readonly path: string
@@ -243,12 +253,29 @@ export interface StorageMigrationPreview {
   readonly byte_count: number
   readonly external_dependencies: ReadonlyArray<StorageDependency>
   readonly originals_retained: true
+  readonly operation?: 'relocate' | 'organize' | 'restore'
+  readonly path_mappings?: ReadonlyArray<{ readonly source: string; readonly target: string }>
+  readonly warnings?: ReadonlyArray<string>
 }
 export interface StorageMigrationConfirmRequest {
   readonly contract_version?: '0.3.0'
   readonly project_session_id: string
   readonly expected_storage_revision: number
   readonly ticket_id: string
+}
+export interface StorageIndexRequest {
+  readonly contract_version?: '0.3.0'
+  readonly project_session_id: string
+  readonly expected_storage_revision: number
+}
+export interface StorageIndexResult {
+  readonly contract_version: '0.3.2'
+  readonly project_session_id: string
+  readonly expected_storage_revision: number
+  readonly path: string
+  readonly artifact_count: number
+  readonly external_dependency_count: number
+  readonly warnings: ReadonlyArray<string>
 }
 
 interface HostBridgeBootstrap {
@@ -567,13 +594,39 @@ export class FetchHostBridge implements HostBridge {
   }
 
   async previewStorageMigration(request: StorageLocationRequest): Promise<StorageMigrationPreview> {
-    const result = await this.dataPost<StorageMigrationPreview>('storage/preview', request,
+    return this.prepareStorageOperation('preview', 'relocate', request)
+  }
+
+  async previewStorageOrganization(request: StorageLocationRequest): Promise<StorageMigrationPreview> {
+    return this.prepareStorageOperation('organize-preview', 'organize', request)
+  }
+
+  async previewStorageRestore(request: StorageLocationRequest): Promise<StorageMigrationPreview> {
+    return this.prepareStorageOperation('restore-preview', 'restore', request)
+  }
+
+  private async prepareStorageOperation(
+    route: 'preview' | 'organize-preview' | 'restore-preview',
+    operation: 'relocate' | 'organize' | 'restore',
+    request: StorageLocationRequest,
+  ): Promise<StorageMigrationPreview> {
+    const result = await this.dataPost<StorageMigrationPreview>(`storage/${route}`, request,
       'StorageLocationRequest', 'StorageMigrationPreview')
-    if (result.project_session_id !== request.project_session_id || result.expected_storage_revision !== request.expected_storage_revision) {
-      throw new HostBridgeError('迁移预览不属于当前工程，请重新检查。')
+    if (result.project_session_id !== request.project_session_id || result.expected_storage_revision !== request.expected_storage_revision ||
+      (result.operation ?? 'relocate') !== operation) {
+      throw new HostBridgeError('迁移预览不属于当前工程或所选操作，请重新检查。')
     }
     this.storagePreviews.set(result.ticket_id, result)
     if (this.storagePreviews.size > 32) this.storagePreviews.delete(this.storagePreviews.keys().next().value!)
+    return result
+  }
+
+  async generateStorageIndex(request: StorageIndexRequest): Promise<StorageIndexResult> {
+    const result = await this.dataPost<StorageIndexResult>('storage/index', request,
+      'StorageIndexRequest', 'StorageIndexResult')
+    if (result.project_session_id !== request.project_session_id || result.expected_storage_revision !== request.expected_storage_revision) {
+      throw new HostBridgeError('文件目录响应不属于当前工程，请刷新检查。')
+    }
     return result
   }
 
@@ -585,7 +638,9 @@ export class FetchHostBridge implements HostBridge {
     this.storagePreviews.delete(request.ticket_id)
     const result = await this.dataPost<StorageInspection>('storage/confirm', request,
       'StorageMigrationConfirmRequest', 'StorageInspection')
-    if (result.storage.data_root !== preview.target.data_root || result.storage.attempts_root !== preview.target.attempts_root) {
+    if (result.storage.data_root !== preview.target.data_root || result.storage.attempts_root !== preview.target.attempts_root ||
+      (result.storage.layout ?? 'uuid') !== (preview.target.layout ?? 'uuid') ||
+      (result.storage.data_id ?? null) !== (preview.target.data_id ?? null)) {
       throw new HostBridgeError('迁移响应与已确认位置不一致，请刷新检查实际工程。')
     }
     return result

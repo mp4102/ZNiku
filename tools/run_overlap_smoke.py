@@ -81,9 +81,10 @@ def _metadata(artifact: Artifact) -> OverlapMetadata:
     return OverlapMetadata.model_validate(plain(artifact.media_info[OVERLAP_NAMESPACE]))
 
 
-def _application(work_root: Path) -> ProjectServiceApplication:
+def _application(work_root: Path, *, readable_storage: bool = False) -> ProjectServiceApplication:
     return ProjectServiceApplication(
         work_root=work_root,
+        project_data_default=readable_storage,
         definition_catalog=(
             *built_in_media_definitions(),
             *built_in_av27_definitions(),
@@ -251,7 +252,9 @@ def _submit(
     return result
 
 
-def run_smoke(output: Path, *, frame_rate: str = "30000/1001") -> dict[str, Any]:
+def run_smoke(
+    output: Path, *, frame_rate: str = "30000/1001", readable_storage: bool = False
+) -> dict[str, Any]:
     """十八帧三章含一帧短章，完整普通 Graph / SQLite / Submit / reuse 验证。"""
     if output.exists():
         raise FileExistsError("E_OVERLAP_SMOKE_EXISTS: 必须选择新的保留目录")
@@ -309,7 +312,7 @@ def run_smoke(output: Path, *, frame_rate: str = "30000/1001") -> dict[str, Any]
     )
 
     project_path = output / "overlap.zniku"
-    app = _application(output / "attempts")
+    app = _application(output / "attempts", readable_storage=readable_storage)
     app.command(
         {
             "operation": "create_av_enhance_v27",
@@ -428,6 +431,15 @@ def run_smoke(output: Path, *, frame_rate: str = "30000/1001") -> dict[str, Any]
         "config_stale_nodes": stale,
         "seconds": perf_counter() - started,
     }
+    if readable_storage:
+        # 同一真实 Runtime 媒体链只切换物理定位；不能注入状态或把路径名视为结果证明。
+        storage = ProjectStore.open(project_path).load_storage()
+        assert storage is not None and storage.layout == "readable"
+        assert storage.layout_state.nodes["overlap.fi.A"].relative_dir.startswith(
+            "chapters/0001-A/外部FI补帧__N"
+        )
+        report["storage_layout"] = storage.layout
+        report["data_root"] = storage.data_root
     with (output / "report.json").open("x", encoding="utf-8") as stream:
         json.dump(report, stream, ensure_ascii=False, indent=2)
     return report
@@ -437,9 +449,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--frame-rate", choices=("30/1", "30000/1001"), default="30000/1001")
+    parser.add_argument("--readable-storage", action="store_true")
     args = parser.parse_args()
     print(
-        json.dumps(run_smoke(args.output, frame_rate=args.frame_rate), ensure_ascii=False, indent=2)
+        json.dumps(
+            run_smoke(
+                args.output, frame_rate=args.frame_rate, readable_storage=args.readable_storage
+            ),
+            ensure_ascii=False,
+            indent=2,
+        )
     )
     return 0
 

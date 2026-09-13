@@ -4740,7 +4740,8 @@
         "mapping": {
           "artifact": "#/$defs/Host_Reference_ArtifactPathReference",
           "handoff": "#/$defs/Host_Reference_HandoffPathReference",
-          "picker_selection": "#/$defs/Host_Reference_PickerSelectionReference"
+          "picker_selection": "#/$defs/Host_Reference_PickerSelectionReference",
+          "storage_index": "#/$defs/Host_Reference_StorageIndexPathReference"
         },
         "propertyName": "kind"
       },
@@ -4753,6 +4754,9 @@
         },
         {
           "$ref": "#/$defs/Host_Reference_HandoffPathReference"
+        },
+        {
+          "$ref": "#/$defs/Host_Reference_StorageIndexPathReference"
         }
       ]
     },
@@ -5786,7 +5790,8 @@
         "mapping": {
           "artifact": "#/$defs/Host_HostSystemArguments_ArtifactPathReference",
           "handoff": "#/$defs/Host_HostSystemArguments_HandoffPathReference",
-          "picker_selection": "#/$defs/Host_HostSystemArguments_PickerSelectionReference"
+          "picker_selection": "#/$defs/Host_HostSystemArguments_PickerSelectionReference",
+          "storage_index": "#/$defs/Host_HostSystemArguments_StorageIndexPathReference"
         },
         "propertyName": "kind"
       },
@@ -5799,6 +5804,9 @@
         },
         {
           "$ref": "#/$defs/Host_HostSystemArguments_HandoffPathReference"
+        },
+        {
+          "$ref": "#/$defs/Host_HostSystemArguments_StorageIndexPathReference"
         }
       ]
     },
@@ -5824,6 +5832,30 @@
         "selection_handle"
       ],
       "title": "PickerSelectionReference",
+      "type": "object"
+    },
+    "Host_HostSystemArguments_StorageIndexPathReference": {
+      "additionalProperties": false,
+      "description": "只定位当前工程已生成的固定文件目录，不开放任意本机HTML或目录路径。",
+      "properties": {
+        "kind": {
+          "const": "storage_index",
+          "title": "Kind",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "project_session_id"
+      ],
+      "title": "StorageIndexPathReference",
       "type": "object"
     },
     "Host_HostUserActionRequest_HostCapability": {
@@ -6057,7 +6089,8 @@
         "mapping": {
           "artifact": "#/$defs/Host_MediaPreviewRequest_ArtifactPathReference",
           "handoff": "#/$defs/Host_MediaPreviewRequest_HandoffPathReference",
-          "picker_selection": "#/$defs/Host_MediaPreviewRequest_PickerSelectionReference"
+          "picker_selection": "#/$defs/Host_MediaPreviewRequest_PickerSelectionReference",
+          "storage_index": "#/$defs/Host_MediaPreviewRequest_StorageIndexPathReference"
         },
         "propertyName": "kind"
       },
@@ -6070,6 +6103,9 @@
         },
         {
           "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffPathReference"
+        },
+        {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_StorageIndexPathReference"
         }
       ]
     },
@@ -6095,6 +6131,30 @@
         "selection_handle"
       ],
       "title": "PickerSelectionReference",
+      "type": "object"
+    },
+    "Host_MediaPreviewRequest_StorageIndexPathReference": {
+      "additionalProperties": false,
+      "description": "只定位当前工程已生成的固定文件目录，不开放任意本机HTML或目录路径。",
+      "properties": {
+        "kind": {
+          "const": "storage_index",
+          "title": "Kind",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "project_session_id"
+      ],
+      "title": "StorageIndexPathReference",
       "type": "object"
     },
     "Host_PublicationPreviewRequest_ChapterSelector": {
@@ -6618,6 +6678,30 @@
         "selection_handle"
       ],
       "title": "PickerSelectionReference",
+      "type": "object"
+    },
+    "Host_Reference_StorageIndexPathReference": {
+      "additionalProperties": false,
+      "description": "只定位当前工程已生成的固定文件目录，不开放任意本机HTML或目录路径。",
+      "properties": {
+        "kind": {
+          "const": "storage_index",
+          "title": "Kind",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "project_session_id"
+      ],
+      "title": "StorageIndexPathReference",
       "type": "object"
     },
     "IconToken": {
@@ -8851,16 +8935,43 @@
           "type": "string"
         },
         "contract_version": {
-          "const": "0.3.0",
           "default": "0.3.0",
+          "enum": [
+            "0.3.0",
+            "0.3.2"
+          ],
           "title": "Contract Version",
           "type": "string"
+        },
+        "data_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data Id"
         },
         "data_root": {
           "maxLength": 32767,
           "minLength": 1,
           "title": "Data Root",
           "type": "string"
+        },
+        "layout": {
+          "default": "uuid",
+          "enum": [
+            "uuid",
+            "readable"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "layout_state": {
+          "$ref": "#/$defs/StorageLayoutState"
         },
         "media_basename": {
           "anyOf": [
@@ -8898,7 +9009,10 @@
         "data_root",
         "attempts_root",
         "retention",
-        "media_basename"
+        "media_basename",
+        "layout",
+        "layout_state",
+        "data_id"
       ],
       "title": "ProjectStorage",
       "type": "object"
@@ -9718,6 +9832,111 @@
       "title": "StorageDependency",
       "type": "object"
     },
+    "StorageIndexPathReference": {
+      "additionalProperties": false,
+      "description": "只定位当前工程已生成的固定文件目录，不开放任意本机HTML或目录路径。",
+      "properties": {
+        "kind": {
+          "const": "storage_index",
+          "title": "Kind",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "project_session_id"
+      ],
+      "title": "StorageIndexPathReference",
+      "type": "object"
+    },
+    "StorageIndexRequest": {
+      "additionalProperties": false,
+      "description": "生成派生 HTML 时绑定 CAS；不改变图、运行或复用结果。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_session_id",
+        "expected_storage_revision"
+      ],
+      "title": "StorageIndexRequest",
+      "type": "object"
+    },
+    "StorageIndexResult": {
+      "additionalProperties": false,
+      "description": "只返回固定派生文件位置；打开能力仍须通过绑定当前工程的宿主引用。",
+      "properties": {
+        "artifact_count": {
+          "title": "Artifact Count",
+          "type": "integer"
+        },
+        "contract_version": {
+          "const": "0.3.2",
+          "default": "0.3.2",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "external_dependency_count": {
+          "title": "External Dependency Count",
+          "type": "integer"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "project_session_id": {
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "expected_storage_revision",
+        "path",
+        "artifact_count",
+        "external_dependency_count",
+        "warnings"
+      ],
+      "title": "StorageIndexResult",
+      "type": "object"
+    },
     "StorageInspectRequest": {
       "additionalProperties": false,
       "description": "只读检查必须绑定当前工程会话。",
@@ -9826,6 +10045,34 @@
         "warnings"
       ],
       "title": "StorageInspection",
+      "type": "object"
+    },
+    "StorageLayoutState": {
+      "additionalProperties": false,
+      "description": "普通持久存储索引；随机身份仍是正式身份，编号不是领域版本或执行权威。",
+      "properties": {
+        "nodes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/StorageNodeLocation"
+          },
+          "title": "Nodes",
+          "type": "object"
+        },
+        "runs": {
+          "additionalProperties": {
+            "maximum": 999999,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Runs",
+          "type": "object"
+        }
+      },
+      "required": [
+        "nodes",
+        "runs"
+      ],
+      "title": "StorageLayoutState",
       "type": "object"
     },
     "StorageLocationRequest": {
@@ -9946,11 +10193,29 @@
           "title": "File Count",
           "type": "integer"
         },
+        "operation": {
+          "default": "relocate",
+          "enum": [
+            "relocate",
+            "organize",
+            "restore"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
         "originals_retained": {
           "const": true,
           "default": true,
           "title": "Originals Retained",
           "type": "boolean"
+        },
+        "path_mappings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/StoragePathMapping"
+          },
+          "title": "Path Mappings",
+          "type": "array"
         },
         "project_session_id": {
           "title": "Project Session Id",
@@ -9965,6 +10230,14 @@
         "ticket_id": {
           "title": "Ticket Id",
           "type": "string"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
         }
       },
       "required": [
@@ -9978,9 +10251,56 @@
         "file_count",
         "byte_count",
         "external_dependencies",
-        "originals_retained"
+        "originals_retained",
+        "operation",
+        "path_mappings",
+        "warnings"
       ],
       "title": "StorageMigrationPreview",
+      "type": "object"
+    },
+    "StorageNodeLocation": {
+      "additionalProperties": false,
+      "description": "一个稳定 node_id 的持久目录，不因后续展示改名而移动。",
+      "properties": {
+        "number": {
+          "maximum": 999999,
+          "minimum": 1,
+          "title": "Number",
+          "type": "integer"
+        },
+        "relative_dir": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Relative Dir",
+          "type": "string"
+        }
+      },
+      "required": [
+        "number",
+        "relative_dir"
+      ],
+      "title": "StorageNodeLocation",
+      "type": "object"
+    },
+    "StoragePathMapping": {
+      "additionalProperties": false,
+      "description": "预览一个已绑定 attempt 的实体位置变更，不授权其他目录。",
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "title": "StoragePathMapping",
       "type": "object"
     },
     "StudioState": {

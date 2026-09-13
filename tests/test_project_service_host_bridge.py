@@ -42,6 +42,7 @@ from zniku.project_service import (
     create_project_service_host_bridge_session,
     make_project_service_handler,
 )
+from zniku.project_service.host_bridge import StorageIndexPathReference
 from zniku.runtime import NodeRunState
 
 _ORIGIN = "http://127.0.0.1:4173"
@@ -81,9 +82,13 @@ class RecordingResolver:
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.references: list[ArtifactPathReference | HandoffPathReference] = []
+        self.references: list[
+            ArtifactPathReference | HandoffPathReference | StorageIndexPathReference
+        ] = []
 
-    def resolve(self, reference: ArtifactPathReference | HandoffPathReference) -> Path:
+    def resolve(
+        self, reference: ArtifactPathReference | HandoffPathReference | StorageIndexPathReference
+    ) -> Path:
         self.references.append(reference)
         return self.path
 
@@ -855,3 +860,54 @@ def test_windows_picker_concurrency_fails_busy_without_opening_window() -> None:
     finally:
         platform._dialog_lock.release()
     assert failure.value.code == "E_HOST_BRIDGE_DIALOG_BUSY"
+
+
+def test_storage_index_can_only_reveal_fixed_session_reference(tmp_path: Path) -> None:
+    target = tmp_path / "文件目录.html"
+    target.write_text("synthetic", encoding="utf-8")
+    platform = RecordingPlatform()
+    resolver = RecordingResolver(target)
+    session = HostBridgeSession(platform, studio_origin=_ORIGIN, path_resolver=resolver)
+    reference = {"kind": "storage_index", "project_session_id": str(uuid4())}
+    session.invoke(
+        {
+            "user_action_id": _issue(session, "reveal_in_file_manager"),
+            "capability": "reveal_in_file_manager",
+            "arguments": {"reference": reference},
+        }
+    )
+    assert len(platform.launches) == len(resolver.references) == 1
+    assert platform.launches[0].executable == "explorer.exe"
+    with pytest.raises(HostBridgeFailure, match="工程目录索引只允许"):
+        session.invoke(
+            {
+                "user_action_id": _issue(session, "open_with_system_player"),
+                "capability": "open_with_system_player",
+                "arguments": {"reference": reference},
+            }
+        )
+    assert len(platform.launches) == len(resolver.references) == 1
+    with pytest.raises(ValidationError):
+        StorageIndexPathReference.model_validate({**reference, "path": str(target)})
+
+
+def test_storage_index_resolver_passes_session_to_current_project_authority(tmp_path: Path) -> None:
+    current_session = str(uuid4())
+    target = tmp_path / "文件目录.html"
+
+    def locate(session_id: str) -> Path:
+        if session_id != current_session:
+            raise ValueError("旧工程会话")
+        return target
+
+    resolver = ProjectServiceHostPathResolver(SimpleNamespace(storage_index_path=locate))
+    assert (
+        resolver.resolve(
+            StorageIndexPathReference(kind="storage_index", project_session_id=current_session)
+        )
+        == target
+    )
+    with pytest.raises(HostBridgeFailure, match="旧工程会话"):
+        resolver.resolve(
+            StorageIndexPathReference(kind="storage_index", project_session_id=str(uuid4()))
+        )

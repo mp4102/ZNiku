@@ -157,6 +157,13 @@ NodeRun 工作/日志及 handoff 目标路径，保留原位置文件；不改�
 时序或 reuse/stale 结论。首版仅允许无活动或等待 Run 时迁移，有历史数据时不能用“更改位置”代替迁移。
 归档检查必须列出数据目录外的已登记源素材/输出及检查范围，不把 `.zniku` 单文件宣称为完整离线归档。
 
+经操作者批准的v0.3.2存储可读化：UUID身份与物理目录名分离，新布局可用工程内持久的节点/运行编号和
+纯命名提示组织独立attempt；分配与NodeRun路径在同一SQLite事务固化，既有UUID布局继续兼容。
+这些是工程存储定位，不参与Graph、媒体身份或reuse/stale。只在显式维护中整理或重新定位副本；
+数据根缺失可只读打开工程进入维修模式，禁止创建目录和启动Runtime，恢复定位后才恢复执行。
+文件目录索引是可重建的用户浏览导出，不是新authority。具体边界见
+[`v0.3.2-readable-storage-plan.md`](../v0.3.2-readable-storage-plan.md)。
+
 同一个 `Project.graph` 既是 Studio 正在编辑的 Graph，也是下一次 Run 的唯一候选来源。为支持逐步编排、
 自动保存和崩溃恢复，它可以保存仅带有第 7.1 节闭合集合 authoring diagnostics 的暂不可运行状态；不得另存
 一张隐藏的“最后可运行 Graph”，也不得生成 Compiler、Freeze、ExecutionPlan 或领域级 Revision authority。

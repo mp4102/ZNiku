@@ -26,6 +26,7 @@ from pydantic import JsonValue, ValidationError
 
 from zniku.graph import GraphValidationError, GraphValidator, NodeDefinition, NodeInstance
 from zniku.project import ProjectStore
+from zniku.project.storage_layout import AttemptNamingHint, safe_attempt_directory
 
 from .models import (
     Artifact,
@@ -79,6 +80,7 @@ from .scheduler import Scheduler
 
 type ArtifactQuickProbe = Callable[[Artifact], bool]
 type OutputPathResolver = Callable[[Run, NodeInstance, NodeDefinition], tuple[OutputPathSpec, ...]]
+type AttemptNamingResolver = Callable[[Run, NodeInstance, NodeDefinition], AttemptNamingHint | None]
 
 
 class RuntimeServiceError(RuntimeError):
@@ -125,12 +127,14 @@ class RuntimeService:
         progress_wall_clock: WallClock | None = None,
         progress_monotonic_clock: MonotonicClock | None = None,
         output_path_resolver: OutputPathResolver | None = None,
+        attempt_naming_resolver: AttemptNamingResolver | None = None,
     ) -> None:
-        root = Path(work_root)
+        root = Path(work_root).absolute()
         try:
+            safe_attempt_directory(root, root / ("0" * 32))
             root.mkdir(parents=True, exist_ok=True)
             self._work_root = root.resolve(strict=True)
-        except OSError as error:
+        except (OSError, ValueError) as error:
             raise RuntimeServiceError("E_SERVICE_WORK_ROOT_INVALID", str(error)) from error
         if not self._work_root.is_dir():
             raise RuntimeServiceError("E_SERVICE_WORK_ROOT_INVALID", "work_root 必须是目录")
@@ -145,6 +149,7 @@ class RuntimeService:
         )
         self._artifact_quick_probe = artifact_quick_probe or _default_artifact_quick_probe
         self._output_path_resolver = output_path_resolver
+        self._attempt_naming_resolver = attempt_naming_resolver
         self._progress_wall_clock = progress_wall_clock or utc_now
         self._progress_monotonic_clock = progress_monotonic_clock or monotonic
         self._progress_lock = threading.RLock()
@@ -232,6 +237,7 @@ class RuntimeService:
             started_at=utc_now(),
             expected_storage_revision=expected_storage_revision,
             rerun_from_node_id=rerun_from_node_id,
+            attempt_naming_hints=self._attempt_naming_hints(run),
         )
 
     def create_rerun_run(
@@ -559,6 +565,7 @@ class RuntimeService:
             new_attempts,
             updated_at=utc_now(),
             expected_storage_revision=expected_storage_revision,
+            attempt_naming_hints=self._attempt_naming_hints(run),
         )
         return self.run_until_blocked(run_id)
 
@@ -594,6 +601,7 @@ class RuntimeService:
             run_id,
             abandoned_at=abandoned_at,
             pending_node_runs=tuple(pending_attempts),
+            attempt_naming_hints=self._attempt_naming_hints(run),
         )
 
     def recover_interrupted(self) -> tuple[NodeRun, ...]:
@@ -961,6 +969,7 @@ class RuntimeService:
             node=node,
             inputs=inputs.runner_inputs,
             output_paths=output_paths,
+            work_dir=Path(node_run.work_dir),
         )
 
     def _resolve_inputs(self, run: Run, node_id: str) -> _ResolvedInputs:
@@ -1310,6 +1319,21 @@ class RuntimeService:
                 "Run 执行闭包缺少 NodeRun：" + ", ".join(missing),
             )
         return latest
+
+    def _attempt_naming_hints(self, run: Run) -> dict[str, AttemptNamingHint]:
+        """只接收可信宿主的纯命名提示；分类不进入 Graph、调度或结果失效判断。"""
+
+        if self._attempt_naming_resolver is None:
+            return {}
+        definitions = {(item.type_id, item.version): item for item in run.definitions_snapshot}
+        result: dict[str, AttemptNamingHint] = {}
+        for node in run.graph_snapshot.nodes:
+            hint = self._attempt_naming_resolver(
+                run, node, definitions[(node.type_id, node.definition_version)]
+            )
+            if hint is not None:
+                result[node.node_id] = AttemptNamingHint.model_validate(hint)
+        return result
 
     def _attempt_work_dir(self, node_run_id: str) -> Path:
         """只用 UUID hex 派生 attempt 目录，不接受 node_id 或用户路径片段。"""

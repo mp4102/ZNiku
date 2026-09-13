@@ -4,7 +4,7 @@ import { copyFile, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, sep } from 'node:path'
 import axe from 'axe-core'
 import type { GraphWire, RunDetailEnvelope, StatusEnvelope } from '../src/studio/contracts'
-import type { StorageInspection } from '../src/studio/host-bridge'
+import type { StorageIndexResult, StorageInspection } from '../src/studio/host-bridge'
 import { maskedScreenshot, ProductionJournal, SyntheticFixtureHost, type SyntheticFixture } from './production-support'
 
 const service = new SyntheticFixtureHost()
@@ -1136,6 +1136,27 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   await expect(panel.getByText(/不等于完整离线归档/)).toBeVisible()
   await accessibility(page, '工程旁数据与归档依赖检查')
   await page.screenshot({ path: info.outputPath('project-data-inspection.png'), fullPage: true })
+  // 索引只在显式点击后生成；正式 Runtime 记录不变，打开仅通过当前工程的固定宿主引用。
+  const beforeIndex = await detail()
+  const generatedResponse = page.waitForResponse((response) => response.url() === `${origin}/api/studio/storage/index`)
+  await panel.getByRole('button', { name: '生成文件目录', exact: true }).click()
+  const generated = await generatedResponse
+  expect(generated.status()).toBe(200)
+  const indexResult = await generated.json() as StorageIndexResult
+  expect(indexResult.path).toBe(join(dataRoot, '文件目录.html'))
+  expect(indexResult.artifact_count).toBe(beforeIndex.artifacts.length)
+  const indexView = panel.getByRole('region', { name: '已生成的文件目录', exact: true })
+  await expect(indexView).toContainText(indexResult.path)
+  expect(await readFile(indexResult.path, 'utf8')).toContain('ZNIKU derived storage index; not runtime authority')
+  expect(await detail()).toEqual(beforeIndex)
+  const revealedResponse = page.waitForResponse((response) => response.url() === `${origin}/api/host-bridge/invoke`)
+  await indexView.getByRole('button', { name: '在文件管理器中定位目录索引', exact: true }).click()
+  const revealed = await revealedResponse
+  expect(revealed.status()).toBe(200)
+  expect(revealed.request().postDataJSON()).toMatchObject({ capability: 'reveal_in_file_manager',
+    arguments: { reference: { kind: 'storage_index', project_session_id: indexResult.project_session_id } } })
+  expect(await revealed.json()).toMatchObject({ status: 'launched', selections: [] })
+  await accessibility(page, '派生文件目录与显式系统定位')
   await panel.getByRole('button', { name: '完成', exact: true }).click()
   expect(await exists(otherArrival)).toBe(true)
   expect(await readFile(target)).toEqual(await readFile(original))

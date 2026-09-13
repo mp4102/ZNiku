@@ -309,8 +309,18 @@ class HandoffPathReference(HostBridgeModel):
     selector: HandoffPathSelector
 
 
+class StorageIndexPathReference(HostBridgeModel):
+    """只定位当前工程已生成的固定文件目录，不开放任意本机HTML或目录路径。"""
+
+    kind: Literal["storage_index"]
+    project_session_id: HostRandomId
+
+
 type HostPathReference = Annotated[
-    PickerSelectionReference | ArtifactPathReference | HandoffPathReference,
+    PickerSelectionReference
+    | ArtifactPathReference
+    | HandoffPathReference
+    | StorageIndexPathReference,
     Field(discriminator="kind"),
 ]
 
@@ -412,7 +422,9 @@ class HostProjectReadAuthority(Protocol):
 class HostPathResolver(Protocol):
     """把非 picker authority reference 解引用为宿主路径。"""
 
-    def resolve(self, reference: ArtifactPathReference | HandoffPathReference) -> Path:
+    def resolve(
+        self, reference: ArtifactPathReference | HandoffPathReference | StorageIndexPathReference
+    ) -> Path:
         """解析并验证 reference；不得信任浏览器路径。"""
 
 
@@ -429,9 +441,24 @@ class ProjectServiceHostPathResolver:
     def __init__(self, application: HostProjectReadAuthority) -> None:
         self._application = application
 
-    def resolve(self, reference: ArtifactPathReference | HandoffPathReference) -> Path:
+    def resolve(
+        self, reference: ArtifactPathReference | HandoffPathReference | StorageIndexPathReference
+    ) -> Path:
         """要求 Artifact 属于引用 Run，handoff 属于最新 waiting attempt。"""
 
+        if isinstance(reference, StorageIndexPathReference):
+            resolver = getattr(self._application, "storage_index_path", None)
+            try:
+                if not callable(resolver):
+                    raise ValueError("当前服务不支持工程文件目录定位")
+                path: object = resolver(reference.project_session_id)
+                if not isinstance(path, Path):
+                    raise ValueError("工程文件目录定位结果非法")
+                return path
+            except Exception as error:
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_REFERENCE", str(error), http_status=HTTPStatus.CONFLICT
+                ) from error
         try:
             detail = self._application.inspect_run_detail(reference.run_id)
         except Exception as error:
@@ -535,7 +562,8 @@ class ProjectServiceHostPathResolver:
                 work / "incoming" / incoming_directory_name(selector.port_id)
             )
             if (
-                work.parent != root
+                not work.is_relative_to(root)
+                or work == root
                 or incoming != work / "incoming" / incoming_directory_name(selector.port_id)
                 or not incoming.is_dir()
             ):
@@ -810,6 +838,14 @@ class HostBridgeSession:
                 "HostBridge system-action arguments 字段或类型无效",
                 http_status=HTTPStatus.UNPROCESSABLE_ENTITY,
             ) from error
+        if isinstance(arguments.reference, StorageIndexPathReference) and (
+            capability != "reveal_in_file_manager"
+        ):
+            raise HostBridgeFailure(
+                "E_HOST_BRIDGE_REFERENCE",
+                "工程目录索引只允许在文件管理器中定位，不可作为媒体执行",
+                http_status=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
         path = self.resolve_path_reference(arguments.reference)
         if capability == "open_with_system_player":
             if not path.is_file():

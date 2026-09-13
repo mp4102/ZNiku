@@ -20,7 +20,16 @@ from zniku.project_service import HostBridgeFailure
 _INBOX = "/api/studio/handoff-inbox"
 _STORAGE = "/api/studio/storage"
 _ROUTES = tuple(f"{_INBOX}/{action}" for action in ("observe", "preview", "confirm")) + tuple(
-    f"{_STORAGE}/{action}" for action in ("inspect", "configure", "preview", "confirm")
+    f"{_STORAGE}/{action}"
+    for action in (
+        "inspect",
+        "configure",
+        "preview",
+        "confirm",
+        "organize-preview",
+        "restore-preview",
+        "index",
+    )
 )
 
 

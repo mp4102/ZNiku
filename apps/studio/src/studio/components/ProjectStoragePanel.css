@@ -1,0 +1,46 @@
+/* 存储维护需要看清长路径与确认内容，只扩大此窗口，不改变其他画布对话框。 */
+.canvas-dialog:has(.project-storage-panel) {
+  width: min(780px, 100%);
+}
+
+.project-storage-panel .handoff-import-review {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.project-storage-panel .handoff-import-review > div:nth-child(-n + 2) {
+  grid-column: 1 / -1;
+}
+
+.project-storage-panel section {
+  display: grid;
+  gap: 10px;
+}
+
+.project-storage-panel section h3 {
+  margin: 0;
+}
+
+.project-storage-panel details > summary {
+  cursor: pointer;
+  padding-block: 8px;
+}
+
+.project-storage-panel details[open] > summary {
+  margin-bottom: 6px;
+}
+
+.project-storage-panel li + li {
+  margin-top: 8px;
+}
+
+.project-storage-panel [aria-label="已生成的文件目录"] {
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .project-storage-panel .handoff-import-review {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

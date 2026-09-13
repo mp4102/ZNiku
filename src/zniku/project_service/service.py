@@ -95,6 +95,7 @@ from zniku.runtime import (
     RunState,
     RuntimeConflictError,
     RuntimeNotFoundError,
+    RuntimeRepository,
     RuntimeRepositoryError,
     RuntimeService,
     RuntimeServiceError,
@@ -147,6 +148,7 @@ from .models import (
     parse_project_service_command,
     parse_template_preview_request,
 )
+from .storage_naming import resolve_attempt_naming
 from .storage_paths import existing_storage_root, prepare_storage_location
 
 _LOG_TAIL_LIMIT: Final = 128 * 1024
@@ -278,7 +280,11 @@ class ProjectServiceApplication:
             self.assert_preview_session(project_session_id)
             if self._desktop_closing:
                 raise ProjectServiceError("E_DESKTOP_CLOSING", "应用正在关闭", http_status=409)
-            store, _ = self._require_session()
+            store = self._store
+            if store is None:
+                raise ProjectServiceError(
+                    "E_PROJECT_SERVICE_NO_PROJECT", "尚未打开 .zniku Project", http_status=409
+                )
             if modifying:
                 self._active_operation = "migrate_storage"
         try:
@@ -294,6 +300,27 @@ class ProjectServiceApplication:
                 with self._state:
                     self._active_operation = None
                     self._state.notify_all()
+
+    def storage_index_path(self, project_session_id: str) -> Path:
+        """只允许显式定位当前工程的固定HTML索引，不接受浏览器本机路径或执行HTML。"""
+
+        from .storage import _safe_path
+
+        with self.storage_authority(project_session_id) as (store, _legacy):
+            storage = store.load_storage()
+            if storage is None:
+                raise ProjectServiceError(
+                    "E_PROJECT_STORAGE_INDEX", "请先配置工程数据并生成文件目录", http_status=409
+                )
+            root = _safe_path(Path(storage.data_root))
+            path = _safe_path(root / "文件目录.html")
+            if not path.is_file() or path.parent != root:
+                raise ProjectServiceError(
+                    "E_PROJECT_STORAGE_INDEX",
+                    "当前工程文件目录不存在或不是普通文件",
+                    http_status=409,
+                )
+            return path
 
     def assert_preview_session(self, project_session_id: str | None) -> None:
         """预览生成前后校验页面会话；不加载全量历史，也不修改领域状态。"""
@@ -348,7 +375,12 @@ class ProjectServiceApplication:
                     http_status=422,
                 )
             authority = ImportAuthority(
-                runtime, node_run, targets[0], self._effective_work_root(store), store.path
+                runtime,
+                node_run,
+                targets[0],
+                self._effective_work_root(store),
+                store.path,
+                storage=store.load_storage(),
             )
             previous_run_id = self._active_run_id
             if importing:
@@ -655,7 +687,7 @@ class ProjectServiceApplication:
         store, runtime, active_run_id, active_operation, error, project_session_id = (
             self._session_view()
         )
-        if store is None or runtime is None:
+        if store is None:
             if view_run_id is not None:
                 raise ProjectServiceError(
                     "E_PROJECT_SERVICE_RUN_NOT_FOUND",
@@ -674,21 +706,28 @@ class ProjectServiceApplication:
         try:
             authoring = store.load_authoring()
             snapshot = authoring.snapshot
+            # 数据盘丢失时只读打开SQLite供维修；不构造Runtime，以免创建空目录或恢复运行状态。
+            repository = runtime.repository if runtime is not None else RuntimeRepository(store)
+            if runtime is None:
+                error = ProjectServiceFailure(
+                    code="E_PROJECT_STORAGE_MISSING",
+                    message="工程数据目录不可用；当前为只读维修模式，请在工程数据中重新定位已有数据目录。",
+                )
             terminal = tuple(
                 self._summarize_run(run)
-                for run in runtime.repository.list_run_window(
+                for run in repository.list_run_window(
                     terminal=True, limit=_STATUS_TERMINAL_LIMIT + 1
                 )
             )
             terminal_window = terminal[:_STATUS_TERMINAL_LIMIT]
             by_id = {summary.run_id: summary for summary in terminal_window}
-            for run in runtime.repository.list_run_window(terminal=False):
+            for run in repository.list_run_window(terminal=False):
                 by_id[run.run_id] = self._summarize_run(run)
             for identity in (active_run_id, view_run_id):
                 if identity is None or identity in by_id:
                     continue
                 try:
-                    by_id[identity] = self._summarize_run(runtime.repository.get_run(identity))
+                    by_id[identity] = self._summarize_run(repository.get_run(identity))
                 except RuntimeNotFoundError:
                     if identity == view_run_id:
                         raise ProjectServiceError(
@@ -723,7 +762,7 @@ class ProjectServiceApplication:
                 next_run_cursor=next_cursor,
                 active_run_id=active_run_id,
                 active_operation=active_operation,
-                latest_results=runtime.repository.list_latest(),
+                latest_results=repository.list_latest(),
                 error=error,
             )
         except ProjectServiceError:
@@ -1043,7 +1082,13 @@ class ProjectServiceApplication:
     def _open(self, command: OpenProjectCommand) -> None:
         path = self._resolve_open_path(command.path)
         store = ProjectStore.open(path)
-        runtime = self._runtime_for(store)
+        try:
+            runtime = self._runtime_for(store)
+        except ProjectStoreError as error:
+            # 只为缺失数据根提供维护入口；链接/路径损坏/未知存储合同仍失败关闭，不自动修正。
+            if error.code != "E_PROJECT_STORAGE_MISSING":
+                raise
+            runtime = None
         self._store = store
         self._runtime = runtime
         self._project_session_id = str(uuid4())
@@ -1959,6 +2004,7 @@ class ProjectServiceApplication:
             progress_wall_clock=self._progress_wall_clock,
             progress_monotonic_clock=self._progress_monotonic_clock,
             output_path_resolver=resolve_paths,
+            attempt_naming_resolver=resolve_attempt_naming,
         )
 
     def _session_view(
@@ -1982,9 +2028,15 @@ class ProjectServiceApplication:
             )
 
     def _require_session(self) -> tuple[ProjectStore, RuntimeService]:
-        if self._store is None or self._runtime is None:
+        if self._store is None:
             raise ProjectServiceError(
                 "E_PROJECT_SERVICE_NO_PROJECT", "尚未打开 .zniku Project", http_status=409
+            )
+        if self._runtime is None:
+            raise ProjectServiceError(
+                "E_PROJECT_STORAGE_MISSING",
+                "工程处于只读维修模式；请先在工程数据中重新定位，不能编辑或运行。",
+                http_status=409,
             )
         return self._store, self._runtime
 

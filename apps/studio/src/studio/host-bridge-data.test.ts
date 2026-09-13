@@ -1,7 +1,7 @@
 /** 工程数据与收件 wire 只接受 Python Schema；票据消费后网络不明也不重放文件副作用。 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FetchHostBridge } from './host-bridge'
-import type { HandoffImportBinding, ProjectStorage, StorageInspection, StorageMigrationPreview } from './host-bridge'
+import type { HandoffImportBinding, ProjectStorage, StorageIndexResult, StorageInspection, StorageMigrationPreview } from './host-bridge'
 
 afterEach(() => vi.unstubAllGlobals())
 const session = '00000000-0000-4000-8000-000000000001'
@@ -20,7 +20,7 @@ const inboxPreview = { ...binding, inbox_id: 'inbox_1234567890_1234567890', sour
 const inboxResult = { ...binding, inbox_id: inboxPreview.inbox_id, source_name: inboxPreview.source_name,
   source_size: inboxPreview.source_size, target_path: inboxPreview.target_path, status: 'collected' }
 const storage: ProjectStorage = { contract_version: '0.3.0', mode: 'custom', data_root: 'D:\\archive\\project.data',
-  attempts_root: 'D:\\archive\\project.data\\attempts', retention: 'keep', media_basename: 'SYN-001 (2020)' }
+  attempts_root: 'D:\\archive\\project.data\\attempts', retention: 'keep', media_basename: 'SYN-001 (2020)', data_id: null, layout: 'uuid', layout_state: { nodes: {}, runs: {} } }
 const inspection: StorageInspection = { contract_version: '0.3.0', storage, configured: true, attempt_count: 2,
   registered_file_count: 2, registered_bytes: 2048, managed_file_count: 2, managed_bytes: 2048,
   missing: [], external_dependencies: [], coverage: 'registered_artifacts', warnings: [] }
@@ -28,7 +28,13 @@ const storageRequest = { contract_version: '0.3.0' as const, project_session_id:
 const storagePreview: StorageMigrationPreview = { contract_version: '0.3.0', ticket_id: '00000000-0000-4000-8000-000000000005',
   project_session_id: session, expected_storage_revision: 3,
   source: { ...storage, mode: 'legacy', data_root: 'C:\\synthetic', attempts_root: 'C:\\synthetic\\attempts' },
-  target: storage, attempt_count: 2, file_count: 2, byte_count: 2048, external_dependencies: [], originals_retained: true }
+  target: storage, attempt_count: 2, file_count: 2, byte_count: 2048, external_dependencies: [], originals_retained: true,
+  operation: 'relocate', path_mappings: [], warnings: [] }
+const readableStorage: ProjectStorage = { ...storage, contract_version: '0.3.2', data_id: '00000000-0000-4000-8000-000000000006', layout: 'readable', layout_state: { nodes: {}, runs: {} } }
+const organizePreview: StorageMigrationPreview = { ...storagePreview, operation: 'organize', target: readableStorage,
+  path_mappings: [{ source: 'C:\\synthetic\\attempts\\opaque', target: 'D:\\archive\\project.data\\attempts\\custom\\任务__N001\\R001-A001' }] }
+const indexResult: StorageIndexResult = { contract_version: '0.3.2', project_session_id: session, expected_storage_revision: 3,
+  path: 'D:\\archive\\project.data\\文件目录.html', artifact_count: 2, external_dependency_count: 1, warnings: [] }
 function response(value: unknown): Response {
   return new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
@@ -147,5 +153,109 @@ describe('工程数据 HostBridge wire', () => {
     await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('synthetic lost acknowledgement')
     await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('已失效')
     expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('可读整理使用明确路由和父目录句柄，确认仍消费同一工程绑定票据', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(organizePreview)).mockResolvedValueOnce(response({ ...inspection, storage: readableStorage }))
+    vi.stubGlobal('fetch', fetch)
+    const host = bridge()
+    const request = { ...storageRequest, selection_handle: 'parent_directory_handle_1234567890' }
+    await expect(host.previewStorageOrganization(request)).resolves.toEqual(organizePreview)
+    expect(fetch.mock.calls[0]![0]).toBe('http://127.0.0.1:18765/api/studio/storage/organize-preview')
+    expect(JSON.parse((fetch.mock.calls[0]![1] as RequestInit).body as string)).toEqual(request)
+    const confirm = { project_session_id: session, expected_storage_revision: 3, ticket_id: organizePreview.ticket_id }
+    await expect(host.confirmStorageMigration(confirm)).resolves.toMatchObject({ storage: { layout: 'readable' } })
+    await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('已失效')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('不能将普通换盘预览或重新定位预览冒充可读整理', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(storagePreview))
+      .mockResolvedValueOnce(response({ ...organizePreview, operation: 'restore' }))
+    vi.stubGlobal('fetch', fetch)
+    const host = bridge()
+    await expect(host.previewStorageOrganization(storageRequest)).rejects.toThrow('所选操作')
+    await expect(host.previewStorageOrganization(storageRequest)).rejects.toThrow('所选操作')
+    await expect(host.confirmStorageMigration({ project_session_id: session, expected_storage_revision: 3, ticket_id: storagePreview.ticket_id })).rejects.toThrow('已失效')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('整理响应布局必须与预览一致，网络或响应不明时不自动再次复制', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(organizePreview)).mockResolvedValueOnce(response(inspection))
+      .mockResolvedValueOnce(response(organizePreview)).mockRejectedValueOnce(new Error('synthetic copy outcome unknown'))
+    vi.stubGlobal('fetch', fetch)
+    const host = bridge()
+    const confirm = { project_session_id: session, expected_storage_revision: 3, ticket_id: organizePreview.ticket_id }
+    await host.previewStorageOrganization(storageRequest)
+    await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('不一致')
+    await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('已失效')
+    await host.previewStorageOrganization(storageRequest)
+    await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('synthetic copy outcome unknown')
+    await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('已失效')
+    expect(fetch).toHaveBeenCalledTimes(4)
+  })
+
+  it('重新定位只传.data本体的选择句柄，错误工程和旧revision不能确认', async () => {
+    const restorePreview = { ...organizePreview, operation: 'restore' }
+    const fetch = vi.fn().mockResolvedValueOnce(response({ ...restorePreview, project_session_id: other }))
+      .mockResolvedValueOnce(response(restorePreview)).mockResolvedValueOnce(response({ ...inspection, storage: readableStorage }))
+    vi.stubGlobal('fetch', fetch)
+    const host = bridge()
+    const request = { ...storageRequest, selection_handle: 'existing_data_handle_1234567890123' }
+    await expect(host.previewStorageRestore(request)).rejects.toThrow('不属于')
+    await expect(host.previewStorageRestore(request)).resolves.toMatchObject({ operation: 'restore' })
+    const confirm = { project_session_id: session, expected_storage_revision: 3, ticket_id: organizePreview.ticket_id }
+    await expect(host.confirmStorageMigration({ ...confirm, expected_storage_revision: 4 })).rejects.toThrow('已失效')
+    await expect(host.confirmStorageMigration(confirm)).resolves.toMatchObject({ storage: { layout: 'readable' } })
+    expect(fetch.mock.calls[0]![0]).toBe('http://127.0.0.1:18765/api/studio/storage/restore-preview')
+    expect(JSON.parse((fetch.mock.calls[0]![1] as RequestInit).body as string)).toEqual(request)
+  })
+
+  it('确认回执的数据归属必须与预览一致，同名同路径不等于同一工程数据', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(organizePreview))
+      .mockResolvedValueOnce(response({ ...inspection, storage: { ...readableStorage, data_id: other } }))
+    vi.stubGlobal('fetch', fetch)
+    const host = bridge()
+    const confirm = { project_session_id: session, expected_storage_revision: 3, ticket_id: organizePreview.ticket_id }
+    await host.previewStorageOrganization(storageRequest)
+    await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('不一致')
+    await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('已失效')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('新维护预览仍失败关闭未知字段与原始路径，不向宿主发出写入意图', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ ...organizePreview, path_mappings: [{ source: 'C:\\synthetic', target: 'D:\\synthetic', execute: 'bad' }] }))
+    vi.stubGlobal('fetch', fetch)
+    const host = bridge()
+    await expect(host.previewStorageOrganization({ ...storageRequest, target_path: 'D:\\bad' } as typeof storageRequest)).rejects.toThrow('Schema')
+    await expect(host.previewStorageRestore({ ...storageRequest, source_path: 'D:\\bad' } as typeof storageRequest)).rejects.toThrow('Schema')
+    expect(fetch).not.toHaveBeenCalled()
+    await expect(host.previewStorageOrganization(storageRequest)).rejects.toThrow('Schema')
+  })
+
+  it('索引响应严格匹配当前工程和revision，不返回脚本执行或任意保存能力', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(indexResult))
+      .mockResolvedValueOnce(response({ ...indexResult, project_session_id: other }))
+      .mockResolvedValueOnce(response({ ...indexResult, expected_storage_revision: 4 }))
+      .mockResolvedValueOnce(response({ ...indexResult, html: '<script>bad</script>' }))
+    vi.stubGlobal('fetch', fetch)
+    const host = bridge()
+    const request = { project_session_id: session, expected_storage_revision: 3 }
+    await expect(host.generateStorageIndex(request)).resolves.toEqual(indexResult)
+    expect(fetch.mock.calls[0]![0]).toBe('http://127.0.0.1:18765/api/studio/storage/index')
+    expect(JSON.parse((fetch.mock.calls[0]![1] as RequestInit).body as string)).toEqual(request)
+    await expect(host.generateStorageIndex(request)).rejects.toThrow('不属于')
+    await expect(host.generateStorageIndex(request)).rejects.toThrow('不属于')
+    await expect(host.generateStorageIndex(request)).rejects.toThrow('Schema')
+    expect(fetch).toHaveBeenCalledTimes(4)
+  })
+
+  it('索引定位只使用固定Host capability和工程引用，不传HTML文件路径', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ contract_version: '0.3.0', user_action_id: 'user_action_1234567890_1234567890', capability: 'reveal_in_file_manager', expires_in_seconds: 5 }))
+      .mockResolvedValueOnce(response({ contract_version: '0.3.0', status: 'launched', selections: [] }))
+    vi.stubGlobal('fetch', fetch)
+    await bridge().launch('reveal_in_file_manager', { kind: 'storage_index', project_session_id: session })
+    expect(JSON.parse((fetch.mock.calls[1]![1] as RequestInit).body as string)).toMatchObject({ capability: 'reveal_in_file_manager', arguments: { reference: { kind: 'storage_index', project_session_id: session } } })
+    expect((fetch.mock.calls[1]![1] as RequestInit).body).not.toContain(indexResult.path)
   })
 })

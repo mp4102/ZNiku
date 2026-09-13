@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Annotated, Final, Literal
 
 from pydantic import Field, StringConstraints, ValidationError
 
+from zniku.project.storage import ProjectStorage
+from zniku.project.storage_layout import safe_attempt_directory
 from zniku.runtime import ExternalOutputTarget, NodeRun, RunnerError, RuntimeService
 
 from .host_bridge import (
@@ -98,6 +100,7 @@ class ImportAuthority:
     target: ExternalOutputTarget
     work_root: Path
     project_path: Path
+    storage: ProjectStorage | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,22 +173,40 @@ def _identity(
 
 
 def _target_path(authority: ImportAuthority) -> Path:
+    """从当前持久身份重验目标；可读目录不能通过 UUID 文件夹名字反向认领。"""
+
     root = _safe_path(authority.work_root)
-    work = _safe_path(Path(authority.node_run.work_dir))
+    raw_work = Path(authority.node_run.work_dir)
+    storage = authority.storage
+    if storage is not None and storage.layout == "readable":
+        location = storage.layout_state.nodes.get(authority.node_run.node_id)
+        run_number = storage.layout_state.runs.get(authority.node_run.run_id)
+        if location is None or run_number is None or Path(storage.attempts_root) != root:
+            raise _failure("PATH", "任务缺少当前工程已保存的存储绑定", 422)
+        expected = (
+            root / location.relative_dir / f"R{run_number:03d}-A{authority.node_run.attempt:03d}"
+        )
+    else:
+        expected = root / authority.node_run.node_run_id.replace("-", "")
+    try:
+        safe_attempt_directory(root, raw_work)
+    except (OSError, ValueError) as error:
+        raise _failure("PATH", "任务工作目录不符合独立 attempt 边界", 422) from error
+    if raw_work != expected:
+        raise _failure("PATH", "任务工作目录与持久身份绑定不匹配", 422)
+    work = _safe_path(raw_work)
+    output_root = _safe_path(work / "outputs")
     target = Path(authority.target.path)
     try:
-        work.relative_to(root)
-        target.relative_to(work)
+        target.relative_to(output_root)
     except ValueError as error:
-        raise _failure("PATH", "任务目标不在已绑定 attempt 内", 422) from error
-    if work == root or work.name != authority.node_run.node_run_id.replace("-", ""):
-        raise _failure("PATH", "任务工作目录身份不匹配", 422)
+        raise _failure("PATH", "任务目标不在已绑定 attempt 的 outputs 内", 422) from error
     target = _safe_path(target, allow_missing_leaf=True)
     try:
-        target.relative_to(work)
+        target.relative_to(output_root)
     except ValueError as error:
         raise _failure("PATH", "解析后的任务目标逃逸 attempt", 422) from error
-    if target == authority.project_path.resolve(strict=True):
+    if target == output_root or target == authority.project_path.resolve(strict=True):
         raise _failure("PATH", "禁止覆盖工程文件", 422)
     return target
 

@@ -301,7 +301,12 @@ def test_new_generic_project_runs_in_its_configured_persistent_root(
     )
     run = _run(application)
     assert run.state is RunState.COMPLETED
-    assert Path(run.node_runs[0].work_dir).parent == expected_root
+    if desktop_default:
+        assert Path(run.node_runs[0].work_dir) == (
+            expected_root / "custom" / "source__N001" / "R001-A001"
+        )
+    else:
+        assert Path(run.node_runs[0].work_dir).parent == expected_root
     assert (Path(run.node_runs[0].work_dir) / "outputs" / "source.txt").is_file()
     reopened = ProjectServiceApplication(
         work_root=tmp_path / "new-launcher", project_data_default=True
@@ -381,7 +386,9 @@ def test_av27_atomic_create_uses_final_project_name_and_source_runs_in_that_root
     run = _run(application, node.node_id)
     assert run.state is RunState.COMPLETED
     assert len(run.node_runs) == 1
-    assert Path(run.node_runs[0].work_dir).parent == Path(storage.attempts_root)
+    assert Path(run.node_runs[0].work_dir) == (
+        Path(storage.attempts_root) / "common" / "源素材__N001" / "R001-A001"
+    )
     assert sorted(item.name for item in tmp_path.glob("*.data")) == ["Final Video Project.data"]
     assert source.read_bytes() == b"synthetic-not-media"
 
@@ -422,8 +429,16 @@ def test_av27_create_custom_parent_and_explicit_media_basename_are_persisted(
     )
     run = _run(application, source.node_id)
     assert run.state is RunState.COMPLETED
-    assert Path(run.node_runs[0].work_dir).parent == Path(storage.attempts_root)
-    assert store.load_storage() == storage
+    assert Path(run.node_runs[0].work_dir) == (
+        Path(storage.attempts_root) / "common" / "源素材__N001" / "R001-A001"
+    )
+    after = store.load_storage()
+    assert after is not None
+    assert after.model_dump(exclude={"layout_state"}) == storage.model_dump(
+        exclude={"layout_state"}
+    )
+    assert after.layout_state.runs[run.run_id] == 1
+    assert after.layout_state.nodes[source.node_id].relative_dir == "common/源素材__N001"
 
 
 @pytest.mark.parametrize(
@@ -533,7 +548,7 @@ def test_new_project_storage_operation_remains_pollable_without_any_run(tmp_path
 
 @pytest.mark.parametrize("location", ["data", "attempts"])
 @pytest.mark.parametrize("failure", ["missing", "junction"])
-def test_open_configured_storage_rejects_missing_or_replaced_directory_without_recreating_it(
+def test_open_missing_storage_is_readonly_and_replaced_directory_still_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, location: str, failure: str
 ) -> None:
     """用合成 Windows reparse 标志模拟目录被换成 junction，不依赖创建系统链接权限。"""
@@ -564,9 +579,20 @@ def test_open_configured_storage_rejects_missing_or_replaced_directory_without_r
     application = ProjectServiceApplication(
         work_root=tmp_path / "launcher", project_data_default=True
     )
-    with pytest.raises(ProjectServiceError, match="E_PROJECT_STORAGE"):
-        application.command({"operation": "open_project", "path": str(path)})
-    assert application.inspect().snapshot is None
+    if failure == "missing":
+        opened = application.command({"operation": "open_project", "path": str(path)})
+        assert opened.snapshot is not None and opened.error is not None
+        assert opened.error.code == "E_PROJECT_STORAGE_MISSING"
+        assert opened.project_session_id is not None
+        with application.storage_authority(opened.project_session_id) as (authority, _):
+            assert authority.path == path
+        with pytest.raises(ProjectServiceError, match="E_PROJECT_STORAGE_MISSING"):
+            _run(application)
+        assert application._runtime is None
+    else:
+        with pytest.raises(ProjectServiceError, match="E_PROJECT_STORAGE"):
+            application.command({"operation": "open_project", "path": str(path)})
+        assert application.inspect().snapshot is None
     assert path.read_bytes() == before
     if failure == "missing":
         assert not affected.exists()

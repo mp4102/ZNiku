@@ -37,6 +37,12 @@ from zniku.project import (
     ProjectSnapshot,
     ProjectStore,
 )
+from zniku.project.storage_layout import (
+    AttemptLocationRequest,
+    AttemptNamingHint,
+    allocate_attempt_paths,
+    safe_attempt_directory,
+)
 from zniku.runtime.models import (
     Artifact,
     ExternalHandoff,
@@ -385,6 +391,7 @@ class RuntimeRepository:
         started_at: datetime,
         expected_storage_revision: int | None = None,
         rerun_from_node_id: str | None = None,
+        attempt_naming_hints: Mapping[str, AttemptNamingHint] | None = None,
     ) -> Run:
         """原子建立 running Run 与完整选中闭包的 attempt 1。
 
@@ -427,6 +434,7 @@ class RuntimeRepository:
                     self._store._read_storage_revision(connection), expected_storage_revision
                 )
                 self._validate_new_run_snapshot(connection, run)
+                candidates = self._bind_storage_paths(connection, candidates, attempt_naming_hints)
                 self._validate_bulk_node_runs(
                     connection,
                     run,
@@ -639,6 +647,7 @@ class RuntimeRepository:
         *,
         abandoned_at: datetime,
         pending_node_runs: Sequence[NodeRun] = (),
+        attempt_naming_hints: Mapping[str, AttemptNamingHint] | None = None,
     ) -> Run:
         """原子把非终态 Run 收敛为 ``failed(reason=cancelled)``。
 
@@ -672,6 +681,9 @@ class RuntimeRepository:
                             "E_RUN_ABANDON_ATTEMPT_SET",
                             "queued pending Run 的取消 attempts 必须精确覆盖执行闭包",
                         )
+                    candidates = self._bind_storage_paths(
+                        connection, candidates, attempt_naming_hints
+                    )
                     self._validate_bulk_node_runs(
                         connection,
                         current,
@@ -798,6 +810,7 @@ class RuntimeRepository:
                         "E_NODE_RUN_OUTSIDE_SELECTION",
                         "NodeRun node 不属于 Run 的 selected closure",
                     )
+                node_run = self._bind_storage_paths(connection, (node_run,), None)[0]
                 candidate_work_dir = _work_dir_identity(node_run.work_dir)
                 existing_work_dirs = tuple(
                     _work_dir_identity(cast(str, row[0]))
@@ -889,6 +902,7 @@ class RuntimeRepository:
         *,
         updated_at: datetime,
         expected_storage_revision: int | None = None,
+        attempt_naming_hints: Mapping[str, AttemptNamingHint] | None = None,
     ) -> tuple[NodeRun, ...]:
         """原子创建 source 与选中下游闭包的新 attempts，并失效 current projection。
 
@@ -958,6 +972,7 @@ class RuntimeRepository:
                         )
                     expected_attempts[node_id] = latest_attempt.attempt + 1
 
+                candidates = self._bind_storage_paths(connection, candidates, attempt_naming_hints)
                 self._validate_bulk_node_runs(
                     connection,
                     run,
@@ -2474,6 +2489,54 @@ class RuntimeRepository:
         return latest
 
     @staticmethod
+    def _bind_storage_paths(
+        connection: sqlite3.Connection,
+        candidates: tuple[NodeRun, ...],
+        hints: Mapping[str, AttemptNamingHint] | None,
+    ) -> tuple[NodeRun, ...]:
+        """在创建历史的同一事务内保存存储编号与 work_dir，不提前创建任何文件。
+
+        映射是 Runtime 历史的存储索引，不是用户图编辑；不递增 authoring CAS。调用方后续
+        任意校验或 INSERT 失败时整个事务回滚，因此不存在占号、路径落盘一半或第二套真值。
+        """
+
+        storage = ProjectStore._read_project_storage(connection)
+        if storage is None or storage.layout != "readable" or not candidates:
+            return candidates
+        root = Path(storage.attempts_root)
+        rebound: dict[str, NodeRun] = {}
+        try:
+            # 按稳定 identity 而不是画布节点排列首次分配；后续只使用持久映射。
+            ordered = sorted(candidates, key=lambda item: (item.node_id, item.attempt))
+            for candidate in ordered:
+                safe_attempt_directory(root, Path(candidate.work_dir))
+            state, paths = allocate_attempt_paths(
+                storage.layout_state,
+                root=root,
+                requests=tuple(
+                    AttemptLocationRequest(
+                        node_id=item.node_id,
+                        run_id=item.run_id,
+                        attempt=item.attempt,
+                        hint=None if hints is None else hints.get(item.node_id),
+                    )
+                    for item in ordered
+                ),
+            )
+            for candidate, path in zip(ordered, paths, strict=True):
+                rebound[candidate.node_run_id] = candidate.model_copy(
+                    update={"work_dir": str(path)}
+                )
+            updated = storage.model_copy(update={"layout_state": state})
+            connection.execute(
+                "UPDATE project_storage SET payload_json = ? WHERE singleton = 1",
+                (updated.model_dump_json(),),
+            )
+        except (OSError, ValueError) as error:
+            raise RuntimeConflictError("E_RUNTIME_STORAGE_LAYOUT", str(error)) from error
+        return tuple(rebound[item.node_run_id] for item in candidates)
+
+    @staticmethod
     def _insert_node_run(connection: sqlite3.Connection, node_run: NodeRun) -> None:
         connection.execute(
             """
@@ -2791,6 +2854,26 @@ class RuntimeRepository:
         run: Run,
     ) -> None:
         """交叉校验 attempt 状态、own/reused Result 与有序 outputs，拒绝关系篡改。"""
+
+        storage = self._store._read_project_storage(connection)
+        if storage is not None and storage.layout == "readable":
+            # 只有已有持久映射可解释历史目录；读取不补号或按当前名字重新推导。
+            for node_run in run.node_runs:
+                location = storage.layout_state.nodes.get(node_run.node_id)
+                number = storage.layout_state.runs.get(run.run_id)
+                if location is None or number is None:
+                    raise RuntimeDataError(
+                        "E_NODE_RUN_STORAGE_BINDING", "可读目录缺少既有 node 或 Run 存储映射"
+                    )
+                expected = (
+                    Path(storage.attempts_root)
+                    / location.relative_dir
+                    / f"R{number:03d}-A{node_run.attempt:03d}"
+                )
+                if Path(node_run.work_dir) != expected:
+                    raise RuntimeDataError(
+                        "E_NODE_RUN_STORAGE_BINDING", "NodeRun 工作目录与持久存储映射不一致"
+                    )
 
         work_dir_rows = connection.execute(
             "SELECT work_dir FROM node_runs ORDER BY rowid"
