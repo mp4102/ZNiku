@@ -186,12 +186,13 @@ def _ensure_non_blank(value: str, *, field_name: str) -> str:
     return value
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=128)
 def _check_parameter_schema_cached(serialized_schema: bytes) -> None:
-    """只缓存成功的 Schema 语法检查，最多 32 个有界的进程内精确 JSON 键。
+    """只缓存成功的 Schema 语法检查，最多 128 个有界的进程内精确 JSON 键。
 
     这不是 digest、持久化或新的领域 authority。解析副本避免引用调用者可变字典；失败不进入
     lru_cache，跨线程同时 miss 最多重复做检查，不共享可变 validator 或验证结论对象。
+    新旧目录共存已超过 32 种 Schema；128 项避免连续加载目录把整个缓存逐出，上限 32 MiB。
     """
     Draft202012Validator.check_schema(json.loads(serialized_schema))
 

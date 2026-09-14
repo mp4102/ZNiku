@@ -1,7 +1,7 @@
 /** 生产资源 + 正式服务 + 120 帧合成媒体；只测试到外部等待，不伪造 Aion 产物。 */
 import { test, expect, type Page } from '@playwright/test'
 import axe from 'axe-core'
-import { ProductionJournal, SyntheticFixtureHost, maskedScreenshot } from './production-support'
+import { ProductionJournal, SyntheticFixtureHost, maskedScreenshot, selectWorkflowProfile } from './production-support'
 import type { StatusEnvelope, RunDetailEnvelope } from '../src/studio/contracts'
 
 let service: SyntheticFixtureHost
@@ -38,8 +38,7 @@ for (const mode of ['average', 'exact_times', 'exact_frames'] as const) {
     await page.getByRole('button', { name: '选择工程保存位置', exact: true }).click()
     await expect(page.locator('.creator-project-path')).toContainText('wizard-output-layout.zniku')
     await page.getByRole('button', { name: '下一步：处理方案' }).click()
-    await expect(page.getByLabel('工作流方案')).toHaveValue('source-aligned')
-    await page.getByLabel('工作流方案').selectOption('overlap')
+    await selectWorkflowProfile(page, 'overlap')
     await page.getByRole('button', { name: '下一步：处理与成片设置' }).click()
     await page.getByLabel('片名', { exact: true }).fill('Synthetic Overlap')
     await page.getByLabel('年份', { exact: true }).fill('2026')

@@ -18,8 +18,10 @@ import {
   type OnSelectionChangeParams,
 } from '@xyflow/react'
 import { AvEnhanceV27Wizard, type AvEnhanceV27WizardMode } from './AvEnhanceV27Wizard'
+import { failedPreparationNode, type PreparationRetryIntent } from './preparation-rerun'
 import type { OverlapFullEnvelope, OverlapFullIntent, OverlapFullRequest, OverlapProcessingRequest } from './chapter-overlap-contracts'
 import { sourceAlignedCatalogAvailable, type SourceAlignedFullEnvelope, type SourceAlignedFullIntent, type SourceAlignedFullRequest, type SourceAlignedProcessingRequest } from './source-aligned-contracts'
+import { preparedSourceCatalogAvailable, type PreparedSourceCreateRequest, type PreparedSourceChoice, type PreparedSourceChooseRequest, type PreparedSourceFullEnvelope, type PreparedSourceFullIntent, type PreparedSourceFullRequest, type PreparedSourceProcessingRequest, type PreparedSourceViewRequest } from './prepared-source-contracts'
 import type {
   WorkflowEdge,
   WorkflowNode,
@@ -94,6 +96,10 @@ import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { AuthoringViewPanel } from './components/AuthoringViewPanel'
 import { GraphCanvas } from './components/GraphCanvas'
 import { HandoffCenter, handoffResourceKey } from './components/HandoffCenter'
+import { PreparedSourceOperationMonitor } from './PreparedSourceOperationMonitor'
+import { isSourcePreparationOperationNode } from './prepared-source-contracts'
+import * as colorPrepared from './prepared-color-contracts'
+import * as working from './working-source-contracts'
 import { NodeInspector, type InspectorTab } from './components/NodeInspector'
 import { MediaPreview, type PreviewCandidate } from './components/MediaPreview'
 import { DesktopExit } from './components/DesktopExit'
@@ -111,7 +117,10 @@ import { RetryImpactDialog } from './components/RetryImpactDialog'
 import './workspace-shell.css'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
 /** 仅用于复用 UI 请求互斥；expand_overlap 从不发送到旧 command wire。 */
-type WorkspaceOperation = StudioCommand | { readonly operation: 'expand_overlap'; readonly request: OverlapFullRequest | SourceAlignedFullRequest; readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope }
+type WorkspaceOperation = StudioCommand
+  | { readonly operation: 'expand_overlap'; readonly request: OverlapFullRequest | SourceAlignedFullRequest | PreparedSourceFullRequest | colorPrepared.ColorPreparedSourceFullRequest | working.WorkFullRequest; readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope | PreparedSourceFullEnvelope | colorPrepared.ColorPreparedSourceFullEnvelope | working.WorkFullEnvelope }
+  | { readonly operation: 'create_prepared_source'; readonly request: PreparedSourceCreateRequest | colorPrepared.ColorPreparedSourceCreateRequest | working.WorkCreateRequest }
+  | { readonly operation: 'choose_prepared_source'; readonly request: PreparedSourceChooseRequest | colorPrepared.ColorPreparedSourceChooseRequest | working.WorkChooseRequest }
 
 // 仅决定能否继续展示“模板已就绪”标签，不进入 Run 绑定、执行或存储版本。
 const graphPresentationComparison = (graph: GraphWire) => JSON.stringify({
@@ -501,6 +510,7 @@ export function StudioWorkspace({
   const [templateOpen, setTemplateOpen] = useState(false)
   const templateOutputSelectionRef = useRef<HostSelection | null>(null)
   const templateOutputPickerFlightRef = useRef(0)
+  const preparationCancelFlightRef = useRef<symbol | null>(null)
   const [templateMode, setTemplateMode] = useState<AvEnhanceV27WizardMode>('create')
   const [homeOpen, setHomeOpen] = useState(true)
   const [homeActionBusy, setHomeActionBusy] = useState(false)
@@ -594,7 +604,7 @@ export function StudioWorkspace({
     readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
     readonly precondition: AuthoringPrecondition | null
   } | null>(null)
-  const latestOverlapPreviewRef = useRef<{ readonly intentJson: string; readonly request: OverlapFullRequest | SourceAlignedFullRequest; readonly envelope: OverlapFullEnvelope | SourceAlignedFullEnvelope; readonly precondition: AuthoringPrecondition } | null>(null)
+  const latestOverlapPreviewRef = useRef<{ readonly intentJson: string; readonly request: OverlapFullRequest | SourceAlignedFullRequest | PreparedSourceFullRequest | colorPrepared.ColorPreparedSourceFullRequest | working.WorkFullRequest; readonly envelope: OverlapFullEnvelope | SourceAlignedFullEnvelope | PreparedSourceFullEnvelope | colorPrepared.ColorPreparedSourceFullEnvelope | working.WorkFullEnvelope; readonly precondition: AuthoringPrecondition } | null>(null)
   const templateConnectionEpochRef = useRef(0)
   useEffect(() => {
     // 断线与显式重连撤销旧会话的预览资格，迟到响应也不能再次提升为 mutation authority。
@@ -1928,7 +1938,7 @@ export function StudioWorkspace({
       let next: StatusEnvelope | null = null
       try {
         for (const command of commands) {
-          if (['open_project', 'create_project', 'create_av_enhance_v27'].includes(command.operation)) {
+          if (['open_project', 'create_project', 'create_av_enhance_v27', 'create_prepared_source'].includes(command.operation)) {
             if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置，再切换工程。')
             if (statusRef.current?.snapshot && !options.discardLocal) await flushAuthoring()
             if (selectionGuardRef.current.parameterDraftDirty) throw new Error('保存等待期间节点设置已变化；请先应用或放弃，再切换工程。')
@@ -1937,13 +1947,45 @@ export function StudioWorkspace({
             throw new Error('连接在等待保存期间已变化；未发送后续向导命令，请重新检查工程。')
           }
           if (command.operation === 'expand_overlap') {
-            if (command.request.contract_version === '0.3.3') {
+            if (command.request.contract_version === working.WORK_SOURCE_VERSION) {
+              if (!effectiveGateway.workingSource) throw new Error('当前服务不支持普通工作源展开。')
+              next = await effectiveGateway.workingSource.expand(command.request)
+            } else if (command.request.contract_version === colorPrepared.COLOR_PREPARED_VERSION) {
+              if (!effectiveGateway.expandColorPreparedSource) throw new Error('当前服务不支持新工作解释处理链展开。')
+              next = await effectiveGateway.expandColorPreparedSource(command.request)
+            } else if (command.request.contract_version === '0.3.4') {
+              if (!effectiveGateway.expandPreparedSource) throw new Error('当前服务不支持工作源处理链展开。')
+              next = await effectiveGateway.expandPreparedSource(command.request)
+            } else if (command.request.contract_version === '0.3.3') {
               if (!effectiveGateway.expandSourceAligned) throw new Error('当前服务不支持原片规划工作流展开。')
               next = await effectiveGateway.expandSourceAligned(command.request)
             } else {
               if (!effectiveGateway.expandOverlap) throw new Error('当前服务不支持重叠補帧展开。')
               next = await effectiveGateway.expandOverlap(command.request)
             }
+          } else if (command.operation === 'create_prepared_source') {
+            if (command.request.contract_version === working.WORK_SOURCE_VERSION) {
+              if (!effectiveGateway.workingSource) throw new Error('当前服务不支持普通工作源创建。')
+              next = await effectiveGateway.workingSource.create(command.request)
+            } else if (command.request.contract_version === colorPrepared.COLOR_PREPARED_VERSION) {
+              if (!effectiveGateway.createColorPreparedSource) throw new Error('当前服务不支持新工作解释工程。')
+              next = await effectiveGateway.createColorPreparedSource(command.request)
+            } else {
+              if (!effectiveGateway.createPreparedSource) throw new Error('当前服务不支持素材检查工程。')
+              next = await effectiveGateway.createPreparedSource(command.request)
+            }
+          } else if (command.operation === 'choose_prepared_source') {
+            if (command.request.contract_version === working.WORK_SOURCE_VERSION) {
+              if (!effectiveGateway.workingSource) throw new Error('当前服务不支持普通工作源设置。')
+              next = await effectiveGateway.workingSource.choose(command.request)
+            } else if (command.request.contract_version === colorPrepared.COLOR_PREPARED_VERSION) {
+              if (!effectiveGateway.chooseColorPreparedSource) throw new Error('当前服务不支持新工作解释选择。')
+              next = await effectiveGateway.chooseColorPreparedSource(command.request)
+            } else {
+              if (!effectiveGateway.choosePreparedSource) throw new Error('当前服务不支持素材准备选择。')
+              next = await effectiveGateway.choosePreparedSource(command.request)
+            }
+            if (next.project_path !== previousPath) throw new Error('素材准备响应切换了工程；请重新载入当前工程。')
           } else next = await effectiveGateway.command(command)
           if (generation !== generationRef.current) return null
           if (command.operation === 'expand_overlap' && (
@@ -1974,6 +2016,8 @@ export function StudioWorkspace({
               command.operation === 'create_project' ||
               command.operation === 'save_project' ||
               command.operation === 'create_av_enhance_v27' ||
+              command.operation === 'create_prepared_source' ||
+              command.operation === 'choose_prepared_source' ||
               command.operation === 'expand_overlap' ||
               command.operation === 'expand_av_enhance_v27',
             macroLabel: command.operation === 'expand_overlap' ? '展开重叠补帧处理链' : command.operation === 'expand_av_enhance_v27' ? '展开处理链' : undefined,
@@ -1981,10 +2025,12 @@ export function StudioWorkspace({
               command.operation === 'open_project' ||
               command.operation === 'create_project' ||
               command.operation === 'create_av_enhance_v27' ||
+              command.operation === 'create_prepared_source' ||
+              command.operation === 'choose_prepared_source' ||
               command.operation === 'expand_overlap' ||
               command.operation === 'expand_av_enhance_v27',
           })
-          if (command.operation === 'expand_overlap' && !accepted) throw new Error('重叠处理链响应未被当前工程接受，请重新载入磁盘版本。')
+          if (['expand_overlap', 'create_prepared_source', 'choose_prepared_source'].includes(command.operation) && !accepted) throw new Error('工作流响应未被当前工程接受，请重新载入磁盘版本。')
         }
         if (!next) return null
 
@@ -1996,6 +2042,8 @@ export function StudioWorkspace({
             last?.operation === 'create_project' ||
             last?.operation === 'save_project' ||
             last?.operation === 'create_av_enhance_v27' ||
+            last?.operation === 'create_prepared_source' ||
+            last?.operation === 'choose_prepared_source' ||
             last?.operation === 'expand_overlap' ||
             last?.operation === 'expand_av_enhance_v27')
         ) {
@@ -2014,6 +2062,8 @@ export function StudioWorkspace({
           last?.operation === 'open_project' ||
           last?.operation === 'create_project' ||
           last?.operation === 'create_av_enhance_v27' ||
+          last?.operation === 'create_prepared_source' ||
+          last?.operation === 'choose_prepared_source' ||
           last?.operation === 'expand_overlap' ||
           last?.operation === 'expand_av_enhance_v27'
         ) {
@@ -2172,7 +2222,158 @@ export function StudioWorkspace({
     return envelope
   }, [effectiveGateway, flushAuthoring, precondition])
 
-  const expandOverlap = useCallback(async (intent: OverlapFullIntent | SourceAlignedFullIntent): Promise<boolean> => {
+  const createColorPreparedSource = useCallback(async (request: colorPrepared.ColorPreparedSourceCreateRequest | working.WorkCreateRequest): Promise<boolean> => {
+    const next = await executeCommands([{ operation: 'create_prepared_source', request }], { templateConnectionEpoch: templateConnectionEpochRef.current })
+    if (!next) return false
+    setTemplateProfile(null)
+    setShowRunSnapshot(false)
+    setFitViewEpoch((value) => value + 1)
+    return true
+  }, [executeCommands])
+
+  const inspectColorPreparedSource = useCallback(async (runId: string) => {
+    if (!effectiveGateway.inspectColorPreparedSource) throw new Error('当前服务不支持素材准备视图。')
+    const sessionId = statusRef.current?.project_session_id
+    const connectionEpoch = templateConnectionEpochRef.current
+    if (!sessionId) throw new Error('请先创建或打开素材检查工程。')
+    const view = await effectiveGateway.inspectColorPreparedSource({ contract_version: colorPrepared.COLOR_PREPARED_VERSION, project_session_id: sessionId, run_id: runId })
+    if (connectionEpoch !== templateConnectionEpochRef.current || statusRef.current?.project_session_id !== sessionId) throw new Error('素材准备视图已经过期，请查看当前工程。')
+    return view
+  }, [effectiveGateway])
+
+  const chooseColorPreparedSource = useCallback(async (choice: colorPrepared.ColorPreparedSourceChoice): Promise<boolean> => {
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃节点设置，再选择素材准备方式。')
+    const connectionEpoch = templateConnectionEpochRef.current
+    const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间连接或设置变化，未更改准备方式。')
+    return await executeCommands([{ operation: 'choose_prepared_source', request: { contract_version: colorPrepared.COLOR_PREPARED_VERSION, ...binding, ...choice } }], { templateConnectionEpoch: connectionEpoch }) !== null
+  }, [executeCommands, flushAuthoring])
+
+  const previewColorPreparedSourceProcessing = useCallback(async (request: colorPrepared.ColorPreparedSourceProcessingRequest) => {
+    if (!effectiveGateway.previewColorPreparedSourceProcessing) throw new Error('当前服务不支持工作源处理设置。')
+    return effectiveGateway.previewColorPreparedSourceProcessing(request)
+  }, [effectiveGateway])
+
+  const previewColorPreparedSource = useCallback(async (intent: colorPrepared.ColorPreparedSourceFullIntent) => {
+    latestOverlapPreviewRef.current = null
+    if (!effectiveGateway.previewColorPreparedSource) throw new Error('当前服务不支持工作源处理预览。')
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃节点设置。')
+    const connectionEpoch = templateConnectionEpochRef.current
+    const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间连接或设置变化，请重新检查。')
+    const request: colorPrepared.ColorPreparedSourceFullRequest = { ...intent, ...binding }
+    const envelope = await effectiveGateway.previewColorPreparedSource(request)
+    if (connectionEpoch !== templateConnectionEpochRef.current || JSON.stringify(binding) !== JSON.stringify(precondition())) throw new Error('工程在预览期间变化，请重新预览。')
+    latestOverlapPreviewRef.current = { intentJson: JSON.stringify(intent), request, envelope, precondition: binding }
+    return envelope
+  }, [effectiveGateway, flushAuthoring, precondition])
+
+  const createPreparedSource = useCallback(async (request: PreparedSourceCreateRequest): Promise<boolean> => {
+    const next = await executeCommands([{ operation: 'create_prepared_source', request }], { templateConnectionEpoch: templateConnectionEpochRef.current })
+    if (!next) return false
+    setTemplateProfile(null)
+    setShowRunSnapshot(false)
+    setFitViewEpoch((value) => value + 1)
+    return true
+  }, [executeCommands])
+
+  const inspectPreparedSource = useCallback(async (runId: string) => {
+    if (!effectiveGateway.inspectPreparedSource) throw new Error('当前服务不支持素材准备视图。')
+    const sessionId = statusRef.current?.project_session_id
+    const connectionEpoch = templateConnectionEpochRef.current
+    if (!sessionId) throw new Error('请先创建或打开素材检查工程。')
+    const view = await effectiveGateway.inspectPreparedSource({ contract_version: '0.3.4', project_session_id: sessionId, run_id: runId })
+    if (connectionEpoch !== templateConnectionEpochRef.current || statusRef.current?.project_session_id !== sessionId) throw new Error('素材准备视图已经过期，请查看当前工程。')
+    return view
+  }, [effectiveGateway])
+
+  const choosePreparedSource = useCallback(async (choice: PreparedSourceChoice): Promise<boolean> => {
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃节点设置，再选择素材准备方式。')
+    const connectionEpoch = templateConnectionEpochRef.current
+    const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间连接或设置变化，未更改准备方式。')
+    return await executeCommands([{ operation: 'choose_prepared_source', request: { contract_version: '0.3.4', ...binding, ...choice } }], { templateConnectionEpoch: connectionEpoch }) !== null
+  }, [executeCommands, flushAuthoring])
+
+  const inspectPreparedSourceOperation = useCallback(async (runId: string, nodeRunId: string) => {
+    const sessionId = statusRef.current?.project_session_id, connectionEpoch = templateConnectionEpochRef.current
+    if (!sessionId) throw new Error('请先打开工程。')
+    const run = detailRef.current?.run
+    const attempt = run?.node_runs.find((item) => item.node_run_id === nodeRunId)
+    const node = run?.graph_snapshot.nodes.find((item) => item.node_id === attempt?.node_id)
+    if (run?.run_id !== runId || !attempt) throw new Error('素材操作已经不属于当前运行记录。')
+    const request = { project_session_id: sessionId, run_id: runId, node_run_id: nodeRunId }
+    let view
+    if (working.isWorkPreparationOperationNode(node) && effectiveGateway.workingSource) {
+      view = await effectiveGateway.workingSource.inspectOperation({ ...request, contract_version: working.WORK_SOURCE_VERSION })
+    } else if (colorPrepared.isColorPreparationOperationNode(node) && effectiveGateway.inspectColorPreparedSourceOperation) {
+      view = await effectiveGateway.inspectColorPreparedSourceOperation({ ...request, contract_version: colorPrepared.COLOR_PREPARED_VERSION })
+    } else if (isSourcePreparationOperationNode(node) && effectiveGateway.inspectPreparedSourceOperation) {
+      view = await effectiveGateway.inspectPreparedSourceOperation({ ...request, contract_version: '0.3.4' })
+    } else throw new Error('当前节点没有对应 exact 版本的素材操作视图。')
+    if (connectionEpoch !== templateConnectionEpochRef.current || statusRef.current?.project_session_id !== sessionId) throw new Error('素材操作视图已经过期，请查看当前工程。')
+    return view
+  }, [effectiveGateway])
+
+  const previewPreparedSourceProcessing = useCallback(async (request: PreparedSourceProcessingRequest) => {
+    if (!effectiveGateway.previewPreparedSourceProcessing) throw new Error('当前服务不支持工作源处理设置。')
+    return effectiveGateway.previewPreparedSourceProcessing(request)
+  }, [effectiveGateway])
+
+  const previewPreparedSource = useCallback(async (intent: PreparedSourceFullIntent) => {
+    latestOverlapPreviewRef.current = null
+    if (!effectiveGateway.previewPreparedSource) throw new Error('当前服务不支持工作源处理预览。')
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃节点设置。')
+    const connectionEpoch = templateConnectionEpochRef.current
+    const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间连接或设置变化，请重新检查。')
+    const request: PreparedSourceFullRequest = { ...intent, ...binding }
+    const envelope = await effectiveGateway.previewPreparedSource(request)
+    if (connectionEpoch !== templateConnectionEpochRef.current || JSON.stringify(binding) !== JSON.stringify(precondition())) throw new Error('工程在预览期间变化，请重新预览。')
+    latestOverlapPreviewRef.current = { intentJson: JSON.stringify(intent), request, envelope, precondition: binding }
+    return envelope
+  }, [effectiveGateway, flushAuthoring, precondition])
+
+  const cancelPreparationRun = useCallback(async (runId: string, nodeRunId?: string) => {
+    if (preparationCancelFlightRef.current) return
+    if (!window.confirm('停止本次检查或准备？原件与已完成产物保留；未完成步骤下次只能从头开始。')) return
+    const projectSessionId = statusRef.current?.project_session_id
+    if (!projectSessionId) return
+    // 停止是独立信号通道，必须能在同步导入/验证占用 ordinary command 互斥时发出。
+    // 不用取消响应覆盖 Graph；后续只读轮询负责收敛状态，迟到的旧工程提示也直接丢弃。
+    const token = Symbol('preparation-cancel'), connectionEpoch = templateConnectionEpochRef.current
+    preparationCancelFlightRef.current = token
+    try {
+      const run = detailRef.current?.run
+      const attempt = nodeRunId ? run?.node_runs.find((item) => item.node_run_id === nodeRunId) : null
+      const node = attempt ? run?.graph_snapshot.nodes.find((item) => item.node_id === attempt.node_id) : undefined
+      if (nodeRunId && (run?.run_id !== runId || !attempt)) throw new Error('停止目标已不属于当前运行记录。')
+      const color = nodeRunId ? colorPrepared.isColorPreparationOperationNode(node)
+        : statusRef.current?.snapshot?.project.graph.nodes.some(colorPrepared.isColorPreparationOperationNode)
+      const work = nodeRunId ? working.isWorkPreparationOperationNode(node) : statusRef.current?.snapshot?.project.graph.nodes.some(working.isWorkPreparationOperationNode)
+      if (work) {
+        if (!effectiveGateway.workingSource) throw new Error('当前服务没有普通工作源的停止入口。')
+        const request = { contract_version: working.WORK_SOURCE_VERSION, project_session_id: projectSessionId, run_id: runId }
+        if (nodeRunId) await effectiveGateway.workingSource.cancelOperation({ ...request, node_run_id: nodeRunId })
+        else await effectiveGateway.workingSource.cancel(request)
+      } else if (color) {
+        const request = { contract_version: colorPrepared.COLOR_PREPARED_VERSION, project_session_id: projectSessionId, run_id: runId }
+        if (nodeRunId && effectiveGateway.cancelColorPreparedSourceOperation) await effectiveGateway.cancelColorPreparedSourceOperation({ ...request, node_run_id: nodeRunId })
+        else if (!nodeRunId && effectiveGateway.cancelColorPreparedSource) await effectiveGateway.cancelColorPreparedSource(request)
+        else throw new Error('当前服务没有新工作解释节点的停止入口。')
+      } else {
+        const request: PreparedSourceViewRequest = { contract_version: '0.3.4', project_session_id: projectSessionId, run_id: runId }
+        if (nodeRunId && isSourcePreparationOperationNode(node) && effectiveGateway.cancelPreparedSourceOperation) await effectiveGateway.cancelPreparedSourceOperation({ ...request, node_run_id: nodeRunId })
+        else if (!nodeRunId && effectiveGateway.cancelPreparedSource) await effectiveGateway.cancelPreparedSource(request)
+        else throw new Error('当前节点没有对应 exact 版本的停止入口。')
+      }
+      if (statusRef.current?.project_session_id === projectSessionId && connectionEpoch === templateConnectionEpochRef.current) setClientHint('已发送停止请求。当前检查收尾后可从头重试；请等待服务返回最终状态。')
+    } catch (error) {
+      if (statusRef.current?.project_session_id === projectSessionId && connectionEpoch === templateConnectionEpochRef.current) setClientHint(error instanceof Error ? error.message : '停止请求未发送成功，请重新检查连接。')
+    } finally { if (preparationCancelFlightRef.current === token) preparationCancelFlightRef.current = null }
+  }, [effectiveGateway])
+
+  const expandOverlap = useCallback(async (intent: OverlapFullIntent | SourceAlignedFullIntent | PreparedSourceFullIntent | colorPrepared.ColorPreparedSourceFullIntent | working.WorkFullIntent): Promise<boolean> => {
     const current = latestOverlapPreviewRef.current
     if (!current || current.intentJson !== JSON.stringify(intent) || parameterDraftDirty || dirty || JSON.stringify(current.precondition) !== JSON.stringify(precondition())) {
       latestOverlapPreviewRef.current = null
@@ -2311,17 +2512,26 @@ export function StudioWorkspace({
     })
   }, [effectiveHostBridge, hostCapabilityAvailable])
 
-  const startPreparationRun = useCallback(async (): Promise<string | null> => {
+  const startPreparationRun = useCallback(async (retryAdmission?: PreparationRetryIntent): Promise<string | null> => {
     const connectionEpoch = templateConnectionEpochRef.current
     const binding = await flushAuthoring()
     if (connectionEpoch !== templateConnectionEpochRef.current) throw new Error('连接在等待保存期间已变化；未启动素材分析，请检查工程后重试。')
     if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置，再运行。')
-    const next = await executeCommands([{ operation: 'run_all', ...binding }], {
+    let command: StudioCommand = { operation: 'run_all', ...binding }
+    if (retryAdmission) {
+      const detail = await effectiveGateway.inspectRun(retryAdmission.run_id)
+      if (connectionEpoch !== templateConnectionEpochRef.current || JSON.stringify(precondition()) !== JSON.stringify(binding)) throw new Error('工程在读取准入重试目标期间已变化；未启动，请重新查看。')
+      const currentProjectId = statusRef.current?.snapshot?.project.project_id
+      if (!currentProjectId) throw new Error('当前工程身份不可用；没有启动准入重试。')
+      command = { operation: 'rerun_from_here', ...binding, run_id: retryAdmission.run_id,
+        node_id: failedPreparationNode(detail, retryAdmission, currentProjectId) }
+    }
+    const next = await executeCommands([command], {
       preferCreatedRun: true, templateConnectionEpoch: connectionEpoch,
     })
     // 只绑定本次 command response 明确返回的 active_run_id；不得从历史、时间或节点形状猜测。
     return next?.active_run_id ?? null
-  }, [executeCommands, flushAuthoring])
+  }, [effectiveGateway, executeCommands, flushAuthoring, precondition])
 
   useEffect(() => {
     if (fitViewEpoch === 0) return
@@ -2536,6 +2746,48 @@ export function StudioWorkspace({
     presentationEnvelope?.catalog ?? null,
   )
   const sourceAlignedSupported = presentationError === null && sourceAlignedCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
+  const preparedSourceSupported = presentationError === null && preparedSourceCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
+  const canMonitorPreparation = (node: { readonly type_id: string; readonly definition_version: string } | undefined) =>
+    working.isWorkPreparationOperationNode(node) ? Boolean(effectiveGateway.workingSource) : colorPrepared.isColorPreparationOperationNode(node) ? Boolean(effectiveGateway.inspectColorPreparedSourceOperation && effectiveGateway.cancelColorPreparedSourceOperation)
+      : isSourcePreparationOperationNode(node) && Boolean(effectiveGateway.inspectPreparedSourceOperation && effectiveGateway.cancelPreparedSourceOperation)
+  const preparedColorSupported = presentationError === null && colorPrepared.preparedColorCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
+  const preparedColorServices = useMemo<colorPrepared.ColorPreparedSourceWizardServices | undefined>(() =>
+    preparedColorSupported && effectiveGateway.createColorPreparedSource && effectiveGateway.inspectColorPreparedSource && effectiveGateway.chooseColorPreparedSource && effectiveGateway.previewColorPreparedSourceProcessing && effectiveGateway.previewColorPreparedSource && effectiveGateway.expandColorPreparedSource
+      ? { create: createColorPreparedSource, inspect: inspectColorPreparedSource, choose: chooseColorPreparedSource,
+        processing: previewColorPreparedSourceProcessing, preview: previewColorPreparedSource, expand: expandOverlap } : undefined,
+  [preparedColorSupported, effectiveGateway, createColorPreparedSource, inspectColorPreparedSource, chooseColorPreparedSource, previewColorPreparedSourceProcessing, previewColorPreparedSource, expandOverlap])
+  const workSupported = presentationError === null && working.workingSourceCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
+  const workingSourceServices = useMemo<working.WorkingSourceWizardServices | undefined>(() => {
+    const gateway = effectiveGateway.workingSource
+    if (!workSupported || !gateway) return undefined
+    return {
+      create: createColorPreparedSource, expand: expandOverlap,
+      processing: (request) => gateway.processing(request),
+      async inspect(runId) {
+        const projectSessionId = statusRef.current?.project_session_id, epoch = templateConnectionEpochRef.current
+        if (!projectSessionId) throw new Error('请先创建或打开素材工程。')
+        const view = await gateway.inspect({ contract_version: working.WORK_SOURCE_VERSION, project_session_id: projectSessionId, run_id: runId })
+        if (epoch !== templateConnectionEpochRef.current || statusRef.current?.project_session_id !== projectSessionId) throw new Error('素材视图已过期；请查看当前工程。')
+        return view
+      },
+      async choose(choice) {
+        if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置。')
+        const epoch = templateConnectionEpochRef.current, binding = await flushAuthoring()
+        if (epoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间工程或设置变化，未更改准备方式。')
+        return await executeCommands([{ operation: 'choose_prepared_source', request: { contract_version: working.WORK_SOURCE_VERSION, ...binding, ...choice } }], { templateConnectionEpoch: epoch }) !== null
+      },
+      async preview(intent) {
+        latestOverlapPreviewRef.current = null
+        if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置。')
+        const epoch = templateConnectionEpochRef.current, binding = await flushAuthoring()
+        if (epoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间工程或设置变化，请重新检查。')
+        const request = { ...intent, ...binding }, envelope = await gateway.preview(request)
+        if (epoch !== templateConnectionEpochRef.current || JSON.stringify(binding) !== JSON.stringify(precondition())) throw new Error('预览期间工程发生变化，请重新检查。')
+        latestOverlapPreviewRef.current = { intentJson: JSON.stringify(intent), request, envelope, precondition: binding }
+        return envelope
+      },
+    }
+  }, [workSupported, effectiveGateway, createColorPreparedSource, expandOverlap, flushAuthoring, executeCommands, precondition])
   const singleSelectedNodeId = selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null
   const rerunId = currentRun?.run_id ?? null
   const rerunNodeIncluded = singleSelectedNodeId
@@ -2551,13 +2803,15 @@ export function StudioWorkspace({
     !!currentRun && !!draft && currentRun.graph_snapshot !== draft.project.graph &&
     JSON.stringify(currentRun.graph_snapshot) !== JSON.stringify(draft.project.graph)
   const hasAvEnhanceV27Nodes =
-    draft?.project.graph.nodes.some((node) => node.type_id.startsWith('zniku.avenhance.v27.')) ??
+    draft?.project.graph.nodes.some((node) => node.type_id.startsWith('zniku.avenhance.v27.') || node.type_id.startsWith('zniku.prepared.') || node.type_id.startsWith('zniku.source_preparation.')) ??
     false
+  const hasPreparedSourceNodes = draft?.project.graph.nodes.some((node) => node.definition_version === '0.3.4' &&
+    (node.type_id.startsWith('zniku.prepared.') || node.type_id.startsWith('zniku.source_preparation.'))) ?? false
   const visibleTemplateProfile =
     (templateProfile && draft && templateProfile.graphContent !== undefined && templateProfile.graphContent !== graphPresentationComparison(draft.project.graph)
       ? { ...templateProfile, modified: true, compatible: false } : templateProfile) ??
     (hasAvEnhanceV27Nodes
-      ? { status: 'v2.7 nodes · profile check required', compatible: false, modified: false }
+      ? { status: hasPreparedSourceNodes ? '工作源准备节点 · 以当前图与准入检查为准' : 'v2.7 nodes · profile check required', compatible: false, modified: false }
       : null)
 
   const beginHomeAction = (): number | null => {
@@ -2924,6 +3178,16 @@ export function StudioWorkspace({
         onPreviewSourceAlignedProcessing={sourceAlignedSupported && effectiveGateway.previewSourceAlignedProcessing ? previewSourceAlignedProcessing : undefined}
         onPreviewSourceAligned={sourceAlignedSupported && effectiveGateway.previewSourceAligned ? previewSourceAligned : undefined}
         onExpandSourceAligned={sourceAlignedSupported && effectiveGateway.expandSourceAligned ? expandOverlap : undefined}
+        onCreatePreparedSource={preparedSourceSupported && effectiveGateway.createPreparedSource ? createPreparedSource : undefined}
+        preparedColor={preparedColorServices}
+        workingSource={workingSourceServices}
+        onInspectPreparedSource={preparedSourceSupported && effectiveGateway.inspectPreparedSource ? inspectPreparedSource : undefined}
+        onChoosePreparedSource={preparedSourceSupported && effectiveGateway.choosePreparedSource ? choosePreparedSource : undefined}
+        onPreviewPreparedSourceProcessing={preparedSourceSupported && effectiveGateway.previewPreparedSourceProcessing ? previewPreparedSourceProcessing : undefined}
+        onPreviewPreparedSource={preparedSourceSupported && effectiveGateway.previewPreparedSource ? previewPreparedSource : undefined}
+        onExpandPreparedSource={preparedSourceSupported && effectiveGateway.expandPreparedSource ? expandOverlap : undefined}
+        onCancelPreparationRun={cancelPreparationRun}
+        onCreateNewWorkSource={() => setTemplateMode('create')}
         onStartPreparationRun={startPreparationRun}
         open={templateOpen}
         pickerAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file') && hostCapabilityAvailable('select_directory')}
@@ -3146,6 +3410,10 @@ export function StudioWorkspace({
             nodeLabel={nodeLabel}
             selectedNodeId={selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null}
             importController={handoffImport}
+            preparationMonitor={status?.project_session_id && selectedNodeRun && canMonitorPreparation(currentRun?.graph_snapshot.nodes.find((node) => node.node_id === selectedNodeRun.node_id))
+              ? <PreparedSourceOperationMonitor projectSessionId={status.project_session_id} runId={selectedNodeRun.run_id} nodeRunId={selectedNodeRun.node_run_id}
+                unavailable={health.status.stale} operationPending={handoffImport.busy || checkingNodeRunId === selectedNodeRun.node_run_id || submittingNodeRunId === selectedNodeRun.node_run_id}
+                inspect={inspectPreparedSourceOperation} cancel={cancelPreparationRun} /> : undefined}
             inboxControls={status?.project_session_id && effectiveHostBridge.observeHandoffInbox ? (nodeRun) => {
               const handoff = nodeRun.external_handoff!
               const target = handoff.output_targets.length === 1 ? handoff.output_targets[0] : null
@@ -3216,6 +3484,11 @@ export function StudioWorkspace({
 
       <TaskDrawer
         open={bottomOpen} tab={taskTab} onOpenChange={setBottomOpen} onTabChange={setTaskTab}
+        operationMonitor={bottomOpen && taskTab === 'current' && !templateOpen && status?.project_session_id && (effectiveGateway.workingSource || (effectiveGateway.inspectPreparedSourceOperation && effectiveGateway.cancelPreparedSourceOperation) || (effectiveGateway.inspectColorPreparedSourceOperation && effectiveGateway.cancelColorPreparedSourceOperation))
+          ? [...runLatestAttempts.values()].filter((attempt) => attempt.state === 'running' && canMonitorPreparation(currentRun?.graph_snapshot.nodes.find((node) => node.node_id === attempt.node_id))).map((attempt) =>
+            <PreparedSourceOperationMonitor key={`${status.project_session_id}/${attempt.node_run_id}`} projectSessionId={status.project_session_id!}
+              runId={attempt.run_id} nodeRunId={attempt.node_run_id} unavailable={health.status.stale || health.detail.stale} operationPending
+              inspect={inspectPreparedSourceOperation} cancel={cancelPreparationRun} />) : undefined}
         summaries={allSummaries} selectedRunId={viewRunId} selectedSummary={viewedSummary}
         nodeRuns={[...runLatestAttempts.values()].map((nodeRun) => {
           const node = currentRun?.graph_snapshot.nodes.find((item) => item.node_id === nodeRun.node_id)

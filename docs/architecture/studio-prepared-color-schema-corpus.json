@@ -1,0 +1,4539 @@
+{
+  "contract_kind": "studio_prepared_color_schema_authoring_corpus",
+  "contract_version": "0.3.4-color.1",
+  "definitions": [
+    {
+      "features": {
+        "json_types": [
+          "object",
+          "string"
+        ],
+        "local_refs": [],
+        "schema_keywords": [
+          "$schema",
+          "additionalProperties",
+          "maxLength",
+          "minLength",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_preparation.source",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "source_path": {
+            "maxLength": 32760,
+            "minLength": 1,
+            "title": "Source Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path"
+        ],
+        "title": "SourceParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/Rational"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "default",
+          "maxLength",
+          "pattern",
+          "properties",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_preparation.diagnostics",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "Rational": {
+            "maxLength": 64,
+            "pattern": "^-?[0-9]+/[1-9][0-9]*$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "target_frame_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Rational"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "DiagnosticParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/Rational"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "const",
+          "default",
+          "maxLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_preparation.video_prepare.t1",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "Rational": {
+            "maxLength": 64,
+            "pattern": "^-?[0-9]+/[1-9][0-9]*$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "strategy_id": {
+            "const": "t1-clock-quantization/2",
+            "default": "t1-clock-quantization/2",
+            "title": "Strategy Id",
+            "type": "string"
+          },
+          "target_frame_rate": {
+            "$ref": "#/$defs/Rational"
+          }
+        },
+        "required": [
+          "target_frame_rate"
+        ],
+        "title": "PrepareParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/Rational"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "maxLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_preparation.video_repair.external.mkv",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "Rational": {
+            "maxLength": 64,
+            "pattern": "^-?[0-9]+/[1-9][0-9]*$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "target_frame_rate": {
+            "$ref": "#/$defs/Rational"
+          }
+        },
+        "required": [
+          "target_frame_rate"
+        ],
+        "title": "ExternalParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/Rational"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "maxLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_preparation.video_repair.external.mp4",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "Rational": {
+            "maxLength": 64,
+            "pattern": "^-?[0-9]+/[1-9][0-9]*$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "target_frame_rate": {
+            "$ref": "#/$defs/Rational"
+          }
+        },
+        "required": [
+          "target_frame_rate"
+        ],
+        "title": "ExternalParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/Rational"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "maxLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_preparation.video_repair.external.mov",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "Rational": {
+            "maxLength": 64,
+            "pattern": "^-?[0-9]+/[1-9][0-9]*$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "target_frame_rate": {
+            "$ref": "#/$defs/Rational"
+          }
+        },
+        "required": [
+          "target_frame_rate"
+        ],
+        "title": "ExternalParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/InterpretationPolicy",
+          "#/$defs/Rational"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "default",
+          "enum",
+          "maxLength",
+          "pattern",
+          "properties",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source_preparation.admission",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "InterpretationPolicy": {
+            "enum": [
+              "declared_only",
+              "operator_confirmed_bt709_limited_left"
+            ],
+            "type": "string"
+          },
+          "Rational": {
+            "maxLength": 64,
+            "pattern": "^-?[0-9]+/[1-9][0-9]*$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "audio_policy": {
+            "default": "original",
+            "enum": [
+              "original",
+              "none"
+            ],
+            "title": "Audio Policy",
+            "type": "string"
+          },
+          "interpretation_policy": {
+            "$ref": "#/$defs/InterpretationPolicy",
+            "default": "declared_only"
+          },
+          "target_frame_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Rational"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "AdmissionParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/AdmittedTimeline",
+          "#/$defs/AverageChapterSelector",
+          "#/$defs/ChapterLeafPlan",
+          "#/$defs/ChapterProjection",
+          "#/$defs/ChapterSelector",
+          "#/$defs/ChapterSettings",
+          "#/$defs/DisplayTimecode",
+          "#/$defs/ExactFramesChapterSelector",
+          "#/$defs/ExactSeconds",
+          "#/$defs/ExactTimesChapterSelector",
+          "#/$defs/LeafProjection",
+          "#/$defs/MappedCutPoint",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation",
+          "#/$defs/Timecode"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "discriminator",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "maximum",
+          "minItems",
+          "minLength",
+          "minimum",
+          "oneOf",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared.overlap.split.leaves.1",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "AdmittedTimeline": {
+            "additionalProperties": false,
+            "description": "由服务注入的直接产物时间轴，不是允许客户端自报的 probe 或 admission。",
+            "properties": {
+              "artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              }
+            },
+            "required": [
+              "artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "AdmittedTimeline",
+            "type": "object"
+          },
+          "AverageChapterSelector": {
+            "additionalProperties": false,
+            "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+            "properties": {
+              "count": {
+                "default": 1,
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "mode": {
+                "const": "average",
+                "default": "average",
+                "title": "Mode",
+                "type": "string"
+              }
+            },
+            "title": "AverageChapterSelector",
+            "type": "object"
+          },
+          "ChapterLeafPlan": {
+            "additionalProperties": false,
+            "description": "可重算的严格只读预览；持久化/运行时仍须从当前直接输入重新检查。",
+            "properties": {
+              "chapter_count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Chapter Count",
+                "type": "integer"
+              },
+              "chapters": {
+                "items": {
+                  "$ref": "#/$defs/ChapterProjection"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "title": "Chapters",
+                "type": "array"
+              },
+              "cut_points": {
+                "items": {
+                  "$ref": "#/$defs/MappedCutPoint"
+                },
+                "maxItems": 999,
+                "title": "Cut Points",
+                "type": "array"
+              },
+              "leaf_count": {
+                "const": 1,
+                "maximum": 10000,
+                "minimum": 1,
+                "title": "Leaf Count",
+                "type": "integer"
+              },
+              "leaf_frame_cap": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "profile_id": {
+                "const": "zniku.chapter-overlap-fi",
+                "default": "zniku.chapter-overlap-fi",
+                "title": "Profile Id",
+                "type": "string"
+              },
+              "profile_version": {
+                "const": "0.3.2",
+                "default": "0.3.2",
+                "title": "Profile Version",
+                "type": "string"
+              },
+              "settings": {
+                "$ref": "#/$defs/ChapterSettings"
+              },
+              "source": {
+                "$ref": "#/$defs/AdmittedTimeline"
+              }
+            },
+            "required": [
+              "source",
+              "settings",
+              "chapter_count",
+              "leaf_count",
+              "leaf_frame_cap",
+              "cut_points",
+              "chapters"
+            ],
+            "title": "ChapterLeafPlan",
+            "type": "object"
+          },
+          "ChapterProjection": {
+            "additionalProperties": false,
+            "description": "正式章节只组织已规划叶，不持有执行状态、媒体路径或隐藏拓扑。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "duration_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "duration_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "end_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "end_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "label": {
+                "pattern": "^[A-Z]+$",
+                "title": "Label",
+                "type": "string"
+              },
+              "leaves": {
+                "items": {
+                  "$ref": "#/$defs/LeafProjection"
+                },
+                "maxItems": 10000,
+                "minItems": 1,
+                "title": "Leaves",
+                "type": "array"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "start_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              }
+            },
+            "required": [
+              "start_frame",
+              "end_frame",
+              "frame_count",
+              "start_seconds",
+              "end_seconds",
+              "duration_seconds",
+              "start_timecode",
+              "end_timecode",
+              "duration_timecode",
+              "chapter_id",
+              "ordinal",
+              "label",
+              "leaves"
+            ],
+            "title": "ChapterProjection",
+            "type": "object"
+          },
+          "ChapterSelector": {
+            "discriminator": {
+              "mapping": {
+                "average": "#/$defs/AverageChapterSelector",
+                "exact_frames": "#/$defs/ExactFramesChapterSelector",
+                "exact_times": "#/$defs/ExactTimesChapterSelector"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AverageChapterSelector"
+              },
+              {
+                "$ref": "#/$defs/ExactFramesChapterSelector"
+              },
+              {
+                "$ref": "#/$defs/ExactTimesChapterSelector"
+              }
+            ]
+          },
+          "ChapterSettings": {
+            "additionalProperties": false,
+            "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+            "properties": {
+              "chapter_selector": {
+                "$ref": "#/$defs/ChapterSelector"
+              },
+              "leaf_max_minutes": {
+                "default": 5,
+                "maximum": 60,
+                "minimum": 1,
+                "title": "Leaf Max Minutes",
+                "type": "integer"
+              }
+            },
+            "title": "ChapterSettings",
+            "type": "object"
+          },
+          "DisplayTimecode": {
+            "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}$",
+            "type": "string"
+          },
+          "ExactFramesChapterSelector": {
+            "additionalProperties": false,
+            "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+            "properties": {
+              "frames": {
+                "items": {
+                  "$ref": "#/$defs/PositiveInt"
+                },
+                "maxItems": 999,
+                "minItems": 1,
+                "title": "Frames",
+                "type": "array"
+              },
+              "mode": {
+                "const": "exact_frames",
+                "title": "Mode",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "frames"
+            ],
+            "title": "ExactFramesChapterSelector",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "ExactTimesChapterSelector": {
+            "additionalProperties": false,
+            "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+            "properties": {
+              "mode": {
+                "const": "exact_times",
+                "title": "Mode",
+                "type": "string"
+              },
+              "times": {
+                "items": {
+                  "$ref": "#/$defs/Timecode"
+                },
+                "maxItems": 999,
+                "minItems": 1,
+                "title": "Times",
+                "type": "array"
+              }
+            },
+            "required": [
+              "mode",
+              "times"
+            ],
+            "title": "ExactTimesChapterSelector",
+            "type": "object"
+          },
+          "LeafProjection": {
+            "additionalProperties": false,
+            "description": "叶身份全局有序，ordinal 在章内从零开始，区间仍是同一源坐标。",
+            "properties": {
+              "chapter_ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "duration_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "duration_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "end_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "end_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "global_ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "leaf_id": {
+                "pattern": "^leaf-[0-9]{4,}$",
+                "title": "Leaf Id",
+                "type": "string"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "start_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              }
+            },
+            "required": [
+              "start_frame",
+              "end_frame",
+              "frame_count",
+              "start_seconds",
+              "end_seconds",
+              "duration_seconds",
+              "start_timecode",
+              "end_timecode",
+              "duration_timecode",
+              "leaf_id",
+              "global_ordinal",
+              "chapter_ordinal",
+              "ordinal"
+            ],
+            "title": "LeafProjection",
+            "type": "object"
+          },
+          "MappedCutPoint": {
+            "additionalProperties": false,
+            "description": "原始用户切点和实际帧边界的并列展示，平均模式没有伪造的用户输入。",
+            "properties": {
+              "actual_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "actual_seconds": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "actual_timecode": {
+                "$ref": "#/$defs/DisplayTimecode"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "requested_frame": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/PositiveInt"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "requested_time": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Timecode"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "ordinal",
+              "actual_frame",
+              "actual_seconds",
+              "actual_timecode"
+            ],
+            "title": "MappedCutPoint",
+            "type": "object"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          },
+          "Timecode": {
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "一次全源 Split 的严格 planner 投影以及直接准入/原音轨绑定。",
+        "properties": {
+          "plan": {
+            "$ref": "#/$defs/ChapterLeafPlan"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "plan",
+          "source"
+        ],
+        "title": "SplitParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Geometry",
+          "#/$defs/Label",
+          "#/$defs/LeafBinding",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "exclusiveMaximum",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "maximum",
+          "minItems",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared.overlap.enhancement.external",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Geometry": {
+            "additionalProperties": false,
+            "description": "规范方形像素几何；不允许隐式缩放或 SAR 更改。",
+            "properties": {
+              "height": {
+                "maximum": 16384,
+                "minimum": 2,
+                "title": "Height",
+                "type": "integer"
+              },
+              "sample_aspect_ratio": {
+                "const": "1/1",
+                "default": "1/1",
+                "title": "Sample Aspect Ratio",
+                "type": "string"
+              },
+              "width": {
+                "maximum": 16384,
+                "minimum": 2,
+                "title": "Width",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "title": "Geometry",
+            "type": "object"
+          },
+          "Label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "LeafBinding": {
+            "additionalProperties": false,
+            "description": "全局 leaf 身份与章内连续序号分开保存，避免跨章重名被当作同一产物。",
+            "properties": {
+              "count": {
+                "maximum": 10000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "global_ordinal": {
+                "exclusiveMaximum": 10000,
+                "minimum": 0,
+                "title": "Global Ordinal",
+                "type": "integer"
+              },
+              "leaf_id": {
+                "pattern": "^leaf-[0-9]{4,5}$",
+                "title": "Leaf Id",
+                "type": "string"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "leaf_id",
+              "global_ordinal",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "LeafBinding",
+            "type": "object"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "一个完整叶的人工增强声明与受控整数缩放；不得由文件名推断。",
+        "properties": {
+          "actual_scale_factor": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "expected_input_geometry": {
+            "$ref": "#/$defs/Geometry"
+          },
+          "expected_output_geometry": {
+            "$ref": "#/$defs/Geometry"
+          },
+          "leaf": {
+            "$ref": "#/$defs/LeafBinding"
+          },
+          "model_name": {
+            "$ref": "#/$defs/Label"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Version"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter",
+          "leaf",
+          "expected_input_geometry",
+          "expected_output_geometry",
+          "model_name"
+        ],
+        "title": "EnhancementParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "description",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "maximum",
+          "minItems",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared.overlap.merge_video",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "普通章节点的局部源与正式范围，不承载上下游隐藏路径。",
+        "properties": {
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter"
+        ],
+        "title": "ChapterParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/CandidateFiProfile",
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "const",
+          "default",
+          "description",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "maximum",
+          "minItems",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared.overlap.fi_context",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "CandidateFiProfile": {
+            "additionalProperties": false,
+            "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+            "properties": {
+              "left_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 0,
+                "title": "Left Context Frames",
+                "type": "integer"
+              },
+              "minimum_input_frames": {
+                "default": 2,
+                "maximum": 256,
+                "minimum": 2,
+                "title": "Minimum Input Frames",
+                "type": "integer"
+              },
+              "model_name": {
+                "const": "Aion",
+                "default": "Aion",
+                "title": "Model Name",
+                "type": "string"
+              },
+              "phase": {
+                "const": "even-input-2m-minus-1",
+                "default": "even-input-2m-minus-1",
+                "title": "Phase",
+                "type": "string"
+              },
+              "right_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 1,
+                "title": "Right Context Frames",
+                "type": "integer"
+              },
+              "software_version": {
+                "const": "v1.0",
+                "default": "v1.0",
+                "title": "Software Version",
+                "type": "string"
+              },
+              "status": {
+                "const": "pending_real_acceptance",
+                "default": "pending_real_acceptance",
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "title": "CandidateFiProfile",
+            "type": "object"
+          },
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "上下文、外部 FI 和裁边共用同一候选 profile，变更必须使下游失效。",
+        "properties": {
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "fi_profile": {
+            "$ref": "#/$defs/CandidateFiProfile"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter"
+        ],
+        "title": "FiParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/CandidateFiProfile",
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "const",
+          "default",
+          "description",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "maximum",
+          "minItems",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared.overlap.frame_interpolation.external",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "CandidateFiProfile": {
+            "additionalProperties": false,
+            "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+            "properties": {
+              "left_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 0,
+                "title": "Left Context Frames",
+                "type": "integer"
+              },
+              "minimum_input_frames": {
+                "default": 2,
+                "maximum": 256,
+                "minimum": 2,
+                "title": "Minimum Input Frames",
+                "type": "integer"
+              },
+              "model_name": {
+                "const": "Aion",
+                "default": "Aion",
+                "title": "Model Name",
+                "type": "string"
+              },
+              "phase": {
+                "const": "even-input-2m-minus-1",
+                "default": "even-input-2m-minus-1",
+                "title": "Phase",
+                "type": "string"
+              },
+              "right_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 1,
+                "title": "Right Context Frames",
+                "type": "integer"
+              },
+              "software_version": {
+                "const": "v1.0",
+                "default": "v1.0",
+                "title": "Software Version",
+                "type": "string"
+              },
+              "status": {
+                "const": "pending_real_acceptance",
+                "default": "pending_real_acceptance",
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "title": "CandidateFiProfile",
+            "type": "object"
+          },
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "上下文、外部 FI 和裁边共用同一候选 profile，变更必须使下游失效。",
+        "properties": {
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "fi_profile": {
+            "$ref": "#/$defs/CandidateFiProfile"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter"
+        ],
+        "title": "FiParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/CandidateFiProfile",
+          "#/$defs/ChapterBinding",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Ordinal",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "const",
+          "default",
+          "description",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "maximum",
+          "minItems",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared.overlap.fi_crop",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "CandidateFiProfile": {
+            "additionalProperties": false,
+            "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+            "properties": {
+              "left_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 0,
+                "title": "Left Context Frames",
+                "type": "integer"
+              },
+              "minimum_input_frames": {
+                "default": 2,
+                "maximum": 256,
+                "minimum": 2,
+                "title": "Minimum Input Frames",
+                "type": "integer"
+              },
+              "model_name": {
+                "const": "Aion",
+                "default": "Aion",
+                "title": "Model Name",
+                "type": "string"
+              },
+              "phase": {
+                "const": "even-input-2m-minus-1",
+                "default": "even-input-2m-minus-1",
+                "title": "Phase",
+                "type": "string"
+              },
+              "right_context_frames": {
+                "default": 32,
+                "maximum": 240,
+                "minimum": 1,
+                "title": "Right Context Frames",
+                "type": "integer"
+              },
+              "software_version": {
+                "const": "v1.0",
+                "default": "v1.0",
+                "title": "Software Version",
+                "type": "string"
+              },
+              "status": {
+                "const": "pending_real_acceptance",
+                "default": "pending_real_acceptance",
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "title": "CandidateFiProfile",
+            "type": "object"
+          },
+          "ChapterBinding": {
+            "additionalProperties": false,
+            "description": "章的源区间和稳定身份；count 是本计划章数，不是 Core scope。",
+            "properties": {
+              "chapter_id": {
+                "pattern": "^chapter-[0-9]{4}$",
+                "title": "Chapter Id",
+                "type": "string"
+              },
+              "count": {
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Count",
+                "type": "integer"
+              },
+              "end_frame": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "ordinal": {
+                "$ref": "#/$defs/Ordinal"
+              },
+              "start_frame": {
+                "$ref": "#/$defs/Ordinal"
+              }
+            },
+            "required": [
+              "chapter_id",
+              "ordinal",
+              "count",
+              "start_frame",
+              "end_frame"
+            ],
+            "title": "ChapterBinding",
+            "type": "object"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "上下文、外部 FI 和裁边共用同一候选 profile，变更必须使下游失效。",
+        "properties": {
+          "chapter": {
+            "$ref": "#/$defs/ChapterBinding"
+          },
+          "fi_profile": {
+            "$ref": "#/$defs/CandidateFiProfile"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter"
+        ],
+        "title": "FiParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "maximum",
+          "minItems",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared.overlap.program_encode",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "完整裁后章的单次连续编码，仅全局末尾补一帧。",
+        "properties": {
+          "chapter_count": {
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Chapter Count",
+            "type": "integer"
+          },
+          "encoder": {
+            "enum": [
+              "cpu",
+              "gpu"
+            ],
+            "title": "Encoder",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter_count",
+          "encoder"
+        ],
+        "title": "ProgramParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "minItems",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared.overlap.final_mux",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Program 与原始音轨的绑定；不改变章节或帧率。",
+        "properties": {
+          "mr_mode": {
+            "enum": [
+              "off",
+              "external"
+            ],
+            "title": "Mr Mode",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "mr_mode"
+        ],
+        "title": "FinalParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "boolean",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/Label",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "minItems",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared_source.external.mp4",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "DeclaredContainer": {
+            "enum": [
+              "mp4",
+              "mov",
+              "mkv"
+            ],
+            "type": "string"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "外部 N→N 修复；声明容器必须由对应 exact definition 的 const 约束。",
+        "properties": {
+          "declared_container": {
+            "const": "mp4",
+            "default": "mp4",
+            "type": "string"
+          },
+          "model_name": {
+            "$ref": "#/$defs/Label"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Version"
+          },
+          "operator_frame_order_confirmed": {
+            "const": true,
+            "title": "Operator Frame Order Confirmed",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "model_name",
+          "operator_frame_order_confirmed",
+          "declared_container"
+        ],
+        "title": "ExternalParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "boolean",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/Label",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "minItems",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared_source.external.mov",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "DeclaredContainer": {
+            "enum": [
+              "mp4",
+              "mov",
+              "mkv"
+            ],
+            "type": "string"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "外部 N→N 修复；声明容器必须由对应 exact definition 的 const 约束。",
+        "properties": {
+          "declared_container": {
+            "const": "mov",
+            "default": "mov",
+            "type": "string"
+          },
+          "model_name": {
+            "$ref": "#/$defs/Label"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Version"
+          },
+          "operator_frame_order_confirmed": {
+            "const": true,
+            "title": "Operator Frame Order Confirmed",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "model_name",
+          "operator_frame_order_confirmed",
+          "declared_container"
+        ],
+        "title": "ExternalParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "boolean",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/Label",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "items",
+          "maxItems",
+          "maxLength",
+          "minItems",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.prepared_source.external.mkv",
+        "version": "0.3.4-color.1"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "DeclaredContainer": {
+            "enum": [
+              "mp4",
+              "mov",
+              "mkv"
+            ],
+            "type": "string"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "只绑定已有准入及工作参考；原件、参考、音频不得合并为一个来源角色。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "audio_source_artifact_ids": {
+                "items": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "title": "Audio Source Artifact Ids",
+                "type": "array"
+              },
+              "diagnosis_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Diagnosis Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Media Artifact Id",
+                "type": "string"
+              },
+              "reference_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Media Artifact Id",
+                "type": "string"
+              },
+              "reference_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Reference Video Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_media_artifact_id",
+              "reference_media_artifact_id",
+              "reference_video_artifact_id",
+              "admission_artifact_id",
+              "diagnosis_artifact_id",
+              "audio_source_artifact_ids",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "外部 N→N 修复；声明容器必须由对应 exact definition 的 const 约束。",
+        "properties": {
+          "declared_container": {
+            "const": "mkv",
+            "default": "mkv",
+            "type": "string"
+          },
+          "model_name": {
+            "$ref": "#/$defs/Label"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Version"
+          },
+          "operator_frame_order_confirmed": {
+            "const": true,
+            "title": "Operator Frame Order Confirmed",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "model_name",
+          "operator_frame_order_confirmed",
+          "declared_container"
+        ],
+        "title": "ExternalParameters",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Python exact NodeDefinition 与纯数据 Presentation 的机器盘点，不是语义权威。",
+  "presentation": {
+    "categories": [
+      {
+        "category_id": "prepared",
+        "description": "0.3.4 独立候选节点；保留原件、显式选择准备方案并验证工作参考。",
+        "order": 70,
+        "title": "素材准备与工作参考"
+      },
+      {
+        "category_id": "overlap",
+        "description": "0.3.2 / 0.3.3 独立精确版本的分章与重叠补帧节点；Aion 软件 v1.0 待真实验收。",
+        "order": 60,
+        "title": "ZNIKU 重叠 FI 候选"
+      },
+      {
+        "category_id": "input",
+        "description": "选择只读源媒体并建立工作流入口。",
+        "order": 10,
+        "title": "导入素材"
+      },
+      {
+        "category_id": "transform",
+        "description": "转换、增强和补帧等视频处理步骤。",
+        "order": 20,
+        "title": "画面处理"
+      },
+      {
+        "category_id": "structure",
+        "description": "按顺序拆分或汇合视频分支。",
+        "order": 30,
+        "title": "拆分与合并"
+      },
+      {
+        "category_id": "delivery",
+        "description": "编码、封装并发布最终文件。",
+        "order": 40,
+        "title": "编码与输出"
+      },
+      {
+        "category_id": "av27",
+        "description": "由模板生成的精确 AVEnhanceFlow v2.7.0 节点。",
+        "order": 50,
+        "title": "AVEnhanceFlow v2.7.0"
+      }
+    ],
+    "contract_version": "0.3.0",
+    "locale": "zh-CN",
+    "nodes": [
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "只读登记本机实体媒体，原件不复制、不改名、不覆盖。",
+        "icon_token": "source",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "file_path",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "源文件",
+            "order": 1,
+            "parameter_pointer": "/source_path",
+            "picker": {
+              "extensions": [
+                ".mkv",
+                ".mp4",
+                ".mov",
+                ".avi",
+                ".wav",
+                ".flac",
+                ".m4a"
+              ]
+            },
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "output",
+            "label": "只读原件",
+            "port_id": "media"
+          }
+        ],
+        "title": "保留原件导入",
+        "type_id": "zniku.source_preparation.source"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "完整检查视频时钟与音频关系；发现不兼容不等于文件损坏。",
+        "icon_token": "check",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "只接受有依据的精确有理数；不从近似小数、文件名或画面内容猜测。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "有依据的目标精确帧率",
+            "order": 1,
+            "parameter_pointer": "/target_frame_rate",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "待检查原件",
+            "port_id": "original_media"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "完整素材检查报告",
+            "port_id": "diagnosis"
+          }
+        ],
+        "title": "素材检查",
+        "type_id": "zniku.source_preparation.diagnostics"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "按已启用策略生成独立工作副本；内容验证通过前不是可用产物。",
+        "icon_token": "transform",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "只接受有依据的精确有理数；不从近似小数、文件名或画面内容猜测。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "有依据的目标精确帧率",
+            "order": 1,
+            "parameter_pointer": "/target_frame_rate",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "text",
+            "description": "策略由产品闭合目录提供；填写参数不能启用尚未完成验证的策略。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "工作副本策略版本",
+            "order": 2,
+            "parameter_pointer": "/strategy_id",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "只读原件",
+            "port_id": "original_media"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "已完成的素材检查报告",
+            "port_id": "diagnosis"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "已验证工作副本",
+            "port_id": "media"
+          }
+        ],
+        "title": "内置素材准备",
+        "type_id": "zniku.source_preparation.video_prepare.t1"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "提交与原件内容保持一致的兼容修复结果；不符合时可另建新工作源工程。",
+        "icon_token": "transform",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "只接受有依据的精确有理数；不从近似小数、文件名或画面内容猜测。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "有依据的目标精确帧率",
+            "order": 1,
+            "parameter_pointer": "/target_frame_rate",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "只读原件",
+            "port_id": "original_media"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "已完成的素材检查报告",
+            "port_id": "diagnosis"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "已验证外部保内容修复结果",
+            "port_id": "media"
+          }
+        ],
+        "title": "外部保内容素材修复",
+        "type_id": "zniku.source_preparation.video_repair.external.mkv"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "提交与原件内容保持一致的兼容修复结果；不符合时可另建新工作源工程。",
+        "icon_token": "transform",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "只接受有依据的精确有理数；不从近似小数、文件名或画面内容猜测。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "有依据的目标精确帧率",
+            "order": 1,
+            "parameter_pointer": "/target_frame_rate",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "只读原件",
+            "port_id": "original_media"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "已完成的素材检查报告",
+            "port_id": "diagnosis"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "已验证外部保内容修复结果",
+            "port_id": "media"
+          }
+        ],
+        "title": "外部保内容素材修复",
+        "type_id": "zniku.source_preparation.video_repair.external.mp4"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "提交与原件内容保持一致的兼容修复结果；不符合时可另建新工作源工程。",
+        "icon_token": "transform",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "只接受有依据的精确有理数；不从近似小数、文件名或画面内容猜测。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "有依据的目标精确帧率",
+            "order": 1,
+            "parameter_pointer": "/target_frame_rate",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "只读原件",
+            "port_id": "original_media"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "已完成的素材检查报告",
+            "port_id": "diagnosis"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "已验证外部保内容修复结果",
+            "port_id": "media"
+          }
+        ],
+        "title": "外部保内容素材修复",
+        "type_id": "zniku.source_preparation.video_repair.external.mov"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "独立核对原件、工作参考与音频关系，通过后才允许精确规划。",
+        "icon_token": "check",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "只接受有依据的精确有理数；不从近似小数、文件名或画面内容猜测。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "有依据的目标精确帧率",
+            "order": 1,
+            "parameter_pointer": "/target_frame_rate",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "select",
+            "description": "音频与视频分别核对。使用原件音频不意味着其原视频必须先满足工作时钟。",
+            "enum_labels": [
+              {
+                "label": "保留原件音频",
+                "value": "original"
+              },
+              {
+                "label": "原件无音频",
+                "value": "none"
+              }
+            ],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "工作源音频约定",
+            "order": 2,
+            "parameter_pointer": "/audio_policy",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "默认要求明确声明；仅用户主动确认时按 SDR BT.709/有限范围/left 解释缺失项。不是探测事实或色彩转换，不改原件与修复副本；显式冲突不能覆盖。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "本工程工作色彩解释",
+            "order": 3,
+            "parameter_pointer": "/interpretation_policy",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "只读原件",
+            "port_id": "original_media"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "已完成的素材检查报告",
+            "port_id": "diagnosis"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "待准入工作参考",
+            "port_id": "reference_media"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "显式音频载体 (有序)",
+            "port_id": "audio_sources"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "已准入工作参考视频",
+            "port_id": "video"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "工作参考与音频准入绑定",
+            "port_id": "gate"
+          }
+        ],
+        "title": "工作源准入",
+        "type_id": "zniku.source_preparation.admission"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "按平均章数或精确切点分章，再按最大时长在章内均衡分叶。",
+        "icon_token": "split",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "Python 计算的章叶范围；修改必须满足原 Schema 和节点局部验证。不会自动重建其他节点。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "精确章节与分叶计划",
+            "order": 1,
+            "parameter_pointer": "/plan",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 2,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "有序视频",
+            "port_id": "videos"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "工作参考与音频准入绑定",
+            "port_id": "gate"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "处理分段 1",
+            "port_id": "leaf-0001"
+          }
+        ],
+        "title": "分章与章内均衡分叶",
+        "type_id": "zniku.prepared.overlap.split.leaves.1"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "把当前处理段交给外部工具增强；提交结果不得改变精确帧数或来源。",
+        "icon_token": "transform",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          },
+          {
+            "description": null,
+            "group_id": "quality",
+            "order": 20,
+            "title": "质量与输出"
+          },
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "零基半开源帧区间；不包含 FI 重叠上下文。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "正式章节范围",
+            "order": 2,
+            "parameter_pointer": "/chapter",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "章内增强片段；与正式章节绑定，不跨章。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "章内处理段范围",
+            "order": 3,
+            "parameter_pointer": "/leaf",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "quality",
+            "importance": "primary",
+            "label": "预期输入尺寸",
+            "order": 4,
+            "parameter_pointer": "/expected_input_geometry",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "quality",
+            "importance": "primary",
+            "label": "预期输出尺寸",
+            "order": 5,
+            "parameter_pointer": "/expected_output_geometry",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "模型名称",
+            "order": 6,
+            "parameter_pointer": "/model_name",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "模型版本",
+            "order": 7,
+            "parameter_pointer": "/model_version",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "quality",
+            "importance": "primary",
+            "label": "实际放大倍数",
+            "order": 8,
+            "parameter_pointer": "/actual_scale_factor",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "输入视频",
+            "port_id": "video"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "输出视频",
+            "port_id": "video"
+          }
+        ],
+        "title": "外部逐叶增强",
+        "type_id": "zniku.prepared.overlap.enhancement.external"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "按章内顺序合并已完成增强片段，为补帧准备完整章节。",
+        "icon_token": "merge",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "零基半开源帧区间；不包含 FI 重叠上下文。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "正式章节范围",
+            "order": 2,
+            "parameter_pointer": "/chapter",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "有序视频",
+            "port_id": "videos"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "输出视频",
+            "port_id": "video"
+          }
+        ],
+        "title": "合并章节增强段",
+        "type_id": "zniku.prepared.overlap.merge_video"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "等待直接连入的章节增强结果，收集本章及所需相邻画面；没有预计等待时间。",
+        "icon_token": "merge",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          },
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "零基半开源帧区间；不包含 FI 重叠上下文。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "正式章节范围",
+            "order": 2,
+            "parameter_pointer": "/chapter",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "软件 v1.0 / Aion 待真实验收。默认前后 32 帧、最短输入 2 帧是工程默认，不是已验证的模型要求。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "Aion 候选与上下文设置",
+            "order": 3,
+            "parameter_pointer": "/fi_profile",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "所需章节增强视频 (有序)",
+            "port_id": "chapters"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "包含邻章上下文的补帧输入",
+            "port_id": "video"
+          }
+        ],
+        "title": "准备补帧上下文",
+        "type_id": "zniku.prepared.overlap.fi_context"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "使用包含上下文的输入完成 Aion 补帧；保留外部原始结果，后续节点另行裁边。候选待真实验收。",
+        "icon_token": "transform",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          },
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "零基半开源帧区间；不包含 FI 重叠上下文。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "正式章节范围",
+            "order": 2,
+            "parameter_pointer": "/chapter",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "软件 v1.0 / Aion 待真实验收。默认前后 32 帧、最短输入 2 帧是工程默认，不是已验证的模型要求。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "Aion 候选与上下文设置",
+            "order": 3,
+            "parameter_pointer": "/fi_profile",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "包含邻章上下文的补帧输入",
+            "port_id": "video"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "外部原始补帧结果 (保留)",
+            "port_id": "video"
+          }
+        ],
+        "title": "外部上下文补帧",
+        "type_id": "zniku.prepared.overlap.frame_interpolation.external"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "根据已绑定上下文裁出正式章节，不覆盖外部原始补帧结果。",
+        "icon_token": "split",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          },
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "零基半开源帧区间；不包含 FI 重叠上下文。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "正式章节范围",
+            "order": 2,
+            "parameter_pointer": "/chapter",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": "软件 v1.0 / Aion 待真实验收。默认前后 32 帧、最短输入 2 帧是工程默认，不是已验证的模型要求。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "Aion 候选与上下文设置",
+            "order": 3,
+            "parameter_pointer": "/fi_profile",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "外部原始补帧结果 (保留)",
+            "port_id": "video"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "精确裁边后章节视频",
+            "port_id": "video"
+          }
+        ],
+        "title": "精确裁边补帧章节",
+        "type_id": "zniku.prepared.overlap.fi_crop"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "按顺序读取裁边章节并连续编码，只在全片最后补一帧，不生成强制整片 ProRes。",
+        "icon_token": "encode",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          },
+          {
+            "description": null,
+            "group_id": "quality",
+            "order": 20,
+            "title": "质量与输出"
+          },
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "integer",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "章节总数",
+            "order": 2,
+            "parameter_pointer": "/chapter_count",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "select",
+            "description": null,
+            "enum_labels": [
+              {
+                "label": "CPU 编码",
+                "value": "cpu"
+              },
+              {
+                "label": "GPU 编码",
+                "value": "gpu"
+              }
+            ],
+            "group_id": "quality",
+            "importance": "primary",
+            "label": "编码设备",
+            "order": 3,
+            "parameter_pointer": "/encoder",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "精确裁边后章节视频 (有序)",
+            "port_id": "chapters"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "输出视频",
+            "port_id": "video"
+          }
+        ],
+        "title": "连续编码重叠补帧成片",
+        "type_id": "zniku.prepared.overlap.program_encode"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "将连续视频与显式绑定音频封装；不从 MR 或增强结果偷换音轨。",
+        "icon_token": "mux",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          },
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "select",
+            "description": null,
+            "enum_labels": [
+              {
+                "label": "不启用",
+                "value": "off"
+              },
+              {
+                "label": "外部人工处理",
+                "value": "external"
+              }
+            ],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "马赛克修复方式",
+            "order": 2,
+            "parameter_pointer": "/mr_mode",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "输入视频",
+            "port_id": "video"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "显式音频载体 (有序)",
+            "port_id": "sources"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "工作参考与音频准入绑定",
+            "port_id": "gate"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "封装媒体",
+            "port_id": "media"
+          }
+        ],
+        "title": "封装重叠补帧成片",
+        "type_id": "zniku.prepared.overlap.final_mux"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "以准入后的完整工作参考执行可选 MR；不替代素材兼容修复，音频仍来自显式音轨载体。",
+        "icon_token": "transform",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          },
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "text",
+            "description": "填写外部软件实际输出封装；选择文件只复制，不转换封装或自动提交。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "外部结果实际封装",
+            "order": 2,
+            "parameter_pointer": "/declared_container",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "模型名称",
+            "order": 3,
+            "parameter_pointer": "/model_name",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "模型版本",
+            "order": 4,
+            "parameter_pointer": "/model_version",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "switch",
+            "description": "这是外部马赛克修复约定，不是保内容兼容修复或逐帧画质证明。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "确认马赛克修复保留工作参考帧序",
+            "order": 5,
+            "parameter_pointer": "/operator_frame_order_confirmed",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "已准入工作参考视频",
+            "port_id": "video"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "工作参考与音频准入绑定",
+            "port_id": "gate"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "外部 MR 有效处理视频",
+            "port_id": "video"
+          }
+        ],
+        "title": "外部工作参考马赛克修复",
+        "type_id": "zniku.prepared_source.external.mp4"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "以准入后的完整工作参考执行可选 MR；不替代素材兼容修复，音频仍来自显式音轨载体。",
+        "icon_token": "transform",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          },
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "text",
+            "description": "填写外部软件实际输出封装；选择文件只复制，不转换封装或自动提交。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "外部结果实际封装",
+            "order": 2,
+            "parameter_pointer": "/declared_container",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "模型名称",
+            "order": 3,
+            "parameter_pointer": "/model_name",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "模型版本",
+            "order": 4,
+            "parameter_pointer": "/model_version",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "switch",
+            "description": "这是外部马赛克修复约定，不是保内容兼容修复或逐帧画质证明。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "确认马赛克修复保留工作参考帧序",
+            "order": 5,
+            "parameter_pointer": "/operator_frame_order_confirmed",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "已准入工作参考视频",
+            "port_id": "video"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "工作参考与音频准入绑定",
+            "port_id": "gate"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "外部 MR 有效处理视频",
+            "port_id": "video"
+          }
+        ],
+        "title": "外部工作参考马赛克修复",
+        "type_id": "zniku.prepared_source.external.mov"
+      },
+      {
+        "card_summary_paths": [],
+        "category_id": "prepared",
+        "definition_version": "0.3.4-color.1",
+        "description": "以准入后的完整工作参考执行可选 MR；不替代素材兼容修复，音频仍来自显式音轨载体。",
+        "icon_token": "transform",
+        "keywords": [
+          "工作源",
+          "素材准备",
+          "0.3.4-color.1"
+        ],
+        "palette_level": "advanced",
+        "parameter_groups": [
+          {
+            "description": null,
+            "group_id": "basic",
+            "order": 10,
+            "title": "基础设置"
+          },
+          {
+            "description": null,
+            "group_id": "binding",
+            "order": 30,
+            "title": "高级绑定"
+          }
+        ],
+        "parameters": [
+          {
+            "control_hint": "auto",
+            "description": "原件、已准入工作参考、有效处理视频和音频是独立直接输入；不同路径不代表开启 MR。",
+            "enum_labels": [],
+            "group_id": "binding",
+            "importance": "advanced",
+            "label": "原件、工作参考与音频绑定",
+            "order": 1,
+            "parameter_pointer": "/source",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "text",
+            "description": "填写外部软件实际输出封装；选择文件只复制，不转换封装或自动提交。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "外部结果实际封装",
+            "order": 2,
+            "parameter_pointer": "/declared_container",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "模型名称",
+            "order": 3,
+            "parameter_pointer": "/model_name",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "auto",
+            "description": null,
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "模型版本",
+            "order": 4,
+            "parameter_pointer": "/model_version",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          },
+          {
+            "control_hint": "switch",
+            "description": "这是外部马赛克修复约定，不是保内容兼容修复或逐帧画质证明。",
+            "enum_labels": [],
+            "group_id": "basic",
+            "importance": "primary",
+            "label": "确认马赛克修复保留工作参考帧序",
+            "order": 5,
+            "parameter_pointer": "/operator_frame_order_confirmed",
+            "picker": null,
+            "placeholder": null,
+            "unit": null
+          }
+        ],
+        "ports": [
+          {
+            "description": null,
+            "direction": "input",
+            "label": "已准入工作参考视频",
+            "port_id": "video"
+          },
+          {
+            "description": null,
+            "direction": "input",
+            "label": "工作参考与音频准入绑定",
+            "port_id": "gate"
+          },
+          {
+            "description": null,
+            "direction": "output",
+            "label": "外部 MR 有效处理视频",
+            "port_id": "video"
+          }
+        ],
+        "title": "外部工作参考马赛克修复",
+        "type_id": "zniku.prepared_source.external.mkv"
+      }
+    ]
+  }
+}

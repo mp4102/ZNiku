@@ -127,3 +127,22 @@ def test_metadata_collection_excludes_editable_source_paths_and_cache(
         "zniku-0.3.2.dist-info/top_level.txt",
     }
     assert all((metadata / name).is_file() for name in names)
+
+
+def test_optional_mkvmerge_requires_and_packages_original_licenses(
+    build_resources: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """只打包显式分发根；exe 与原始许可必须一起进入可核对清单。"""
+    media, _ = build_resources
+    mkv = media / "mkvtoolnix"
+    (mkv / "doc/licenses").mkdir(parents=True)
+    (mkv / "mkvmerge.exe").write_bytes(b"synthetic executable")
+    for name in ("COPYING.txt", "README.txt"):
+        (mkv / "doc" / name).write_text("synthetic provenance", encoding="utf-8")
+    with pytest.raises(ValueError, match="许可"):
+        build_desktop.build_arguments(media, tmp_path / "candidate")
+    (mkv / "doc/licenses/dependency.txt").write_text("synthetic license", encoding="utf-8")
+    argv = build_desktop.build_arguments(media, tmp_path / "candidate")
+    assert f"{mkv / 'mkvmerge.exe'};media-tools" in argv
+    assert f"{mkv / 'doc/COPYING.txt'};licenses/mkvtoolnix" in argv
+    assert f"{mkv / 'doc/licenses/dependency.txt'};licenses/mkvtoolnix/licenses" in argv

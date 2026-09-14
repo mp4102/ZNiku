@@ -22,6 +22,8 @@ from .chapter_overlap import CHAPTER_OVERLAP_PREVIEW_ROUTE, ChapterOverlapPrevie
 from .handoff_import import HandoffImportManager
 from .handoff_inbox import HandoffInboxManager
 from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
+from .prepared_color import PREPARED_COLOR_ROUTES, ColorPreparedSourceError
+from .prepared_source import PREPARED_SOURCE_ROUTES, PreparedSourceError
 from .preview import PreviewCache
 from .service import ProjectServiceApplication, ProjectServiceError
 from .source_aligned import (
@@ -31,6 +33,7 @@ from .source_aligned import (
     SourceAlignedError,
 )
 from .storage_api import StorageApi
+from .work import WorkError
 
 _MAX_BODY_BYTES: Final = 4 * 1024 * 1024
 _MAX_GRAPH_SAVE_BYTES: Final = 32 * 1024 * 1024
@@ -306,6 +309,8 @@ def make_project_service_handler(
                     SOURCE_ALIGNED_PROCESSING_ROUTE,
                     SOURCE_ALIGNED_FULL_PREVIEW_ROUTE,
                     SOURCE_ALIGNED_EXPAND_ROUTE,
+                    *PREPARED_SOURCE_ROUTES,
+                    *PREPARED_COLOR_ROUTES,
                     "/api/studio/rerun-preview",
                 }
             ):
@@ -363,6 +368,14 @@ def make_project_service_handler(
                     envelope = application.preview_source_aligned(payload)
                 elif parsed.path == SOURCE_ALIGNED_EXPAND_ROUTE:
                     envelope = application.expand_source_aligned(payload)
+                elif parsed.path in PREPARED_SOURCE_ROUTES:
+                    from .prepared_source_application import dispatch
+
+                    envelope = dispatch(application, parsed.path.rsplit("/", 1)[-1], payload)
+                elif parsed.path in PREPARED_COLOR_ROUTES:
+                    from .prepared_color_application import dispatch as dispatch_color
+
+                    envelope = dispatch_color(application, parsed.path.rsplit("/", 1)[-1], payload)
                 elif parsed.path == "/api/studio/templates/chapter-overlap-fi/processing-preview":
                     from .overlap_application import processing_preview
 
@@ -380,7 +393,13 @@ def make_project_service_handler(
                     envelope = application.preview_rerun(payload)
                 else:
                     envelope = application.command(payload)
-            except (ChapterOverlapPreviewError, SourceAlignedError) as error:
+            except (
+                ChapterOverlapPreviewError,
+                SourceAlignedError,
+                PreparedSourceError,
+                ColorPreparedSourceError,
+                WorkError,
+            ) as error:
                 self._json(HTTPStatus(error.http_status), error.envelope.model_dump(mode="json"))
                 return
             except _JsonPayloadError as error:

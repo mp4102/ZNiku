@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -102,6 +103,44 @@ def test_random_port_bootstrap_health_and_no_token_record(
         assert lock.existing(timeout=0.5) == record
     finally:
         lock.close()
+
+
+def test_reload_asset_burst_is_queued_before_http_loop_accepts(tmp_path: Path) -> None:
+    """模拟重开资产和上一页连接同时到达；短暂未 accept 也不能拒绝必要模块。"""
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "index.html").write_text(
+        '<html><head><script src="/main.js"></script></head><body></body></html>',
+        encoding="utf-8",
+    )
+    (assets / "main.js").write_text("export const production = true", encoding="utf-8")
+    server = DesktopServer(
+        build_desktop_application(tmp_path / "attempts"), assets, data_root=tmp_path / "settings"
+    )
+    clients: list[socket.socket] = []
+    try:
+        # listener 已 bind/listen，故意不启动 accept 主循环。16 个合成连接小于固定32容量，
+        # 却会稳定超过 stdlib 默认5；不靠 sleep 或浏览器自动重试消解失败。
+        for _ in range(16):
+            clients.append(socket.create_connection(("127.0.0.1", server.http.server_port), 1))
+        assert server.http.request_queue_size == 32
+        server.start()
+        for client in clients:
+            client.settimeout(5)
+            request_bytes = (
+                f"GET /main.js HTTP/1.0\r\nHost: 127.0.0.1:{server.http.server_port}\r\n\r\n"
+            ).encode()
+            client.sendall(request_bytes)
+            chunks: list[bytes] = []
+            while chunk := client.recv(4096):
+                chunks.append(chunk)
+            response = b"".join(chunks)
+            assert response.startswith(b"HTTP/1.0 200")
+            assert response.endswith(b"export const production = true")
+    finally:
+        for client in clients:
+            client.close()
+        server.close()
 
 
 @pytest.mark.parametrize(

@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import json
+
 from pydantic import ValidationError
 
 from zniku.avenhance_v27 import definitions as av27
@@ -21,6 +23,19 @@ from zniku.chapter_overlap.node_contracts import (
     EnhancementParameters,
 )
 from zniku.graph import NodeDefinition, NodeInstance
+from zniku.prepared_source.definitions import definition_role as prepared_role
+from zniku.prepared_source.node_contracts import (
+    PARAMETER_MODELS as PREPARED_MODELS,
+)
+from zniku.prepared_source.node_contracts import (
+    ChapterParameters as PreparedChapterParameters,
+)
+from zniku.prepared_source.node_contracts import (
+    EnhancementParameters as PreparedEnhancementParameters,
+)
+from zniku.prepared_source.node_contracts import (
+    ExternalParameters as PreparedExternalParameters,
+)
 from zniku.project.storage_layout import AttemptNamingHint
 from zniku.runtime import Run
 from zniku.source_aligned.definitions import definition_role as aligned_role
@@ -36,6 +51,8 @@ from zniku.source_aligned.node_contracts import (
 from zniku.source_aligned.node_contracts import (
     ExternalParameters,
 )
+
+from .preparation_roles import definition_role as preparation_role
 
 _OVERLAP_NAMES = {
     "split": "分章分叶",
@@ -66,6 +83,71 @@ def resolve_attempt_naming(
     fallback = AttemptNamingHint(task_name=definition.type_id.rsplit(".", 1)[-1][:300] or "任务")
     if (node.type_id, node.definition_version) != (definition.type_id, definition.version):
         return fallback
+    prep_role = preparation_role(definition)
+    if prep_role is not None:
+        return AttemptNamingHint(
+            category="common",
+            task_name={
+                "source": "只读原件",
+                "diagnostics": "素材检查",
+                "builtin": "内置工作副本",
+                "external": "外部工作参考"
+                if definition.version == "0.3.4-work.1"
+                else "外部素材修复",
+                "admission": "工作源准入",
+            }[prep_role],
+        )
+    from zniku.prepared_color.definitions import definition_role as color_role
+    from zniku.prepared_color.node_contracts import (
+        PARAMETER_MODELS as COLOR_MODELS,
+    )
+    from zniku.prepared_color.node_contracts import ExternalParameters as ColorExternalParameters
+
+    color = color_role(definition)
+    if color is not None:
+        try:
+            color_model = ColorExternalParameters if color == "external" else COLOR_MODELS[color]
+            color_parameters = color_model.model_validate_json(
+                json.dumps(node.model_dump(mode="json")["parameters"])
+            ).model_dump(mode="json")
+        except (ValidationError, ValueError, Av27MediaError):
+            return fallback
+        if color == "external":
+            return AttemptNamingHint(category="common", task_name="外部马赛克修复")
+        color_name = _OVERLAP_NAMES[color]
+        chapter = color_parameters.get("chapter")
+        if isinstance(chapter, dict):
+            if color == "enhancement":
+                color_name += f"-leaf-{color_parameters['leaf']['ordinal'] + 1:04d}"
+            return _chapter(chapter["ordinal"], color_name)
+        return AttemptNamingHint(
+            category="common" if color == "split" else "program", task_name=color_name
+        )
+    from zniku.prepared_source.work_definitions import definition_role as work_role
+
+    downstream = prepared_role(definition) or work_role(definition)
+    if downstream is not None:
+        try:
+            prepared_model = (
+                PreparedExternalParameters
+                if downstream == "external"
+                else PREPARED_MODELS[downstream]
+            )
+            prepared = prepared_model.model_validate(
+                node.model_dump(mode="json")["parameters"], strict=True
+            )
+        except (ValidationError, ValueError, Av27MediaError):
+            return fallback
+        if downstream == "external":
+            return AttemptNamingHint(category="common", task_name="外部马赛克修复")
+        prepared_name = _OVERLAP_NAMES[downstream]
+        if isinstance(prepared, PreparedChapterParameters):
+            if isinstance(prepared, PreparedEnhancementParameters):
+                prepared_name += f"-leaf-{prepared.leaf.ordinal + 1:04d}"
+            return _chapter(prepared.chapter.ordinal, prepared_name)
+        return AttemptNamingHint(
+            category="common" if downstream == "split" else "program", task_name=prepared_name
+        )
     new_role = aligned_role(definition)
     if new_role is not None:
         try:

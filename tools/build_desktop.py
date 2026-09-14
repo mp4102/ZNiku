@@ -13,9 +13,19 @@ import subprocess
 import sys
 from pathlib import Path
 
-from audit_desktop_package import audit_desktop, build_source_info, product_version, source_files
+from audit_desktop_package import (
+    _media_inputs,
+    audit_desktop,
+    build_source_info,
+    product_version,
+    source_files,
+)
 
 from zniku.desktop.windows import is_windows
+from zniku.source_color.models import T1_PROMOTED as COLOR_T1_PROMOTED
+from zniku.source_color.models import T1_STRATEGY as COLOR_T1_STRATEGY
+from zniku.source_preparation.models import T1_PROMOTED, T1_STRATEGY
+from zniku.source_preparation.work_models import SOURCE_PREPARATION_VERSION, WORK_STRATEGY
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -39,6 +49,8 @@ def build_arguments(media_root: Path, output: Path) -> list[str]:
     """构造固定 PyInstaller argv，输入只能指定构建资源目录，不是任意命令模板。"""
 
     media = media_root.resolve(strict=True)
+    if (T1_PROMOTED or COLOR_T1_PROMOTED) and not (media / "mkvtoolnix/mkvmerge.exe").is_file():
+        raise ValueError("启用 T1 的候选必须显式提供 MKVToolNix 及原始许可，不能依赖用户 PATH")
     assets = ROOT / "apps" / "studio" / "dist"
     required = (
         media / "bin" / "ffmpeg.exe",
@@ -57,6 +69,12 @@ def build_arguments(media_root: Path, output: Path) -> list[str]:
     data_arguments = []
     for name, source in {**source_files(ROOT), **metadata_files()}.items():
         data_arguments.extend(["--add-data", f"{source};{Path(name).parent.as_posix()}"])
+    optional_tools = []
+    for name, source in _media_inputs(media).items():
+        if "mkvtoolnix" in name or name.endswith("/mkvmerge.exe"):
+            target = Path(name.removeprefix("_internal/")).parent.as_posix()
+            flag = "--add-binary" if source.suffix.lower() == ".exe" else "--add-data"
+            optional_tools.extend([flag, f"{source};{target}"])
     return [
         sys.executable,
         "-m",
@@ -92,6 +110,7 @@ def build_arguments(media_root: Path, output: Path) -> list[str]:
         "--add-data",
         f"{media / 'README.txt'};licenses/ffmpeg",
         *data_arguments,
+        *optional_tools,
         str(ROOT / "tools" / "desktop_entry.py"),
     ]
 
@@ -125,6 +144,13 @@ def main() -> int:
         "distribution": "local acceptance only; external redistribution requires license review",
         "media_license": "_internal/licenses/ffmpeg/LICENSE",
         "media_provenance": "_internal/licenses/ffmpeg/README.txt",
+        "mkvmerge_bundled": (args.media_distribution_root / "mkvtoolnix/mkvmerge.exe").is_file(),
+        "enabled_preparation_strategies": [
+            *([T1_STRATEGY] if T1_PROMOTED else []),
+            *([COLOR_T1_STRATEGY] if COLOR_T1_PROMOTED else []),
+        ],
+        "working_source_contract_version": SOURCE_PREPARATION_VERSION,
+        "enabled_working_source_strategies": [WORK_STRATEGY],
         **source_info,
     }
     (package / "BUILD-INFO.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -133,15 +159,19 @@ def main() -> int:
         "完整解压此目录后双击 ZNIKU Studio.exe。"
         "无需安装 Python 或 npm。第一次启动需要允许浏览器打开本机页面。\n"
         "在界面中选择工程与媒体。退出请使用界面的“退出应用”，关闭浏览器标签页不会停止服务。\n"
-        "本0.3.3候选使用独立Studio-v0.3.3-candidate本机状态通道，不会连接旧版本实例。\n"
+        "本工作源候选使用独立Studio-v0.3.4-work-candidate本机状态通道，不连接旧合同实例。\n"
         "同一候选更新前先在其页面确认“退出应用”；旧候选和真实工程不会自动迁移。\n"
-        "测试新链时，新建工程并选择“ZNIKU 原片规划与重叠 FI · 0.3.3”推荐方案。\n"
-        "第0项外部修复默认关闭；开启后先分析原片，确认工作流后再等待外部文件。\n"
+        "新建默认使用普通工作源方案：可直接使用、需要准备或暂不支持，按界面说明继续。\n"
+        "色彩缺失须明确确认 SDR BT.709 工作解释；不代表测量结果，不覆盖已知冲突或 HDR。\n"
+        "内置工作副本保留帧数和帧序，但可能改变播放节奏；必须确认影响，不改写原件。\n"
+        "外部文件可作为新的工作参考，按新帧数重新规划并使用其音频；不证明保内容修复。\n"
+        "内置 T1 是否启用以准备页面为准；未完成真实策略门禁时保持禁用。\n"
+        "素材准备通过后，第0项“马赛克修复”默认关闭；它与源兼容修复不同，开启后按已准入工作参考另行交付。\n"
         "按实际外部输出选择MP4/MOV/MKV；导入仅复制和检查，不转码、不改速、不自动提交。\n"
         "含当前不能无损保持的AAC预滚/样本裁剪音轨时，生成工作流前会明确阻止，不静默转码音频。\n"
-        "外部修复检查会顺序读取全片，可能耗时；本候选的人工检查暂不提供中途取消或百分比。\n"
+        "工作源检查合并一次全片帧读取；准备页显示实测阶段并可停止，未知总量不显示百分比。\n"
         "章节支持平均章数、精确时间或精确帧切点；分叶最长默认5分钟，独立可设1-60分钟。\n"
-        "FI软件v1.0、模型Aion仍待真实验收：处理fi-input，提交未裁边fi-raw，系统另存fi成品章。\n"
+        "本0.3.4新绑定链仍待真实外部验收，不覆盖旧版验收结论：FI处理fi-input，提交未裁边fi-raw，系统另存fi成品章。\n"
         "默认左右32帧上下文与最短2帧仅为候选工程设置，必须先以短片验证相位、画质与同步。\n"
         "新工程的工作数据默认在工程旁同名 .data 文件夹，可在建项时选择专用磁盘父目录。\n"
         "新工程使用章节/任务/运行批次可读目录；旧UUID工程保持原位置，不自动搬动。\n"

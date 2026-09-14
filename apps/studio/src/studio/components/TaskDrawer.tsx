@@ -35,6 +35,7 @@ export interface TaskDrawerProps {
   readonly outputs?: ReactNode
   readonly outputCount?: number
   readonly currentGraphActions?: ReactNode
+  readonly operationMonitor?: ReactNode
   readonly showingSnapshot?: boolean
   readonly onReturnToEditing?: () => void
   readonly onAbandon?: (runId: string) => void
@@ -45,7 +46,7 @@ export interface TaskDrawerProps {
 
 export function TaskDrawer({ open, tab, onOpenChange, onTabChange, summaries, selectedRunId, selectedSummary,
   nodeRuns, nodeLabel, onSelectRun, onLocateNode, nextRunCursor = null, historyBusy = false, onLoadOlder,
-  diagnostics, problemCount, otherWaitingCount = 0, outputs, outputCount, currentGraphActions, showingSnapshot = false,
+  diagnostics, problemCount, otherWaitingCount = 0, outputs, outputCount, currentGraphActions, operationMonitor, showingSnapshot = false,
   onReturnToEditing, onAbandon, abandonDisabled = false, abandonDisabledReason, returnFocusRef }: TaskDrawerProps) {
   const id = useId()
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -142,7 +143,7 @@ export function TaskDrawer({ open, tab, onOpenChange, onTabChange, summaries, se
           <section className="task-drawer-detail" aria-label="被查看处理详情">
             <h3>{showingSnapshot ? '本次处理使用的流程（只读）' : '被查看的处理记录'}</h3>
             {selected ? <>
-              <p>{historyLabel(selected)}</p>{returnButton}
+              <p>{historyLabel(selected)}</p>{returnButton}{operationMonitor}
               <ul className="task-drawer-node-list">{selectedNodes.map((nodeRun) => <li key={nodeRun.node_run_id}>
                 <button type="button" onClick={() => onLocateNode(selected.run_id, nodeRun.node_id)}>
                   <strong>{nodeLabel?.(nodeRun.node_id) ?? nodeRun.node_id}</strong><span>{nodeStateLabel(nodeRun.state)}</span>

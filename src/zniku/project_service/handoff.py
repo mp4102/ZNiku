@@ -16,7 +16,10 @@ from zniku.runtime import Artifact, NodeRunState, Run
 from .av27_handoff import project_av27_handoff_contracts
 from .models import ExternalHandoffContractProjection, HandoffContractField
 from .overlap_handoff import project_overlap_handoff_contracts
+from .prepared_color_presentation import project_prepared_handoffs as project_color_handoffs
+from .prepared_source_presentation import project_prepared_handoffs
 from .source_aligned_presentation import project_source_aligned_handoffs
+from .work_presentation import project_work_handoffs
 
 
 def project_handoff_contracts(
@@ -28,6 +31,9 @@ def project_handoff_contracts(
         *project_av27_handoff_contracts(run, artifacts),
         *project_overlap_handoff_contracts(run, artifacts),
         *project_source_aligned_handoffs(run, artifacts),
+        *project_prepared_handoffs(run, artifacts),
+        *project_color_handoffs(run, artifacts),
+        *project_work_handoffs(run, artifacts),
     ]
     covered = {item.node_run_id for item in contracts}
     nodes = {item.node_id: item for item in run.graph_snapshot.nodes}

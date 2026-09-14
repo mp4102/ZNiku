@@ -57,6 +57,9 @@ def test_graph_core_is_the_upper_authority_and_designs_are_subordinate() -> None
         Path("studio-schema-corpus.json"),
         Path("studio-overlap-schema-corpus.json"),
         Path("studio-source-aligned-schema-corpus.json"),
+        Path("studio-prepared-source-schema-corpus.json"),
+        Path("studio-prepared-color-schema-corpus.json"),
+        Path("studio-prepared-work-schema-corpus.json"),
         Path("studio-run-observability.md"),
         Path("studio-ux-baseline.md"),
     }
@@ -135,10 +138,10 @@ def test_active_guidance_preserves_core_authority_and_ux_subordination() -> None
     assert "docs/architecture/studio-ux-baseline.md" in agents
     assert "正式下位设计" in agents
     assert "多个 Source、多个 Output、零 Output" in agents
-    assert "目标版本：`ZNIKU Studio v0.3.3`" in readme
+    assert "目标版本：`ZNIKU Studio v0.3.4`" in readme
     assert "docs/v0.3.1-ui-optimization-plan.md" in agents
     assert "docs/v0.3.1-ui-optimization-plan.md" in readme
-    assert "当前实现版本：`0.3.3`" in readme
+    assert "当前实现版本：`0.3.4`" in readme
     assert "`v0.2.1` Phase 0\u20135 已完成" in readme
     assert "docs/architecture/studio-ux-baseline.md" in readme
     assert "docs/v0.3.0-execution-plan.md" in readme
@@ -200,6 +203,10 @@ def test_legacy_python_implementation_is_not_shipped_as_product_code() -> None:
         "presentation",
         "runtime",
         "source_aligned",
+        "source_preparation",
+        "prepared_source",
+        "source_color",
+        "prepared_color",
     }
 
 

@@ -256,6 +256,8 @@ class ProjectServiceApplication:
         self._active_run_id: str | None = None
         self._active_operation: ActiveProjectOperation | None = None
         self._worker: threading.Thread | None = None
+        self._preparation_cancel: threading.Event | None = None
+        self._active_preparation_node_run_id: str | None = None
         self._last_error: ProjectServiceFailure | None = None
         self._desktop_closing = False
 
@@ -375,6 +377,20 @@ class ProjectServiceApplication:
                     "多输出节点请按各目标放好文件，再执行完整检查",
                     http_status=422,
                 )
+            from .preparation_roles import definition_role
+
+            run_snapshot = runtime.repository.get_run(node_run.run_id)
+            selected_node = next(
+                item
+                for item in run_snapshot.graph_snapshot.nodes
+                if item.node_id == node_run.node_id
+            )
+            selected_definition = next(
+                item
+                for item in run_snapshot.definitions_snapshot
+                if (item.type_id, item.version)
+                == (selected_node.type_id, selected_node.definition_version)
+            )
             authority = ImportAuthority(
                 runtime,
                 node_run,
@@ -382,13 +398,23 @@ class ProjectServiceApplication:
                 self._effective_work_root(store),
                 store.path,
                 storage=store.load_storage(),
+                preserve_failed_candidate=definition_role(selected_definition) == "external",
             )
             previous_run_id = self._active_run_id
+            cancellation = threading.Event()
             if importing:
                 self._active_operation = "import_external"
                 self._active_run_id = node_run.run_id
+                self._preparation_cancel = cancellation
+                self._active_preparation_node_run_id = node_run.node_run_id
         try:
-            yield authority
+            from zniku.source_preparation.progress import cancellation_scope, progress_log
+
+            with (
+                cancellation_scope(cancellation),
+                progress_log(Path(node_run.work_dir) / "logs" / "stdout.log"),
+            ):
+                yield authority
             self.assert_preview_session(binding.project_session_id)
         except (RuntimeServiceError, RuntimeRepositoryError) as error:
             raise self._translate_failure(error) from error
@@ -397,6 +423,8 @@ class ProjectServiceApplication:
                 with self._state:
                     self._active_operation = None
                     self._active_run_id = previous_run_id
+                    self._preparation_cancel = None
+                    self._active_preparation_node_run_id = None
                     self._state.notify_all()
 
     def inspect_presentations(self) -> PresentationCatalogEnvelope:
@@ -898,6 +926,56 @@ class ProjectServiceApplication:
             ) as failure:
                 raise self._translate_failure(failure) from failure
 
+    @contextmanager
+    def _preparation_inspection(
+        self, run_id: str, node_run_id: str, *, expected_runtime: RuntimeService
+    ) -> Iterator[None]:
+        """新保内容检查可停止且可观察；旧节点的只读 readiness 行为保持不变。"""
+        from zniku.source_preparation.progress import cancellation_scope
+
+        from .preparation_roles import definition_role
+
+        with self._state:
+            _, runtime = self._require_session()
+            if runtime is not expected_runtime:
+                raise ProjectServiceError(
+                    "E_PROJECT_SESSION_CONFLICT",
+                    "工程会话已变化，请重新检查当前任务",
+                    http_status=409,
+                )
+            run = runtime.repository.get_run(run_id)
+            attempt = next(item for item in run.node_runs if item.node_run_id == node_run_id)
+            node = next(
+                item for item in run.graph_snapshot.nodes if item.node_id == attempt.node_id
+            )
+            definition = next(
+                item
+                for item in run.definitions_snapshot
+                if (item.type_id, item.version) == (node.type_id, node.definition_version)
+            )
+            preparation = definition_role(definition) == "external"
+            if preparation:
+                self._assert_idle()
+                previous_run_id = self._active_run_id
+                cancellation = threading.Event()
+                self._active_run_id = run_id
+                self._active_operation = "import_external"
+                self._preparation_cancel = cancellation
+                self._active_preparation_node_run_id = node_run_id
+        if not preparation:
+            yield
+            return
+        try:
+            with cancellation_scope(cancellation):
+                yield
+        finally:
+            with self._state:
+                self._active_operation = None
+                self._active_run_id = previous_run_id
+                self._preparation_cancel = None
+                self._active_preparation_node_run_id = None
+                self._state.notify_all()
+
     def inspect_external_readiness(
         self,
         *,
@@ -931,11 +1009,14 @@ class ProjectServiceApplication:
             probe_candidates = [target for target in targets if target.state == "present"]
             if len(probe_candidates) == len(targets):
                 try:
-                    runtime.inspect_external_outputs(
-                        run_id,
-                        node_run_id,
-                        handoff_id=handoff.handoff_id,
-                    )
+                    with self._preparation_inspection(
+                        run_id, node_run_id, expected_runtime=runtime
+                    ):
+                        runtime.inspect_external_outputs(
+                            run_id,
+                            node_run_id,
+                            handoff_id=handoff.handoff_id,
+                        )
                 except RunnerError as failure:
                     message = str(failure)[:4096]
                     targets = [
@@ -1917,6 +1998,11 @@ class ProjectServiceApplication:
         replacement = runtime.create_rerun_run(
             command.node_id, expected_storage_revision=command.expected_storage_revision
         )
+        from .work_recovery import retire_replaced_work_run
+
+        # 普通工作准备的显式恢复同时结束被替代的失败批次，避免其非终态阻塞后续全图启动。
+        # 创建替代 Run 失败则没有此副作用；旧合同、自由业务图及活动 handoff 均不适用。
+        retire_replaced_work_run(runtime, run, replacement, command.node_id)
         run_id = replacement.run_id
         self._begin_worker("rerun_from_here", run_id, lambda: runtime.run_until_blocked(run_id))
 
@@ -1956,6 +2042,7 @@ class ProjectServiceApplication:
                 run_id=command.run_id,
                 handoff_id=command.handoff_id,
             ),
+            preparation_node_run_id=node_run.node_run_id,
         )
 
     def _abandon(self, command: AbandonRunCommand) -> None:
@@ -1968,14 +2055,23 @@ class ProjectServiceApplication:
         operation: ActiveProjectOperation,
         run_id: str,
         work: Callable[[], object],
+        *,
+        preparation_node_run_id: str | None = None,
     ) -> None:
         self._active_run_id = run_id
         self._active_operation = operation
+        # 只供明确的素材准备取消端点发信号；普通 Runtime、旧节点和持久状态均不增加语义。
+        from zniku.source_preparation.progress import cancellation_scope
+
+        cancellation = threading.Event()
+        self._preparation_cancel = cancellation
+        self._active_preparation_node_run_id = preparation_node_run_id
 
         def target() -> None:
             failure: ProjectServiceFailure | None = None
             try:
-                work()
+                with cancellation_scope(cancellation):
+                    work()
             except (ProjectStoreError, RuntimeRepositoryError, RuntimeServiceError) as error:
                 translated = self._translate_failure(error)
                 failure = ProjectServiceFailure(
@@ -1993,6 +2089,8 @@ class ProjectServiceApplication:
                     self._last_error = failure
                     self._active_operation = None
                     self._worker = None
+                    self._preparation_cancel = None
+                    self._active_preparation_node_run_id = None
                     self._state.notify_all()
 
         worker = threading.Thread(
@@ -2011,10 +2109,27 @@ class ProjectServiceApplication:
         ) -> tuple[OutputPathSpec, ...]:
             if storage is None or storage.media_basename is None:
                 return ()
+            from zniku.prepared_color.naming import overlap_output_paths as color_paths
+            from zniku.prepared_source.naming import overlap_output_paths as prepared_paths
+            from zniku.prepared_source.work_naming import overlap_output_paths as work_paths
+
+            from .prepared_color_presentation import (
+                preparation_output_paths as color_preparation_paths,
+            )
+            from .prepared_source_presentation import preparation_output_paths
             from .source_aligned_presentation import source_aligned_output_paths
+            from .work_presentation import preparation_output_paths as work_preparation_paths
 
             return (
-                source_aligned_output_paths(node, definition, media_basename=storage.media_basename)
+                work_preparation_paths(node, definition, media_basename=storage.media_basename)
+                or work_paths(node, definition, media_basename=storage.media_basename)
+                or color_preparation_paths(node, definition, media_basename=storage.media_basename)
+                or color_paths(node, definition, media_basename=storage.media_basename)
+                or preparation_output_paths(node, definition, media_basename=storage.media_basename)
+                or prepared_paths(node, definition, media_basename=storage.media_basename)
+                or source_aligned_output_paths(
+                    node, definition, media_basename=storage.media_basename
+                )
                 or overlap_output_paths(node, definition, media_basename=storage.media_basename)
                 or descriptive_output_paths(
                     node,

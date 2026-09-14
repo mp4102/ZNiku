@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
 import axe from 'axe-core'
 import type { StatusEnvelope, RunDetailEnvelope } from '../src/studio/contracts'
-import { ProductionJournal, SyntheticFixtureHost } from './production-support'
+import { ProductionJournal, SyntheticFixtureHost, selectWorkflowProfile } from './production-support'
 
 let service: SyntheticFixtureHost
 let journal: ProductionJournal
@@ -53,7 +53,7 @@ test('原片分析失败不是外部等待：原文、重开定位与同 Run 新
   await page.getByRole('button', { name: '选择工程保存位置', exact: true }).click()
   await expect(page.locator('.creator-project-path')).toContainText('wizard-output-layout.zniku')
   await page.getByRole('button', { name: '下一步：处理方案' }).click()
-  await expect(page.getByLabel('工作流方案')).toHaveValue('source-aligned')
+  await selectWorkflowProfile(page, 'source-aligned')
   await page.getByRole('button', { name: '下一步：处理与成片设置' }).click()
   await page.getByLabel('片名', { exact: true }).fill('Synthetic Analysis Failure')
   await page.getByLabel('年份', { exact: true }).fill('2026')

@@ -248,7 +248,8 @@ describe('可读目录整理、索引与归档恢复', () => {
     const result = await screen.findByRole('region', { name: '已生成的文件目录' })
     expect(value.generateStorageIndex).toHaveBeenCalledWith({ project_session_id: 'session-1', expected_storage_revision: 4 })
     expect(result).toHaveTextContent(fileIndex.path)
-    expect(result).toHaveFocus()
+    // 聚焦由 effect 完成；DOM 已出现并不保证同一时刻完成焦点转移。
+    await waitFor(() => expect(result).toHaveFocus())
     expect(result).toHaveTextContent('不是完整归档')
     expect(value.launch).not.toHaveBeenCalled()
     expect(result.querySelector('a, iframe, script')).toBeNull()

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import secrets
-import shutil
 import stat
 import tempfile
 import threading
@@ -18,10 +17,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
-from typing import TYPE_CHECKING, Annotated, Final, Literal
+from typing import TYPE_CHECKING, Annotated, BinaryIO, Final, Literal
 
 from pydantic import Field, StringConstraints, ValidationError
 
+from zniku.media.probe import MediaNodeError
 from zniku.project.storage import ProjectStorage
 from zniku.project.storage_layout import safe_attempt_directory
 from zniku.runtime import ExternalOutputTarget, NodeRun, RunnerError, RuntimeService
@@ -42,6 +42,23 @@ if TYPE_CHECKING:
 
 IMPORT_TTL_SECONDS: Final = 300
 MAX_PENDING_IMPORTS: Final = 32
+
+
+def _copy_candidate_bytes(source: BinaryIO, destination: BinaryIO, total: int) -> None:
+    """分块复制便于取消与实测进度；失败由调用者保留原件并处理本 attempt staging。
+
+    事件仅由素材准备路径注入；其他导入仍使用相同的有界复制和外层原子发布条件。
+    """
+    from zniku.source_preparation.progress import check_cancellation, sample, stage
+
+    with stage("copy", "bytes"):
+        copied = 0
+        while chunk := source.read(1024 * 1024):
+            check_cancellation()
+            destination.write(chunk)
+            copied += len(chunk)
+            sample(copied, total)
+        check_cancellation()
 
 
 class HandoffImportBinding(HostBridgeModel):
@@ -101,6 +118,7 @@ class ImportAuthority:
     work_root: Path
     project_path: Path
     storage: ProjectStorage | None = None
+    preserve_failed_candidate: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +310,8 @@ class HandoffImportManager:
                 self._copy_and_publish(ticket, authority)
         except RunnerError as error:
             raise HostBridgeFailure(error.code, str(error), http_status=422) from error
+        except MediaNodeError as error:
+            raise HostBridgeFailure(error.code, str(error), http_status=422) from error
         except OSError as error:
             raise _failure(
                 "IO", "导入文件失败，原文件和已有目标仍保留。" + str(error), 422
@@ -328,7 +348,7 @@ class HandoffImportManager:
                     ticket.source_identity.mtime_ns,
                 ):
                     raise _failure("CHANGED", "源文件已被替换或正在写入，请重新选择")
-                shutil.copyfileobj(source, destination, length=1024 * 1024)
+                _copy_candidate_bytes(source, destination, ticket.source_identity.size)
                 destination.flush()
                 os.fsync(destination.fileno())
             self._assert_unchanged(ticket, authority)
@@ -357,7 +377,7 @@ class HandoffImportManager:
             else:
                 os.replace(candidate, ticket.target)
         finally:
-            # 不做递归删除；只清理本方法创建、仍在原 attempt 下的唯一候选与空目录。
+            # 不做递归删除。新保内容修复失败时保留候选供诊断；旧导入仍清理其临时副本。
             try:
                 if (
                     _safe_path(work) == work
@@ -365,7 +385,11 @@ class HandoffImportManager:
                     and (staging.stat().st_dev, staging.stat().st_ino) == staging_identity
                 ):
                     staging.relative_to(work)
-                    if candidate.exists() and not candidate.is_symlink():
+                    if (
+                        candidate.exists()
+                        and not candidate.is_symlink()
+                        and not authority.preserve_failed_candidate
+                    ):
                         candidate.unlink()
                     staging.rmdir()
             except (OSError, ValueError, HostBridgeFailure):

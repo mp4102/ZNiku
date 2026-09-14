@@ -280,12 +280,25 @@ def _git_state(repository: Path) -> tuple[str, bool]:
 
 
 def _media_inputs(media_root: Path) -> dict[str, Path]:
+    """固定工具及原始许可清单；可选 MKVToolNix 只能来自显式构建分发根。"""
     mapping = {
         "_internal/media-tools/ffmpeg.exe": media_root / "bin/ffmpeg.exe",
         "_internal/media-tools/ffprobe.exe": media_root / "bin/ffprobe.exe",
         "_internal/licenses/ffmpeg/LICENSE": media_root / "LICENSE",
         "_internal/licenses/ffmpeg/README.txt": media_root / "README.txt",
     }
+    mkvtoolnix = media_root / "mkvtoolnix"
+    if mkvtoolnix.exists():
+        mapping["_internal/media-tools/mkvmerge.exe"] = mkvtoolnix / "mkvmerge.exe"
+        for name in ("COPYING.txt", "README.txt"):
+            mapping[f"_internal/licenses/mkvtoolnix/{name}"] = mkvtoolnix / "doc" / name
+        licenses = mkvtoolnix / "doc" / "licenses"
+        if not licenses.is_dir() or not any(licenses.rglob("*")):
+            raise PackageAuditError("MKVToolNix 缺少第三方原始许可目录")
+        for path in sorted(licenses.rglob("*")):
+            if path.is_file():
+                relative = path.relative_to(licenses).as_posix()
+                mapping[f"_internal/licenses/mkvtoolnix/licenses/{relative}"] = path
     for path in mapping.values():
         if not path.is_file() or path.stat().st_size == 0 or path.is_symlink():
             raise PackageAuditError("缺少原始 FFmpeg/FFprobe 或非空 LICENSE/README")
@@ -412,6 +425,75 @@ def _audit_pyz(executable: Path, repository: Path, sources: Mapping[str, Path]) 
     return len(expected)
 
 
+def _check_preparation_capabilities(
+    info: Mapping[str, object], sources: Mapping[str, Path], media: Mapping[str, Path]
+) -> None:
+    """静态读取被核对源码的发布决定；不执行包内代码，也不相信能力清单自报。
+
+    旧版本没有素材准备模块时不追补新字段；新候选必须如实声明启用策略及实际工具，
+    字段缺失、类型错误或发布常量不再是可检查字面量均失败关闭。
+    """
+    policy = sources.get("zniku/source_preparation/models.py")
+    if policy is None:
+        return
+
+    def published_strategy(source: Path) -> list[str]:
+        """逐版本静态核对；旧策略晋级不会替新色彩策略取得执行资格。"""
+        constants: dict[str, object] = {}
+        for statement in ast.parse(source.read_text(encoding="utf-8")).body:
+            if not isinstance(statement, ast.Assign):
+                continue
+            for target in statement.targets:
+                if isinstance(target, ast.Name) and target.id in {"T1_PROMOTED", "T1_STRATEGY"}:
+                    try:
+                        constants[target.id] = ast.literal_eval(statement.value)
+                    except (ValueError, TypeError) as error:
+                        raise PackageAuditError("准备策略发布常量不能静态核对") from error
+        promoted, strategy = constants.get("T1_PROMOTED"), constants.get("T1_STRATEGY")
+        if type(promoted) is not bool or not isinstance(strategy, str) or not strategy:
+            raise PackageAuditError("准备策略发布常量缺失或类型不合法")
+        return [strategy] if promoted else []
+
+    enabled = published_strategy(policy)
+    color_policy = sources.get("zniku/source_color/models.py")
+    if color_policy is not None:
+        enabled.extend(published_strategy(color_policy))
+    bundled = "_internal/media-tools/mkvmerge.exe" in media
+    if (
+        type(info.get("mkvmerge_bundled")) is not bool
+        or info.get("mkvmerge_bundled") != bundled
+        or info.get("enabled_preparation_strategies") != enabled
+        or (enabled and not bundled)
+    ):
+        raise PackageAuditError("BUILD-INFO 准备能力与源码发布决定或实际工具不一致")
+    work_policy = sources.get("zniku/source_preparation/work_models.py")
+    if work_policy is not None:
+        constants: dict[str, object] = {}
+        for statement in ast.parse(work_policy.read_text(encoding="utf-8")).body:
+            if not isinstance(statement, ast.Assign):
+                continue
+            for target in statement.targets:
+                if isinstance(target, ast.Name) and target.id in {
+                    "SOURCE_PREPARATION_VERSION",
+                    "WORK_STRATEGY",
+                }:
+                    try:
+                        constants[target.id] = ast.literal_eval(statement.value)
+                    except (ValueError, TypeError) as error:
+                        raise PackageAuditError("工作源能力常量不能静态核对") from error
+        version = constants.get("SOURCE_PREPARATION_VERSION")
+        strategy = constants.get("WORK_STRATEGY")
+        if (
+            not isinstance(version, str)
+            or not version
+            or not isinstance(strategy, str)
+            or not strategy
+            or info.get("working_source_contract_version") != version
+            or info.get("enabled_working_source_strategies") != [strategy]
+        ):
+            raise PackageAuditError("BUILD-INFO 普通工作源能力与源码不一致")
+
+
 def audit_desktop(package: Path, repository: Path, media_root: Path) -> dict[str, object]:
     """核对真实 exe/PYZ、附带源码、静态资源及原始工具；不依赖 COLLECT 自报清单。"""
 
@@ -441,7 +523,13 @@ def audit_desktop(package: Path, repository: Path, media_root: Path) -> dict[str
     packed_media = {
         name: path
         for name, path in files.items()
-        if name.startswith(("_internal/media-tools/", "_internal/licenses/ffmpeg/"))
+        if name.startswith(
+            (
+                "_internal/media-tools/",
+                "_internal/licenses/ffmpeg/",
+                "_internal/licenses/mkvtoolnix/",
+            )
+        )
     }
     _compare_files(media, packed_media, "媒体工具和原始许可")
     for name, path in files.items():
@@ -455,6 +543,7 @@ def audit_desktop(package: Path, repository: Path, media_root: Path) -> dict[str
                     if not entry.is_dir():
                         _check_hygiene(entry.filename)
     info = json.loads(files["BUILD-INFO.json"].read_text("utf-8"))
+    _check_preparation_capabilities(info, sources, media)
     version = product_version(repository)
     metadata_files = {
         name

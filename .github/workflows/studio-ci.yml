@@ -57,6 +57,13 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Verify prepared-source Studio corpus
+        working-directory: .
+        run: |
+          uv run --locked --extra dev python tools/generate_prepared_source_studio_corpus.py --check
+          uv run --locked --extra dev python tools/generate_prepared_color_studio_corpus.py --check
+          uv run --locked --extra dev python tools/generate_prepared_work_studio_corpus.py --check
+
       - name: Geometry preflight experiment tests
         run: node --test preflight/geometry.test.mjs
 
@@ -79,7 +86,7 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg mkvtoolnix
 
       - name: Production desktop host, overlap modes, accessibility and bounded performance
         id: production-e2e

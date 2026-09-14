@@ -1075,6 +1075,1046 @@
       "title": "ChapterSettings",
       "type": "object"
     },
+    "ColorPreparedSourceAction": {
+      "additionalProperties": false,
+      "description": "当前策略能力及空间估计，未晋级策略明确 disabled。",
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "estimated_additional_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Additional Bytes"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "route": {
+          "enum": [
+            "direct",
+            "builtin",
+            "external"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "strategy_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strategy Id"
+        }
+      },
+      "required": [
+        "route",
+        "label",
+        "enabled",
+        "reason",
+        "strategy_id",
+        "estimated_additional_bytes"
+      ],
+      "title": "ColorPreparedSourceAction",
+      "type": "object"
+    },
+    "ColorPreparedSourceChooseRequest": {
+      "additionalProperties": false,
+      "description": "显式改变准备前半图；不隐式提交外部文件，不修改活动 snapshot。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "external_format": {
+          "default": "mkv",
+          "enum": [
+            "mp4",
+            "mov",
+            "mkv"
+          ],
+          "title": "External Format",
+          "type": "string"
+        },
+        "interpretation_policy": {
+          "default": "declared_only",
+          "enum": [
+            "declared_only",
+            "operator_confirmed_bt709_limited_left"
+          ],
+          "title": "Interpretation Policy",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "route": {
+          "enum": [
+            "direct",
+            "builtin",
+            "external"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "target_frame_rate": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Frame Rate"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "expected_storage_revision",
+        "route"
+      ],
+      "title": "ColorPreparedSourceChooseRequest",
+      "type": "object"
+    },
+    "ColorPreparedSourceCreateRequest": {
+      "additionalProperties": false,
+      "description": "显式创建只含原件入口和诊断的普通工程；不启动处理、不复制原件。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "data_parent": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data Parent"
+        },
+        "project_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "project_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Name",
+          "type": "string"
+        },
+        "project_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Project Path",
+          "type": "string"
+        },
+        "source_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_path",
+        "project_id",
+        "project_name",
+        "source_path"
+      ],
+      "title": "ColorPreparedSourceCreateRequest",
+      "type": "object"
+    },
+    "ColorPreparedSourceFailure": {
+      "additionalProperties": false,
+      "description": "保留原始稳定错误与字段位置，不回显整份客户端输入。",
+      "properties": {
+        "code": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "field_path": {
+          "default": [],
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Field Path",
+          "type": "array"
+        },
+        "message": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "related_run_ids": {
+          "default": [],
+          "items": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          "title": "Related Run Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "field_path",
+        "related_run_ids"
+      ],
+      "title": "ColorPreparedSourceFailure",
+      "type": "object"
+    },
+    "ColorPreparedSourceFailureEnvelope": {
+      "additionalProperties": false,
+      "description": "失败不携带成功摘要或可用规划。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "default": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "error": {
+          "$ref": "#/$defs/ColorPreparedSourceFailure"
+        }
+      },
+      "required": [
+        "contract_version",
+        "error"
+      ],
+      "title": "ColorPreparedSourceFailureEnvelope",
+      "type": "object"
+    },
+    "ColorPreparedSourceFinding": {
+      "additionalProperties": false,
+      "description": "向创作者解释一个实际发现，不用本地化字符串决定执行资格。",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "impact": {
+          "title": "Impact",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "recommendation": {
+          "title": "Recommendation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "reason",
+        "impact",
+        "recommendation"
+      ],
+      "title": "ColorPreparedSourceFinding",
+      "type": "object"
+    },
+    "ColorPreparedSourceFullEnvelope": {
+      "additionalProperties": false,
+      "description": "完整处理图的只读摘要；不传输第二张 Graph。",
+      "properties": {
+        "contexts": {
+          "$ref": "#/$defs/ExperimentalContextPlan"
+        },
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "default": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "edge_count": {
+          "minimum": 0,
+          "title": "Edge Count",
+          "type": "integer"
+        },
+        "execution_available": {
+          "const": true,
+          "default": true,
+          "title": "Execution Available",
+          "type": "boolean"
+        },
+        "node_count": {
+          "exclusiveMinimum": 0,
+          "title": "Node Count",
+          "type": "integer"
+        },
+        "plan": {
+          "$ref": "#/$defs/ChapterLeafPlan"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/PreparedSourceProcessing"
+        },
+        "profile_id": {
+          "const": "zniku.prepared-color-overlap",
+          "default": "zniku.prepared-color-overlap",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "0.3.4-color.1",
+          "default": "0.3.4-color.1",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "publication": {
+          "$ref": "#/$defs/PreparedSourcePublication"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        },
+        "storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Storage Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "processing",
+        "profile_id",
+        "profile_version",
+        "project_session_id",
+        "storage_revision",
+        "preparation_run_id",
+        "execution_available",
+        "plan",
+        "contexts",
+        "publication",
+        "node_count",
+        "edge_count"
+      ],
+      "title": "ColorPreparedSourceFullEnvelope",
+      "type": "object"
+    },
+    "ColorPreparedSourceFullRequest": {
+      "additionalProperties": false,
+      "description": "预览/展开以完成准入的 preparation Run 为实际输入，仍受 CAS 约束。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_PreparedSourceProcessing"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "publication": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_PublicationRequest"
+        }
+      },
+      "required": [
+        "contract_version",
+        "processing",
+        "project_session_id",
+        "expected_storage_revision",
+        "preparation_run_id",
+        "publication"
+      ],
+      "title": "ColorPreparedSourceFullRequest",
+      "type": "object"
+    },
+    "ColorPreparedSourceHandoff": {
+      "additionalProperties": false,
+      "description": "只引用当前 waiting attempt，复用统一外部助手。",
+      "properties": {
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "node_run_id",
+        "node_id"
+      ],
+      "title": "ColorPreparedSourceHandoff",
+      "type": "object"
+    },
+    "ColorPreparedSourceOperationEnvelope": {
+      "additionalProperties": false,
+      "description": "临时 worker 的只读事实，不包含可被误用为工作源准入的路线或媒体字段。",
+      "properties": {
+        "active": {
+          "title": "Active",
+          "type": "boolean"
+        },
+        "cancel_requested": {
+          "title": "Cancel Requested",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Operation"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "stage_progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ColorPreparedSourceStageProgress"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "active",
+        "operation",
+        "stage_progress",
+        "cancel_requested"
+      ],
+      "title": "ColorPreparedSourceOperationEnvelope",
+      "type": "object"
+    },
+    "ColorPreparedSourceOperationRequest": {
+      "additionalProperties": false,
+      "description": "绑定实际 attempt 的操作视图/停止请求；不要求图等于向导模板。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id"
+      ],
+      "title": "ColorPreparedSourceOperationRequest",
+      "type": "object"
+    },
+    "ColorPreparedSourceProcessingEnvelope": {
+      "additionalProperties": false,
+      "description": "处理配置合法不等于真实模型验收完成。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "default": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/PreparedSourceProcessing"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "processing"
+      ],
+      "title": "ColorPreparedSourceProcessingEnvelope",
+      "type": "object"
+    },
+    "ColorPreparedSourceProcessingRequest": {
+      "additionalProperties": false,
+      "description": "只检查用户处理参数，不接受浏览器声明的 N/FPS。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_PreparedSourceProcessing"
+        }
+      },
+      "required": [
+        "contract_version",
+        "processing"
+      ],
+      "title": "ColorPreparedSourceProcessingRequest",
+      "type": "object"
+    },
+    "ColorPreparedSourceStageProgress": {
+      "additionalProperties": false,
+      "description": "当前 attempt 的业务日志实测投影，未知总量不伪造百分比。",
+      "properties": {
+        "current": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current"
+        },
+        "elapsed_seconds": {
+          "minimum": 0,
+          "title": "Elapsed Seconds",
+          "type": "number"
+        },
+        "rate_per_second": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rate Per Second"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "total": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "enum": [
+                "frames",
+                "packets",
+                "bytes",
+                "tracks",
+                "samples"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "required": [
+        "stage",
+        "current",
+        "total",
+        "unit",
+        "elapsed_seconds",
+        "rate_per_second"
+      ],
+      "title": "ColorPreparedSourceStageProgress",
+      "type": "object"
+    },
+    "ColorPreparedSourceViewEnvelope": {
+      "additionalProperties": false,
+      "description": "从当前图、最新结果及指定 Run 派生的有界准备步骤展示。",
+      "properties": {
+        "admission_status": {
+          "enum": [
+            "not_started",
+            "pending",
+            "completed",
+            "failed"
+          ],
+          "title": "Admission Status",
+          "type": "string"
+        },
+        "audio_track_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Track Count"
+        },
+        "available_actions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ColorPreparedSourceAction"
+          },
+          "title": "Available Actions",
+          "type": "array"
+        },
+        "color_interpretation_available": {
+          "default": false,
+          "title": "Color Interpretation Available",
+          "type": "boolean"
+        },
+        "color_interpretation_reason": {
+          "default": "等待完整色彩声明检查。",
+          "title": "Color Interpretation Reason",
+          "type": "string"
+        },
+        "color_interpretation_required": {
+          "default": false,
+          "title": "Color Interpretation Required",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "default": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "current_node_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Node Run Id"
+        },
+        "diagnosis_status": {
+          "enum": [
+            "pending",
+            "completed",
+            "failed"
+          ],
+          "title": "Diagnosis Status",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ColorPreparedSourceFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "findings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ColorPreparedSourceFinding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "frame_rate": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Rate"
+        },
+        "frame_rate_choices": {
+          "default": [],
+          "items": {
+            "maxLength": 64,
+            "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "title": "Frame Rate Choices",
+          "type": "array"
+        },
+        "handoff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ColorPreparedSourceHandoff"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "interpretation_policy": {
+          "default": "declared_only",
+          "enum": [
+            "declared_only",
+            "operator_confirmed_bt709_limited_left"
+          ],
+          "title": "Interpretation Policy",
+          "type": "string"
+        },
+        "original_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Original Path",
+          "type": "string"
+        },
+        "profile_id": {
+          "const": "zniku.prepared-color-overlap",
+          "default": "zniku.prepared-color-overlap",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "0.3.4-color.1",
+          "default": "0.3.4-color.1",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeProgressProjection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "reference_path": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Path"
+        },
+        "route": {
+          "enum": [
+            "diagnose",
+            "direct",
+            "builtin",
+            "external"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "source_frame_count": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Frame Count"
+        },
+        "source_name": {
+          "title": "Source Name",
+          "type": "string"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "stage_progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ColorPreparedSourceStageProgress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "enum": [
+            "checking",
+            "needs_choice",
+            "preparing",
+            "waiting_external",
+            "ready",
+            "failed"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Storage Revision",
+          "type": "integer"
+        },
+        "working_signal_basis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Signal Basis"
+        }
+      },
+      "required": [
+        "contract_version",
+        "profile_id",
+        "profile_version",
+        "project_session_id",
+        "storage_revision",
+        "run_id",
+        "route",
+        "state",
+        "stage",
+        "current_node_run_id",
+        "progress",
+        "stage_progress",
+        "source_name",
+        "original_path",
+        "reference_path",
+        "source_frame_count",
+        "frame_rate",
+        "frame_rate_choices",
+        "audio_track_count",
+        "findings",
+        "available_actions",
+        "diagnosis_status",
+        "admission_status",
+        "interpretation_policy",
+        "color_interpretation_available",
+        "color_interpretation_required",
+        "color_interpretation_reason",
+        "working_signal_basis",
+        "handoff",
+        "error"
+      ],
+      "title": "ColorPreparedSourceViewEnvelope",
+      "type": "object"
+    },
+    "ColorPreparedSourceViewRequest": {
+      "additionalProperties": false,
+      "description": "只读视图绑定明确工程会话与 Run，轮询不要求固定 storage revision。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-color.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id"
+      ],
+      "title": "ColorPreparedSourceViewRequest",
+      "type": "object"
+    },
     "CommandExecutorSpec": {
       "additionalProperties": false,
       "description": "声明必须以 ``shell=False`` 直接启动的 executable 与 argv。",
@@ -5536,6 +6576,741 @@
       "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
       "type": "string"
     },
+    "Host_ColorPreparedSourceFullRequest_AverageChapterSelector": {
+      "additionalProperties": false,
+      "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+      "properties": {
+        "count": {
+          "default": 1,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "average",
+          "default": "average",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "AverageChapterSelector",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_CandidateFiProfile": {
+      "additionalProperties": false,
+      "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+      "properties": {
+        "left_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 0,
+          "title": "Left Context Frames",
+          "type": "integer"
+        },
+        "minimum_input_frames": {
+          "default": 2,
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Minimum Input Frames",
+          "type": "integer"
+        },
+        "model_name": {
+          "const": "Aion",
+          "default": "Aion",
+          "title": "Model Name",
+          "type": "string"
+        },
+        "phase": {
+          "const": "even-input-2m-minus-1",
+          "default": "even-input-2m-minus-1",
+          "title": "Phase",
+          "type": "string"
+        },
+        "right_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 1,
+          "title": "Right Context Frames",
+          "type": "integer"
+        },
+        "software_version": {
+          "const": "v1.0",
+          "default": "v1.0",
+          "title": "Software Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "CandidateFiProfile",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "average": "#/$defs/Host_ColorPreparedSourceFullRequest_AverageChapterSelector",
+          "exact_frames": "#/$defs/Host_ColorPreparedSourceFullRequest_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Host_ColorPreparedSourceFullRequest_ExactTimesChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_AverageChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Host_ColorPreparedSourceFullRequest_ChapterSettings": {
+      "additionalProperties": false,
+      "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_ChapterSelector"
+        },
+        "leaf_max_minutes": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Leaf Max Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "ChapterSettings",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_DeclaredContainer": {
+      "enum": [
+        "mp4",
+        "mov",
+        "mkv"
+      ],
+      "type": "string"
+    },
+    "Host_ColorPreparedSourceFullRequest_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+      "properties": {
+        "frames": {
+          "items": {
+            "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_PositiveInt"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_Timecode"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "Host_ColorPreparedSourceFullRequest_PreparedSourceEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "PreparedSourceEnhancement",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_PreparedSourceMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Host_ColorPreparedSourceFullRequest_PreparedSourceMrExternal",
+          "off": "#/$defs/Host_ColorPreparedSourceFullRequest_PreparedSourceMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_PreparedSourceMrOff"
+        },
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_PreparedSourceMrExternal"
+        }
+      ]
+    },
+    "Host_ColorPreparedSourceFullRequest_PreparedSourceMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的工作源绑定外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "PreparedSourceMrExternal",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_PreparedSourceMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "PreparedSourceMrOff",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_PreparedSourceProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_PreparedSourceEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_PreparedSourceMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceFullRequest_ChapterSettings"
+        }
+      },
+      "required": [
+        "enhancement",
+        "program_encode"
+      ],
+      "title": "PreparedSourceProcessing",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_PublicationRequest": {
+      "additionalProperties": false,
+      "description": "声明发布目录、可选片名子目录及显式覆盖；省略 layout 时直接写入所选目录。",
+      "properties": {
+        "layout": {
+          "default": "direct",
+          "enum": [
+            "direct",
+            "title_subdirectory"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "output_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Output Root",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 4,
+          "minLength": 4,
+          "title": "Year",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_root",
+        "title",
+        "year",
+        "overwrite"
+      ],
+      "title": "PublicationRequest",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceFullRequest_Timecode": {
+      "maxLength": 128,
+      "minLength": 8,
+      "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+      "type": "string"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_AverageChapterSelector": {
+      "additionalProperties": false,
+      "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+      "properties": {
+        "count": {
+          "default": 1,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "average",
+          "default": "average",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "AverageChapterSelector",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_CandidateFiProfile": {
+      "additionalProperties": false,
+      "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+      "properties": {
+        "left_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 0,
+          "title": "Left Context Frames",
+          "type": "integer"
+        },
+        "minimum_input_frames": {
+          "default": 2,
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Minimum Input Frames",
+          "type": "integer"
+        },
+        "model_name": {
+          "const": "Aion",
+          "default": "Aion",
+          "title": "Model Name",
+          "type": "string"
+        },
+        "phase": {
+          "const": "even-input-2m-minus-1",
+          "default": "even-input-2m-minus-1",
+          "title": "Phase",
+          "type": "string"
+        },
+        "right_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 1,
+          "title": "Right Context Frames",
+          "type": "integer"
+        },
+        "software_version": {
+          "const": "v1.0",
+          "default": "v1.0",
+          "title": "Software Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "CandidateFiProfile",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "average": "#/$defs/Host_ColorPreparedSourceProcessingRequest_AverageChapterSelector",
+          "exact_frames": "#/$defs/Host_ColorPreparedSourceProcessingRequest_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Host_ColorPreparedSourceProcessingRequest_ExactTimesChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_AverageChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Host_ColorPreparedSourceProcessingRequest_ChapterSettings": {
+      "additionalProperties": false,
+      "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_ChapterSelector"
+        },
+        "leaf_max_minutes": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Leaf Max Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "ChapterSettings",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_DeclaredContainer": {
+      "enum": [
+        "mp4",
+        "mov",
+        "mkv"
+      ],
+      "type": "string"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+      "properties": {
+        "frames": {
+          "items": {
+            "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_PositiveInt"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_Timecode"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_PreparedSourceEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "PreparedSourceEnhancement",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_PreparedSourceMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Host_ColorPreparedSourceProcessingRequest_PreparedSourceMrExternal",
+          "off": "#/$defs/Host_ColorPreparedSourceProcessingRequest_PreparedSourceMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_PreparedSourceMrOff"
+        },
+        {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_PreparedSourceMrExternal"
+        }
+      ]
+    },
+    "Host_ColorPreparedSourceProcessingRequest_PreparedSourceMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的工作源绑定外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "PreparedSourceMrExternal",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_PreparedSourceMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "PreparedSourceMrOff",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_PreparedSourceProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_PreparedSourceEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_PreparedSourceMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/Host_ColorPreparedSourceProcessingRequest_ChapterSettings"
+        }
+      },
+      "required": [
+        "enhancement",
+        "program_encode"
+      ],
+      "title": "PreparedSourceProcessing",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Host_ColorPreparedSourceProcessingRequest_Timecode": {
+      "maxLength": 128,
+      "minLength": 8,
+      "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+      "type": "string"
+    },
     "Host_DesktopPreferencesRequest_DesktopRecentProject": {
       "additionalProperties": false,
       "description": "最近工程只保存工程路径/名字/时间，不携带运行或媒体身份。",
@@ -6164,6 +7939,741 @@
       ],
       "title": "StorageIndexPathReference",
       "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_AverageChapterSelector": {
+      "additionalProperties": false,
+      "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+      "properties": {
+        "count": {
+          "default": 1,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "average",
+          "default": "average",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "AverageChapterSelector",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_CandidateFiProfile": {
+      "additionalProperties": false,
+      "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+      "properties": {
+        "left_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 0,
+          "title": "Left Context Frames",
+          "type": "integer"
+        },
+        "minimum_input_frames": {
+          "default": 2,
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Minimum Input Frames",
+          "type": "integer"
+        },
+        "model_name": {
+          "const": "Aion",
+          "default": "Aion",
+          "title": "Model Name",
+          "type": "string"
+        },
+        "phase": {
+          "const": "even-input-2m-minus-1",
+          "default": "even-input-2m-minus-1",
+          "title": "Phase",
+          "type": "string"
+        },
+        "right_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 1,
+          "title": "Right Context Frames",
+          "type": "integer"
+        },
+        "software_version": {
+          "const": "v1.0",
+          "default": "v1.0",
+          "title": "Software Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "CandidateFiProfile",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "average": "#/$defs/Host_PreparedSourceFullRequest_AverageChapterSelector",
+          "exact_frames": "#/$defs/Host_PreparedSourceFullRequest_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Host_PreparedSourceFullRequest_ExactTimesChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_AverageChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Host_PreparedSourceFullRequest_ChapterSettings": {
+      "additionalProperties": false,
+      "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_ChapterSelector"
+        },
+        "leaf_max_minutes": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Leaf Max Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "ChapterSettings",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_DeclaredContainer": {
+      "enum": [
+        "mp4",
+        "mov",
+        "mkv"
+      ],
+      "type": "string"
+    },
+    "Host_PreparedSourceFullRequest_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+      "properties": {
+        "frames": {
+          "items": {
+            "$ref": "#/$defs/Host_PreparedSourceFullRequest_PositiveInt"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "$ref": "#/$defs/Host_PreparedSourceFullRequest_Timecode"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "Host_PreparedSourceFullRequest_PreparedSourceEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "PreparedSourceEnhancement",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_PreparedSourceMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Host_PreparedSourceFullRequest_PreparedSourceMrExternal",
+          "off": "#/$defs/Host_PreparedSourceFullRequest_PreparedSourceMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_PreparedSourceMrOff"
+        },
+        {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_PreparedSourceMrExternal"
+        }
+      ]
+    },
+    "Host_PreparedSourceFullRequest_PreparedSourceMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的工作源绑定外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "PreparedSourceMrExternal",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_PreparedSourceMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "PreparedSourceMrOff",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_PreparedSourceProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_PreparedSourceEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_PreparedSourceMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_ChapterSettings"
+        }
+      },
+      "required": [
+        "enhancement",
+        "program_encode"
+      ],
+      "title": "PreparedSourceProcessing",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_PublicationRequest": {
+      "additionalProperties": false,
+      "description": "声明发布目录、可选片名子目录及显式覆盖；省略 layout 时直接写入所选目录。",
+      "properties": {
+        "layout": {
+          "default": "direct",
+          "enum": [
+            "direct",
+            "title_subdirectory"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "output_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Output Root",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 4,
+          "minLength": 4,
+          "title": "Year",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_root",
+        "title",
+        "year",
+        "overwrite"
+      ],
+      "title": "PublicationRequest",
+      "type": "object"
+    },
+    "Host_PreparedSourceFullRequest_Timecode": {
+      "maxLength": 128,
+      "minLength": 8,
+      "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+      "type": "string"
+    },
+    "Host_PreparedSourceProcessingRequest_AverageChapterSelector": {
+      "additionalProperties": false,
+      "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+      "properties": {
+        "count": {
+          "default": 1,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "average",
+          "default": "average",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "AverageChapterSelector",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_CandidateFiProfile": {
+      "additionalProperties": false,
+      "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+      "properties": {
+        "left_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 0,
+          "title": "Left Context Frames",
+          "type": "integer"
+        },
+        "minimum_input_frames": {
+          "default": 2,
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Minimum Input Frames",
+          "type": "integer"
+        },
+        "model_name": {
+          "const": "Aion",
+          "default": "Aion",
+          "title": "Model Name",
+          "type": "string"
+        },
+        "phase": {
+          "const": "even-input-2m-minus-1",
+          "default": "even-input-2m-minus-1",
+          "title": "Phase",
+          "type": "string"
+        },
+        "right_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 1,
+          "title": "Right Context Frames",
+          "type": "integer"
+        },
+        "software_version": {
+          "const": "v1.0",
+          "default": "v1.0",
+          "title": "Software Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "CandidateFiProfile",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "average": "#/$defs/Host_PreparedSourceProcessingRequest_AverageChapterSelector",
+          "exact_frames": "#/$defs/Host_PreparedSourceProcessingRequest_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Host_PreparedSourceProcessingRequest_ExactTimesChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_AverageChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Host_PreparedSourceProcessingRequest_ChapterSettings": {
+      "additionalProperties": false,
+      "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_ChapterSelector"
+        },
+        "leaf_max_minutes": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Leaf Max Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "ChapterSettings",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_DeclaredContainer": {
+      "enum": [
+        "mp4",
+        "mov",
+        "mkv"
+      ],
+      "type": "string"
+    },
+    "Host_PreparedSourceProcessingRequest_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+      "properties": {
+        "frames": {
+          "items": {
+            "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_PositiveInt"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_Timecode"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "Host_PreparedSourceProcessingRequest_PreparedSourceEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "PreparedSourceEnhancement",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_PreparedSourceMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Host_PreparedSourceProcessingRequest_PreparedSourceMrExternal",
+          "off": "#/$defs/Host_PreparedSourceProcessingRequest_PreparedSourceMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_PreparedSourceMrOff"
+        },
+        {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_PreparedSourceMrExternal"
+        }
+      ]
+    },
+    "Host_PreparedSourceProcessingRequest_PreparedSourceMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的工作源绑定外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "PreparedSourceMrExternal",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_PreparedSourceMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "PreparedSourceMrOff",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_PreparedSourceProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_PreparedSourceEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_PreparedSourceMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_ChapterSettings"
+        }
+      },
+      "required": [
+        "enhancement",
+        "program_encode"
+      ],
+      "title": "PreparedSourceProcessing",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Host_PreparedSourceProcessingRequest_Timecode": {
+      "maxLength": 128,
+      "minLength": 8,
+      "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+      "type": "string"
     },
     "Host_PublicationPreviewRequest_ChapterSelector": {
       "discriminator": {
@@ -7442,6 +9952,765 @@
       "type": "object"
     },
     "Host_SourceAlignedProcessingRequest_Timecode": {
+      "maxLength": 128,
+      "minLength": 8,
+      "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+      "type": "string"
+    },
+    "Host_WorkChooseRequest_WorkConfirmationId": {
+      "enum": [
+        "color_interpretation",
+        "target_frame_rate",
+        "retime",
+        "external_reference"
+      ],
+      "type": "string"
+    },
+    "Host_WorkChooseRequest_WorkInterpretationPolicy": {
+      "enum": [
+        "declared_only",
+        "operator_confirmed_bt709_limited_left"
+      ],
+      "type": "string"
+    },
+    "Host_WorkChooseRequest_WorkRoute": {
+      "enum": [
+        "direct",
+        "builtin",
+        "external"
+      ],
+      "type": "string"
+    },
+    "Host_WorkFullRequest_AverageChapterSelector": {
+      "additionalProperties": false,
+      "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+      "properties": {
+        "count": {
+          "default": 1,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "average",
+          "default": "average",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "AverageChapterSelector",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_CandidateFiProfile": {
+      "additionalProperties": false,
+      "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+      "properties": {
+        "left_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 0,
+          "title": "Left Context Frames",
+          "type": "integer"
+        },
+        "minimum_input_frames": {
+          "default": 2,
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Minimum Input Frames",
+          "type": "integer"
+        },
+        "model_name": {
+          "const": "Aion",
+          "default": "Aion",
+          "title": "Model Name",
+          "type": "string"
+        },
+        "phase": {
+          "const": "even-input-2m-minus-1",
+          "default": "even-input-2m-minus-1",
+          "title": "Phase",
+          "type": "string"
+        },
+        "right_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 1,
+          "title": "Right Context Frames",
+          "type": "integer"
+        },
+        "software_version": {
+          "const": "v1.0",
+          "default": "v1.0",
+          "title": "Software Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "CandidateFiProfile",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "average": "#/$defs/Host_WorkFullRequest_AverageChapterSelector",
+          "exact_frames": "#/$defs/Host_WorkFullRequest_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Host_WorkFullRequest_ExactTimesChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_WorkFullRequest_AverageChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_WorkFullRequest_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_WorkFullRequest_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Host_WorkFullRequest_ChapterSettings": {
+      "additionalProperties": false,
+      "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Host_WorkFullRequest_ChapterSelector"
+        },
+        "leaf_max_minutes": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Leaf Max Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "ChapterSettings",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_DeclaredContainer": {
+      "enum": [
+        "mp4",
+        "mov",
+        "mkv"
+      ],
+      "type": "string"
+    },
+    "Host_WorkFullRequest_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+      "properties": {
+        "frames": {
+          "items": {
+            "$ref": "#/$defs/Host_WorkFullRequest_PositiveInt"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "$ref": "#/$defs/Host_WorkFullRequest_Timecode"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "Host_WorkFullRequest_PreparedSourceEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "PreparedSourceEnhancement",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_PreparedSourceMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Host_WorkFullRequest_PreparedSourceMrExternal",
+          "off": "#/$defs/Host_WorkFullRequest_PreparedSourceMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_WorkFullRequest_PreparedSourceMrOff"
+        },
+        {
+          "$ref": "#/$defs/Host_WorkFullRequest_PreparedSourceMrExternal"
+        }
+      ]
+    },
+    "Host_WorkFullRequest_PreparedSourceMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的工作源绑定外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/Host_WorkFullRequest_DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "PreparedSourceMrExternal",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_PreparedSourceMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "PreparedSourceMrOff",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_PreparedSourceProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/Host_WorkFullRequest_PreparedSourceEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/Host_WorkFullRequest_CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/Host_WorkFullRequest_PreparedSourceMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Host_WorkFullRequest_ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/Host_WorkFullRequest_ChapterSettings"
+        }
+      },
+      "required": [
+        "enhancement",
+        "program_encode"
+      ],
+      "title": "PreparedSourceProcessing",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_PublicationRequest": {
+      "additionalProperties": false,
+      "description": "声明发布目录、可选片名子目录及显式覆盖；省略 layout 时直接写入所选目录。",
+      "properties": {
+        "layout": {
+          "default": "direct",
+          "enum": [
+            "direct",
+            "title_subdirectory"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "output_root": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Output Root",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 4,
+          "minLength": 4,
+          "title": "Year",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_root",
+        "title",
+        "year",
+        "overwrite"
+      ],
+      "title": "PublicationRequest",
+      "type": "object"
+    },
+    "Host_WorkFullRequest_Timecode": {
+      "maxLength": 128,
+      "minLength": 8,
+      "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
+      "type": "string"
+    },
+    "Host_WorkProcessingRequest_AverageChapterSelector": {
+      "additionalProperties": false,
+      "description": "只声明平均章数；N 相关非空校验留给 admitted 时间轴上的规划。",
+      "properties": {
+        "count": {
+          "default": 1,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "average",
+          "default": "average",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "AverageChapterSelector",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_CandidateFiProfile": {
+      "additionalProperties": false,
+      "description": "可配置工程默认，不声称 32 帧或 minM=2 是 Aion 实测能力。",
+      "properties": {
+        "left_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 0,
+          "title": "Left Context Frames",
+          "type": "integer"
+        },
+        "minimum_input_frames": {
+          "default": 2,
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Minimum Input Frames",
+          "type": "integer"
+        },
+        "model_name": {
+          "const": "Aion",
+          "default": "Aion",
+          "title": "Model Name",
+          "type": "string"
+        },
+        "phase": {
+          "const": "even-input-2m-minus-1",
+          "default": "even-input-2m-minus-1",
+          "title": "Phase",
+          "type": "string"
+        },
+        "right_context_frames": {
+          "default": 32,
+          "maximum": 240,
+          "minimum": 1,
+          "title": "Right Context Frames",
+          "type": "integer"
+        },
+        "software_version": {
+          "const": "v1.0",
+          "default": "v1.0",
+          "title": "Software Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "CandidateFiProfile",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_ChapterSelector": {
+      "discriminator": {
+        "mapping": {
+          "average": "#/$defs/Host_WorkProcessingRequest_AverageChapterSelector",
+          "exact_frames": "#/$defs/Host_WorkProcessingRequest_ExactFramesChapterSelector",
+          "exact_times": "#/$defs/Host_WorkProcessingRequest_ExactTimesChapterSelector"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_AverageChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_ExactFramesChapterSelector"
+        },
+        {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_ExactTimesChapterSelector"
+        }
+      ]
+    },
+    "Host_WorkProcessingRequest_ChapterSettings": {
+      "additionalProperties": false,
+      "description": "创作者分章与每叶最大时长意图；有效默认值无需额外手工填写。",
+      "properties": {
+        "chapter_selector": {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_ChapterSelector"
+        },
+        "leaf_max_minutes": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Leaf Max Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "ChapterSettings",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_DeclaredContainer": {
+      "enum": [
+        "mp4",
+        "mov",
+        "mkv"
+      ],
+      "type": "string"
+    },
+    "Host_WorkProcessingRequest_ExactFramesChapterSelector": {
+      "additionalProperties": false,
+      "description": "每个值为下一章零基首帧；最多 999 个切点，不表示每隔该帧数切分。",
+      "properties": {
+        "frames": {
+          "items": {
+            "$ref": "#/$defs/Host_WorkProcessingRequest_PositiveInt"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Frames",
+          "type": "array"
+        },
+        "mode": {
+          "const": "exact_frames",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "frames"
+      ],
+      "title": "ExactFramesChapterSelector",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_ExactTimesChapterSelector": {
+      "additionalProperties": false,
+      "description": "相对 HH:MM:SS 时间点列表；旧 AV27 的有理秒 selector 不因此扩展。",
+      "properties": {
+        "mode": {
+          "const": "exact_times",
+          "title": "Mode",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "$ref": "#/$defs/Host_WorkProcessingRequest_Timecode"
+          },
+          "maxItems": 999,
+          "minItems": 1,
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode",
+        "times"
+      ],
+      "title": "ExactTimesChapterSelector",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "Host_WorkProcessingRequest_PreparedSourceEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name"
+      ],
+      "title": "PreparedSourceEnhancement",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_PreparedSourceMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/Host_WorkProcessingRequest_PreparedSourceMrExternal",
+          "off": "#/$defs/Host_WorkProcessingRequest_PreparedSourceMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_PreparedSourceMrOff"
+        },
+        {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_PreparedSourceMrExternal"
+        }
+      ]
+    },
+    "Host_WorkProcessingRequest_PreparedSourceMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的工作源绑定外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "PreparedSourceMrExternal",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_PreparedSourceMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "PreparedSourceMrOff",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_PreparedSourceProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_PreparedSourceEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_PreparedSourceMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_ChapterSettings"
+        }
+      },
+      "required": [
+        "enhancement",
+        "program_encode"
+      ],
+      "title": "PreparedSourceProcessing",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_ProgramEncodeDeclaration": {
+      "additionalProperties": false,
+      "description": "选择冻结的 GPU 或 CPU Program encoder profile。",
+      "properties": {
+        "encoder": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ],
+          "title": "Encoder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "encoder"
+      ],
+      "title": "ProgramEncodeDeclaration",
+      "type": "object"
+    },
+    "Host_WorkProcessingRequest_Timecode": {
       "maxLength": 128,
       "minLength": 8,
       "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$",
@@ -8912,6 +12181,1177 @@
     "PositiveInt": {
       "exclusiveMinimum": 0,
       "type": "integer"
+    },
+    "PreparedSourceAction": {
+      "additionalProperties": false,
+      "description": "当前策略能力及空间估计，未晋级策略明确 disabled。",
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "estimated_additional_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Additional Bytes"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "route": {
+          "enum": [
+            "direct",
+            "builtin",
+            "external"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "strategy_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strategy Id"
+        }
+      },
+      "required": [
+        "route",
+        "label",
+        "enabled",
+        "reason",
+        "strategy_id",
+        "estimated_additional_bytes"
+      ],
+      "title": "PreparedSourceAction",
+      "type": "object"
+    },
+    "PreparedSourceChooseRequest": {
+      "additionalProperties": false,
+      "description": "显式改变准备前半图；不隐式提交外部文件，不修改活动 snapshot。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "external_format": {
+          "default": "mkv",
+          "enum": [
+            "mp4",
+            "mov",
+            "mkv"
+          ],
+          "title": "External Format",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "route": {
+          "enum": [
+            "direct",
+            "builtin",
+            "external"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "target_frame_rate": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Frame Rate"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "expected_storage_revision",
+        "route"
+      ],
+      "title": "PreparedSourceChooseRequest",
+      "type": "object"
+    },
+    "PreparedSourceCreateRequest": {
+      "additionalProperties": false,
+      "description": "显式创建只含原件入口和诊断的普通工程；不启动处理、不复制原件。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "data_parent": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data Parent"
+        },
+        "project_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "project_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Name",
+          "type": "string"
+        },
+        "project_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Project Path",
+          "type": "string"
+        },
+        "source_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_path",
+        "project_id",
+        "project_name",
+        "source_path"
+      ],
+      "title": "PreparedSourceCreateRequest",
+      "type": "object"
+    },
+    "PreparedSourceEnhancement": {
+      "additionalProperties": false,
+      "description": "新wire允许响应中明确的空模型版本；不修改旧请求null拒绝语义。",
+      "properties": {
+        "actual_scale_factor": {
+          "default": 1,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Actual Scale Factor",
+          "type": "integer"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        }
+      },
+      "required": [
+        "model_name",
+        "model_version",
+        "actual_scale_factor"
+      ],
+      "title": "PreparedSourceEnhancement",
+      "type": "object"
+    },
+    "PreparedSourceFailure": {
+      "additionalProperties": false,
+      "description": "保留原始稳定错误与字段位置，不回显整份客户端输入。",
+      "properties": {
+        "code": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "field_path": {
+          "default": [],
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "title": "Field Path",
+          "type": "array"
+        },
+        "message": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "related_run_ids": {
+          "default": [],
+          "items": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          "title": "Related Run Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "field_path",
+        "related_run_ids"
+      ],
+      "title": "PreparedSourceFailure",
+      "type": "object"
+    },
+    "PreparedSourceFailureEnvelope": {
+      "additionalProperties": false,
+      "description": "失败不携带成功摘要或可用规划。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4",
+          "default": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "error": {
+          "$ref": "#/$defs/PreparedSourceFailure"
+        }
+      },
+      "required": [
+        "contract_version",
+        "error"
+      ],
+      "title": "PreparedSourceFailureEnvelope",
+      "type": "object"
+    },
+    "PreparedSourceFinding": {
+      "additionalProperties": false,
+      "description": "向创作者解释一个实际发现，不用本地化字符串决定执行资格。",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "impact": {
+          "title": "Impact",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "recommendation": {
+          "title": "Recommendation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "reason",
+        "impact",
+        "recommendation"
+      ],
+      "title": "PreparedSourceFinding",
+      "type": "object"
+    },
+    "PreparedSourceFullEnvelope": {
+      "additionalProperties": false,
+      "description": "完整处理图的只读摘要；不传输第二张 Graph。",
+      "properties": {
+        "contexts": {
+          "$ref": "#/$defs/ExperimentalContextPlan"
+        },
+        "contract_version": {
+          "const": "0.3.4",
+          "default": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "edge_count": {
+          "minimum": 0,
+          "title": "Edge Count",
+          "type": "integer"
+        },
+        "execution_available": {
+          "const": true,
+          "default": true,
+          "title": "Execution Available",
+          "type": "boolean"
+        },
+        "node_count": {
+          "exclusiveMinimum": 0,
+          "title": "Node Count",
+          "type": "integer"
+        },
+        "plan": {
+          "$ref": "#/$defs/ChapterLeafPlan"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/PreparedSourceProcessing"
+        },
+        "profile_id": {
+          "const": "zniku.prepared-source-overlap",
+          "default": "zniku.prepared-source-overlap",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "0.3.4",
+          "default": "0.3.4",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "publication": {
+          "$ref": "#/$defs/PreparedSourcePublication"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        },
+        "storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Storage Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "processing",
+        "profile_id",
+        "profile_version",
+        "project_session_id",
+        "storage_revision",
+        "preparation_run_id",
+        "execution_available",
+        "plan",
+        "contexts",
+        "publication",
+        "node_count",
+        "edge_count"
+      ],
+      "title": "PreparedSourceFullEnvelope",
+      "type": "object"
+    },
+    "PreparedSourceFullRequest": {
+      "additionalProperties": false,
+      "description": "预览/展开以完成准入的 preparation Run 为实际输入，仍受 CAS 约束。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_PreparedSourceProcessing"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "publication": {
+          "$ref": "#/$defs/Host_PreparedSourceFullRequest_PublicationRequest"
+        }
+      },
+      "required": [
+        "contract_version",
+        "processing",
+        "project_session_id",
+        "expected_storage_revision",
+        "preparation_run_id",
+        "publication"
+      ],
+      "title": "PreparedSourceFullRequest",
+      "type": "object"
+    },
+    "PreparedSourceHandoff": {
+      "additionalProperties": false,
+      "description": "只引用当前 waiting attempt，复用统一外部助手。",
+      "properties": {
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "node_run_id",
+        "node_id"
+      ],
+      "title": "PreparedSourceHandoff",
+      "type": "object"
+    },
+    "PreparedSourceMr": {
+      "discriminator": {
+        "mapping": {
+          "external": "#/$defs/PreparedSourceMrExternal",
+          "off": "#/$defs/PreparedSourceMrOff"
+        },
+        "propertyName": "mode"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PreparedSourceMrOff"
+        },
+        {
+          "$ref": "#/$defs/PreparedSourceMrExternal"
+        }
+      ]
+    },
+    "PreparedSourceMrExternal": {
+      "additionalProperties": false,
+      "description": "操作者声明的工作源绑定外部前处理，不证明模型身份或逐帧内容。",
+      "properties": {
+        "declared_container": {
+          "$ref": "#/$defs/DeclaredContainer",
+          "default": "mp4"
+        },
+        "mode": {
+          "const": "external",
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Model Name",
+          "type": "string"
+        },
+        "model_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Version"
+        },
+        "operator_frame_order_confirmed": {
+          "const": true,
+          "title": "Operator Frame Order Confirmed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "model_name",
+        "model_version",
+        "declared_container",
+        "operator_frame_order_confirmed"
+      ],
+      "title": "PreparedSourceMrExternal",
+      "type": "object"
+    },
+    "PreparedSourceMrOff": {
+      "additionalProperties": false,
+      "description": "默认不插入前处理节点，不改变原片分析。",
+      "properties": {
+        "mode": {
+          "const": "off",
+          "default": "off",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "PreparedSourceMrOff",
+      "type": "object"
+    },
+    "PreparedSourceOperationEnvelope": {
+      "additionalProperties": false,
+      "description": "临时 worker 的只读事实，不包含可被误用为工作源准入的路线或媒体字段。",
+      "properties": {
+        "active": {
+          "title": "Active",
+          "type": "boolean"
+        },
+        "cancel_requested": {
+          "title": "Cancel Requested",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Operation"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "stage_progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreparedSourceStageProgress"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "active",
+        "operation",
+        "stage_progress",
+        "cancel_requested"
+      ],
+      "title": "PreparedSourceOperationEnvelope",
+      "type": "object"
+    },
+    "PreparedSourceOperationRequest": {
+      "additionalProperties": false,
+      "description": "绑定实际 attempt 的操作视图/停止请求；不要求图等于向导模板。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id"
+      ],
+      "title": "PreparedSourceOperationRequest",
+      "type": "object"
+    },
+    "PreparedSourceProcessing": {
+      "additionalProperties": false,
+      "description": "唯一处理设置；有效默认值不隐藏必填项，也不证明外部软件能力。",
+      "properties": {
+        "enhancement": {
+          "$ref": "#/$defs/PreparedSourceEnhancement"
+        },
+        "fi_profile": {
+          "$ref": "#/$defs/CandidateFiProfile"
+        },
+        "mr": {
+          "$ref": "#/$defs/PreparedSourceMr"
+        },
+        "program_encode": {
+          "$ref": "#/$defs/ProgramEncodeDeclaration"
+        },
+        "settings": {
+          "$ref": "#/$defs/ChapterSettings"
+        }
+      },
+      "required": [
+        "mr",
+        "settings",
+        "enhancement",
+        "fi_profile",
+        "program_encode"
+      ],
+      "title": "PreparedSourceProcessing",
+      "type": "object"
+    },
+    "PreparedSourceProcessingEnvelope": {
+      "additionalProperties": false,
+      "description": "处理配置合法不等于真实模型验收完成。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4",
+          "default": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/PreparedSourceProcessing"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "processing"
+      ],
+      "title": "PreparedSourceProcessingEnvelope",
+      "type": "object"
+    },
+    "PreparedSourceProcessingRequest": {
+      "additionalProperties": false,
+      "description": "只检查用户处理参数，不接受浏览器声明的 N/FPS。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/Host_PreparedSourceProcessingRequest_PreparedSourceProcessing"
+        }
+      },
+      "required": [
+        "contract_version",
+        "processing"
+      ],
+      "title": "PreparedSourceProcessingRequest",
+      "type": "object"
+    },
+    "PreparedSourcePublication": {
+      "additionalProperties": false,
+      "description": "只读出版目标预览；目录实际创建仍由受控Output节点执行。",
+      "properties": {
+        "output_directory_to_create": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Directory To Create"
+        },
+        "output_target_path": {
+          "title": "Output Target Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_target_path",
+        "output_directory_to_create"
+      ],
+      "title": "PreparedSourcePublication",
+      "type": "object"
+    },
+    "PreparedSourceStageProgress": {
+      "additionalProperties": false,
+      "description": "当前 attempt 的业务日志实测投影，未知总量不伪造百分比。",
+      "properties": {
+        "current": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current"
+        },
+        "elapsed_seconds": {
+          "minimum": 0,
+          "title": "Elapsed Seconds",
+          "type": "number"
+        },
+        "rate_per_second": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rate Per Second"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "total": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "enum": [
+                "frames",
+                "packets",
+                "bytes",
+                "tracks",
+                "samples"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "required": [
+        "stage",
+        "current",
+        "total",
+        "unit",
+        "elapsed_seconds",
+        "rate_per_second"
+      ],
+      "title": "PreparedSourceStageProgress",
+      "type": "object"
+    },
+    "PreparedSourceViewEnvelope": {
+      "additionalProperties": false,
+      "description": "从当前图、最新结果及指定 Run 派生的有界准备步骤展示。",
+      "properties": {
+        "admission_status": {
+          "enum": [
+            "not_started",
+            "pending",
+            "completed",
+            "failed"
+          ],
+          "title": "Admission Status",
+          "type": "string"
+        },
+        "audio_track_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Track Count"
+        },
+        "available_actions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PreparedSourceAction"
+          },
+          "title": "Available Actions",
+          "type": "array"
+        },
+        "contract_version": {
+          "const": "0.3.4",
+          "default": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "current_node_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Node Run Id"
+        },
+        "diagnosis_status": {
+          "enum": [
+            "pending",
+            "completed",
+            "failed"
+          ],
+          "title": "Diagnosis Status",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreparedSourceFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "findings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PreparedSourceFinding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "frame_rate": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Rate"
+        },
+        "frame_rate_choices": {
+          "default": [],
+          "items": {
+            "maxLength": 64,
+            "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "title": "Frame Rate Choices",
+          "type": "array"
+        },
+        "handoff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreparedSourceHandoff"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "original_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Original Path",
+          "type": "string"
+        },
+        "profile_id": {
+          "const": "zniku.prepared-source-overlap",
+          "default": "zniku.prepared-source-overlap",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "0.3.4",
+          "default": "0.3.4",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeProgressProjection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "reference_path": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Path"
+        },
+        "route": {
+          "enum": [
+            "diagnose",
+            "direct",
+            "builtin",
+            "external"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "source_frame_count": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Frame Count"
+        },
+        "source_name": {
+          "title": "Source Name",
+          "type": "string"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "stage_progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreparedSourceStageProgress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "enum": [
+            "checking",
+            "needs_choice",
+            "preparing",
+            "waiting_external",
+            "ready",
+            "failed"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Storage Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contract_version",
+        "profile_id",
+        "profile_version",
+        "project_session_id",
+        "storage_revision",
+        "run_id",
+        "route",
+        "state",
+        "stage",
+        "current_node_run_id",
+        "progress",
+        "stage_progress",
+        "source_name",
+        "original_path",
+        "reference_path",
+        "source_frame_count",
+        "frame_rate",
+        "frame_rate_choices",
+        "audio_track_count",
+        "findings",
+        "available_actions",
+        "diagnosis_status",
+        "admission_status",
+        "handoff",
+        "error"
+      ],
+      "title": "PreparedSourceViewEnvelope",
+      "type": "object"
+    },
+    "PreparedSourceViewRequest": {
+      "additionalProperties": false,
+      "description": "只读视图绑定明确工程会话与 Run，轮询不要求固定 storage revision。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id"
+      ],
+      "title": "PreparedSourceViewRequest",
+      "type": "object"
     },
     "PresentationCatalog": {
       "additionalProperties": false,
@@ -11795,6 +16235,1037 @@
         "adapter"
       ],
       "title": "ValidatorSpec",
+      "type": "object"
+    },
+    "WorkChooseRequest": {
+      "additionalProperties": false,
+      "description": "确认仅对当前报告/路线有效；服务必须重新核对，不能由勾选覆盖不支持项。",
+      "properties": {
+        "confirmations": {
+          "items": {
+            "$ref": "#/$defs/Host_WorkChooseRequest_WorkConfirmationId"
+          },
+          "maxItems": 4,
+          "title": "Confirmations",
+          "type": "array"
+        },
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "external_format": {
+          "default": "mkv",
+          "enum": [
+            "mp4",
+            "mov",
+            "mkv"
+          ],
+          "title": "External Format",
+          "type": "string"
+        },
+        "interpretation_policy": {
+          "$ref": "#/$defs/Host_WorkChooseRequest_WorkInterpretationPolicy",
+          "default": "declared_only"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "route": {
+          "$ref": "#/$defs/Host_WorkChooseRequest_WorkRoute"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "target_frame_rate": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Frame Rate"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "expected_storage_revision",
+        "route"
+      ],
+      "title": "WorkChooseRequest",
+      "type": "object"
+    },
+    "WorkConfirmation": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/WorkConfirmationId"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "routes": {
+          "items": {
+            "$ref": "#/$defs/WorkRoute"
+          },
+          "title": "Routes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "routes",
+        "label",
+        "description"
+      ],
+      "title": "WorkConfirmation",
+      "type": "object"
+    },
+    "WorkConfirmationId": {
+      "enum": [
+        "color_interpretation",
+        "target_frame_rate",
+        "retime",
+        "external_reference"
+      ],
+      "type": "string"
+    },
+    "WorkCreateRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "data_parent": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data Parent"
+        },
+        "project_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "project_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Project Name",
+          "type": "string"
+        },
+        "project_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Project Path",
+          "type": "string"
+        },
+        "source_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_path",
+        "project_id",
+        "project_name",
+        "source_path"
+      ],
+      "title": "WorkCreateRequest",
+      "type": "object"
+    },
+    "WorkFailureEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "default": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "error": {
+          "$ref": "#/$defs/ColorPreparedSourceFailure"
+        }
+      },
+      "required": [
+        "contract_version",
+        "error"
+      ],
+      "title": "WorkFailureEnvelope",
+      "type": "object"
+    },
+    "WorkFullEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "contexts": {
+          "$ref": "#/$defs/ExperimentalContextPlan"
+        },
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "default": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "edge_count": {
+          "minimum": 0,
+          "title": "Edge Count",
+          "type": "integer"
+        },
+        "execution_available": {
+          "const": true,
+          "default": true,
+          "title": "Execution Available",
+          "type": "boolean"
+        },
+        "node_count": {
+          "exclusiveMinimum": 0,
+          "title": "Node Count",
+          "type": "integer"
+        },
+        "plan": {
+          "$ref": "#/$defs/ChapterLeafPlan"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/PreparedSourceProcessing"
+        },
+        "profile_id": {
+          "const": "zniku.prepared-work-overlap",
+          "default": "zniku.prepared-work-overlap",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "0.3.4-work.1",
+          "default": "0.3.4-work.1",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "publication": {
+          "$ref": "#/$defs/PreparedSourcePublication"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        },
+        "storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Storage Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "processing",
+        "profile_id",
+        "profile_version",
+        "project_session_id",
+        "storage_revision",
+        "preparation_run_id",
+        "execution_available",
+        "plan",
+        "contexts",
+        "publication",
+        "node_count",
+        "edge_count"
+      ],
+      "title": "WorkFullEnvelope",
+      "type": "object"
+    },
+    "WorkFullRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "preparation_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Preparation Run Id",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/Host_WorkFullRequest_PreparedSourceProcessing"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "publication": {
+          "$ref": "#/$defs/Host_WorkFullRequest_PublicationRequest"
+        }
+      },
+      "required": [
+        "contract_version",
+        "processing",
+        "project_session_id",
+        "expected_storage_revision",
+        "preparation_run_id",
+        "publication"
+      ],
+      "title": "WorkFullRequest",
+      "type": "object"
+    },
+    "WorkImpact": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "enum": [
+            "frames",
+            "timing",
+            "color",
+            "audio",
+            "storage",
+            "external_reference"
+          ],
+          "title": "Id",
+          "type": "string"
+        },
+        "routes": {
+          "items": {
+            "$ref": "#/$defs/WorkRoute"
+          },
+          "title": "Routes",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "routes",
+        "title",
+        "description"
+      ],
+      "title": "WorkImpact",
+      "type": "object"
+    },
+    "WorkInterpretationPolicy": {
+      "enum": [
+        "declared_only",
+        "operator_confirmed_bt709_limited_left"
+      ],
+      "type": "string"
+    },
+    "WorkOperationEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "title": "Active",
+          "type": "boolean"
+        },
+        "cancel_requested": {
+          "title": "Cancel Requested",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Operation"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "stage_progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ColorPreparedSourceStageProgress"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "active",
+        "operation",
+        "stage_progress",
+        "cancel_requested"
+      ],
+      "title": "WorkOperationEnvelope",
+      "type": "object"
+    },
+    "WorkOperationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id"
+      ],
+      "title": "WorkOperationRequest",
+      "type": "object"
+    },
+    "WorkProcessingEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "default": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/PreparedSourceProcessing"
+        },
+        "status": {
+          "const": "pending_real_acceptance",
+          "default": "pending_real_acceptance",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "status",
+        "processing"
+      ],
+      "title": "WorkProcessingEnvelope",
+      "type": "object"
+    },
+    "WorkProcessingRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "processing": {
+          "$ref": "#/$defs/Host_WorkProcessingRequest_PreparedSourceProcessing"
+        }
+      },
+      "required": [
+        "contract_version",
+        "processing"
+      ],
+      "title": "WorkProcessingRequest",
+      "type": "object"
+    },
+    "WorkRetryTarget": {
+      "additionalProperties": false,
+      "description": "实际失败 attempt 的快照绑定；重试仍调用普通 rerun_from_here，绝不续传。",
+      "properties": {
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "node_run_id",
+        "node_id"
+      ],
+      "title": "WorkRetryTarget",
+      "type": "object"
+    },
+    "WorkRoute": {
+      "enum": [
+        "direct",
+        "builtin",
+        "external"
+      ],
+      "type": "string"
+    },
+    "WorkSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "audio_source": {
+          "default": "original",
+          "enum": [
+            "original",
+            "reference",
+            "none"
+          ],
+          "title": "Audio Source",
+          "type": "string"
+        },
+        "confirmations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WorkConfirmationId"
+          },
+          "title": "Confirmations",
+          "type": "array"
+        },
+        "external_format": {
+          "default": "mkv",
+          "enum": [
+            "mp4",
+            "mov",
+            "mkv"
+          ],
+          "title": "External Format",
+          "type": "string"
+        },
+        "interpretation_policy": {
+          "$ref": "#/$defs/WorkInterpretationPolicy",
+          "default": "declared_only"
+        },
+        "route": {
+          "enum": [
+            "diagnose",
+            "direct",
+            "builtin",
+            "external"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "target_frame_rate": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Frame Rate"
+        }
+      },
+      "required": [
+        "route",
+        "target_frame_rate",
+        "external_format",
+        "interpretation_policy",
+        "confirmations",
+        "audio_source"
+      ],
+      "title": "WorkSettings",
+      "type": "object"
+    },
+    "WorkViewEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "admission_status": {
+          "enum": [
+            "not_started",
+            "pending",
+            "completed",
+            "failed"
+          ],
+          "title": "Admission Status",
+          "type": "string"
+        },
+        "audio_track_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Track Count"
+        },
+        "available_actions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ColorPreparedSourceAction"
+          },
+          "title": "Available Actions",
+          "type": "array"
+        },
+        "color_interpretation_available": {
+          "default": false,
+          "title": "Color Interpretation Available",
+          "type": "boolean"
+        },
+        "color_interpretation_reason": {
+          "default": "等待工作源观察。",
+          "title": "Color Interpretation Reason",
+          "type": "string"
+        },
+        "color_interpretation_required": {
+          "default": false,
+          "title": "Color Interpretation Required",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "default": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "current_node_run_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Node Run Id"
+        },
+        "current_settings": {
+          "$ref": "#/$defs/WorkSettings"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "direct",
+                "preparation_required",
+                "unsupported"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision"
+        },
+        "diagnosis_status": {
+          "enum": [
+            "pending",
+            "completed",
+            "failed"
+          ],
+          "title": "Diagnosis Status",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ColorPreparedSourceFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "findings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ColorPreparedSourceFinding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "frame_rate": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Rate"
+        },
+        "frame_rate_choices": {
+          "default": [],
+          "items": {
+            "maxLength": 64,
+            "pattern": "^[1-9][0-9]*/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "title": "Frame Rate Choices",
+          "type": "array"
+        },
+        "handoff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ColorPreparedSourceHandoff"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "impacts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WorkImpact"
+          },
+          "title": "Impacts",
+          "type": "array"
+        },
+        "inspection_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "header_only",
+                "frames_eof"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inspection Scope"
+        },
+        "interpretation_policy": {
+          "$ref": "#/$defs/WorkInterpretationPolicy",
+          "default": "declared_only"
+        },
+        "original_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Original Path",
+          "type": "string"
+        },
+        "profile_id": {
+          "const": "zniku.prepared-work-overlap",
+          "default": "zniku.prepared-work-overlap",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_version": {
+          "const": "0.3.4-work.1",
+          "default": "0.3.4-work.1",
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeProgressProjection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "reference_path": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Path"
+        },
+        "required_confirmations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WorkConfirmation"
+          },
+          "title": "Required Confirmations",
+          "type": "array"
+        },
+        "retry_target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkRetryTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "route": {
+          "enum": [
+            "diagnose",
+            "direct",
+            "builtin",
+            "external"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "source_frame_count": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Frame Count"
+        },
+        "source_name": {
+          "title": "Source Name",
+          "type": "string"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "stage_progress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ColorPreparedSourceStageProgress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "enum": [
+            "checking",
+            "needs_choice",
+            "preparing",
+            "waiting_external",
+            "ready",
+            "failed"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Storage Revision",
+          "type": "integer"
+        },
+        "working_signal_basis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Signal Basis"
+        }
+      },
+      "required": [
+        "contract_version",
+        "profile_id",
+        "profile_version",
+        "project_session_id",
+        "storage_revision",
+        "run_id",
+        "route",
+        "state",
+        "stage",
+        "decision",
+        "inspection_scope",
+        "impacts",
+        "required_confirmations",
+        "current_settings",
+        "retry_target",
+        "current_node_run_id",
+        "progress",
+        "stage_progress",
+        "source_name",
+        "original_path",
+        "reference_path",
+        "source_frame_count",
+        "frame_rate",
+        "frame_rate_choices",
+        "audio_track_count",
+        "findings",
+        "available_actions",
+        "diagnosis_status",
+        "admission_status",
+        "interpretation_policy",
+        "color_interpretation_available",
+        "color_interpretation_required",
+        "color_interpretation_reason",
+        "working_signal_basis",
+        "handoff",
+        "error"
+      ],
+      "title": "WorkViewEnvelope",
+      "type": "object"
+    },
+    "WorkViewRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "0.3.4-work.1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "project_session_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id"
+      ],
+      "title": "WorkViewRequest",
       "type": "object"
     }
   },

@@ -2937,7 +2937,8 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     render(<App gateway={gateway} />)
     await screen.findByText('Synthetic Studio Project')
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    // 工程标题可以先于异步画布挂载出现，需等待真正可操作的目标节点。
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     displaySettings()
     const alias = screen.getByLabelText('节点别名')
     fireEvent.change(alias, { target: { value: '等待保存' } })
@@ -3000,7 +3001,8 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<App gateway={gateway} />)
     await screen.findByText('Synthetic Studio Project')
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    // 工程标题先于 ReactFlow 的节点挂载出现；等待实际操作对象，不依赖渲染帧时序。
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     displaySettings()
     const alias = screen.getByLabelText('节点别名')
     fireEvent.change(alias, { target: { value: '未保存的增强' } })

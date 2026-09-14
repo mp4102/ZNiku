@@ -1,0 +1,23 @@
+.source-preparation { display: grid; gap: 1rem; min-width: 0; }
+.source-preparation p { margin: .2rem 0; }
+.source-preparation .creator-profile-result.is-needs_choice { border-color: #8f6b2e; background: #241e12; }
+.source-preparation .creator-profile-result.is-failed { border-color: #975858; background: #2b191c; }
+.source-preparation .creator-profile-result.is-checking, .source-preparation .creator-profile-result.is-preparing,
+.source-preparation .creator-profile-result.is-waiting_external { border-color: #485f7a; background: #15202d; }
+.source-preparation dl, .source-preparation-progress dl { display: grid; gap: .55rem; margin: 0; }
+.source-preparation dl > div, .source-preparation-progress dl > div { display: grid; grid-template-columns: minmax(7rem, .3fr) minmax(0, 1fr); gap: .75rem; }
+.source-preparation dd, .source-preparation-progress dd { margin: 0; overflow-wrap: anywhere; }
+.source-preparation dt, .source-preparation-progress dt { color: var(--text-muted, #a4acb9); }
+.source-preparation-progress, .source-preparation-finding { border: 1px solid var(--border, #394150); border-radius: .65rem; padding: 1rem; }
+.source-preparation-progress progress { width: 100%; margin: .6rem 0; accent-color: var(--accent, #b6e58c); }
+.source-preparation-finding { margin: .65rem 0; }
+.source-preparation-finding h5 { margin: 0 0 .7rem; font-size: 1rem; }
+.source-preparation fieldset { border: 0; margin: 0; padding: 0; }
+.source-preparation-option { display: flex !important; align-items: flex-start; gap: .7rem; border: 1px solid var(--border, #394150); border-radius: .6rem; margin: .6rem 0; padding: .8rem; }
+.source-preparation-option input { margin-top: .2rem; width: auto !important; }
+.source-preparation-option span { display: grid; gap: .35rem; }
+.source-preparation button { margin: .3rem .4rem .3rem 0; }
+.source-preparation nav { display: flex; gap: .5rem; align-items: center; }
+@media (max-width: 700px) {
+  .source-preparation dl > div, .source-preparation-progress dl > div { grid-template-columns: 1fr; gap: .2rem; }
+}

@@ -5,7 +5,7 @@ import { dirname, join, sep } from 'node:path'
 import axe from 'axe-core'
 import type { GraphWire, RunDetailEnvelope, StatusEnvelope } from '../src/studio/contracts'
 import type { StorageIndexResult, StorageInspection } from '../src/studio/host-bridge'
-import { maskedScreenshot, ProductionJournal, SyntheticFixtureHost, type SyntheticFixture } from './production-support'
+import { maskedScreenshot, ProductionJournal, SyntheticFixtureHost, selectWorkflowProfile, type SyntheticFixture } from './production-support'
 
 const service = new SyntheticFixtureHost()
 let origin: string
@@ -306,13 +306,13 @@ async function exists(path: string): Promise<boolean> {
 async function wizardSettings(page: Page): Promise<Locator> {
   await page.goto(origin)
   await page.getByRole('button', { name: /新建视频工程/ }).click()
-  const wizard = page.getByRole('dialog', { name: 'AVEnhanceFlow v2.7.0 创作者向导' })
+  const wizard = page.getByRole('dialog', { name: /创作者向导/ })
   await wizard.getByRole('button', { name: /选择视频素材/ }).click()
   await expect(wizard.getByText('av27-source.mkv', { exact: true })).toBeVisible()
   await wizard.getByLabel('工程名称', { exact: true }).fill('合成输出布局工程')
   await wizard.getByRole('button', { name: '选择工程保存位置', exact: true }).click()
   await wizard.getByRole('button', { name: '下一步：处理方案', exact: true }).click()
-  await wizard.getByLabel('工作流方案').selectOption('av27')
+  await selectWorkflowProfile(wizard, 'av27')
   await wizard.getByRole('button', { name: '下一步：处理与成片设置', exact: true }).click()
   if (!await wizard.getByLabel('片名', { exact: true }).isVisible()) await openOutputOptions(wizard)
   await wizard.getByLabel('片名', { exact: true }).fill('Synthetic Wizard Output')
@@ -351,7 +351,7 @@ test('生产向导：首步四项设置，高级统一折叠、取消与恢复�
   await writeFile(productionEntryPath, productionEntry?.split('/').at(-1) ?? 'missing', 'utf8')
   await info.attach('storage-ui-production-entry', { path: productionEntryPath, contentType: 'text/plain' })
   await page.getByRole('button', { name: /新建视频工程/ }).click()
-  const wizard = page.getByRole('dialog', { name: 'AVEnhanceFlow v2.7.0 创作者向导' })
+  const wizard = page.getByRole('dialog', { name: /创作者向导/ })
   const advanced = wizard.locator('summary').filter({ hasText: '高级选项（可选）' })
   const dataPicker = wizard.getByRole('button', { name: '选择工作数据父目录', exact: true })
   const storage = wizard.getByRole('region', { name: '工作数据位置', exact: true })
@@ -419,6 +419,7 @@ test('生产向导：首步四项设置，高级统一折叠、取消与恢复�
   expect(await readdir(fixture.data_parent)).toEqual([])
   // 不碰可选磁盘 picker 也可继续；默认位置不能成为另一道必答题。
   await wizard.getByRole('button', { name: '下一步：处理方案', exact: true }).click()
+  await selectWorkflowProfile(wizard, 'av27')
   await expect(wizard.getByRole('button', { name: '下一步：处理与成片设置', exact: true })).toBeVisible()
   await wizard.getByRole('button', { name: '上一步', exact: true }).click()
   await maskedScreenshot(page, info.outputPath('wizard-storage-default-1920.png'))

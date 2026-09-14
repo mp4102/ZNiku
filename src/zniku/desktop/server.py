@@ -30,6 +30,9 @@ from zniku.media import (
     media_validators,
     runner_media_probe,
 )
+from zniku.prepared_color import definitions as prepared_color
+from zniku.prepared_source import definitions as prepared_source
+from zniku.prepared_source import work_definitions as prepared_work
 from zniku.project_service import ProjectServiceApplication, ProjectServiceError
 from zniku.project_service.host import _load_json, make_project_service_handler
 from zniku.project_service.host_bridge import (
@@ -40,6 +43,13 @@ from zniku.project_service.host_bridge import (
 )
 from zniku.project_service.preview import PreviewCache
 from zniku.source_aligned import definitions as source_aligned
+from zniku.source_color import definitions as source_color
+from zniku.source_preparation import (
+    register_source_preparation_adapters,
+    register_source_preparation_validators,
+    source_preparation_definitions,
+)
+from zniku.source_preparation import work_definitions as work_source
 
 from .contracts import (
     DesktopCloseEnvelope,
@@ -66,22 +76,160 @@ def build_desktop_application(work_root: Path) -> ProjectServiceApplication:
             source_aligned.external_definition("mp4"),
             source_aligned.external_definition("mov"),
             source_aligned.external_definition("mkv"),
+            *source_preparation_definitions(),
+            *prepared_source.built_in_overlap_definitions(),
+            prepared_source.external_definition("mp4"),
+            prepared_source.external_definition("mov"),
+            prepared_source.external_definition("mkv"),
+            *source_color.source_preparation_definitions(),
+            *prepared_color.built_in_overlap_definitions(),
+            prepared_color.external_definition("mp4"),
+            prepared_color.external_definition("mov"),
+            prepared_color.external_definition("mkv"),
+            *work_source.source_preparation_definitions(),
+            *prepared_work.built_in_overlap_definitions(),
+            prepared_work.external_definition("mp4"),
+            prepared_work.external_definition("mov"),
+            prepared_work.external_definition("mkv"),
         ),
         python_adapters={
             **media_python_adapters(),
             **av27_python_adapters(),
             **overlap_python_adapters(),
             **source_aligned.overlap_python_adapters(),
+            **register_source_preparation_adapters(),
+            **prepared_source.overlap_python_adapters(),
+            **source_color.register_source_preparation_adapters(),
+            **prepared_color.overlap_python_adapters(),
+            **work_source.register_source_preparation_adapters(),
+            **prepared_work.overlap_python_adapters(),
         },
         validators={
             **media_validators(),
             **av27_validators(),
             **overlap_validators(),
             **source_aligned.overlap_validators(),
+            **register_source_preparation_validators(),
+            **prepared_source.overlap_validators(),
+            **source_color.register_source_preparation_validators(),
+            **prepared_color.overlap_validators(),
+            **work_source.register_source_preparation_validators(),
+            **prepared_work.overlap_validators(),
         },
         media_probe=runner_media_probe,
         artifact_quick_probe=media_artifact_quick_probe,
     )
+
+
+class _DesktopHTTPServer(ThreadingHTTPServer):
+    """为本机重开资产突发保留有界连接队列，不改变请求授权或执行并发。"""
+
+    # 浏览器一次加载多个 modulepreload，上一页还可能有未收尾的状态请求。
+    # stdlib 默认5在 Windows 可直接拒绝必需的 JS 连接，使 React 根本无法挂载。
+    # 这是 accept 前的待处理连接容量，不是32个媒体任务或可配置无限队列。
+    request_queue_size = 32
+
+
+# Fetch Standard 的闭合 bad port 表，核对于2026-09-14，不依赖本机动态端口范围。
+# https://fetch.spec.whatwg.org/#port-blocking
+_BROWSER_BLOCKED_PORTS = frozenset(
+    {
+        0,
+        1,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19,
+        20,
+        21,
+        22,
+        23,
+        25,
+        37,
+        42,
+        43,
+        53,
+        69,
+        77,
+        79,
+        87,
+        95,
+        101,
+        102,
+        103,
+        104,
+        109,
+        110,
+        111,
+        113,
+        115,
+        117,
+        119,
+        123,
+        135,
+        137,
+        139,
+        143,
+        161,
+        179,
+        389,
+        427,
+        465,
+        512,
+        513,
+        514,
+        515,
+        526,
+        530,
+        531,
+        532,
+        540,
+        548,
+        554,
+        556,
+        563,
+        587,
+        601,
+        636,
+        989,
+        990,
+        993,
+        995,
+        1719,
+        1720,
+        1723,
+        2049,
+        3659,
+        4045,
+        4190,
+        5060,
+        5061,
+        6000,
+        6566,
+        6665,
+        6666,
+        6667,
+        6668,
+        6669,
+        6679,
+        6697,
+        10080,
+    }
+)
+
+
+def _create_http_server() -> _DesktopHTTPServer:
+    """先持有 OS 分配的 listener，再排除浏览器禁用端口；有界失败不修改系统。"""
+    for _ in range(32):
+        server = _DesktopHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+        if server.server_port not in _BROWSER_BLOCKED_PORTS:
+            return server
+        # 只释放刚刚创建且尚未发布的 listener，绝不释放别的服务或先探测再占端口。
+        server.server_close()
+    raise RuntimeError("E_DESKTOP_PORT: 连续32次分配到浏览器禁用端口，未启动桌面服务")
 
 
 class DesktopServer:
@@ -103,7 +251,7 @@ class DesktopServer:
         self.instance_id = str(uuid4())
         self.preferences = DesktopPreferenceStore(data_root)
         # 先占有 OS 分配的端口再生成 exact Origin，不进行存在抢占窗口的 free-port 探测。
-        self.http = ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+        self.http = _create_http_server()
         self.origin = f"http://127.0.0.1:{self.http.server_port}"
         self.host_bridge = create_project_service_host_bridge_session(
             application, studio_origin=self.origin, platform=platform

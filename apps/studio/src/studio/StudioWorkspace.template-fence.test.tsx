@@ -66,6 +66,23 @@ function overlapGateway(): StudioGateway {
 }
 
 describe('Workspace 新候选 preview 与 mutation fences', () => {
+  it('停止准备独立于已占用的普通命令互斥，不发送abandon或伪造终态', async () => {
+    const gateway = overlapGateway()
+    let release!: (status: StatusEnvelope) => void
+    gateway.command = vi.fn(() => new Promise<StatusEnvelope>((resolve) => { release = resolve }))
+    gateway.cancelPreparedSource = vi.fn(async () => studioEnvelope())
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App gateway={gateway} />)
+    await waitFor(() => expect(wizard().currentSnapshot).not.toBeNull())
+    let pending!: Promise<string | null>
+    await act(async () => { pending = wizard().onStartPreparationRun!() })
+    await waitFor(() => expect(gateway.command).toHaveBeenCalled())
+    await act(async () => { await wizard().onCancelPreparationRun!('00000000-0000-4000-8000-000000000041') })
+    expect(gateway.cancelPreparedSource).toHaveBeenCalledExactlyOnceWith({ contract_version: '0.3.4', project_session_id: studioEnvelope().project_session_id,
+      run_id: '00000000-0000-4000-8000-000000000041' })
+    expect(gateway.command).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'abandon_run' }))
+    await act(async () => { release(studioEnvelope()); await pending })
+  })
   it('向导查看失败分析精确加载该 Run 的问题并定位失败步骤，不新建 Run 或提交外部产物', async () => {
     const failed = failedDetailEnvelope('interrupted'), status = failedStatusEnvelope('interrupted')
     const raw = 'E_RUNNER_VALIDATION_REJECTED: E_AV27_SOURCE_FPS_AMBIGUOUS: Source 全片 cadence 置信度不足'

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Barrier
 from typing import Any
 
@@ -195,7 +196,24 @@ def test_cache_is_bounded_and_concurrent_results_remain_independent() -> None:
         values = tuple(executor.map(worker, range(8)))
     assert len({id(value) for value in values}) == 8
     assert models._check_parameter_schema_cached.cache_info().currsize == 2
-    for ordinal in range(40):
+    for ordinal in range(140):
         _definition(dict(_schema(), description=f"bounded-{ordinal}"))
-    assert models._check_parameter_schema_cached.cache_info().currsize == 32
-    assert models._check_parameter_schema_cached.cache_info().maxsize == 32
+    assert models._check_parameter_schema_cached.cache_info().currsize == 128
+    assert models._check_parameter_schema_cached.cache_info().maxsize == 128
+
+
+def test_current_and_legacy_catalogs_do_not_evict_each_other(tmp_path: Path) -> None:
+    """完整共存目录第二次解析不重做语法检查；每个参数实例的验证仍照常执行。"""
+    from zniku.desktop.server import build_desktop_application
+
+    app = build_desktop_application(tmp_path / "unused")
+    values = [item.model_dump_json() for item in app._definition_catalog]
+    models._check_parameter_schema_cached.cache_clear()
+    for value in values:
+        NodeDefinition.model_validate_json(value)
+    first = models._check_parameter_schema_cached.cache_info()
+    for value in values:
+        NodeDefinition.model_validate_json(value)
+    second = models._check_parameter_schema_cached.cache_info()
+    assert second.misses == first.misses
+    assert second.hits == first.hits + len(values)

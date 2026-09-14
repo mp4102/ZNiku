@@ -3,9 +3,18 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { dirname, resolve } from 'node:path'
 import { writeFile } from 'node:fs/promises'
-import type { ConsoleMessage, Page, Request, Response, TestInfo } from '@playwright/test'
+import type { ConsoleMessage, Locator, Page, Request, Response, TestInfo } from '@playwright/test'
+
+/** 兼容门禁显式选择旧方案；普通默认的高级折叠不能被脚本绕过。 */
+export async function selectWorkflowProfile(context: Page | Locator, profile: string): Promise<void> {
+  const selector = context.getByLabel('工作流方案')
+  if (!await selector.isVisible()) await context.getByText('高级 · 旧严格准备路线与兼容流程', { exact: true }).click()
+  await selector.selectOption(profile)
+}
 
 export interface SyntheticFixture {
+  readonly source_preparation_problem?: string
+  readonly source_preparation_repaired?: string
   readonly source_aligned_mr?: string
   readonly wizard_project: string
   readonly output_root: string

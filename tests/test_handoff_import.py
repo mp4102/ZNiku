@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import stat
 import threading
 from dataclasses import dataclass
@@ -39,6 +38,7 @@ from zniku.project_service import (
     ProjectServiceApplication,
     ProjectServiceError,
     create_project_service_host_bridge_session,
+    handoff_import,
 )
 from zniku.project_service.handoff_import import (
     HandoffImportConfirmRequest,
@@ -431,7 +431,8 @@ def test_copy_io_failure_cleans_only_staging_and_preserves_originals(
     def fail_copy(source: object, destination: object, length: int) -> None:
         raise OSError("synthetic full disk")
 
-    monkeypatch.setattr(shutil, "copyfileobj", fail_copy)
+    # 复制现按块报告进度；故障仍注入真实候选复制边界，不删减原件/旧目标保护断言。
+    monkeypatch.setattr(handoff_import, "_copy_candidate_bytes", fail_copy)
     with pytest.raises(HostBridgeFailure, check=lambda error: error.code == "E_HANDOFF_IMPORT_IO"):
         value.confirm(preview, overwrite=True)
     assert value.target().read_bytes() == b"old" and value.source.read_bytes() == b"899"
@@ -572,13 +573,13 @@ def test_source_replaced_during_copy_is_rejected(
 ) -> None:
     value = _setup(tmp_path)
     preview = value.preview()
-    original = shutil.copyfileobj
+    original = handoff_import._copy_candidate_bytes
 
     def changing(source: Any, destination: Any, length: int) -> None:
         original(source, destination, length)
         value.source.write_bytes(b"902")
 
-    monkeypatch.setattr(shutil, "copyfileobj", changing)
+    monkeypatch.setattr(handoff_import, "_copy_candidate_bytes", changing)
     with pytest.raises(
         HostBridgeFailure, check=lambda error: error.code == "E_HANDOFF_IMPORT_CHANGED"
     ):

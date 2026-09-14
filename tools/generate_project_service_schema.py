@@ -62,6 +62,32 @@ from zniku.project_service.models import (
     StatusEnvelope,
     TemplatePreviewEnvelope,
 )
+from zniku.project_service.prepared_color import (
+    ColorPreparedSourceChooseRequest,
+    ColorPreparedSourceCreateRequest,
+    ColorPreparedSourceFailureEnvelope,
+    ColorPreparedSourceFullEnvelope,
+    ColorPreparedSourceFullRequest,
+    ColorPreparedSourceOperationEnvelope,
+    ColorPreparedSourceOperationRequest,
+    ColorPreparedSourceProcessingEnvelope,
+    ColorPreparedSourceProcessingRequest,
+    ColorPreparedSourceViewEnvelope,
+    ColorPreparedSourceViewRequest,
+)
+from zniku.project_service.prepared_source import (
+    PreparedSourceChooseRequest,
+    PreparedSourceCreateRequest,
+    PreparedSourceFailureEnvelope,
+    PreparedSourceFullEnvelope,
+    PreparedSourceFullRequest,
+    PreparedSourceOperationEnvelope,
+    PreparedSourceOperationRequest,
+    PreparedSourceProcessingEnvelope,
+    PreparedSourceProcessingRequest,
+    PreparedSourceViewEnvelope,
+    PreparedSourceViewRequest,
+)
 from zniku.project_service.preview import MediaPreviewEnvelope, MediaPreviewRequest
 from zniku.project_service.source_aligned import (
     SourceAlignedFailureEnvelope,
@@ -82,6 +108,19 @@ from zniku.project_service.storage_api import (
     StorageMigrationConfirmRequest,
 )
 from zniku.project_service.storage_index import StorageIndexResult
+from zniku.project_service.work import (
+    WorkChooseRequest,
+    WorkCreateRequest,
+    WorkFailureEnvelope,
+    WorkFullEnvelope,
+    WorkFullRequest,
+    WorkOperationEnvelope,
+    WorkOperationRequest,
+    WorkProcessingEnvelope,
+    WorkProcessingRequest,
+    WorkViewEnvelope,
+    WorkViewRequest,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "apps" / "studio" / "src" / "service" / "project-service.schema.json"
@@ -157,6 +196,21 @@ def render_schema() -> str:
     """输出 status root、全部定向 response 与 command Schema；它只是 wire drift gate。"""
 
     response_models = (
+        WorkOperationEnvelope,
+        WorkViewEnvelope,
+        WorkProcessingEnvelope,
+        WorkFullEnvelope,
+        WorkFailureEnvelope,
+        ColorPreparedSourceOperationEnvelope,
+        ColorPreparedSourceViewEnvelope,
+        ColorPreparedSourceProcessingEnvelope,
+        ColorPreparedSourceFullEnvelope,
+        ColorPreparedSourceFailureEnvelope,
+        PreparedSourceOperationEnvelope,
+        PreparedSourceViewEnvelope,
+        PreparedSourceProcessingEnvelope,
+        PreparedSourceFullEnvelope,
+        PreparedSourceFailureEnvelope,
         SourceAlignedFailureEnvelope,
         SourceAlignedFullEnvelope,
         SourceAlignedProcessingEnvelope,
@@ -225,6 +279,24 @@ def render_schema() -> str:
     envelope_definitions["TemplatePreviewRequest"] = preview_schema
 
     host_request_models = (
+        WorkOperationRequest,
+        WorkCreateRequest,
+        WorkViewRequest,
+        WorkChooseRequest,
+        WorkProcessingRequest,
+        WorkFullRequest,
+        ColorPreparedSourceOperationRequest,
+        ColorPreparedSourceCreateRequest,
+        ColorPreparedSourceViewRequest,
+        ColorPreparedSourceChooseRequest,
+        ColorPreparedSourceProcessingRequest,
+        ColorPreparedSourceFullRequest,
+        PreparedSourceOperationRequest,
+        PreparedSourceCreateRequest,
+        PreparedSourceViewRequest,
+        PreparedSourceChooseRequest,
+        PreparedSourceProcessingRequest,
+        PreparedSourceFullRequest,
         SourceAlignedFullRequest,
         SourceAlignedProcessingRequest,
         ChapterOverlapPreviewRequest,

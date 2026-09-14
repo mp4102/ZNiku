@@ -1,6 +1,6 @@
 name: ZNIKU Core CI
 
-# 验证 0.2.0 Core、保留的旧节点及 v0.3.3 普通专用媒体节点与 Runtime 接线。
+# 验证 0.2.0 Core、保留的旧节点及 v0.3.4 普通素材准备节点与 Runtime 接线。
 # 媒体测试只在临时目录生成极短合成 payload，不读取用户媒体或旧 Real Acceptance 数据。
 
 on:
@@ -38,7 +38,7 @@ jobs:
       - name: Install and verify media tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg
+          sudo apt-get install --yes ffmpeg mkvtoolnix
           command -v ffmpeg
           command -v ffprobe
           ffmpeg -version | head -n 1
@@ -69,6 +69,13 @@ jobs:
 
       - name: Verify Project Service Studio schema
         run: uv run --locked --extra dev python tools/generate_project_service_schema.py --check
+
+      - name: Verify prepared-source contracts and synthetic full chain
+        run: |
+          uv run --locked --extra dev python tools/generate_prepared_source_studio_corpus.py --check
+          uv run --locked --extra dev python tools/generate_prepared_color_studio_corpus.py --check
+          uv run --locked --extra dev python tools/generate_prepared_work_studio_corpus.py --check
+          uv run --locked --extra dev python tools/run_prepared_source_smoke.py --output build/prepared-source-ci
 
       - name: Verify overlap Presentation corpus and Python preview fixture
         run: uv run --locked --extra dev python tools/generate_overlap_studio_corpus.py

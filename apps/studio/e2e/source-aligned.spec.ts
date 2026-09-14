@@ -2,7 +2,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { test, expect, type Page } from '@playwright/test'
 import axe from 'axe-core'
-import { ProductionJournal, SyntheticFixtureHost, maskedScreenshot } from './production-support'
+import { ProductionJournal, SyntheticFixtureHost, maskedScreenshot, selectWorkflowProfile } from './production-support'
 import type { StatusEnvelope, RunDetailEnvelope } from '../src/studio/contracts'
 import type { SourceAlignedFullRequest } from '../src/studio/source-aligned-contracts'
 
@@ -39,8 +39,8 @@ async function reachSettings(page: Page, profile = 'source-aligned') {
   await page.getByRole('button', { name: '选择工程保存位置', exact: true }).click()
   await expect(page.locator('.creator-project-path')).toContainText('wizard-output-layout.zniku')
   await page.getByRole('button', { name: '下一步：处理方案' }).click()
-  await expect(page.getByLabel('工作流方案')).toHaveValue('source-aligned')
-  if (profile !== 'source-aligned') await page.getByLabel('工作流方案').selectOption(profile)
+  // 此门禁显式选择历史 profile；新建默认由 prepared-source 门禁单独覆盖。
+  await selectWorkflowProfile(page, profile)
   await page.getByRole('button', { name: '下一步：处理与成片设置' }).click()
   await page.getByLabel('片名', { exact: true }).fill('Synthetic Source Aligned')
   await page.getByLabel('年份', { exact: true }).fill('2026')

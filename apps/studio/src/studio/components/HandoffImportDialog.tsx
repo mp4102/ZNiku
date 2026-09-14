@@ -1,9 +1,9 @@
 /** 显式确认源文件与唯一目标；复制成功仍不代表 Runtime Submit。 */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { HandoffImportController } from '../use-handoff-import'
 import { CanvasDialog } from './ConnectNodesDialog'
 
-export function HandoffImportDialog({ controller }: { readonly controller: HandoffImportController }) {
+export function HandoffImportDialog({ controller, operationMonitor }: { readonly controller: HandoffImportController; readonly operationMonitor?: ReactNode }) {
   const [overwrite, setOverwrite] = useState(false)
   const preview = controller.preview
   if (!preview) return null
@@ -19,6 +19,7 @@ export function HandoffImportDialog({ controller }: { readonly controller: Hando
     </dl>
     {preview.envelope.replace_existing && <label className="handoff-import-overwrite"><input type="checkbox" checked={overwrite} disabled={controller.copying} onChange={(event) => setOverwrite(event.target.checked)} />允许替换此任务已有目标文件</label>}
     {controller.copying && <p role="status">正在导入外部文件…请等待复制和验证完成。</p>}
+    {operationMonitor}
     <div className="dialog-actions">
       <button type="button" disabled={controller.copying} onClick={controller.cancel}>取消</button>
       <button type="button" disabled={controller.copying || (preview.envelope.replace_existing && !overwrite)} onClick={() => void controller.confirm(overwrite)}>{controller.copying ? '正在复制与验证…' : '确认复制到此任务'}</button>

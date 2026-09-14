@@ -22,8 +22,18 @@ from zniku.media import (
     media_validators,
     runner_media_probe,
 )
+from zniku.prepared_color import definitions as prepared_color
+from zniku.prepared_source import definitions as prepared_source
+from zniku.prepared_source import work_definitions as prepared_work
 from zniku.project_service import ProjectServiceApplication, serve_project_service
 from zniku.source_aligned import definitions as source_aligned
+from zniku.source_color import definitions as source_color
+from zniku.source_preparation import (
+    register_source_preparation_adapters,
+    register_source_preparation_validators,
+    source_preparation_definitions,
+)
+from zniku.source_preparation import work_definitions as work_source
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -72,18 +82,45 @@ def build_application(work_root: Path) -> ProjectServiceApplication:
             source_aligned.external_definition("mp4"),
             source_aligned.external_definition("mov"),
             source_aligned.external_definition("mkv"),
+            *source_preparation_definitions(),
+            *prepared_source.built_in_overlap_definitions(),
+            prepared_source.external_definition("mp4"),
+            prepared_source.external_definition("mov"),
+            prepared_source.external_definition("mkv"),
+            *source_color.source_preparation_definitions(),
+            *prepared_color.built_in_overlap_definitions(),
+            prepared_color.external_definition("mp4"),
+            prepared_color.external_definition("mov"),
+            prepared_color.external_definition("mkv"),
+            *work_source.source_preparation_definitions(),
+            *prepared_work.built_in_overlap_definitions(),
+            prepared_work.external_definition("mp4"),
+            prepared_work.external_definition("mov"),
+            prepared_work.external_definition("mkv"),
         ),
         python_adapters={
             **media_python_adapters(),
             **av27_python_adapters(),
             **overlap_python_adapters(),
             **source_aligned.overlap_python_adapters(),
+            **register_source_preparation_adapters(),
+            **prepared_source.overlap_python_adapters(),
+            **source_color.register_source_preparation_adapters(),
+            **prepared_color.overlap_python_adapters(),
+            **work_source.register_source_preparation_adapters(),
+            **prepared_work.overlap_python_adapters(),
         },
         validators={
             **media_validators(),
             **av27_validators(),
             **overlap_validators(),
             **source_aligned.overlap_validators(),
+            **register_source_preparation_validators(),
+            **prepared_source.overlap_validators(),
+            **source_color.register_source_preparation_validators(),
+            **prepared_color.overlap_validators(),
+            **work_source.register_source_preparation_validators(),
+            **prepared_work.overlap_validators(),
         },
         media_probe=runner_media_probe,
         artifact_quick_probe=media_artifact_quick_probe,

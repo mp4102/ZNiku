@@ -1,4 +1,4 @@
-# ZNIKU Studio（v0.3.3 开发线）
+# ZNIKU Studio（v0.3.4 开发线）
 
 Studio 以一张自由媒体节点图同时承担编辑和 Runtime 状态展示。React 应用只维护未保存的画布 Draft；
 `.zniku` Project、Graph 校验、Run、Artifact、日志及 external handoff 的正式语义全部来自 Python Project
@@ -9,8 +9,18 @@ Graph 与 Runtime 的唯一上位架构权威是
 易用性从属于 [`studio-ux-baseline.md`](../../docs/architecture/studio-ux-baseline.md)。本应用不得恢复
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-当前 package/product 版本为 `0.3.3`；已有 wire/Presentation/StudioState 仍为 `0.3.0`，SQLite schema 4
-不变。新增原片规划使用独立 `0.3.3` wire 和 exact NodeDefinition，旧定义的版本与含义保持不变。
+当前 package/product 版本为 `0.3.4`；已有 wire/Presentation/StudioState 仍为 `0.3.0`，SQLite schema 4
+不变。保留素材检查与准备的 `0.3.4` 和 `0.3.4-color.1` wire/exact 定义；新建普通路线使用
+`0.3.4-work.1`，旧定义的版本与含义保持不变。
+新入口遵守[普通工作源政策](../../docs/v0.3.4-working-source-policy.md)，展示“可直接处理”“需要准备
+工作副本”“当前处理器不支持”三种后端结论，不要求创作者理解内部 Admission/T1。
+正常源不复制；缺色彩本身不要求副本，必要的工作解释常驻显示并由用户明确确认，不能覆盖已知冲突。
+内置普通副本显式保留解码帧数和顺序并重新定时；可能改变节奏与时长，必须先确认影响和额外空间，
+不声称原时间轴保全。外部结果作为新参考重新检查和规划，明确采用其自身音频，不暗中沿用旧原音轨。
+文件出现不自动提交。进度、取消、失败后新 attempt、有效上游复用仍使用同一 Runtime 和外部助手。
+“高级 · 旧严格准备路线与兼容流程”可明确选择旧保内容比较路线；旧 T1 仍未晋级并保持禁用，
+普通工作副本不是 T1 的改名或放宽。旧工程按实际 exact 恢复，不迁移已有图或等待任务。
+当前新候选使用 `Studio-v0.3.4-work-candidate` 本机状态通道，与旧技术包隔离；尚未进行真实媒体验收。
 v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
 创作者建项、HostBridge、Undo/Redo、兼容连接、纯展示分组与 CAS 自动保存。Phase 4 已实现创作者运行中心、
 外部处理助手与只读重跑影响预览，完整门禁与合成浏览器闭环已通过，见 [Phase 4 验收记录](../../docs/v0.3.0-phase4-acceptance.md)。
@@ -26,9 +36,9 @@ FI软件v1.0、模型Aion已通过首轮1080p三章及操作者对照；4K本轮
 候选标记不变，详情见[Phase 5统一真实验收](../../docs/v0.3.2-phase5-acceptance.md)。
 旧候选保留在各自独立工作树与本机状态通道，不以新版覆盖操作者正在验收的包或数据。
 
-本工作树按 [v0.3.3 执行计划](../../docs/v0.3.3-execution-plan.md)实施原片规划与可选外部前处理：
+保留的旧方案按 [v0.3.3 执行计划](../../docs/v0.3.3-execution-plan.md)实施原片规划与可选外部前处理：
 
-- 新建单一完整视频默认 `zniku.source-aligned-overlap@0.3.3`；只有真实服务目录提供全部新 exact 定义时
+- 选择此保留方案时使用 `zniku.source-aligned-overlap@0.3.3`；只有真实服务目录提供全部新 exact 定义时
   才启用。旧后端只保留旧方案，不因新版前端存在方法就伪称支持，也不在失败后隐式降级。
 - 第三页为“处理与成片设置”：片名/年份，0 可选外部马赛克修复（默认关闭），1 分章分叶，2 增强，
   3 重叠 FI，4 编码。必要声明常驻；外部修复可声明 MP4/MOV/MKV，默认 MP4，不靠更名伪装容器。

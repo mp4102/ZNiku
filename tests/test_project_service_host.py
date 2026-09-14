@@ -227,6 +227,14 @@ def test_http_routes_cors_and_strict_json_fail_closed(tmp_path: Path) -> None:
                         ),
                         "order": 60,
                     },
+                    {
+                        "category_id": "prepared",
+                        "title": "素材准备与工作参考",
+                        "description": (
+                            "0.3.4 独立候选节点；保留原件、显式选择准备方案并验证工作参考。"
+                        ),
+                        "order": 70,
+                    },
                 ],
                 "nodes": [],
             },

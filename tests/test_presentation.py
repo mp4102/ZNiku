@@ -21,6 +21,9 @@ from zniku.graph import (
 )
 from zniku.media import built_in_media_definitions
 from zniku.media.definitions import legacy_output_file_definition, output_file_definition
+from zniku.prepared_color import definitions as prepared_color
+from zniku.prepared_source import definitions as prepared_source
+from zniku.prepared_source import work_definitions as prepared_work
 from zniku.presentation import (
     CategoryPresentation,
     ControlHint,
@@ -43,6 +46,11 @@ from zniku.project import Project, ProjectStore
 from zniku.project_service import ProjectServiceApplication, ProjectServiceError
 from zniku.runtime import capture_node_signature
 from zniku.source_aligned import definitions as source_aligned
+from zniku.source_color.definitions import source_preparation_definitions as color_definitions
+from zniku.source_preparation import source_preparation_definitions
+from zniku.source_preparation.work_definitions import (
+    source_preparation_definitions as work_definitions,
+)
 
 
 def _definition(
@@ -153,12 +161,27 @@ def test_builtin_catalog_covers_all_generic_av27_and_overlap_definitions() -> No
         source_aligned.external_definition("mp4"),
         source_aligned.external_definition("mov"),
         source_aligned.external_definition("mkv"),
+        *source_preparation_definitions(),
+        *prepared_source.built_in_overlap_definitions(),
+        prepared_source.external_definition("mp4"),
+        prepared_source.external_definition("mov"),
+        prepared_source.external_definition("mkv"),
+        *color_definitions(),
+        *prepared_color.built_in_overlap_definitions(),
+        prepared_color.external_definition("mp4"),
+        prepared_color.external_definition("mov"),
+        prepared_color.external_definition("mkv"),
+        *work_definitions(),
+        *prepared_work.built_in_overlap_definitions(),
+        prepared_work.external_definition("mp4"),
+        prepared_work.external_definition("mov"),
+        prepared_work.external_definition("mkv"),
     )
     catalog = build_builtin_presentation_catalog()
 
     assert catalog.contract_version == "0.3.0"
     assert catalog.locale == "zh-CN"
-    assert len(catalog.nodes) == 42
+    assert len(catalog.nodes) == 96
     assert tuple((node.type_id, node.definition_version) for node in catalog.nodes) == tuple(
         (definition.type_id, definition.version) for definition in definitions
     )

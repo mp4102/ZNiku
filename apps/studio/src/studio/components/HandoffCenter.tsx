@@ -41,6 +41,7 @@ export interface HandoffCenterProps {
   readonly selectedNodeId: string | null
   readonly importController?: HandoffImportController
   readonly inboxControls?: (nodeRun: NodeRunWire) => ReactNode
+  readonly preparationMonitor?: ReactNode
   readonly canImportHandoff?: boolean
   readonly detail: RunDetailEnvelope | null
   readonly artifactsById: ReadonlyMap<string, ArtifactWire>
@@ -120,6 +121,7 @@ export function HandoffCenter(props: HandoffCenterProps) {
             <div className="handoff-task-identity" aria-label="当前外部任务标识">
               {handoffSummary(nodeRun, artifactsById, detail).map((line) => <strong key={line}>{line}</strong>)}
             </div>
+            {!props.importController?.preview && props.preparationMonitor}
             <ol className="handoff-steps">
               <li className="handoff-step">
                 <h4>确认处理要求</h4>
@@ -163,7 +165,7 @@ export function HandoffCenter(props: HandoffCenterProps) {
                 {props.importController?.message && <p className="handoff-import-message" role="status">{props.importController.message}</p>}
                 {props.importController?.error && <p className="handoff-import-error" role="alert">{props.importController.error}</p>}
                 {props.importController?.rawError && <details className="handoff-import-diagnostic"><summary>高级 → 导入原始详情</summary><pre>{props.importController.rawError}</pre></details>}
-                {props.importController?.preview && <HandoffImportDialog key={props.importController.preview.envelope.import_id} controller={props.importController} />}
+                {props.importController?.preview && <HandoffImportDialog key={props.importController.preview.envelope.import_id} controller={props.importController} operationMonitor={props.preparationMonitor} />}
               </li>
               <li className="handoff-step">
                 <h4>检查后，由你提交并继续</h4>

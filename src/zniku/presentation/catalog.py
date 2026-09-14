@@ -32,9 +32,22 @@ from zniku.chapter_overlap.definitions import built_in_overlap_definitions
 from zniku.graph import NodeDefinition, PortSpec
 from zniku.media import built_in_media_definitions
 from zniku.media.definitions import is_supported_output_file_definition
+from zniku.prepared_color import definitions as color_definitions
+from zniku.prepared_source import definitions as prepared_definitions
+from zniku.prepared_source import work_definitions
 from zniku.source_aligned import definitions as aligned_definitions
+from zniku.source_color.definitions import (
+    source_preparation_definitions as color_preparation_definitions,
+)
+from zniku.source_preparation import source_preparation_definitions
+from zniku.source_preparation.work_definitions import (
+    source_preparation_definitions as work_source_definitions,
+)
 
 from . import chapter_overlap as overlap_presentation
+from . import prepared_color as color_presentation
+from . import prepared_source as prepared_presentation
+from . import prepared_work as work_presentation
 from . import source_aligned as aligned_presentation
 from .models import (
     PRESENTATION_CONTRACT_VERSION,
@@ -78,6 +91,12 @@ class _NodeMetadata:
 
 
 _CATEGORIES = (
+    CategoryPresentation(
+        category_id="prepared",
+        title="素材准备与工作参考",
+        description="0.3.4 独立候选节点；保留原件、显式选择准备方案并验证工作参考。",
+        order=70,
+    ),
     CategoryPresentation(
         category_id="overlap",
         title="ZNIKU 重叠 FI 候选",
@@ -379,6 +398,10 @@ _PARAMETER_LABELS: dict[str, str] = {
 }
 
 _ENUM_LABELS: dict[str, str] = {
+    "declared_only": "要求已明确的色彩声明 (默认)",
+    "operator_confirmed_bt709_limited_left": "我确认按 SDR BT.709/有限范围/left 处理",
+    "original": "保留原件音频",
+    "none": "原件无音频",
     "any": "不限制",
     "copy": "复制到新文件",
     "cpu": "CPU 编码",
@@ -464,6 +487,21 @@ _ADVANCED_PARAMETERS = _BINDING_PARAMETERS | {
 
 def _builtin_metadata(definition: NodeDefinition) -> _NodeMetadata:
     key = (definition.type_id, definition.version)
+    if _is_prepared(definition):
+        try:
+            return _NodeMetadata(
+                *(
+                    work_presentation
+                    if definition.version == "0.3.4-work.1"
+                    else color_presentation
+                    if definition.version == "0.3.4-color.1"
+                    else prepared_presentation
+                ).metadata(definition)
+            )
+        except ValueError as error:
+            raise PresentationCatalogError(
+                "E_PRESENTATION_BUILTIN_DEFINITION_DRIFT", str(error)
+            ) from error
     if definition.type_id.startswith(("zniku.overlap.", "zniku.source_aligned.")):
         try:
             presenter = (
@@ -518,8 +556,14 @@ def _builtin_metadata(definition: NodeDefinition) -> _NodeMetadata:
 def _is_builtin_definition(definition: NodeDefinition) -> bool:
     """按受控 namespace 识别必须失败关闭的仓库内 definition。"""
 
-    return definition.type_id.startswith(
+    return _is_prepared(definition) or definition.type_id.startswith(
         ("zniku.media.", "zniku.avenhance.v27.", "zniku.overlap.", "zniku.source_aligned.")
+    )
+
+
+def _is_prepared(definition: NodeDefinition) -> bool:
+    return definition.type_id.startswith(
+        ("zniku.source_preparation.", "zniku.prepared.overlap.", "zniku.prepared_source.")
     )
 
 
@@ -590,9 +634,18 @@ def _parameter_presentations(
     groups_in_use: set[str] = set()
     overlap = definition.type_id.startswith(("zniku.overlap.", "zniku.source_aligned."))
     aligned = overlap and definition.version == "0.3.3"
+    prepared = _is_prepared(definition)
+    prepared_fields = (
+        work_presentation
+        if definition.version == "0.3.4-work.1"
+        else color_presentation
+        if definition.version == "0.3.4-color.1"
+        else prepared_presentation
+    )
     for order, (name, raw_schema) in enumerate(_schema_properties(definition).items(), start=1):
         label = (
-            (aligned_presentation.PARAMETER_LABELS.get(name) if aligned else None)
+            (prepared_fields.PARAMETER_LABELS.get(name) if prepared else None)
+            or (aligned_presentation.PARAMETER_LABELS.get(name) if aligned else None)
             or (overlap_presentation.PARAMETER_LABELS.get(name) if overlap else None)
             or _PARAMETER_LABELS.get(name)
         )
@@ -607,7 +660,9 @@ def _parameter_presentations(
                 f"/{name} 的 Schema 必须是 object",
             )
         schema = cast(Mapping[str, object], raw_schema)
-        overlap_binding = overlap and name in overlap_presentation.BINDING_PARAMETERS
+        overlap_binding = (overlap and name in overlap_presentation.BINDING_PARAMETERS) or (
+            prepared and name in prepared_fields.BINDING_PARAMETERS
+        )
         group_id = "binding" if overlap_binding else _parameter_group(name)
         groups_in_use.add(group_id)
         control_hint = _control_hint(name, schema)
@@ -624,7 +679,8 @@ def _parameter_presentations(
             ParameterPresentation(
                 parameter_pointer=f"/{name.replace('~', '~0').replace('/', '~1')}",
                 label=label,
-                description=(aligned_presentation.PARAMETER_HELP.get(name) if aligned else None)
+                description=(prepared_fields.PARAMETER_HELP.get(name) if prepared else None)
+                or (aligned_presentation.PARAMETER_HELP.get(name) if aligned else None)
                 or (overlap_presentation.PARAMETER_HELP.get(name) if overlap else None),
                 group_id=group_id,
                 order=order,
@@ -688,6 +744,17 @@ def _port_presentations(definition: NodeDefinition) -> tuple[PortPresentation, .
                 direction=cast(Any, direction),
                 port_id=port.port_id,
                 label=(
+                    (
+                        work_presentation
+                        if definition.version == "0.3.4-work.1"
+                        else color_presentation
+                        if definition.version == "0.3.4-color.1"
+                        else prepared_presentation
+                    ).port_label(definition, direction, port.port_id)
+                    if _is_prepared(definition)
+                    else None
+                )
+                or (
                     overlap_presentation.port_label(definition, direction, port.port_id)
                     if definition.type_id.startswith("zniku.overlap.")
                     else None
@@ -902,6 +969,21 @@ def build_builtin_presentation_catalog(
             aligned_definitions.external_definition("mp4"),
             aligned_definitions.external_definition("mov"),
             aligned_definitions.external_definition("mkv"),
+            *source_preparation_definitions(),
+            *prepared_definitions.built_in_overlap_definitions(),
+            prepared_definitions.external_definition("mp4"),
+            prepared_definitions.external_definition("mov"),
+            prepared_definitions.external_definition("mkv"),
+            *color_preparation_definitions(),
+            *color_definitions.built_in_overlap_definitions(),
+            color_definitions.external_definition("mp4"),
+            color_definitions.external_definition("mov"),
+            color_definitions.external_definition("mkv"),
+            *work_source_definitions(),
+            *work_definitions.built_in_overlap_definitions(),
+            work_definitions.external_definition("mp4"),
+            work_definitions.external_definition("mov"),
+            work_definitions.external_definition("mkv"),
         )
         if definitions is None
         else tuple(definitions)
