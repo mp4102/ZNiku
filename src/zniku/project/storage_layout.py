@@ -153,6 +153,10 @@ def safe_attempt_directory(root: Path, path: Path) -> Path:
             attributes = candidate.lstat()
         except FileNotFoundError:
             continue
+        except NotADirectoryError as error:
+            # POSIX 在祖先是文件时即拒绝 lstat，Windows 通常先返回不存在；
+            # 两个平台均应返回稳定路径错误，而不是泄漏系统异常或绕过边界。
+            raise ValueError("E_STORAGE_LAYOUT_PATH: 工作路径的已有组件必须是目录") from error
         if stat.S_ISLNK(attributes.st_mode) or (
             getattr(attributes, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
         ):

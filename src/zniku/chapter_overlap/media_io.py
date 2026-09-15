@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import shutil
 import subprocess
 import sys
 import threading
 from collections.abc import Sequence
 from fractions import Fraction
+from itertools import pairwise
 from pathlib import Path
 from queue import Empty, Full, Queue
 from time import monotonic
@@ -131,7 +133,9 @@ def run_ffmpeg(
     """受控单进程执行，真实帧计数不得超过合同；取消即终止并回收 producer。
 
     固定队列/单个读线程避免 pipe 阻塞与无界内存。heartbeat 仅重复已测量进度，不预测
-    媒体处理速度。完成仍须调用方及独立 validator 检查输出媒体，不能据进度登记 Artifact。
+    媒体处理速度。FFmpeg 6.1 的 stream-copy 不输出 progress.frame；复制本模块已知
+    一包一帧的视频时在退出后读同进程 mux 实测总包数，不把缺失进度当零或填入预期帧数。
+    完成仍须调用方及独立 validator 检查输出媒体，不能据进度登记 Artifact。
     """
 
     total = expected_frames if progress_total is None else progress_total
@@ -141,6 +145,7 @@ def run_ffmpeg(
         or total < progress_offset + expected_frames
         or not math.isfinite(timeout_seconds)
         or timeout_seconds <= 0
+        or not argv
         or len(argv) > 256
         or (sys.platform == "win32" and len(subprocess.list2cmdline(list(argv))) > 30000)
     ):
@@ -151,6 +156,7 @@ def run_ffmpeg(
     queue: Queue[bytes | Exception | None] = Queue(maxsize=256)
     measured = 0
     started = monotonic()
+    copy_packets = any(option == "-c:v" and value == "copy" for option, value in pairwise(argv))
 
     def report() -> None:
         if context.progress is not None:
@@ -163,6 +169,7 @@ def run_ffmpeg(
             context.stderr_log_path.open("ab") as stderr,
             context.stdout_log_path.open("ab") as log,
         ):
+            stderr_start = stderr.tell()
             process = subprocess.Popen(
                 [
                     resolve_media_tool("ffmpeg"),
@@ -170,7 +177,7 @@ def run_ffmpeg(
                     "-nostdin",
                     "-n",
                     "-loglevel",
-                    "error",
+                    "verbose" if copy_packets else "error",
                     "-progress",
                     "pipe:1",
                     "-nostats",
@@ -203,10 +210,10 @@ def run_ffmpeg(
                     raise line
                 if line is None:
                     break
-                log.write(line)
                 key, separator, value = (
                     line.decode("utf-8", errors="replace").strip().partition("=")
                 )
+                log.write(line)
                 if key == "frame" and separator:
                     if not value.isdecimal():
                         raise OverlapMediaError("E_OVERLAP_PROGRESS", "FFmpeg frame 必须为整数")
@@ -223,8 +230,18 @@ def run_ffmpeg(
             return_code = process.wait(timeout=5)
             if return_code:
                 raise OverlapMediaError("E_OVERLAP_FFMPEG_FAILED", f"FFmpeg 退出码 {return_code}")
+            if copy_packets:
+                # 6.1 连 stats_mux_pre 也仅为编码路径创建，不能拿它补 copy 计数。
+                # 保留普通实时 progress；只有没有帧计数的旧工具会在复制完成时才更新 N。
+                # 最多读本次 stderr 的末尾256KiB，不重扫媒体、不读取上一次命令的统计。
+                actual = _muxed_video_packet_count(context.stderr_log_path, stderr_start)
+                if actual < measured:
+                    raise OverlapMediaError("E_OVERLAP_PROGRESS", "mux 总包数小于已报告进度")
+                measured = actual
             if measured != expected_frames:
                 raise OverlapMediaError("E_OVERLAP_FRAME_COUNT", "实际输出帧数与合同不同")
+            if copy_packets:
+                log.write(f"copy_packets={measured}\n".encode())
             report()
     except BaseException:
         if process is not None:
@@ -237,6 +254,23 @@ def run_ffmpeg(
         if process is not None and process.stdout is not None:
             process.stdout.close()
     return measured
+
+
+def _muxed_video_packet_count(path: Path, start: int) -> int:
+    """读取受控单输出视频copy的真实mux总结；缺失、重复和未知形状均失败关闭。"""
+
+    with path.open("rb") as stream:
+        stream.seek(0, 2)
+        stream.seek(max(start, stream.tell() - 256 * 1024))
+        tail = stream.read(256 * 1024)
+    matches = re.findall(
+        rb"(?:^|\n)(?:\[out#[^\]\r\n]+\]\s+)?\s*"
+        rb"Output stream #0:0 \(video\): ([0-9]+) packets muxed(?: |\r|$)",
+        tail,
+    )
+    if len(matches) != 1:
+        raise OverlapMediaError("E_OVERLAP_FRAME_COUNT", "缺少唯一的输出视频mux实测包数")
+    return int(matches[0])
 
 
 def clock_filter(rate: Fraction) -> str:

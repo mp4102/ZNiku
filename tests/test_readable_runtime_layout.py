@@ -283,6 +283,25 @@ def test_links_and_existing_file_parents_are_rejected(tmp_path: Path) -> None:
         safe_attempt_directory(tmp_path, tmp_path / "custom/task__N001/R001-A001")
 
 
+def test_posix_not_a_directory_is_a_stable_path_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """在Windows也模拟POSIX子路径lstat错误，不能因平台差异泄漏异常类型。"""
+
+    target = tmp_path / "custom/task__N001/R001-A001"
+    original = Path.lstat
+
+    def not_a_directory(candidate: Path) -> os.stat_result:
+        if candidate == target:
+            raise NotADirectoryError("祖先是文件")
+        return original(candidate)
+
+    monkeypatch.setattr(Path, "lstat", not_a_directory)
+    with pytest.raises(ValueError, match="E_STORAGE_LAYOUT_PATH"):
+        safe_attempt_directory(tmp_path, target)
+    assert not (tmp_path / "custom").exists()
+
+
 def test_reparse_parent_is_rejected_before_directory_creation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

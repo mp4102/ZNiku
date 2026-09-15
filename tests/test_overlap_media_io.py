@@ -210,6 +210,52 @@ def test_wrong_actual_frame_count_never_reports_success(tmp_path: Path) -> None:
         )
 
 
+def test_copy_packet_summary_reads_only_current_video_output(tmp_path: Path) -> None:
+    """独立于FFmpeg版本验证日志解析，不以音频、输入包数或旧命令记录冒充本次输出。"""
+
+    log = tmp_path / "stderr.log"
+    previous = (
+        b"[out#0/null @ previous]   Output stream #0:0 (video): 99 packets muxed (1 bytes);\n"
+    )
+    current = (
+        b"[out#0/matroska @ current]   Output stream #0:0 (video): 7 packets muxed (1 bytes);\n"
+        b"[out#0/matroska @ current]   Output stream #0:1 (audio): 15 packets muxed (1 bytes);\n"
+        b"[in#0/matroska @ current]   Input stream #0:0 (video): 12 packets read (1 bytes);\n"
+    )
+    log.write_bytes(previous + current)
+    assert media_io._muxed_video_packet_count(log, len(previous)) == 7
+
+
+@pytest.mark.parametrize("content", (b"", b"frame=7\n", b"unexpected mux summary\n"))
+def test_copy_missing_packet_summary_cannot_use_previous_or_expected_count(
+    tmp_path: Path, content: bytes
+) -> None:
+    log = tmp_path / "stderr.log"
+    old = b"[out#0/null @ old]   Output stream #0:0 (video): 7 packets muxed (1 bytes);\n"
+    log.write_bytes(old + content)
+    with pytest.raises(media_io.OverlapMediaError, match="E_OVERLAP_FRAME_COUNT"):
+        media_io._muxed_video_packet_count(log, len(old))
+    log.write_bytes(old + old)
+    with pytest.raises(media_io.OverlapMediaError, match="E_OVERLAP_FRAME_COUNT"):
+        media_io._muxed_video_packet_count(log, 0)
+
+
+@pytest.mark.skipif(not TOOLS, reason="需要 FFmpeg/FFprobe")
+def test_copy_actual_packet_count_mismatch_is_not_filled_from_plan(tmp_path: Path) -> None:
+    """复制统计缺少progress.frame的旧FFmpeg也必须拒绝真实2帧与预期3帧的差异。"""
+
+    experiment = _remux.RemuxExperiment(tmp_path / "wrong-copy-count")
+    source = experiment.generate("source.mov", Fraction(30), 2, offset=0, step=1)
+    original = source.read_bytes()
+    with pytest.raises(media_io.OverlapMediaError, match="E_OVERLAP_FRAME_COUNT"):
+        media_io.run_ffmpeg(
+            _context(experiment.output),
+            ["-i", str(source), "-map", "0:v:0", "-c:v", "copy", "-f", "null", "-"],
+            expected_frames=3,
+        )
+    assert source.read_bytes() == original
+
+
 @pytest.mark.skipif(not TOOLS, reason="需要 FFmpeg/FFprobe")
 def test_accepted_decimal_fragmented_raw_crops_to_exact_clock(tmp_path: Path) -> None:
     """外部 59.94 fragmented MOV 无 nb_frames，已验收N允许裁边但不能改源或容忍错帧。"""
@@ -298,7 +344,9 @@ def test_merge_normalizes_mixed_external_timescales_without_reencoding(tmp_path:
             "-c:v",
             "copy",
             "-video_track_timescale",
-            "120",
+            # FFprobe 6.1 对极低120 timescale的短fragmented夹具会猜成r=60、avg=30。
+            # 使用常见MOV timescale构造合法外部输入，仍覆盖与目标30不同的时基及无nb_frames。
+            "15360",
             "-movflags",
             "frag_keyframe+empty_moov",
             str(external),
@@ -306,6 +354,7 @@ def test_merge_normalizes_mixed_external_timescales_without_reencoding(tmp_path:
         role="synthetic-mixed-timescale",
     )
     assert probe_header(external).video.frame_count is None
+    assert probe_header(external).video.time_base == Fraction(1, 15360)
     raw_bytes = external.read_bytes()
     samples = Samples()
     context = _context(experiment.output, samples)
