@@ -32,6 +32,7 @@ from zniku.chapter_overlap.definitions import built_in_overlap_definitions
 from zniku.graph import NodeDefinition, PortSpec
 from zniku.media import built_in_media_definitions
 from zniku.media.definitions import is_supported_output_file_definition
+from zniku.source_admission import definitions as admitted_definitions
 from zniku.source_aligned import definitions as aligned_definitions
 
 from . import chapter_overlap as overlap_presentation
@@ -464,6 +465,13 @@ _ADVANCED_PARAMETERS = _BINDING_PARAMETERS | {
 
 def _builtin_metadata(definition: NodeDefinition) -> _NodeMetadata:
     key = (definition.type_id, definition.version)
+    if definition.version == "0.3.5":
+        try:
+            return _NodeMetadata(*aligned_presentation.metadata(definition))
+        except ValueError as error:
+            raise PresentationCatalogError(
+                "E_PRESENTATION_BUILTIN_DEFINITION_DRIFT", str(error)
+            ) from error
     if definition.type_id.startswith(("zniku.overlap.", "zniku.source_aligned.")):
         try:
             presenter = (
@@ -589,7 +597,7 @@ def _parameter_presentations(
     parameters: list[ParameterPresentation] = []
     groups_in_use: set[str] = set()
     overlap = definition.type_id.startswith(("zniku.overlap.", "zniku.source_aligned."))
-    aligned = overlap and definition.version == "0.3.3"
+    aligned = overlap and definition.version in {"0.3.3", "0.3.5"}
     for order, (name, raw_schema) in enumerate(_schema_properties(definition).items(), start=1):
         label = (
             (aligned_presentation.PARAMETER_LABELS.get(name) if aligned else None)
@@ -902,6 +910,7 @@ def build_builtin_presentation_catalog(
             aligned_definitions.external_definition("mp4"),
             aligned_definitions.external_definition("mov"),
             aligned_definitions.external_definition("mkv"),
+            *admitted_definitions.built_in_definitions(),
         )
         if definitions is None
         else tuple(definitions)

@@ -1819,6 +1819,8 @@ class NodeRunner:
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
+                    # FFprobe JSON 始终为 UTF-8，不能使用工作站区域编码解码中文路径/标签。
+                    encoding="utf-8",
                     shell=False,
                     creationflags=background_creation_flags(),
                     check=False,

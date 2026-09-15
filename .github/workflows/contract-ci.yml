@@ -1,6 +1,6 @@
 name: ZNIKU Core CI
 
-# 验证 0.2.0 Core、保留的旧节点及 v0.3.3 普通专用媒体节点与 Runtime 接线。
+# 验证 0.2.0 Core、保留旧节点及 v0.3.5 单一源准入与普通媒体节点接线。
 # 媒体测试只在临时目录生成极短合成 payload，不读取用户媒体或旧 Real Acceptance 数据。
 
 on:
@@ -75,6 +75,12 @@ jobs:
 
       - name: Verify source-aligned Presentation corpus and Python preview fixture
         run: uv run --locked --extra dev python tools/generate_source_aligned_studio_corpus.py
+
+      - name: Verify source-admitted Presentation corpus and Python preview fixture
+        run: uv run --locked --extra dev python tools/generate_source_admitted_studio_corpus.py
+
+      - name: Verify deterministic source admission scenario matrix
+        run: uv run --locked --extra dev python -m tools.check_source_admission_parity
 
       - name: Typecheck
         run: uv run --locked --extra dev mypy --no-incremental src tests tools

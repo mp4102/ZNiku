@@ -7,9 +7,11 @@ Program 只追加一个全局尾帧。任何缺失、乱序、空间不足、取
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from fractions import Fraction
 from pathlib import Path
 
+from zniku.avenhance_v27 import validators as media_contracts
 from zniku.avenhance_v27.adapters import (
     _audio_metadata_options,
     _promote_attempt_file,
@@ -37,6 +39,7 @@ from zniku.runtime import (
 from .node_contracts import (
     NodeContract,
     ProgramParameters,
+    SourceExpectation,
     SplitParameters,
     effective_contract,
     preflight,
@@ -78,12 +81,25 @@ def atomic_split(context: PythonAdapterContext) -> PythonAdapterResult:
     """
 
     contract = preflight("split", context.inputs, context.node.parameters)
+    return _atomic_split(
+        context, contract, verify_original=True, effective_reader=effective_contract
+    )
+
+
+def _atomic_split(
+    context: PythonAdapterContext,
+    contract: NodeContract,
+    *,
+    verify_original: bool,
+    effective_reader: Callable[[RunnerInput, SourceExpectation], media_contracts._MediaContract],
+) -> PythonAdapterResult:
+    """共用连续 FFV1 producer；源准入由各 exact 入口显式选择，绝不更改旧入口默认。"""
     assert isinstance(contract.params, SplitParameters)
     targets = _targets(context, contract)
     source = _inputs(context, "videos")[0]
     path = source_path(source.path)
     frame_count = contract.source.frame_count
-    if source.artifact_id == contract.source.original_video_artifact_id:
+    if verify_original and source.artifact_id == contract.source.original_video_artifact_id:
         require_supported_audio_origins(path)
         probe_cfr(
             path,
@@ -114,7 +130,7 @@ def atomic_split(context: PythonAdapterContext) -> PythonAdapterResult:
             "-i",
             str(path),
             "-filter_complex",
-            _split_filter(source, contract),
+            _split_filter(source, contract, effective_reader=effective_reader),
             "-map",
             "[vsegment]",
             "-an",
@@ -221,10 +237,12 @@ def atomic_split(context: PythonAdapterContext) -> PythonAdapterResult:
     )
 
 
-def merge_video(context: PythonAdapterContext) -> PythonAdapterResult:
+def merge_video(
+    context: PythonAdapterContext, *, _contract: NodeContract | None = None
+) -> PythonAdapterResult:
     """完整有序叶合并为无重编码增强章；不是旧 AV27 Merge producer。"""
 
-    contract = preflight("merge", context.inputs, context.node.parameters)
+    contract = _contract or preflight("merge", context.inputs, context.node.parameters)
     target = _targets(context, contract)["video"]
     metadata = contract.outputs[0].metadata
     paths = tuple(source_path(item.path) for item in _inputs(context, "videos"))
@@ -254,10 +272,12 @@ def merge_video(context: PythonAdapterContext) -> PythonAdapterResult:
     return _result("video", target, actual, capacity)
 
 
-def fi_context(context: PythonAdapterContext) -> PythonAdapterResult:
+def fi_context(
+    context: PythonAdapterContext, *, _contract: NodeContract | None = None
+) -> PythonAdapterResult:
     """逐个读取真实显式邻章交集并复制包，再按源顺序合并为带上下文 MOV。"""
 
-    contract = preflight("context", context.inputs, context.node.parameters)
+    contract = _contract or preflight("context", context.inputs, context.node.parameters)
     target = _targets(context, contract)["video"]
     metadata = contract.outputs[0].metadata
     binding = metadata.context
@@ -312,10 +332,12 @@ def fi_context(context: PythonAdapterContext) -> PythonAdapterResult:
     return _result("video", target, actual, capacity)
 
 
-def fi_crop(context: PythonAdapterContext) -> PythonAdapterResult:
+def fi_crop(
+    context: PythonAdapterContext, *, _contract: NodeContract | None = None
+) -> PythonAdapterResult:
     """从已验证 raw 中复制精确 half-frame 责任区间；不覆盖 raw、不加章尾帧。"""
 
-    contract = preflight("crop", context.inputs, context.node.parameters)
+    contract = _contract or preflight("crop", context.inputs, context.node.parameters)
     target = _targets(context, contract)["video"]
     metadata = contract.outputs[0].metadata
     binding = metadata.context
@@ -352,10 +374,12 @@ def fi_crop(context: PythonAdapterContext) -> PythonAdapterResult:
     return _result("video", target, actual, capacity)
 
 
-def program_encode(context: PythonAdapterContext) -> PythonAdapterResult:
+def program_encode(
+    context: PythonAdapterContext, *, _contract: NodeContract | None = None
+) -> PythonAdapterResult:
     """单连续 Main10 编码，只在完整有序 2N-1 序列的全局末尾追加一帧。"""
 
-    contract = preflight("program", context.inputs, context.node.parameters)
+    contract = _contract or preflight("program", context.inputs, context.node.parameters)
     assert isinstance(contract.params, ProgramParameters)
     target = _targets(context, contract)["video"]
     metadata = contract.outputs[0].metadata
@@ -431,9 +455,16 @@ def final_mux(context: PythonAdapterContext) -> PythonAdapterResult:
     return _result("media", target, actual, capacity)
 
 
-def _split_filter(source: RunnerInput, contract: NodeContract) -> str:
+def _split_filter(
+    source: RunnerInput,
+    contract: NodeContract,
+    *,
+    effective_reader: Callable[
+        [RunnerInput, SourceExpectation], media_contracts._MediaContract
+    ] = effective_contract,
+) -> str:
     """按当前显式绑定读取几何，不伪造旧 namespace 来调用旧节点执行器。"""
-    media = effective_contract(source, contract.source.expectation())
+    media = effective_reader(source, contract.source.expectation())
     width, height = media.geometry
     if width * 9 != height * 16:
         raise OverlapMediaError("E_SOURCE_ALIGNED_SPLIT_GEOMETRY", "输入必须为精确 16:9")

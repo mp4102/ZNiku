@@ -53,6 +53,8 @@ test('原片分析失败不是外部等待：原文、重开定位与同 Run 新
   await page.getByRole('button', { name: '选择工程保存位置', exact: true }).click()
   await expect(page.locator('.creator-project-path')).toContainText('wizard-output-layout.zniku')
   await page.getByRole('button', { name: '下一步：处理方案' }).click()
+  await page.getByText('工作流版本与旧工程兼容', { exact: true }).click()
+  await page.getByLabel('工作流方案').selectOption('source-aligned')
   await expect(page.getByLabel('工作流方案')).toHaveValue('source-aligned')
   await page.getByRole('button', { name: '下一步：处理与成片设置' }).click()
   await page.getByLabel('片名', { exact: true }).fill('Synthetic Analysis Failure')

@@ -84,6 +84,39 @@ def python_data_definition(*, outputs: tuple[str, ...] = ("data",)) -> NodeDefin
     )
 
 
+def test_ffprobe_json_uses_utf8_for_unicode_paths_and_tags(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows 区域编码不能改变 FFprobe JSON 解码；不改变媒体验收语义。"""
+    path = tmp_path / "章节测试.mkv"
+    calls: list[dict[str, Any]] = []
+
+    def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(kwargs)
+        assert argv[-1] == str(path)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {
+                    "streams": [{"codec_type": "video", "tags": {"title": "中文标题"}}],
+                    "format": {"filename": str(path)},
+                },
+                ensure_ascii=False,
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(subprocess, "run", run)
+    result = NodeRunner(tmp_path / "attempts")._build_ffprobe("synthetic-ffprobe")(
+        path, "VideoFile"
+    )
+    assert calls[0]["encoding"] == "utf-8"
+    assert calls[0]["shell"] is False
+    assert "中文标题" in json.dumps(result, ensure_ascii=False)
+
+
 def test_python_adapter_uses_attempt_local_defaults_and_attempts_are_isolated(
     tmp_path: Path,
 ) -> None:

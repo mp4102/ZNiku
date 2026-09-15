@@ -312,6 +312,7 @@ async function wizardSettings(page: Page): Promise<Locator> {
   await wizard.getByLabel('工程名称', { exact: true }).fill('合成输出布局工程')
   await wizard.getByRole('button', { name: '选择工程保存位置', exact: true }).click()
   await wizard.getByRole('button', { name: '下一步：处理方案', exact: true }).click()
+  await wizard.getByText('工作流版本与旧工程兼容', { exact: true }).click()
   await wizard.getByLabel('工作流方案').selectOption('av27')
   await wizard.getByRole('button', { name: '下一步：处理与成片设置', exact: true }).click()
   if (!await wizard.getByLabel('片名', { exact: true }).isVisible()) await openOutputOptions(wizard)

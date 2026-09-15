@@ -3043,7 +3043,8 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     render(<App gateway={gateway} />)
     await screen.findByText('Synthetic Studio Project')
-    fireEvent.click(screen.getByLabelText('transform 节点'))
+    // 工程标题可能先于 ReactFlow 节点挂载出现；等待操作对象就绪，不依赖宿主调度速度。
+    fireEvent.click(await screen.findByLabelText('transform 节点'))
     displaySettings()
     let alias = screen.getByLabelText('节点别名')
     fireEvent.change(alias, { target: { value: '第一次编辑' } })

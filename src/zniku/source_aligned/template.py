@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -131,6 +132,10 @@ def build_source_aligned(
     binding: PreparationBinding,
     processing: SourceAlignedProcessing,
     publication: PublicationRequest,
+    *,
+    definition_factory: Callable[[str, int], NodeDefinition] | None = None,
+    external_factory: Callable[[DeclaredContainer], NodeDefinition] = external_definition,
+    publication_target: Callable[..., Path] = canonical_publication_target,
 ) -> SourceAlignedBuild:
     """仅扩展严格preparation；所有来源、区间、媒体尺寸均由已登记Artifact派生。"""
 
@@ -176,7 +181,7 @@ def build_source_aligned(
         "height": height * scale,
         "sample_aspect_ratio": "1/1",
     }
-    target = canonical_publication_target(
+    target = publication_target(
         publication,
         mr_mode=processing.mr.mode,
         final_frame_rate=source.frame_rate * 2,
@@ -197,11 +202,26 @@ def build_source_aligned(
     edges = list(current.project.graph.edges)
     definitions = list(current.definitions)
     definition_keys = {(item.type_id, item.version) for item in definitions}
-    enhancement_def = enhancement_definition()
-    merge_def = merge_video_definition()
-    context_def = fi_context_definition()
-    fi_def = frame_interpolation_definition()
-    crop_def = fi_crop_definition()
+    defaults = {
+        "enhancement": enhancement_definition,
+        "merge": merge_video_definition,
+        "context": fi_context_definition,
+        "fi": frame_interpolation_definition,
+        "crop": fi_crop_definition,
+        "program": program_encode_definition,
+        "final": final_mux_definition,
+    }
+
+    def selected(role: str, count: int = 1) -> NodeDefinition:
+        if definition_factory is not None:
+            return definition_factory(role, count)
+        return atomic_split_definition(count) if role == "split" else defaults[role]()
+
+    enhancement_def = selected("enhancement")
+    merge_def = selected("merge")
+    context_def = selected("context")
+    fi_def = selected("fi")
+    crop_def = selected("crop")
     # 仅为首次模板生成保留展示槽位：现有 Source/Admission 原位保留，新增节点从其右侧开始。
     # Studio 卡宽 248；320 列距留出端口与连线通道，MR 开启时独占一列，不覆盖 Admission。
     column_pitch, leaf_pitch = 320, 260
@@ -247,7 +267,7 @@ def build_source_aligned(
     if isinstance(processing.mr, SourceAlignedMrExternal):
         effective_node_id = node(
             "source-aligned.mr",
-            external_definition(processing.mr.declared_container),
+            external_factory(processing.mr.declared_container),
             {"source": source_data, **processing.mr.model_dump(mode="json", exclude={"mode"})},
             0,
             80,
@@ -257,7 +277,7 @@ def build_source_aligned(
 
     split = node(
         "overlap.split",
-        atomic_split_definition(plan.leaf_count),
+        selected("split", plan.leaf_count),
         {
             "plan": plan.model_dump(mode="json"),
             "source": source_data,
@@ -334,7 +354,7 @@ def build_source_aligned(
             )
     program = node(
         "overlap.program",
-        program_encode_definition(),
+        selected("program"),
         {
             "source": source_data,
             "chapter_count": plan.chapter_count,
@@ -347,7 +367,7 @@ def build_source_aligned(
         edge(crop, "video", program, "chapters", ordinal)
     final = node(
         "overlap.final",
-        final_mux_definition(),
+        selected("final"),
         {"source": source_data, "mr_mode": processing.mr.mode},
         split_column + 7,
         80,

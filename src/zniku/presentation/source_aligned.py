@@ -1,6 +1,7 @@
 """为原片规划与外部前处理提供纯中文展示；精确字段约束仍只来自节点 Schema。"""
 
 from zniku.graph import NodeDefinition
+from zniku.source_admission.definitions import definition_role as admitted_role
 from zniku.source_aligned.definitions import definition_role
 
 from .chapter_overlap import _ROLE_METADATA
@@ -22,9 +23,21 @@ def metadata(
     definition: NodeDefinition,
 ) -> tuple[str, str, str, IconToken, PaletteLevel, tuple[str, ...], tuple[str, ...]]:
     """纯展示复用旧角色名称，不把相同 type_id 的旧合同当作新定义。"""
-    role = definition_role(definition)
+    role = (
+        admitted_role(definition) if definition.version == "0.3.5" else definition_role(definition)
+    )
     if role is None:
         raise ValueError("原片规划 definition 与正式 exact identity/Schema/executor 不一致")
+    if role in {"source", "admission"}:
+        return (
+            "读取参考视频" if role == "source" else "参考视频准入",
+            "按 AVEnhanceFlow v2.7.0 的媒体规则分析当前参考；失败可显式选用外部修复候选。",
+            "av27",
+            IconToken.SOURCE,
+            PaletteLevel.ADVANCED,
+            ("参考视频", "AV2.7 准入"),
+            (),
+        )
     title, description, icon = (
         (
             "外部马赛克修复",

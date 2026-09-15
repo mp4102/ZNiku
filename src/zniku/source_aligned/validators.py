@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from fractions import Fraction
 from pathlib import Path
 
@@ -22,13 +23,15 @@ from zniku.avenhance_v27.probe import (
     require_progressive_zero_rotation,
     require_square_sar,
 )
-from zniku.runtime import FrameRange, NodeValidatorContext, NodeValidatorResult
+from zniku.graph import NodeDefinition
+from zniku.runtime import FrameRange, NodeValidatorContext, NodeValidatorResult, RunnerInput
 
 from .node_contracts import (
     EXTERNAL_TYPE_PREFIX,
     OVERLAP_NAMESPACE,
     ExternalMetadata,
     Geometry,
+    NodeContract,
     OverlapMetadata,
     Signal,
     external_preflight,
@@ -54,15 +57,26 @@ _NAMES = {
 }
 
 
-def _validate(context: NodeValidatorContext, role: str) -> NodeValidatorResult:
+def _validate(
+    context: NodeValidatorContext,
+    role: str,
+    *,
+    contract_reader: Callable[
+        [str, tuple[RunnerInput, ...], Mapping[str, object]], NodeContract
+    ] = preflight,
+    role_reader: Callable[[NodeDefinition], str | None] | None = None,
+    metadata_model: type[OverlapMetadata] = OverlapMetadata,
+    namespace: str = OVERLAP_NAMESPACE,
+    verify_original_audio_origins: bool = True,
+) -> NodeValidatorResult:
     """结果是一次轻量验收；失败时不返回任何 namespace，不能局部登记成功输出。"""
     try:
-        contract = preflight(role, context.request.inputs, context.request.node.parameters)
+        contract = contract_reader(role, context.request.inputs, context.request.node.parameters)
         planned = {item.port_id: item.metadata for item in contract.outputs}
         definition = context.request.definition
         from .definitions import definition_role
 
-        if definition_role(definition) != role or any(
+        if (role_reader or definition_role)(definition) != role or any(
             m.producer_type_id != definition.type_id for m in planned.values()
         ):
             fail("DEFINITION", "当前 definition identity 与局部输出职责不符")
@@ -105,7 +119,8 @@ def _validate(context: NodeValidatorContext, role: str) -> NodeValidatorResult:
                     audio_signatures_from_metadata(source.media_info),
                 ):
                     fail("FINAL_AUDIO", "Final 原音轨数量、顺序或格式签名不一致")
-                verify_audio_origins(source.path, output.path)
+                if verify_original_audio_origins:
+                    verify_audio_origins(source.path, output.path)
             else:
                 legacy._require_formats(
                     media,
@@ -168,8 +183,8 @@ def _validate(context: NodeValidatorContext, role: str) -> NodeValidatorResult:
             else:
                 legacy._optional_header_count_matches(video, metadata.frame_count, role=role)
             # 这里只复制已完整重验且由实际输出确认的纯数据，不使用 adapter 提交的来源 metadata。
-            verified = OverlapMetadata.model_validate(metadata.model_dump())
-            extensions[port] = {OVERLAP_NAMESPACE: verified.model_dump(mode="json")}
+            verified = metadata_model.model_validate(metadata.model_dump())
+            extensions[port] = {namespace: verified.model_dump(mode="json")}
         return NodeValidatorResult(
             passed=True,
             summary={

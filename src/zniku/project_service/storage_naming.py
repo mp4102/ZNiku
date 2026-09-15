@@ -23,6 +23,7 @@ from zniku.chapter_overlap.node_contracts import (
 from zniku.graph import NodeDefinition, NodeInstance
 from zniku.project.storage_layout import AttemptNamingHint
 from zniku.runtime import Run
+from zniku.source_admission.definitions import definition_role as admitted_role
 from zniku.source_aligned.definitions import definition_role as aligned_role
 from zniku.source_aligned.node_contracts import (
     PARAMETER_MODELS as ALIGNED_MODELS,
@@ -66,7 +67,11 @@ def resolve_attempt_naming(
     fallback = AttemptNamingHint(task_name=definition.type_id.rsplit(".", 1)[-1][:300] or "任务")
     if (node.type_id, node.definition_version) != (definition.type_id, definition.version):
         return fallback
-    new_role = aligned_role(definition)
+    new_role = aligned_role(definition) or admitted_role(definition)
+    if new_role in {"source", "admission"}:
+        return AttemptNamingHint(
+            category="common", task_name="素材检查" if new_role == "source" else "素材准入"
+        )
     if new_role is not None:
         try:
             model = ExternalParameters if new_role == "external" else ALIGNED_MODELS[new_role]

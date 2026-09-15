@@ -27,6 +27,11 @@
 
 ## 产品与领域边界
 
+- `v0.3.5` 已批准的执行入口为 `docs/v0.3.5-execution-memo.md`，从 v0.3.3 基点独立实施。
+  默认新流程采用 AVEnhanceFlow 2.7.0 的源准入，失败时允许外部修复候选通过同一准入后作为新参考。
+  不引入 v0.3.4 的多套内置源修复流程，不改变 Graph/Runtime 语义或旧 exact definitions，
+  不迁移旧工程/包。先修复继承门禁，再集成新链并全量验证；完成可 commit/push，不含 PR/merge/tag/Release。
+
 - `v0.3.3` 用户已批准连续实施，入口为`docs/v0.3.3-execution-plan.md`：原片规划、可选外部第0步、
   新版本局部输入绑定与向导导航。只新增exact媒体合同，不自动迁移旧图或修改旧AV27/overlap定义。
   用户已授权完成后commit/push，不包括PR、merge、tag、Release或操作真实工程/服务。

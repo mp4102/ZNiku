@@ -12,6 +12,8 @@ from zniku.media.definitions import VIDEO_TRANSFORM_VALIDATOR
 from zniku.media.probe import MediaNodeError
 from zniku.media.validators import transform_frame_relation
 from zniku.runtime import Artifact, NodeRunState, Run
+from zniku.source_admission.contracts import preflight as admitted_preflight
+from zniku.source_admission.definitions import definition_role as admitted_role
 
 from .av27_handoff import project_av27_handoff_contracts
 from .models import ExternalHandoffContractProjection, HandoffContractField
@@ -28,6 +30,13 @@ def project_handoff_contracts(
         *project_av27_handoff_contracts(run, artifacts),
         *project_overlap_handoff_contracts(run, artifacts),
         *project_source_aligned_handoffs(run, artifacts),
+        *project_source_aligned_handoffs(
+            run,
+            artifacts,
+            role_reader=admitted_role,
+            contract_reader=admitted_preflight,
+            admitted_source=True,
+        ),
     ]
     covered = {item.node_run_id for item in contracts}
     nodes = {item.node_id: item for item in run.graph_snapshot.nodes}

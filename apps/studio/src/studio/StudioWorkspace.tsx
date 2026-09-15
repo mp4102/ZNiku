@@ -19,6 +19,7 @@ import {
 } from '@xyflow/react'
 import { AvEnhanceV27Wizard, type AvEnhanceV27WizardMode } from './AvEnhanceV27Wizard'
 import type { OverlapFullEnvelope, OverlapFullIntent, OverlapFullRequest, OverlapProcessingRequest } from './chapter-overlap-contracts'
+import { sourceAdmittedCatalogAvailable, type SourceAdmittedCreateRequest, type SourceAdmittedReplaceRequest, type SourceAdmittedFullEnvelope, type SourceAdmittedFullIntent, type SourceAdmittedFullRequest, type SourceAdmittedProcessingRequest } from './source-admitted-contracts'
 import { sourceAlignedCatalogAvailable, type SourceAlignedFullEnvelope, type SourceAlignedFullIntent, type SourceAlignedFullRequest, type SourceAlignedProcessingRequest } from './source-aligned-contracts'
 import type {
   WorkflowEdge,
@@ -111,7 +112,9 @@ import { RetryImpactDialog } from './components/RetryImpactDialog'
 import './workspace-shell.css'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
 /** 仅用于复用 UI 请求互斥；expand_overlap 从不发送到旧 command wire。 */
-type WorkspaceOperation = StudioCommand | { readonly operation: 'expand_overlap'; readonly request: OverlapFullRequest | SourceAlignedFullRequest; readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope }
+type WorkspaceOperation = StudioCommand | { readonly operation: 'expand_overlap'; readonly request: OverlapFullRequest | SourceAlignedFullRequest | SourceAdmittedFullRequest; readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope }
+  | { readonly operation: 'create_source_admitted'; readonly request: SourceAdmittedCreateRequest }
+  | { readonly operation: 'replace_source_admitted'; readonly request: SourceAdmittedReplaceRequest }
 
 // 仅决定能否继续展示“模板已就绪”标签，不进入 Run 绑定、执行或存储版本。
 const graphPresentationComparison = (graph: GraphWire) => JSON.stringify({
@@ -594,7 +597,7 @@ export function StudioWorkspace({
     readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
     readonly precondition: AuthoringPrecondition | null
   } | null>(null)
-  const latestOverlapPreviewRef = useRef<{ readonly intentJson: string; readonly request: OverlapFullRequest | SourceAlignedFullRequest; readonly envelope: OverlapFullEnvelope | SourceAlignedFullEnvelope; readonly precondition: AuthoringPrecondition } | null>(null)
+  const latestOverlapPreviewRef = useRef<{ readonly intentJson: string; readonly request: OverlapFullRequest | SourceAlignedFullRequest | SourceAdmittedFullRequest; readonly envelope: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope; readonly precondition: AuthoringPrecondition } | null>(null)
   const templateConnectionEpochRef = useRef(0)
   useEffect(() => {
     // 断线与显式重连撤销旧会话的预览资格，迟到响应也不能再次提升为 mutation authority。
@@ -1928,7 +1931,7 @@ export function StudioWorkspace({
       let next: StatusEnvelope | null = null
       try {
         for (const command of commands) {
-          if (['open_project', 'create_project', 'create_av_enhance_v27'].includes(command.operation)) {
+          if (['open_project', 'create_project', 'create_av_enhance_v27', 'create_source_admitted'].includes(command.operation)) {
             if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置，再切换工程。')
             if (statusRef.current?.snapshot && !options.discardLocal) await flushAuthoring()
             if (selectionGuardRef.current.parameterDraftDirty) throw new Error('保存等待期间节点设置已变化；请先应用或放弃，再切换工程。')
@@ -1936,8 +1939,17 @@ export function StudioWorkspace({
           if (options.templateConnectionEpoch !== undefined && options.templateConnectionEpoch !== templateConnectionEpochRef.current) {
             throw new Error('连接在等待保存期间已变化；未发送后续向导命令，请重新检查工程。')
           }
-          if (command.operation === 'expand_overlap') {
-            if (command.request.contract_version === '0.3.3') {
+          if (command.operation === 'create_source_admitted') {
+            if (!effectiveGateway.createSourceAdmitted) throw new Error('当前服务没有单一源准入创建接口。')
+            next = await effectiveGateway.createSourceAdmitted(command.request)
+          } else if (command.operation === 'replace_source_admitted') {
+            if (!effectiveGateway.replaceSourceAdmitted) throw new Error('当前服务没有外部修复候选接口。')
+            next = await effectiveGateway.replaceSourceAdmitted(command.request)
+          } else if (command.operation === 'expand_overlap') {
+            if (command.request.contract_version === '0.3.5') {
+              if (!effectiveGateway.expandSourceAdmitted) throw new Error('当前服务没有单一源准入展开接口。')
+              next = await effectiveGateway.expandSourceAdmitted(command.request)
+            } else if (command.request.contract_version === '0.3.3') {
               if (!effectiveGateway.expandSourceAligned) throw new Error('当前服务不支持原片规划工作流展开。')
               next = await effectiveGateway.expandSourceAligned(command.request)
             } else {
@@ -1973,14 +1985,14 @@ export function StudioWorkspace({
               command.operation === 'open_project' ||
               command.operation === 'create_project' ||
               command.operation === 'save_project' ||
-              command.operation === 'create_av_enhance_v27' ||
+              command.operation === 'create_av_enhance_v27' || command.operation === 'create_source_admitted' || command.operation === 'replace_source_admitted' ||
               command.operation === 'expand_overlap' ||
               command.operation === 'expand_av_enhance_v27',
             macroLabel: command.operation === 'expand_overlap' ? '展开重叠补帧处理链' : command.operation === 'expand_av_enhance_v27' ? '展开处理链' : undefined,
             clearGraphSelection:
               command.operation === 'open_project' ||
               command.operation === 'create_project' ||
-              command.operation === 'create_av_enhance_v27' ||
+              command.operation === 'create_av_enhance_v27' || command.operation === 'create_source_admitted' || command.operation === 'replace_source_admitted' ||
               command.operation === 'expand_overlap' ||
               command.operation === 'expand_av_enhance_v27',
           })
@@ -1995,7 +2007,7 @@ export function StudioWorkspace({
           (last?.operation === 'open_project' ||
             last?.operation === 'create_project' ||
             last?.operation === 'save_project' ||
-            last?.operation === 'create_av_enhance_v27' ||
+            last?.operation === 'create_av_enhance_v27' || last?.operation === 'create_source_admitted' || last?.operation === 'replace_source_admitted' ||
             last?.operation === 'expand_overlap' ||
             last?.operation === 'expand_av_enhance_v27')
         ) {
@@ -2013,7 +2025,7 @@ export function StudioWorkspace({
         if (
           last?.operation === 'open_project' ||
           last?.operation === 'create_project' ||
-          last?.operation === 'create_av_enhance_v27' ||
+          last?.operation === 'create_av_enhance_v27' || last?.operation === 'create_source_admitted' || last?.operation === 'replace_source_admitted' ||
           last?.operation === 'expand_overlap' ||
           last?.operation === 'expand_av_enhance_v27'
         ) {
@@ -2172,7 +2184,53 @@ export function StudioWorkspace({
     return envelope
   }, [effectiveGateway, flushAuthoring, precondition])
 
-  const expandOverlap = useCallback(async (intent: OverlapFullIntent | SourceAlignedFullIntent): Promise<boolean> => {
+  const previewSourceAdmittedProcessing = useCallback(async (request: SourceAdmittedProcessingRequest) => {
+    if (!effectiveGateway.previewSourceAdmittedProcessing) throw new Error('当前服务没有单一源准入设置接口。')
+    return effectiveGateway.previewSourceAdmittedProcessing(request)
+  }, [effectiveGateway])
+
+  const previewSourceAdmitted = useCallback(async (intent: SourceAdmittedFullIntent) => {
+    latestOverlapPreviewRef.current = null
+    if (!effectiveGateway.previewSourceAdmitted) throw new Error('当前服务没有单一源准入预览接口。')
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置。')
+    const connectionEpoch = templateConnectionEpochRef.current
+    const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间连接或设置发生变化，请重新检查。')
+    const request: SourceAdmittedFullRequest = { ...intent, ...binding }
+    const envelope = await effectiveGateway.previewSourceAdmitted(request)
+    if (connectionEpoch !== templateConnectionEpochRef.current || JSON.stringify(binding) !== JSON.stringify(precondition())) throw new Error('工程在预览期间发生变化，请重新预览。')
+    if (envelope.project_session_id !== binding.project_session_id || envelope.storage_revision !== binding.expected_storage_revision || envelope.preparation_run_id !== intent.preparation_run_id) throw new Error('预览与当前工程或分析记录不一致。')
+    latestOverlapPreviewRef.current = { intentJson: JSON.stringify(intent), request, envelope, precondition: binding }
+    return envelope
+  }, [effectiveGateway, flushAuthoring, precondition])
+
+  const createSourceAdmitted = useCallback(async (request: SourceAdmittedCreateRequest): Promise<boolean> => {
+    const next = await executeCommands([{ operation: 'create_source_admitted', request }], { templateConnectionEpoch: templateConnectionEpochRef.current })
+    if (next) { setTemplateProfile(null); setShowRunSnapshot(false) }
+    return next !== null
+  }, [executeCommands])
+
+  const replaceSourceAdmitted = useCallback(async (sourcePath: string): Promise<boolean> => {
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置。')
+    const connectionEpoch = templateConnectionEpochRef.current
+    const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('工程或连接已变化，请重新选择候选。')
+    const next = await executeCommands([{ operation: 'replace_source_admitted', request: { contract_version: '0.3.5', ...binding, source_path: sourcePath, reference_change_confirmed: true } }], { templateConnectionEpoch: connectionEpoch })
+    latestOverlapPreviewRef.current = null
+    return next !== null
+  }, [executeCommands, flushAuthoring])
+
+  const cancelSourceAdmitted = useCallback(async (runId: string): Promise<void> => {
+    if (!effectiveGateway.cancelSourceAdmitted) throw new Error('当前服务不支持取消源分析。')
+    const session = statusRef.current?.project_session_id
+    if (!session || detailRef.current?.run.run_id !== runId) throw new Error('请先选择当前分析任务。')
+    const generation = generationRef.current
+    const next = await effectiveGateway.cancelSourceAdmitted({ contract_version: '0.3.5', project_session_id: session, run_id: runId })
+    if (generation !== generationRef.current || session !== statusRef.current?.project_session_id) return
+    acceptStatus(next, { replaceProject: false })
+  }, [acceptStatus, effectiveGateway])
+
+  const expandOverlap = useCallback(async (intent: OverlapFullIntent | SourceAlignedFullIntent | SourceAdmittedFullIntent): Promise<boolean> => {
     const current = latestOverlapPreviewRef.current
     if (!current || current.intentJson !== JSON.stringify(intent) || parameterDraftDirty || dirty || JSON.stringify(current.precondition) !== JSON.stringify(precondition())) {
       latestOverlapPreviewRef.current = null
@@ -2316,7 +2374,17 @@ export function StudioWorkspace({
     const binding = await flushAuthoring()
     if (connectionEpoch !== templateConnectionEpochRef.current) throw new Error('连接在等待保存期间已变化；未启动素材分析，请检查工程后重试。')
     if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置，再运行。')
-    const next = await executeCommands([{ operation: 'run_all', ...binding }], {
+    const current = statusRef.current
+    const active = current?.run_summaries.find((run) => run.run_id === current.active_run_id)
+    const source = current?.snapshot?.project.graph.nodes.find((node) =>
+      node.type_id === 'zniku.avenhance.v27.source_program' && node.definition_version === '0.3.5')
+    // 分析失败/取消后显式重新分析，从 Source 创建新 attempt；不续接已中断的扫描。
+    const command: StudioCommand = source && active && active.state_counts.failed > 0 &&
+      active.state_counts.running === 0 && active.state_counts.waiting_external === 0 &&
+      current?.snapshot?.project.graph.nodes.length === 2
+      ? { operation: 'rerun_from_here', run_id: active.run_id, node_id: source.node_id, ...binding }
+      : { operation: 'run_all', ...binding }
+    const next = await executeCommands([command], {
       preferCreatedRun: true, templateConnectionEpoch: connectionEpoch,
     })
     // 只绑定本次 command response 明确返回的 active_run_id；不得从历史、时间或节点形状猜测。
@@ -2536,6 +2604,7 @@ export function StudioWorkspace({
     presentationEnvelope?.catalog ?? null,
   )
   const sourceAlignedSupported = presentationError === null && sourceAlignedCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
+  const sourceAdmittedSupported = presentationError === null && sourceAdmittedCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
   const singleSelectedNodeId = selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null
   const rerunId = currentRun?.run_id ?? null
   const rerunNodeIncluded = singleSelectedNodeId
@@ -2899,6 +2968,12 @@ export function StudioWorkspace({
         mode={templateMode}
         onClose={() => setTemplateOpen(false)}
         onCreate={createAvEnhanceV27}
+        onCreateSourceAdmitted={sourceAdmittedSupported && effectiveGateway.createSourceAdmitted ? createSourceAdmitted : undefined}
+        onReplaceSourceAdmitted={sourceAdmittedSupported && effectiveGateway.replaceSourceAdmitted ? replaceSourceAdmitted : undefined}
+        onCancelSourceAdmitted={sourceAdmittedSupported && effectiveGateway.cancelSourceAdmitted ? cancelSourceAdmitted : undefined}
+        onPreviewSourceAdmittedProcessing={sourceAdmittedSupported && effectiveGateway.previewSourceAdmittedProcessing ? previewSourceAdmittedProcessing : undefined}
+        onPreviewSourceAdmitted={sourceAdmittedSupported && effectiveGateway.previewSourceAdmitted ? previewSourceAdmitted : undefined}
+        onExpandSourceAdmitted={sourceAdmittedSupported && effectiveGateway.expandSourceAdmitted ? expandOverlap : undefined}
         onExpand={expandAvEnhanceV27}
         onLocateNode={locateTemplateNode}
         onOpenExternalTasks={openTemplateExternalTasks}
@@ -2929,6 +3004,7 @@ export function StudioWorkspace({
         pickerAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file') && hostCapabilityAvailable('select_directory')}
         projectIdFactory={projectIdFactory}
         runSummaries={allSummaries}
+        analysisProgress={detail?.progress_samples[0] ? { run_id: detail.run.run_id, fraction: detail.progress_samples[0].fraction } : null}
         analysisProblems={currentRun ? { run_id: currentRun.run_id,
           problems: [...runLatestAttempts.values()].flatMap((item) => item.state === 'failed' && item.error ? [{ label: nodeLabel(item.node_id), error: item.error }] : []),
         } : null}

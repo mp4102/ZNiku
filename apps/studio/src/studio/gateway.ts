@@ -45,7 +45,21 @@ import {
   type SourceAlignedFullEnvelope, type SourceAlignedFullRequest, type SourceAlignedProcessingEnvelope, type SourceAlignedProcessingRequest,
 } from './source-aligned-contracts'
 
+import {
+  parseSourceAdmittedCreateRequest, parseSourceAdmittedReplaceRequest, parseSourceAdmittedCancelRequest,
+  parseSourceAdmittedProcessingRequest, parseSourceAdmittedProcessingEnvelope, parseSourceAdmittedFullRequest,
+  parseSourceAdmittedFullEnvelope, parseSourceAdmittedFailure,
+  type SourceAdmittedCreateRequest, type SourceAdmittedReplaceRequest, type SourceAdmittedCancelRequest,
+  type SourceAdmittedProcessingRequest, type SourceAdmittedProcessingEnvelope, type SourceAdmittedFullRequest, type SourceAdmittedFullEnvelope,
+} from './source-admitted-contracts'
+
 export interface StudioGateway {
+  createSourceAdmitted?(request: SourceAdmittedCreateRequest): Promise<StatusEnvelope>
+  replaceSourceAdmitted?(request: SourceAdmittedReplaceRequest): Promise<StatusEnvelope>
+  cancelSourceAdmitted?(request: SourceAdmittedCancelRequest): Promise<StatusEnvelope>
+  previewSourceAdmittedProcessing?(request: SourceAdmittedProcessingRequest): Promise<SourceAdmittedProcessingEnvelope>
+  previewSourceAdmitted?(request: SourceAdmittedFullRequest): Promise<SourceAdmittedFullEnvelope>
+  expandSourceAdmitted?(request: SourceAdmittedFullRequest): Promise<StatusEnvelope>
   previewSourceAlignedProcessing?(request: SourceAlignedProcessingRequest): Promise<SourceAlignedProcessingEnvelope>
   previewSourceAligned?(request: SourceAlignedFullRequest): Promise<SourceAlignedFullEnvelope>
   expandSourceAligned?(request: SourceAlignedFullRequest): Promise<StatusEnvelope>
@@ -156,6 +170,55 @@ export class FetchStudioGateway implements StudioGateway {
     private readonly baseUrl =
       window.__ZNIKU_STUDIO_API_BASE__ ?? 'http://127.0.0.1:18765',
   ) {}
+
+  async createSourceAdmitted(request: SourceAdmittedCreateRequest): Promise<StatusEnvelope> {
+    const payload = parseSourceAdmittedCreateRequest(request)
+    const status = await this.admittedRequest('create', payload, parseStatusEnvelope)
+    if (status.snapshot?.project.project_id !== request.request.project_id ||
+        status.snapshot.project.name !== request.request.project_name || status.project_session_id === null) {
+      throw new StudioContractError('新素材工程响应与请求身份不一致')
+    }
+    return status
+  }
+
+  async replaceSourceAdmitted(request: SourceAdmittedReplaceRequest): Promise<StatusEnvelope> {
+    const status = await this.admittedRequest('replace-source', parseSourceAdmittedReplaceRequest(request), parseStatusEnvelope)
+    if (status.project_session_id !== request.project_session_id || status.storage_revision !== request.expected_storage_revision + 1) throw new StudioContractError('候选引用响应与当前工程或存储版本不一致')
+    return status
+  }
+
+  async cancelSourceAdmitted(request: SourceAdmittedCancelRequest): Promise<StatusEnvelope> {
+    const status = await this.admittedRequest('cancel-analysis', parseSourceAdmittedCancelRequest(request), parseStatusEnvelope)
+    if (status.project_session_id !== request.project_session_id) throw new StudioContractError('取消响应不属于当前工程')
+    return status
+  }
+
+  async previewSourceAdmittedProcessing(request: SourceAdmittedProcessingRequest): Promise<SourceAdmittedProcessingEnvelope> {
+    const payload = parseSourceAdmittedProcessingRequest(request)
+    const preview = await this.admittedRequest('processing-preview', payload, parseSourceAdmittedProcessingEnvelope)
+    if (!sourceAlignedProcessingMatches(payload.processing, preview.processing)) throw new StudioContractError('源准入设置回显与当前请求不一致')
+    return preview
+  }
+
+  async previewSourceAdmitted(request: SourceAdmittedFullRequest): Promise<SourceAdmittedFullEnvelope> {
+    const payload = parseSourceAdmittedFullRequest(request)
+    const preview = await this.admittedRequest('full-preview', payload, parseSourceAdmittedFullEnvelope)
+    if (preview.project_session_id !== request.project_session_id || preview.storage_revision !== request.expected_storage_revision ||
+        preview.preparation_run_id !== request.preparation_run_id || !sourceAlignedProcessingMatches(payload.processing, preview.processing)) throw new StudioContractError('源准入预览与当前工程、分析记录或设置不一致')
+    return preview
+  }
+
+  async expandSourceAdmitted(request: SourceAdmittedFullRequest): Promise<StatusEnvelope> {
+    const status = await this.admittedRequest('expand', parseSourceAdmittedFullRequest(request), parseStatusEnvelope)
+    if (status.project_session_id !== request.project_session_id || status.storage_revision !== request.expected_storage_revision + 1) throw new StudioContractError('源准入展开响应与当前工程或存储版本不一致')
+    return status
+  }
+
+  private admittedRequest<T>(action: string, payload: object, parser: Parser<T>): Promise<T> {
+    return this.request(`/api/studio/templates/source-admitted-overlap/${action}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parser, 'source-admitted')
+  }
 
   async previewSourceAlignedProcessing(request: SourceAlignedProcessingRequest): Promise<SourceAlignedProcessingEnvelope> {
     const payload = parseSourceAlignedProcessingRequest(request)
@@ -345,7 +408,7 @@ export class FetchStudioGateway implements StudioGateway {
     )
   }
 
-  private async request<T>(path: string, init: RequestInit, parser: Parser<T>, overlap: boolean | 'source-aligned' = false): Promise<T> {
+  private async request<T>(path: string, init: RequestInit, parser: Parser<T>, overlap: boolean | 'source-aligned' | 'source-admitted' = false): Promise<T> {
     let response: Response
     try {
       response = await fetch(`${this.baseUrl}${path}`, init)
@@ -365,7 +428,7 @@ export class FetchStudioGateway implements StudioGateway {
     }
 
     if (!response.ok) {
-      const error = overlap === 'source-aligned' ? parseSourceAlignedFailure(value).error : overlap ? parseOverlapFailure(value).error : parseErrorEnvelope(value)
+      const error = overlap === 'source-admitted' ? parseSourceAdmittedFailure(value).error : overlap === 'source-aligned' ? parseSourceAlignedFailure(value).error : overlap ? parseOverlapFailure(value).error : parseErrorEnvelope(value)
       throw new StudioGatewayError(`Project Service command 失败：${error.code}: ${error.message}`, {
         code: error.code,
         serviceMessage: error.message,

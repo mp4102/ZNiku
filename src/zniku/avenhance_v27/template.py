@@ -811,11 +811,26 @@ def canonical_publication_target(
 ) -> Path:
     """只读生成 canonical 文件名；目录布局不改变媒体命名，既有目标仍须显式覆盖。"""
 
+    return _publication_target(
+        request, mr_mode=mr_mode, final_frame_rate=final_frame_rate, height=height
+    )
+
+
+def _publication_target(
+    request: PublicationRequest,
+    *,
+    mr_mode: MrMode,
+    final_frame_rate: Fraction,
+    height: int,
+    rate_label_override: str | None = None,
+) -> Path:
+    """共享出版路径安全检查；旧入口仍只采用旧 rate allowlist，新节点独立传入可读标签。"""
+
     parent = publication_directory(request)
     title = unicodedata.normalize("NFC", request.title)
     if isinstance(height, bool) or not isinstance(height, int) or height <= 0:
         raise Av27TemplateError("E_AV27_NAMING_HEIGHT", "output height 必须是正整数")
-    rate_label = _FINAL_RATE_LABELS.get(final_frame_rate)
+    rate_label = rate_label_override or _FINAL_RATE_LABELS.get(final_frame_rate)
     if rate_label is None:
         raise Av27TemplateError("E_AV27_NAMING_RATE", "最终 FPS 没有冻结的 rate label")
 

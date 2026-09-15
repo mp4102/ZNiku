@@ -57,6 +57,7 @@ def test_graph_core_is_the_upper_authority_and_designs_are_subordinate() -> None
         Path("studio-schema-corpus.json"),
         Path("studio-overlap-schema-corpus.json"),
         Path("studio-source-aligned-schema-corpus.json"),
+        Path("studio-source-admitted-schema-corpus.json"),
         Path("studio-run-observability.md"),
         Path("studio-ux-baseline.md"),
     }
@@ -200,7 +201,19 @@ def test_legacy_python_implementation_is_not_shipped_as_product_code() -> None:
         "presentation",
         "runtime",
         "source_aligned",
+        "source_admission",
     }
+
+
+def test_v035_is_a_local_source_rule_not_a_second_core() -> None:
+    """单一准入只增加媒体插件，不重新引入修复工作流或 Core authority。"""
+    memo = (ROOT / "docs/v0.3.5-execution-memo.md").read_text("utf-8")
+    assert "graph-core-baseline.md" in memo
+    assert "不整笔 cherry-pick v0.3.4" in memo
+    assert "旧 exact definitions" in memo
+    assert "不自动升级" in memo
+    assert not (ROOT / "src/zniku/source_repair").exists()
+    assert not (ROOT / "src/zniku/source_preparation").exists()
 
 
 def test_source_aligned_is_an_independent_subordinate_node_contract() -> None:

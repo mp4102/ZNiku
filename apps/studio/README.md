@@ -1,4 +1,4 @@
-# ZNIKU Studio（v0.3.3 开发线）
+# ZNIKU Studio（v0.3.5 开发线）
 
 Studio 以一张自由媒体节点图同时承担编辑和 Runtime 状态展示。React 应用只维护未保存的画布 Draft；
 `.zniku` Project、Graph 校验、Run、Artifact、日志及 external handoff 的正式语义全部来自 Python Project
@@ -9,8 +9,11 @@ Graph 与 Runtime 的唯一上位架构权威是
 易用性从属于 [`studio-ux-baseline.md`](../../docs/architecture/studio-ux-baseline.md)。本应用不得恢复
 0.1.0 Formal Designer 或 Real Acceptance 的第二套语义。
 
-当前 package/product 版本为 `0.3.3`；已有 wire/Presentation/StudioState 仍为 `0.3.0`，SQLite schema 4
-不变。新增原片规划使用独立 `0.3.3` wire 和 exact NodeDefinition，旧定义的版本与含义保持不变。
+当前 package/product 版本为 `0.3.5`；已有 wire/Presentation/StudioState 仍为 `0.3.0`，SQLite schema 4
+不变。单一源准入使用独立 `0.3.5` wire 和 exact NodeDefinition，旧定义的版本与含义保持不变。
+新建单视频默认标准视频流程；完整 packet 分析采用 AVEnhanceFlow 2.7 实际规则，可显示进度与取消。
+不适用时显式选用外部修复候选，以其自身 N/FPS/音轨重新分析，不自动改片或冒称内容相等。
+参见[执行备忘录](../../docs/v0.3.5-execution-memo.md)；旧流程位于“工作流版本与旧工程兼容”折叠区。
 v0.3.0 Phase 0–3 已实现独立 Presentation、Schema 参数表单、
 创作者建项、HostBridge、Undo/Redo、兼容连接、纯展示分组与 CAS 自动保存。Phase 4 已实现创作者运行中心、
 外部处理助手与只读重跑影响预览，完整门禁与合成浏览器闭环已通过，见 [Phase 4 验收记录](../../docs/v0.3.0-phase4-acceptance.md)。
@@ -26,9 +29,9 @@ FI软件v1.0、模型Aion已通过首轮1080p三章及操作者对照；4K本轮
 候选标记不变，详情见[Phase 5统一真实验收](../../docs/v0.3.2-phase5-acceptance.md)。
 旧候选保留在各自独立工作树与本机状态通道，不以新版覆盖操作者正在验收的包或数据。
 
-本工作树按 [v0.3.3 执行计划](../../docs/v0.3.3-execution-plan.md)实施原片规划与可选外部前处理：
+保留的 [v0.3.3 历史流程](../../docs/v0.3.3-execution-plan.md)提供原片规划与可选外部前处理：
 
-- 新建单一完整视频默认 `zniku.source-aligned-overlap@0.3.3`；只有真实服务目录提供全部新 exact 定义时
+- 该历史线新建单一完整视频默认 `zniku.source-aligned-overlap@0.3.3`；只有真实服务目录提供全部 exact 定义时
   才启用。旧后端只保留旧方案，不因新版前端存在方法就伪称支持，也不在失败后隐式降级。
 - 第三页为“处理与成片设置”：片名/年份，0 可选外部马赛克修复（默认关闭），1 分章分叶，2 增强，
   3 重叠 FI，4 编码。必要声明常驻；外部修复可声明 MP4/MOV/MKV，默认 MP4，不靠更名伪装容器。
@@ -38,7 +41,7 @@ FI软件v1.0、模型Aion已通过首轮1080p三章及操作者对照；4K本轮
   不回写已有 Run snapshot。已经展开或自由编辑的图必须在节点图继续配置，向导不会整图覆盖。
 - 旧 `0.3.2` overlap 与 AVEnhanceFlow v2.7.0 保留明确选项；旧工程重开默认沿用旧方案，旧 MR-on
   显示真实配置与“打开外部任务”入口，不显示假关闭、不自动转换目标或迁移旧图。
-- 当前不支持含音频 priming 的原片直接封装时，预览以 `E_SOURCE_ALIGNED_AUDIO_PRIMING_UNSUPPORTED`
+- 旧 `0.3.3` 不支持含音频 priming 的原片直接封装时，预览以 `E_SOURCE_ALIGNED_AUDIO_PRIMING_UNSUPPORTED`
   提前停止；不会自动转码、裁音或猜测补偿。合成门禁不代表真实外部 AI 画面与音画同步验收完成。
 
 当前 0.2.0 Phase 1–5 与 v0.2.1 Phase 1–5 已实现产品面：

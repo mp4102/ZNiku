@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from pathlib import Path, PureWindowsPath
 
@@ -20,6 +21,7 @@ from zniku.source_aligned.node_contracts import (
     ChapterParameters,
     EnhancementParameters,
     ExternalParameters,
+    NodeContract,
     SplitParameters,
     preflight,
 )
@@ -28,13 +30,17 @@ from .models import ExternalHandoffContractProjection, HandoffContractField
 
 
 def source_aligned_output_paths(
-    node: NodeInstance, definition: NodeDefinition, *, media_basename: str
+    node: NodeInstance,
+    definition: NodeDefinition,
+    *,
+    media_basename: str,
+    role_reader: Callable[[NodeDefinition], str | None] = definition_role,
 ) -> tuple[OutputPathSpec, ...]:
     """名称不影响验收；不完整自定义草稿回退，不将命名变成运行门禁。"""
     if (node.type_id, node.definition_version) != (definition.type_id, definition.version):
         return ()
-    role = definition_role(definition)
-    if role is None or role in {"program", "final"}:
+    role = role_reader(definition)
+    if role is None or role in {"program", "final", "source", "admission"}:
         return ()
     try:
         model = ExternalParameters if role == "external" else PARAMETER_MODELS[role]
@@ -97,7 +103,14 @@ def _direct(artifact: Artifact) -> RunnerInput:
 
 
 def project_source_aligned_handoffs(
-    run: Run, artifacts: tuple[Artifact, ...]
+    run: Run,
+    artifacts: tuple[Artifact, ...],
+    *,
+    role_reader: Callable[[NodeDefinition], str | None] = definition_role,
+    contract_reader: Callable[
+        [str, tuple[RunnerInput, ...], Mapping[str, object]], NodeContract
+    ] = preflight,
+    admitted_source: bool = False,
 ) -> tuple[ExternalHandoffContractProjection, ...]:
     """只读当前最新等待交接；精确数字缺失时不猜测，也不读取媒体或准入文件。"""
     nodes = {node.node_id: node for node in run.graph_snapshot.nodes}
@@ -118,7 +131,7 @@ def project_source_aligned_handoffs(
         ):
             continue
         definition = definitions.get((node.type_id, node.definition_version))
-        role = None if definition is None else definition_role(definition)
+        role = None if definition is None else role_reader(definition)
         if role not in {"external", "enhancement", "fi"}:
             continue
         title = {
@@ -162,7 +175,11 @@ def project_source_aligned_handoffs(
                         ("音频来源", "最终使用原片音频；外部文件的音频不会替代原音轨"),
                         (
                             "检查耗时",
-                            "精确时间轴检查会顺序读取原片与结果；大文件可能较慢，当前检查不能中途取消。",
+                            "按 AV2.7 准入顺序检查外部结果；大文件可能较慢，"
+                            "当前提交检查不能中途取消。"
+                            if admitted_source
+                            else "精确时间轴检查会顺序读取原片与结果；大文件可能较慢，"
+                            "当前检查不能中途取消。",
                         ),
                     ]
                 )
@@ -177,7 +194,7 @@ def project_source_aligned_handoffs(
                         ("输出尺寸", f"{media.geometry[0]} x {media.geometry[1]}"),
                     ]
             elif video is not None:
-                contract = preflight(role, (_direct(video),), node.parameters)
+                contract = contract_reader(role, (_direct(video),), node.parameters)
                 expected = contract.outputs[0].metadata
                 facts = [
                     ("输入帧数", str(contract.input_metadata[0].frame_count)),

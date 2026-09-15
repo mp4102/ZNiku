@@ -2,9 +2,11 @@
 import { useState } from 'react'
 import type { OverlapFullEnvelope } from './chapter-overlap-contracts'
 import type { SourceAlignedFullEnvelope } from './source-aligned-contracts'
+import type { SourceAdmittedFullEnvelope } from './source-admitted-contracts'
 
-export function ChapterOverlapPreview({ preview }: { readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope }) {
-  const sourceAligned = preview.contract_version === '0.3.3'
+export function ChapterOverlapPreview({ preview }: { readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope }) {
+  const sourceAdmitted = preview.contract_version === '0.3.5'
+  const sourceAligned = preview.contract_version === '0.3.3' || sourceAdmitted
   const mr = sourceAligned ? preview.processing.mr : undefined
   const [page, setPage] = useState(0)
   const pageCount = Math.max(1, Math.ceil(preview.plan.chapters.length / 20))
@@ -12,7 +14,8 @@ export function ChapterOverlapPreview({ preview }: { readonly preview: OverlapFu
   const contexts = new Map(preview.contexts.chapters.map((item) => [item.chapter_id, item]))
   return <section className="creator-step creator-confirm" aria-label="确认重叠补帧工作流">
     <header><span>05</span><div><h3>确认重叠补帧工作流</h3><p>以下边界由 Python 根据这次素材分析计算；确认只创建普通节点图，不启动外部软件。</p></div></header>
-    <div className="creator-profile-result" role="status"><strong>{sourceAligned ? 'ZNIKU 原片规划与重叠 FI · 0.3.3 · 待真实验收' : 'ZNIKU 重叠 FI 候选 · 待真实验收'}</strong><span>{preview.node_count} 个节点 · {preview.edge_count} 条连线 · {preview.plan.chapter_count} 章 · {preview.plan.leaf_count} 个处理段</span></div>
+    <div className="creator-profile-result" role="status"><strong>{sourceAdmitted ? 'ZNIKU 标准视频流程 · 0.3.5 · 待真实验收' : sourceAligned ? 'ZNIKU 原片规划与重叠 FI · 0.3.3 · 待真实验收' : 'ZNIKU 重叠 FI 候选 · 待真实验收'}</strong><span>{preview.node_count} 个节点 · {preview.edge_count} 条连线 · {preview.plan.chapter_count} 章 · {preview.plan.leaf_count} 个处理段</span></div>
+    {sourceAdmitted && preview.warnings.length > 0 && <section aria-label="素材检查提示"><h4>检查提示（不阻止继续）</h4><ul>{preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></section>}
     <p>Aion · 软件 v1.0。当前是可执行候选，尚未完成真实模型边界验收；数学帧数正确不代表 AI 画质或全片像素一致。</p>
     <section className="creator-media-summary" aria-label="重叠流程素材摘要"><h4>素材与处理</h4><dl>
       <div><dt>源帧数 / 帧率</dt><dd>{preview.plan.source.frame_count} 帧 · {preview.plan.source.frame_rate} fps</dd></div>

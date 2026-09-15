@@ -2011,10 +2011,18 @@ class ProjectServiceApplication:
         ) -> tuple[OutputPathSpec, ...]:
             if storage is None or storage.media_basename is None:
                 return ()
+            from zniku.source_admission.definitions import definition_role as admitted_role
+
             from .source_aligned_presentation import source_aligned_output_paths
 
             return (
                 source_aligned_output_paths(node, definition, media_basename=storage.media_basename)
+                or source_aligned_output_paths(
+                    node,
+                    definition,
+                    media_basename=storage.media_basename,
+                    role_reader=admitted_role,
+                )
                 or overlap_output_paths(node, definition, media_basename=storage.media_basename)
                 or descriptive_output_paths(
                     node,

@@ -42,6 +42,7 @@ from zniku.presentation import (
 from zniku.project import Project, ProjectStore
 from zniku.project_service import ProjectServiceApplication, ProjectServiceError
 from zniku.runtime import capture_node_signature
+from zniku.source_admission import definitions as source_admitted
 from zniku.source_aligned import definitions as source_aligned
 
 
@@ -153,12 +154,13 @@ def test_builtin_catalog_covers_all_generic_av27_and_overlap_definitions() -> No
         source_aligned.external_definition("mp4"),
         source_aligned.external_definition("mov"),
         source_aligned.external_definition("mkv"),
+        *source_admitted.built_in_definitions(),
     )
     catalog = build_builtin_presentation_catalog()
 
     assert catalog.contract_version == "0.3.0"
     assert catalog.locale == "zh-CN"
-    assert len(catalog.nodes) == 42
+    assert len(catalog.nodes) == 55
     assert tuple((node.type_id, node.definition_version) for node in catalog.nodes) == tuple(
         (definition.type_id, definition.version) for definition in definitions
     )

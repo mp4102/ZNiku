@@ -24,6 +24,9 @@ from .handoff_inbox import HandoffInboxManager
 from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
 from .preview import PreviewCache
 from .service import ProjectServiceApplication, ProjectServiceError
+from .source_admitted import SourceAdmittedError
+from .source_admitted_application import ROUTES as SOURCE_ADMITTED_ROUTES
+from .source_admitted_application import dispatch as source_admitted_dispatch
 from .source_aligned import (
     SOURCE_ALIGNED_EXPAND_ROUTE,
     SOURCE_ALIGNED_FULL_PREVIEW_ROUTE,
@@ -306,6 +309,7 @@ def make_project_service_handler(
                     SOURCE_ALIGNED_PROCESSING_ROUTE,
                     SOURCE_ALIGNED_FULL_PREVIEW_ROUTE,
                     SOURCE_ALIGNED_EXPAND_ROUTE,
+                    *SOURCE_ADMITTED_ROUTES,
                     "/api/studio/rerun-preview",
                 }
             ):
@@ -351,7 +355,9 @@ def make_project_service_handler(
                         http_status=422,
                     )
                 envelope: BaseModel
-                if parsed.path == "/api/studio/templates/av-enhance-v27/preview":
+                if parsed.path in SOURCE_ADMITTED_ROUTES:
+                    envelope = source_admitted_dispatch(application, parsed.path, payload)
+                elif parsed.path == "/api/studio/templates/av-enhance-v27/preview":
                     envelope = application.preview_av_enhance_v27(payload)
                 elif parsed.path == "/api/studio/templates/av-enhance-v27/publication-preview":
                     envelope = application.preview_av27_publication(payload)
@@ -380,7 +386,7 @@ def make_project_service_handler(
                     envelope = application.preview_rerun(payload)
                 else:
                     envelope = application.command(payload)
-            except (ChapterOverlapPreviewError, SourceAlignedError) as error:
+            except (ChapterOverlapPreviewError, SourceAlignedError, SourceAdmittedError) as error:
                 self._json(HTTPStatus(error.http_status), error.envelope.model_dump(mode="json"))
                 return
             except _JsonPayloadError as error:

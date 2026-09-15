@@ -7,6 +7,8 @@ import type { ConsoleMessage, Page, Request, Response, TestInfo } from '@playwri
 
 export interface SyntheticFixture {
   readonly source_aligned_mr?: string
+  readonly repair_candidate?: string
+  readonly original_source?: string
   readonly wizard_project: string
   readonly output_root: string
   readonly output_collision: string
@@ -74,8 +76,8 @@ export class SyntheticFixtureHost {
   origin = ''
   fixture!: SyntheticFixture
 
-  async start(scriptPath = 'tools/studio_production_fixture.py'): Promise<void> {
-    this.child = spawn('uv', ['run', '--locked', '--extra', 'dev', 'python', scriptPath], {
+  async start(scriptPath = 'tools/studio_production_fixture.py', fixtureArgs: ReadonlyArray<string> = []): Promise<void> {
+    this.child = spawn('uv', ['run', '--locked', '--extra', 'dev', 'python', scriptPath, ...fixtureArgs], {
       cwd: resolve('../..'), env: { ...process.env, PYTHONUTF8: '1' }, shell: false,
       windowsHide: true, detached: process.platform !== 'win32',
     })

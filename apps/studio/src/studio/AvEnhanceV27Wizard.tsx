@@ -14,6 +14,7 @@ import { ChapterOverlapPreview } from './ChapterOverlapPreview'
 import { ChapterOverlapDraftError, chapterSettingsIntent, initialChapterOverlapSettings, type ChapterOverlapFieldIssue } from './chapter-overlap-form'
 import { OverlapContractError, type OverlapFullEnvelope, type OverlapFullIntent, type OverlapProcessing, type OverlapProcessingEnvelope, type OverlapProcessingRequest } from './chapter-overlap-contracts'
 import type { SourceAlignedFullEnvelope, SourceAlignedFullIntent, SourceAlignedProcessing, SourceAlignedProcessingEnvelope, SourceAlignedProcessingRequest } from './source-aligned-contracts'
+import type { SourceAdmittedCreateRequest, SourceAdmittedFullEnvelope, SourceAdmittedFullIntent, SourceAdmittedProcessingEnvelope, SourceAdmittedProcessingRequest } from './source-admitted-contracts'
 import { formatHostBridgeError } from './host-error-presentation'
 import { failurePresentation } from './run-presentation'
 import type {
@@ -33,7 +34,7 @@ import type {
 
 type SelectorMode = AvEnhanceV27ChapterSelectorWire['mode']
 type WizardStep = 1 | 2 | 3 | 4 | 5
-type WorkflowProfile = 'av27' | 'overlap' | 'source-aligned'
+type WorkflowProfile = 'av27' | 'overlap' | 'source-aligned' | 'source-admitted'
 type SettingsField = '片名' | '年份' | 'Chapter selector mode' | 'Exact chapter frames' | 'Exact chapter times'
   | 'Leaf duration minutes' | 'Enhancement model name' | 'Enhancement actual scale factor'
   | 'Enhancement model version' | 'FI model name' | 'FI model version' | 'Program encoder' | 'Publication output root' | '更改成片父目录'
@@ -61,6 +62,13 @@ export interface AvEnhanceV27WizardProps {
   readonly runSummaries: ReadonlyArray<RunSummaryWire>
   /** 既有 Run detail 的只读投影，只显示与当前分析身份精确匹配的最新失败。 */
   readonly analysisProblems?: { readonly run_id: string; readonly problems: ReadonlyArray<{ readonly label: string; readonly error: FailureWire }> } | null
+  readonly analysisProgress?: { readonly run_id: string; readonly fraction: number } | null
+  readonly onCreateSourceAdmitted?: (request: SourceAdmittedCreateRequest) => Promise<boolean>
+  readonly onReplaceSourceAdmitted?: (path: string) => Promise<boolean>
+  readonly onCancelSourceAdmitted?: (runId: string) => Promise<void>
+  readonly onPreviewSourceAdmittedProcessing?: (request: SourceAdmittedProcessingRequest) => Promise<SourceAdmittedProcessingEnvelope>
+  readonly onPreviewSourceAdmitted?: (request: SourceAdmittedFullIntent) => Promise<SourceAdmittedFullEnvelope>
+  readonly onExpandSourceAdmitted?: (request: SourceAdmittedFullIntent) => Promise<boolean>
   readonly projectIdFactory?: () => string
   readonly pickerAvailable?: boolean
   readonly onClose: () => void
@@ -174,6 +182,13 @@ export function AvEnhanceV27Wizard({
   currentProjectName,
   runSummaries,
   analysisProblems = null,
+  analysisProgress = null,
+  onCreateSourceAdmitted,
+  onReplaceSourceAdmitted,
+  onCancelSourceAdmitted,
+  onPreviewSourceAdmittedProcessing,
+  onPreviewSourceAdmitted,
+  onExpandSourceAdmitted,
   projectIdFactory = defaultProjectId,
   pickerAvailable = false,
   onClose,
@@ -207,7 +222,7 @@ export function AvEnhanceV27Wizard({
   const chapterNameRefs = useRef<Array<HTMLInputElement | null>>([])
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const previewRequestRef = useRef<AvEnhanceV27TemplatePreviewRequestWire | null>(null)
-  const overlapRequestRef = useRef<OverlapFullIntent | SourceAlignedFullIntent | null>(null)
+  const overlapRequestRef = useRef<OverlapFullIntent | SourceAlignedFullIntent | SourceAdmittedFullIntent | null>(null)
   const responseEpochRef = useRef(0)
   const pickerFlightRef = useRef(0)
   const expansionFlightRef = useRef<{ readonly runId: string; readonly token: symbol } | null>(null)
@@ -232,7 +247,9 @@ export function AvEnhanceV27Wizard({
   const [step, setStep] = useState<WizardStep>(1)
   const [dataParent, setDataParent] = useState<string | null>(null)
   const [preview, setPreview] = useState<AvEnhanceV27TemplatePreviewEnvelope | null>(null)
-  const [overlapPreview, setOverlapPreview] = useState<OverlapFullEnvelope | SourceAlignedFullEnvelope | null>(null)
+  const [overlapPreview, setOverlapPreview] = useState<OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope | null>(null)
+  const [repairCandidate, setRepairCandidate] = useState<{ readonly path: string; readonly epoch: number } | null>(null)
+  const [cancellingAnalysis, setCancellingAnalysis] = useState(false)
   const [workflowProfile, setWorkflowProfile] = useState<WorkflowProfile>('source-aligned')
   const [overlapSettings, setOverlapSettings] = useState(initialChapterOverlapSettings)
   const [overlapIssue, setOverlapIssue] = useState<ChapterOverlapFieldIssue | null>(null)
@@ -294,10 +311,13 @@ export function AvEnhanceV27Wizard({
   const currentSourceMode = mode === 'resume'
     ? sourceModeFromSnapshot(currentSnapshot) ?? sourceMode
     : sourceMode
-  const sourceAlignedEnabled = workflowProfile === 'source-aligned' && currentSourceMode === 'program'
+  const sourceAdmittedEnabled = workflowProfile === 'source-admitted' && currentSourceMode === 'program'
+  const sourceAlignedEnabled = (workflowProfile === 'source-aligned' || sourceAdmittedEnabled) && currentSourceMode === 'program'
   const overlapEnabled = workflowProfile !== 'av27' && currentSourceMode === 'program'
   const overlapAvailable = Boolean(onPreviewOverlapProcessing && onPreviewOverlap && onExpandOverlap)
   const sourceAlignedAvailable = Boolean(onPreviewSourceAlignedProcessing && onPreviewSourceAligned && onExpandSourceAligned)
+  const sourceAdmittedAvailable = Boolean(onCreateSourceAdmitted && onPreviewSourceAdmittedProcessing && onPreviewSourceAdmitted && onExpandSourceAdmitted)
+  const preparedSourceAdmitted = Boolean(currentSnapshot?.project.graph.nodes.some((node) => node.type_id === 'zniku.avenhance.v27.source_program' && node.definition_version === '0.3.5'))
   const legacyMRNodes = currentSnapshot?.project.graph.nodes.filter((node) => node.type_id === legacyMRType) ?? []
   const legacyMRPrepared = preparationCreated && legacyMRNodes.length > 0
   const alreadyExpanded = mode === 'resume' && Boolean(currentSnapshot?.project.graph.nodes.some((node) => !preparationTypes.has(node.type_id)))
@@ -312,6 +332,12 @@ export function AvEnhanceV27Wizard({
   const analysisFailed = analysisSummary?.state === 'failed' || (analysisSummary?.state_counts.failed ?? 0) > 0
   const analysisWaiting = (analysisSummary?.state_counts.waiting_external ?? 0) > 0
   const currentAnalysisProblems = analysisProblems?.run_id === analysisRunId ? analysisProblems.problems : []
+  const analysisCancelled = sourceAdmittedEnabled && analysisFailed && (
+    analysisSummary?.error?.reason === 'cancelled' ||
+    (currentAnalysisProblems.length > 0 && currentAnalysisProblems.every((problem) => problem.error.reason === 'cancelled'))
+  )
+  const canRestartAnalysis = analysisSummary?.state === 'failed' || (sourceAdmittedEnabled && analysisFailed &&
+    analysisSummary?.state_counts.running === 0 && !analysisWaiting)
   const waitingRuns = runSummaries.filter((summary) => summary.state_counts.waiting_external > 0)
 
   useEffect(() => () => {
@@ -352,7 +378,9 @@ export function AvEnhanceV27Wizard({
       setOverlapPreview(null)
       overlapRequestRef.current = null
       // 重开旧工程不推断新版本；只有新建且服务具备独立合同，默认使用原片规划。
-      setWorkflowProfile(!continuing && sourceAlignedAvailable ? 'source-aligned' : 'av27')
+      setWorkflowProfile(continuing ? preparedSourceAdmitted ? 'source-admitted' : 'av27' : sourceAdmittedAvailable ? 'source-admitted' : sourceAlignedAvailable ? 'source-aligned' : 'av27')
+      setRepairCandidate(null)
+      setCancellingAnalysis(false)
       setOverlapSettings(initialChapterOverlapSettings())
       setOverlapIssue(null)
       setContextLeft('32'); setContextRight('32'); setContextMinimum('2')
@@ -425,8 +453,11 @@ export function AvEnhanceV27Wizard({
 
   useEffect(() => {
     // 目录与首页可并行加载；晚到的能力目录只补新建默认值，不能覆盖用户明确选择或已创建工程。
-    if (open && mode === 'create' && !preparationCreated && sourceMode === 'program' && sourceAlignedAvailable && !profileExplicitlyChosenRef.current) setWorkflowProfile('source-aligned')
-  }, [mode, open, preparationCreated, sourceAlignedAvailable, sourceMode])
+    if (open && mode === 'create' && !preparationCreated && sourceMode === 'program' && !profileExplicitlyChosenRef.current) {
+      if (sourceAdmittedAvailable) setWorkflowProfile('source-admitted')
+      else if (sourceAlignedAvailable) setWorkflowProfile('source-aligned')
+    }
+  }, [mode, open, preparationCreated, sourceAdmittedAvailable, sourceAlignedAvailable, sourceMode])
 
   useEffect(() => {
     const previous = connectionRef.current
@@ -450,6 +481,7 @@ export function AvEnhanceV27Wizard({
     setOverlapPreview(null)
     setConnectionInterrupted(true)
     setOutputSelectionExpired(true)
+    setRepairCandidate(null)
     if (mutationFlightRef.current) setMutationInterrupted(true)
     mutationFlightRef.current = null
     setSubmitting(false)
@@ -533,6 +565,7 @@ export function AvEnhanceV27Wizard({
   }, [open, step, overlapIssue])
 
   const invalidateExpansion = () => {
+    setRepairCandidate(null)
     autoExpansionAllowedRef.current = false
     responseEpochRef.current += 1
     pickerFlightRef.current += 1
@@ -776,9 +809,13 @@ export function AvEnhanceV27Wizard({
     try {
       if (overlapEnabled) {
         validateSettings()
-        let request: OverlapFullIntent | SourceAlignedFullIntent
-        let next: OverlapFullEnvelope | SourceAlignedFullEnvelope
-        if (sourceAlignedEnabled) {
+        let request: OverlapFullIntent | SourceAlignedFullIntent | SourceAdmittedFullIntent
+        let next: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope
+        if (sourceAdmittedEnabled) {
+          if (!onPreviewSourceAdmitted) throw new Error('当前服务没有单一源准入接口。')
+          request = { contract_version: '0.3.5', preparation_run_id: runId, processing: buildSourceAlignedProcessing(), publication: buildPublicationRequest() }
+          next = await onPreviewSourceAdmitted(request)
+        } else if (sourceAlignedEnabled) {
           if (!onPreviewSourceAligned) throw new Error('当前服务没有原片规划接口。')
           request = { contract_version: '0.3.3', preparation_run_id: runId, processing: buildSourceAlignedProcessing(), publication: buildPublicationRequest() }
           next = await onPreviewSourceAligned(request)
@@ -861,7 +898,7 @@ export function AvEnhanceV27Wizard({
   const chooseProfile = (next: WorkflowProfile) => {
     profileExplicitlyChosenRef.current = true
     setWorkflowProfile(next)
-    if (preparationCreated && next !== 'source-aligned') {
+    if (preparationCreated && next !== 'source-aligned' && next !== 'source-admitted') {
       // 新 MR 是尚未应用的处理草稿；旧流程只能沿用真实 preparation，不能把新草稿显示成旧图已启用。
       const recorded = preparedMRRef.current
       setMrMode(recorded.mode)
@@ -870,8 +907,13 @@ export function AvEnhanceV27Wizard({
     invalidateExpansion()
   }
   const profileChoice = <section className="creator-settings-group" aria-label="工作流版本">
-    <h4>处理链</h4><label>工作流方案<select aria-label="工作流方案" disabled={controlsDisabled} value={currentSourceMode === 'program' ? workflowProfile : 'av27'} onChange={(event) => chooseProfile(event.target.value as WorkflowProfile)}><option value="source-aligned" disabled={!sourceAlignedAvailable || currentSourceMode !== 'program' || legacyMRPrepared}>ZNIKU 原片规划与重叠 FI · 0.3.3（推荐）</option><option value="overlap" disabled={!overlapAvailable || currentSourceMode !== 'program'}>ZNIKU 重叠 FI · 0.3.2 既有流程</option><option value="av27">AVEnhanceFlow v2.7.0 · 既有流程</option></select></label>
-    {currentSourceMode === 'pre_chaptered' ? <p>已经分章的素材沿用既有流程，不会自动迁移为单一原片规划。</p> : sourceAlignedEnabled ? <p>先分析原片，再确认完整处理链。可选外部修复不会阻塞原片分析；分章分叶、增强和重叠 FI 共用原片时间轴。</p> : overlapEnabled ? <p>保留 0.3.2 的分章和重叠 FI 合同；不自动迁移旧工程或结果。</p> : <p>保留既有分章和逐章补帧语义；不会自动升级已有工程或结果。</p>}
+    <h4>处理链</h4>
+    {sourceAdmittedEnabled && <p><strong>ZNIKU 标准视频流程 · 0.3.5</strong><br />使用 AV2.7 的源媒体准入，保留分章、分叶和重叠 FI。源不适用时可选择外部修复候选，重新检查后继续。</p>}
+    <details open={sourceAdmittedEnabled ? undefined : true}><summary>工作流版本与旧工程兼容</summary><label>工作流方案<select aria-label="工作流方案" disabled={controlsDisabled || (preparationCreated && preparedSourceAdmitted)} value={currentSourceMode === 'program' ? workflowProfile : 'av27'} onChange={(event) => chooseProfile(event.target.value as WorkflowProfile)}>
+      <option value="source-admitted" disabled={!sourceAdmittedAvailable || currentSourceMode !== 'program' || (preparationCreated && !preparedSourceAdmitted)}>ZNIKU 标准视频流程 · 0.3.5（推荐）</option>
+      <option value="source-aligned" disabled={!sourceAlignedAvailable || currentSourceMode !== 'program' || legacyMRPrepared}>ZNIKU 原片规划与重叠 FI · 0.3.3（兼容）</option><option value="overlap" disabled={!overlapAvailable || currentSourceMode !== 'program'}>ZNIKU 重叠 FI · 0.3.2 既有流程</option><option value="av27">AVEnhanceFlow v2.7.0 · 既有流程</option></select></label>
+    {currentSourceMode === 'pre_chaptered' ? <p>已经分章的素材沿用既有流程，不会自动迁移为单一原片规划。</p> : sourceAdmittedEnabled ? <p>新建流程使用单一准入，不自动修改任何旧工程；更换候选不等于修改原文件。</p> : sourceAlignedEnabled ? <p>先分析原片，再确认完整处理链。可选外部修复不会阻塞原片分析；分章分叶、增强和重叠 FI 共用原片时间轴。</p> : overlapEnabled ? <p>保留 0.3.2 的分章和重叠 FI 合同；不自动迁移旧工程或结果。</p> : <p>保留既有分章和逐章补帧语义；不会自动升级已有工程或结果。</p>}
+    </details>
     {legacyMRPrepared && <p>此工程已创建旧版外部修复任务，继续使用其原合同；不能改为原片规划或修改冻结的交付目标。</p>}
     {!sourceAlignedAvailable && currentSourceMode === 'program' && <p>当前连接未提供 0.3.3 接口；升级本机服务后才能选择原片规划。</p>}
   </section>
@@ -881,6 +923,62 @@ export function AvEnhanceV27Wizard({
     const message = formatHostBridgeError(error) ?? rawMessage
     setLocalError(message)
     setPickerFailure({ message, rawMessage })
+  }
+
+  const chooseRepairCandidate = async () => {
+    if (!onPickSources || !onReplaceSourceAdmitted || serviceControlsDisabled || !sourceAdmittedEnabled) return
+    const epoch = responseEpochRef.current
+    const flight = ++pickerFlightRef.current
+    setRepairCandidate(null)
+    try {
+      const chosen = await onPickSources(false)
+      if (epoch !== responseEpochRef.current || flight !== pickerFlightRef.current || !chosen) return
+      if (chosen.length !== 1) throw new Error('请只选择一个修复后的视频。')
+      setRepairCandidate({ path: chosen[0]!, epoch })
+    } catch (error) {
+      if (epoch === responseEpochRef.current && flight === pickerFlightRef.current) reportPickerError(error, '无法选择修复候选。')
+    }
+  }
+
+  const confirmRepairCandidate = async () => {
+    if (!repairCandidate || !onReplaceSourceAdmitted || !onStartPreparationRun || serviceControlsDisabled) return
+    const candidate = repairCandidate
+    if (candidate.epoch !== responseEpochRef.current) { setRepairCandidate(null); return }
+    const epoch = ++responseEpochRef.current
+    pickerFlightRef.current += 1
+    setRepairCandidate(null)
+    overlapRequestRef.current = null
+    setOverlapPreview(null)
+    setPreview(null)
+    setPreviewFailure(null)
+    setLocalError(null)
+    setSubmitting(true)
+    mutationFlightRef.current = Symbol('select-new-reference')
+    try {
+      if (!await onReplaceSourceAdmitted(candidate.path)) throw new Error('未能选用候选；文件没有被改动，请检查工程状态。')
+      if (epoch !== responseEpochRef.current) return
+      setSources([{ source_path: candidate.path, chapter_label: '' }])
+      setAnalysisRunId(null)
+      const runId = await onStartPreparationRun()
+      if (epoch !== responseEpochRef.current) return
+      if (!runId) throw new Error('候选已选定，但分析没有启动；请返回工作区重新运行，不能将它视为已通过。')
+      autoPreviewAllowedRef.current = true
+      autoExpansionAllowedRef.current = true
+      setAnalysisRunId(runId)
+    } catch (error) {
+      if (epoch === responseEpochRef.current) setLocalError(error instanceof Error ? error.message : '候选分析未能开始。')
+    } finally {
+      if (epoch === responseEpochRef.current) { setSubmitting(false); mutationFlightRef.current = null }
+    }
+  }
+
+  const cancelAnalysis = async () => {
+    if (!analysisRunId || !onCancelSourceAdmitted || cancellingAnalysis || serviceUnavailable || reconnecting) return
+    const epoch = responseEpochRef.current
+    setCancellingAnalysis(true)
+    try { await onCancelSourceAdmitted(analysisRunId) }
+    catch (error) { if (epoch === responseEpochRef.current) setLocalError(error instanceof Error ? error.message : '取消请求未完成，请查看真实状态。') }
+    finally { if (epoch === responseEpochRef.current) setCancellingAnalysis(false) }
   }
 
   const chooseProjectPath = async () => {
@@ -1000,7 +1098,10 @@ export function AvEnhanceV27Wizard({
         try {
           // 此检查不依赖媒体、不保存工程、不创建目录。输入变化或取消立即撤销迟到响应的展示资格。
           if (overlapEnabled) {
-            if (sourceAlignedEnabled) {
+            if (sourceAdmittedEnabled) {
+              if (!onPreviewSourceAdmittedProcessing) throw new Error('当前服务没有单一源准入设置接口。')
+              await onPreviewSourceAdmittedProcessing({ contract_version: '0.3.5', processing: buildSourceAlignedProcessing() })
+            } else if (sourceAlignedEnabled) {
               if (!onPreviewSourceAlignedProcessing) throw new Error('当前服务没有原片规划设置接口。')
               await onPreviewSourceAlignedProcessing({ contract_version: '0.3.3', processing: buildSourceAlignedProcessing() })
             } else {
@@ -1066,18 +1167,23 @@ export function AvEnhanceV27Wizard({
       }
       const prepareRequest = buildPrepareRequest()
       const request: AvEnhanceV27TemplatePreviewRequestWire = { action: 'prepare', request: prepareRequest }
-      const preparationPreview = await onPreview(request)
-      if (epoch !== responseEpochRef.current || !open) return
-      if (!preparationPreview || preparationPreview.phase !== 'preparation' || !preparationPreview.profile.compatible) {
-        throw new Error('素材准备检查未通过；没有创建工程或运行任务。')
+      if (!sourceAdmittedEnabled) {
+        const preparationPreview = await onPreview(request)
+        if (epoch !== responseEpochRef.current || !open) return
+        if (!preparationPreview || preparationPreview.phase !== 'preparation' || !preparationPreview.profile.compatible) {
+          throw new Error('素材准备检查未通过；没有创建工程或运行任务。')
+        }
       }
       previewRequestRef.current = request
       const mutationToken = Symbol('create-preparation')
       mutationFlightRef.current = mutationToken
-      const created = await onCreate(prepareRequest, {
+      const storage = {
         ...(dataParent ? { data_parent_directory: dataParent } : {}),
         media_basename: `${title} (${year})`,
-      })
+      }
+      const created = sourceAdmittedEnabled && onCreateSourceAdmitted
+        ? await onCreateSourceAdmitted({ contract_version: '0.3.5', request: prepareRequest, ...storage })
+        : await onCreate(prepareRequest, storage)
       if (epoch !== responseEpochRef.current || !open) return
       if (mutationFlightRef.current === mutationToken) mutationFlightRef.current = null
       previewRequestRef.current = null
@@ -1105,8 +1211,8 @@ export function AvEnhanceV27Wizard({
   }
 
   const restartAnalysis = async () => {
-    // 只有已终止的 Run 使用现有新 Run 路径；仍 running 的失败应进入节点重试并创建新 attempt。
-    if (serviceControlsDisabled || analysisSummary?.state !== 'failed') return
+    // 新源失败/取消由 workspace 走 Source rerun_from_here；旧流程保持原终态要求。
+    if (serviceControlsDisabled || !canRestartAnalysis) return
     const epoch = ++responseEpochRef.current
     pickerFlightRef.current += 1
     previewRequestRef.current = null
@@ -1169,7 +1275,7 @@ export function AvEnhanceV27Wizard({
     if (serviceControlsDisabled) return
     const epoch = responseEpochRef.current
     const authority = previewRequestRef.current
-    if (overlapEnabled ? !overlapPreview || !overlapRequestRef.current || (sourceAlignedEnabled ? !onExpandSourceAligned : !onExpandOverlap) : !preview?.profile.compatible || !authority || authority.action !== 'expand') {
+    if (overlapEnabled ? !overlapPreview || !overlapRequestRef.current || (sourceAdmittedEnabled ? !onExpandSourceAdmitted : sourceAlignedEnabled ? !onExpandSourceAligned : !onExpandOverlap) : !preview?.profile.compatible || !authority || authority.action !== 'expand') {
       invalidateExpansion()
       setLocalError('当前设置没有可确认的 Python 工作流预览；请使用已完成的素材分析重新生成预览。')
       setStep(4)
@@ -1180,7 +1286,9 @@ export function AvEnhanceV27Wizard({
     try {
       mutationFlightRef.current = Symbol('expand-workflow')
       const overlapRequest = overlapRequestRef.current
-      const applied = sourceAlignedEnabled && overlapRequest?.contract_version === '0.3.3' && onExpandSourceAligned
+      const applied = sourceAdmittedEnabled && overlapRequest?.contract_version === '0.3.5' && onExpandSourceAdmitted
+        ? await onExpandSourceAdmitted(overlapRequest)
+        : sourceAlignedEnabled && overlapRequest?.contract_version === '0.3.3' && onExpandSourceAligned
         ? await onExpandSourceAligned(overlapRequest)
         : overlapEnabled && overlapRequest?.contract_version === '0.3.2' && onExpandOverlap
         ? await onExpandOverlap(overlapRequest)
@@ -1407,11 +1515,11 @@ export function AvEnhanceV27Wizard({
               <header><span>04</span><div><h3>分析素材并生成准确方案</h3><p>只有点击下方按钮后，ZNIKU 才会创建工程并开始分析；仅打开页面不会修改任何内容。</p></div></header>
               {publicationPreview && <div className="creator-target" aria-label="输出位置检查结果"><span>输出位置已检查</span><strong>{publicationPreview.output_directory}</strong><small>{publicationPreview.will_create_directory ? '将在开始处理后的输出步骤创建此文件夹；当前检查、分析和确认工作流均不创建目录。' : '成片将保存到此目录；已有文件仍需要明确允许覆盖。'}</small></div>}
               {!preparationCreated ? <button className="creator-analysis-action" disabled={serviceControlsDisabled} onClick={() => void analyze()} type="button"><span>◎</span><strong>{submitting ? '正在准备素材分析…' : '开始分析素材'}</strong><small>先安全检查，再创建工程并分析真实媒体信息</small></button> : analysisRunId ? <div className={`creator-analysis-state is-${analysisFailed ? 'failed' : analysisSummary?.state ?? 'pending'}`} role="status">
-                <strong>{analysisFailed ? '素材分析没有完成'
+                <strong>{analysisCancelled ? '素材分析已取消' : analysisFailed ? '素材分析没有完成'
                   : analysisSummary?.state === 'completed' ? isPublicationError(previewFailure?.code) ? '素材分析已完成，输出位置尚未就绪' : previewFailure ? '素材分析已完成，工作流预览尚未就绪' : '素材分析完成'
                     : analysisWaiting ? '需要完成一个外部处理步骤'
                       : analysisSummary?.requires_operator_action ? '素材分析需要检查' : '正在分析素材'}</strong>
-                <p>{analysisFailed ? '分析步骤发生错误；工程和已完成结果仍保留。请先查看具体问题，修正原因后再从头重试失败步骤。'
+                <p>{analysisCancelled ? '已停止本次分析，原文件未修改。取消不代表素材不支持；可以点击“重新分析”从头读取。' : analysisFailed ? '分析步骤发生错误；工程和已完成结果仍保留。请先查看具体问题，修正原因后再从头重试失败步骤。'
                   : analysisSummary?.state === 'completed' ? submitting ? '正在从这次准确结果生成工作流预览。' : previewFailure ? '这次素材分析记录仍然保留；处理下方提示后即可重新检查，不需要重复分析素材。' : '可使用这次已完成分析生成工作流预览。'
                     : analysisWaiting ? '当前确有步骤等待外部处理。请打开对应任务，按要求检查并显式提交；文件出现不会自动提交。'
                       : analysisSummary?.requires_operator_action ? '请查看这次分析的问题与状态；界面不会把人工干预标记当作外部交付要求。'
@@ -1424,11 +1532,27 @@ export function AvEnhanceV27Wizard({
                     <details><summary>高级详情 · 原始分析错误</summary><pre>{problem.error.reason}: {problem.error.message}</pre></details>
                   </section>
                 })}
+                {sourceAdmittedEnabled && !analysisFailed && analysisSummary?.state === 'running' && !analysisWaiting && <>
+                  <p>正在读取源媒体时间轴；不会转码或修改原片。已读取进度不代表内容或画质验收。</p>
+                  <progress aria-label="源媒体分析进度" max={1} value={analysisProgress?.run_id === analysisRunId ? analysisProgress.fraction : undefined} />
+                  <button type="button" className="button button--ghost" disabled={cancellingAnalysis || serviceUnavailable || reconnecting || !onCancelSourceAdmitted} onClick={() => void cancelAnalysis()}>{cancellingAnalysis ? '正在请求取消…' : '取消分析'}</button>
+                </>}
+                {sourceAdmittedEnabled && analysisFailed && !analysisCancelled && onReplaceSourceAdmitted && <section className="creator-settings-group" aria-label="外部修复候选">
+                  <h4>使用外部修复后的视频</h4>
+                  <p>可在外部工具修复（例如 VideoSourceRepair），再选择结果。候选仍须通过同一媒体检查，不保证任何修复工具都能解决此问题。</p>
+                  <button type="button" className="button button--primary" disabled={serviceControlsDisabled || !pickerAvailable} onClick={() => void chooseRepairCandidate()}>选择修复后的视频</button>
+                  {repairCandidate && <div role="group" aria-label="确认新的处理参考">
+                    <p>候选：{repairCandidate.path}</p>
+                    <p>确认后只引用此文件，重新分析并按它的帧数、帧率和音轨规划。不会复制、覆盖或删除原片；不会沿用旧分析。通过检查不证明它与原片内容相同。</p>
+                    <button type="button" className="button button--primary" disabled={serviceControlsDisabled} onClick={() => void confirmRepairCandidate()}>确认选用并重新分析</button>
+                    <button type="button" className="button button--ghost" disabled={serviceControlsDisabled} onClick={() => setRepairCandidate(null)}>取消选择</button>
+                  </div>}
+                </section>}
                 {analysisFailed && currentAnalysisProblems.length === 0 && analysisSummary?.error && <details><summary>高级详情 · 原始分析错误</summary><pre>{analysisSummary.error.reason}: {analysisSummary.error.message}</pre></details>}
                 {(analysisFailed || (!analysisWaiting && analysisSummary?.requires_operator_action)) && <button className="button button--primary" disabled={serviceControlsDisabled} onClick={() => void openAnalysisProblems(analysisRunId)} type="button">查看分析问题</button>}
                 {analysisFailed && analysisWaiting && <p>另外还有 {analysisSummary?.state_counts.waiting_external} 个外部步骤等待处理；交付外部文件不会修复上述失败。</p>}
                 {analysisWaiting && <button className="button button--ghost" disabled={serviceControlsDisabled || !onOpenExternalTasks} onClick={() => void openExternalTasks(analysisRunId)} type="button">打开等待中的外部任务</button>}
-                {analysisSummary?.state === 'failed' && <><p>此分析记录已终止。原因修正后，“重新分析”会创建新记录；不会接管失败的中间进度。</p><button className="button button--ghost" disabled={serviceControlsDisabled} onClick={() => void restartAnalysis()} type="button">重新分析</button></>}
+                {canRestartAnalysis && <><p>本次分析已停止。“重新分析”会从头创建新的分析尝试；不会接管失败的中间进度。</p><button className="button button--ghost" disabled={serviceControlsDisabled} onClick={() => void restartAnalysis()} type="button">重新分析</button></>}
               </div> : <div className="creator-analysis-records"><strong>选择一次素材分析记录</strong><p>恢复已有工程时请按时间明确选择；界面不会猜测“最新”记录。只有已完成分析才能生成工作流预览。</p>{completedRuns.length === 0 ? <p>{runSummaries.length > 0 ? '当前工程还没有可用的完成记录；可先查看下方未完成分析的问题与进度。' : '当前工程还没有素材分析记录；请返回工作区启动素材分析。'}</p> : completedRuns.map((summary, index) => <button disabled={serviceControlsDisabled} key={summary.run_id} onClick={() => selectAnalysisRun(summary.run_id)} type="button"><span>✓</span><strong>分析记录 {index + 1} · {humanRunTime(summary.created_at)} 完成</strong><small>{summary.node_count} 个步骤均已完成</small></button>)}
                 {runSummaries.filter((summary) => summary.state !== 'completed').map((summary) => <button disabled={serviceControlsDisabled} key={summary.run_id} onClick={() => selectAnalysisRun(summary.run_id)} type="button"><span>◎</span><strong>查看未完成分析 · {humanRunTime(summary.created_at)}</strong><small>{summary.state === 'failed' || summary.state_counts.failed > 0 ? '需要处理分析问题' : summary.state_counts.waiting_external > 0 ? '等待外部处理' : '查看当前进度'} · {summary.state_counts.completed} / {summary.node_count} 个步骤已完成</small></button>)}
               </div>}

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Annotated, Any, Literal, Never, Self, cast
@@ -447,10 +447,15 @@ def _plain(value: object) -> object:
     return value
 
 
-def read_metadata(item: RunnerInput) -> OverlapMetadata:
+def read_metadata(
+    item: RunnerInput,
+    *,
+    metadata_model: type[OverlapMetadata] = OverlapMetadata,
+    namespace: str = OVERLAP_NAMESPACE,
+) -> OverlapMetadata:
     """严格重验新 namespace，不把 AV27 媒体类型或字段相似视为兼容。"""
     try:
-        result = OverlapMetadata.model_validate(_plain(item.media_info.get(OVERLAP_NAMESPACE)))
+        result = metadata_model.model_validate(_plain(item.media_info.get(namespace)))
     except ValidationError as exc:
         raise Av27MediaError("E_SOURCE_ALIGNED_METADATA", "缺少或非法的新节点 metadata") from exc
     expected_port = result.leaf.leaf_id if result.role == "split" and result.leaf else "video"
@@ -567,9 +572,10 @@ def _metadata(
     fi_profile: CandidateFiProfile | None = None,
     enhancement: EnhancementDeclaration | None = None,
     split_count: int = 0,
+    metadata_model: type[OverlapMetadata] = OverlapMetadata,
 ) -> OverlapMetadata:
     rate = Fraction(source.frame_rate) * (2 if role in {"fi", "crop", "program", "final"} else 1)
-    return OverlapMetadata(
+    return metadata_model(
         producer_type_id=f"{ATOMIC_SPLIT_TYPE_PREFIX}{split_count}"
         if role == "split"
         else ROLE_TYPES[role],
@@ -588,7 +594,14 @@ def _metadata(
 
 
 def preflight(
-    role: str, inputs: tuple[RunnerInput, ...], parameters: Mapping[str, object]
+    role: str,
+    inputs: tuple[RunnerInput, ...],
+    parameters: Mapping[str, object],
+    *,
+    metadata_model: type[OverlapMetadata] = OverlapMetadata,
+    namespace: str = OVERLAP_NAMESPACE,
+    effective_reader: Callable[[RunnerInput, SourceExpectation], legacy._MediaContract]
+    | None = None,
 ) -> NodeContract:
     """在媒体 I/O 前失败关闭；adapter 和完成 validator 都调用，不信任 producer 自报绑定。"""
     if role not in PARAMETER_MODELS:
@@ -616,7 +629,7 @@ def preflight(
         ):
             fail("SOURCE_BINDING", "Split 必须绑定一个原片或源对齐修复输入及原片准入")
         video = videos[0]
-        old = effective_contract(video, params.source)
+        old = (effective_reader or effective_contract)(video, params.source)
         source = SourceBinding(
             **params.source.model_dump(), effective_video_artifact_id=video.artifact_id
         )
@@ -652,6 +665,7 @@ def preflight(
                             chapter=chapter_binding_value,
                             leaf=leaf_binding_value,
                             split_count=params.plan.leaf_count,
+                            metadata_model=metadata_model,
                         ),
                     )
                 )
@@ -660,7 +674,9 @@ def preflight(
         "videos" if role == "merge" else "chapters" if role in {"context", "program"} else "video"
     )
     items = _inputs(inputs, port, many=role in {"merge", "context", "program"})
-    metadata = tuple(read_metadata(item) for item in items)
+    metadata = tuple(
+        read_metadata(item, metadata_model=metadata_model, namespace=namespace) for item in items
+    )
     _uniform(metadata)
     first = metadata[0]
     assert isinstance(params, ChapterParameters | ProgramParameters | FinalParameters)
@@ -802,6 +818,7 @@ def preflight(
         context=context,
         fi_profile=profile,
         enhancement=declaration,
+        metadata_model=metadata_model,
     )
     return NodeContract(
         params, source, (OutputContract("media" if role == "final" else "video", result),), metadata

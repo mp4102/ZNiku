@@ -1,0 +1,452 @@
+{
+  "contexts": {
+    "assumption": "even-input-2m-minus-1",
+    "chapter_plan": {
+      "chapter_count": 3,
+      "chapters": [
+        {
+          "chapter_id": "chapter-0001",
+          "duration_seconds": "601601/30000",
+          "duration_timecode": "00:00:20.053",
+          "end_frame": 601,
+          "end_seconds": "601601/30000",
+          "end_timecode": "00:00:20.053",
+          "frame_count": 601,
+          "label": "A",
+          "leaves": [
+            {
+              "chapter_ordinal": 0,
+              "duration_seconds": "601601/30000",
+              "duration_timecode": "00:00:20.053",
+              "end_frame": 601,
+              "end_seconds": "601601/30000",
+              "end_timecode": "00:00:20.053",
+              "frame_count": 601,
+              "global_ordinal": 0,
+              "leaf_id": "leaf-0001",
+              "ordinal": 0,
+              "start_frame": 0,
+              "start_seconds": "0/1",
+              "start_timecode": "00:00:00.000"
+            }
+          ],
+          "ordinal": 0,
+          "start_frame": 0,
+          "start_seconds": "0/1",
+          "start_timecode": "00:00:00.000"
+        },
+        {
+          "chapter_id": "chapter-0002",
+          "duration_seconds": "1001/50",
+          "duration_timecode": "00:00:20.020",
+          "end_frame": 1201,
+          "end_seconds": "1202201/30000",
+          "end_timecode": "00:00:40.073",
+          "frame_count": 600,
+          "label": "B",
+          "leaves": [
+            {
+              "chapter_ordinal": 1,
+              "duration_seconds": "1001/50",
+              "duration_timecode": "00:00:20.020",
+              "end_frame": 1201,
+              "end_seconds": "1202201/30000",
+              "end_timecode": "00:00:40.073",
+              "frame_count": 600,
+              "global_ordinal": 1,
+              "leaf_id": "leaf-0002",
+              "ordinal": 0,
+              "start_frame": 601,
+              "start_seconds": "601601/30000",
+              "start_timecode": "00:00:20.053"
+            }
+          ],
+          "ordinal": 1,
+          "start_frame": 601,
+          "start_seconds": "601601/30000",
+          "start_timecode": "00:00:20.053"
+        },
+        {
+          "chapter_id": "chapter-0003",
+          "duration_seconds": "1001/50",
+          "duration_timecode": "00:00:20.020",
+          "end_frame": 1801,
+          "end_seconds": "1802801/30000",
+          "end_timecode": "00:01:00.093",
+          "frame_count": 600,
+          "label": "C",
+          "leaves": [
+            {
+              "chapter_ordinal": 2,
+              "duration_seconds": "1001/50",
+              "duration_timecode": "00:00:20.020",
+              "end_frame": 1801,
+              "end_seconds": "1802801/30000",
+              "end_timecode": "00:01:00.093",
+              "frame_count": 600,
+              "global_ordinal": 2,
+              "leaf_id": "leaf-0003",
+              "ordinal": 0,
+              "start_frame": 1201,
+              "start_seconds": "1202201/30000",
+              "start_timecode": "00:00:40.073"
+            }
+          ],
+          "ordinal": 2,
+          "start_frame": 1201,
+          "start_seconds": "1202201/30000",
+          "start_timecode": "00:00:40.073"
+        }
+      ],
+      "cut_points": [
+        {
+          "actual_frame": 601,
+          "actual_seconds": "601601/30000",
+          "actual_timecode": "00:00:20.053",
+          "ordinal": 0,
+          "requested_frame": null,
+          "requested_time": null
+        },
+        {
+          "actual_frame": 1201,
+          "actual_seconds": "1202201/30000",
+          "actual_timecode": "00:00:40.073",
+          "ordinal": 1,
+          "requested_frame": null,
+          "requested_time": null
+        }
+      ],
+      "leaf_count": 3,
+      "leaf_frame_cap": 8991,
+      "profile_id": "zniku.chapter-overlap-fi",
+      "profile_version": "0.3.2",
+      "settings": {
+        "chapter_selector": {
+          "count": 3,
+          "mode": "average"
+        },
+        "leaf_max_minutes": 5
+      },
+      "source": {
+        "artifact_id": "00000000-0000-4000-8000-000000000001",
+        "frame_count": 1801,
+        "frame_rate": "30000/1001"
+      }
+    },
+    "chapters": [
+      {
+        "chapter_id": "chapter-0001",
+        "chapter_ordinal": 0,
+        "context_end_frame": 633,
+        "context_start_frame": 0,
+        "crop_end_frame": 1202,
+        "crop_start_frame": 0,
+        "cropped_frame_count": 1202,
+        "formal_end_frame": 601,
+        "formal_start_frame": 0,
+        "global_end_half_frame": 1202,
+        "global_start_half_frame": 0,
+        "input_frame_count": 633,
+        "raw_fi_frame_count": 1265,
+        "sources": [
+          {
+            "chapter_id": "chapter-0001",
+            "chapter_local_end_frame": 601,
+            "chapter_local_start_frame": 0,
+            "chapter_ordinal": 0,
+            "context_local_end_frame": 601,
+            "context_local_start_frame": 0,
+            "frame_count": 601,
+            "source_end_frame": 601,
+            "source_start_frame": 0
+          },
+          {
+            "chapter_id": "chapter-0002",
+            "chapter_local_end_frame": 32,
+            "chapter_local_start_frame": 0,
+            "chapter_ordinal": 1,
+            "context_local_end_frame": 633,
+            "context_local_start_frame": 601,
+            "frame_count": 32,
+            "source_end_frame": 633,
+            "source_start_frame": 601
+          }
+        ]
+      },
+      {
+        "chapter_id": "chapter-0002",
+        "chapter_ordinal": 1,
+        "context_end_frame": 1233,
+        "context_start_frame": 569,
+        "crop_end_frame": 1264,
+        "crop_start_frame": 64,
+        "cropped_frame_count": 1200,
+        "formal_end_frame": 1201,
+        "formal_start_frame": 601,
+        "global_end_half_frame": 2402,
+        "global_start_half_frame": 1202,
+        "input_frame_count": 664,
+        "raw_fi_frame_count": 1327,
+        "sources": [
+          {
+            "chapter_id": "chapter-0001",
+            "chapter_local_end_frame": 601,
+            "chapter_local_start_frame": 569,
+            "chapter_ordinal": 0,
+            "context_local_end_frame": 32,
+            "context_local_start_frame": 0,
+            "frame_count": 32,
+            "source_end_frame": 601,
+            "source_start_frame": 569
+          },
+          {
+            "chapter_id": "chapter-0002",
+            "chapter_local_end_frame": 600,
+            "chapter_local_start_frame": 0,
+            "chapter_ordinal": 1,
+            "context_local_end_frame": 632,
+            "context_local_start_frame": 32,
+            "frame_count": 600,
+            "source_end_frame": 1201,
+            "source_start_frame": 601
+          },
+          {
+            "chapter_id": "chapter-0003",
+            "chapter_local_end_frame": 32,
+            "chapter_local_start_frame": 0,
+            "chapter_ordinal": 2,
+            "context_local_end_frame": 664,
+            "context_local_start_frame": 632,
+            "frame_count": 32,
+            "source_end_frame": 1233,
+            "source_start_frame": 1201
+          }
+        ]
+      },
+      {
+        "chapter_id": "chapter-0003",
+        "chapter_ordinal": 2,
+        "context_end_frame": 1801,
+        "context_start_frame": 1169,
+        "crop_end_frame": 1263,
+        "crop_start_frame": 64,
+        "cropped_frame_count": 1199,
+        "formal_end_frame": 1801,
+        "formal_start_frame": 1201,
+        "global_end_half_frame": 3601,
+        "global_start_half_frame": 2402,
+        "input_frame_count": 632,
+        "raw_fi_frame_count": 1263,
+        "sources": [
+          {
+            "chapter_id": "chapter-0002",
+            "chapter_local_end_frame": 600,
+            "chapter_local_start_frame": 568,
+            "chapter_ordinal": 1,
+            "context_local_end_frame": 32,
+            "context_local_start_frame": 0,
+            "frame_count": 32,
+            "source_end_frame": 1201,
+            "source_start_frame": 1169
+          },
+          {
+            "chapter_id": "chapter-0003",
+            "chapter_local_end_frame": 600,
+            "chapter_local_start_frame": 0,
+            "chapter_ordinal": 2,
+            "context_local_end_frame": 632,
+            "context_local_start_frame": 32,
+            "frame_count": 600,
+            "source_end_frame": 1801,
+            "source_start_frame": 1201
+          }
+        ]
+      }
+    ],
+    "encoded_frame_count": 3602,
+    "final_tail_clone_frames": 1,
+    "settings": {
+      "left_context_frames": 32,
+      "minimum_input_frames": 2,
+      "right_context_frames": 32
+    },
+    "status": "mathematical-only",
+    "unpadded_frame_count": 3601
+  },
+  "contract_version": "0.3.5",
+  "edge_count": 35,
+  "execution_available": true,
+  "node_count": 24,
+  "plan": {
+    "chapter_count": 3,
+    "chapters": [
+      {
+        "chapter_id": "chapter-0001",
+        "duration_seconds": "601601/30000",
+        "duration_timecode": "00:00:20.053",
+        "end_frame": 601,
+        "end_seconds": "601601/30000",
+        "end_timecode": "00:00:20.053",
+        "frame_count": 601,
+        "label": "A",
+        "leaves": [
+          {
+            "chapter_ordinal": 0,
+            "duration_seconds": "601601/30000",
+            "duration_timecode": "00:00:20.053",
+            "end_frame": 601,
+            "end_seconds": "601601/30000",
+            "end_timecode": "00:00:20.053",
+            "frame_count": 601,
+            "global_ordinal": 0,
+            "leaf_id": "leaf-0001",
+            "ordinal": 0,
+            "start_frame": 0,
+            "start_seconds": "0/1",
+            "start_timecode": "00:00:00.000"
+          }
+        ],
+        "ordinal": 0,
+        "start_frame": 0,
+        "start_seconds": "0/1",
+        "start_timecode": "00:00:00.000"
+      },
+      {
+        "chapter_id": "chapter-0002",
+        "duration_seconds": "1001/50",
+        "duration_timecode": "00:00:20.020",
+        "end_frame": 1201,
+        "end_seconds": "1202201/30000",
+        "end_timecode": "00:00:40.073",
+        "frame_count": 600,
+        "label": "B",
+        "leaves": [
+          {
+            "chapter_ordinal": 1,
+            "duration_seconds": "1001/50",
+            "duration_timecode": "00:00:20.020",
+            "end_frame": 1201,
+            "end_seconds": "1202201/30000",
+            "end_timecode": "00:00:40.073",
+            "frame_count": 600,
+            "global_ordinal": 1,
+            "leaf_id": "leaf-0002",
+            "ordinal": 0,
+            "start_frame": 601,
+            "start_seconds": "601601/30000",
+            "start_timecode": "00:00:20.053"
+          }
+        ],
+        "ordinal": 1,
+        "start_frame": 601,
+        "start_seconds": "601601/30000",
+        "start_timecode": "00:00:20.053"
+      },
+      {
+        "chapter_id": "chapter-0003",
+        "duration_seconds": "1001/50",
+        "duration_timecode": "00:00:20.020",
+        "end_frame": 1801,
+        "end_seconds": "1802801/30000",
+        "end_timecode": "00:01:00.093",
+        "frame_count": 600,
+        "label": "C",
+        "leaves": [
+          {
+            "chapter_ordinal": 2,
+            "duration_seconds": "1001/50",
+            "duration_timecode": "00:00:20.020",
+            "end_frame": 1801,
+            "end_seconds": "1802801/30000",
+            "end_timecode": "00:01:00.093",
+            "frame_count": 600,
+            "global_ordinal": 2,
+            "leaf_id": "leaf-0003",
+            "ordinal": 0,
+            "start_frame": 1201,
+            "start_seconds": "1202201/30000",
+            "start_timecode": "00:00:40.073"
+          }
+        ],
+        "ordinal": 2,
+        "start_frame": 1201,
+        "start_seconds": "1202201/30000",
+        "start_timecode": "00:00:40.073"
+      }
+    ],
+    "cut_points": [
+      {
+        "actual_frame": 601,
+        "actual_seconds": "601601/30000",
+        "actual_timecode": "00:00:20.053",
+        "ordinal": 0,
+        "requested_frame": null,
+        "requested_time": null
+      },
+      {
+        "actual_frame": 1201,
+        "actual_seconds": "1202201/30000",
+        "actual_timecode": "00:00:40.073",
+        "ordinal": 1,
+        "requested_frame": null,
+        "requested_time": null
+      }
+    ],
+    "leaf_count": 3,
+    "leaf_frame_cap": 8991,
+    "profile_id": "zniku.chapter-overlap-fi",
+    "profile_version": "0.3.2",
+    "settings": {
+      "chapter_selector": {
+        "count": 3,
+        "mode": "average"
+      },
+      "leaf_max_minutes": 5
+    },
+    "source": {
+      "artifact_id": "00000000-0000-4000-8000-000000000001",
+      "frame_count": 1801,
+      "frame_rate": "30000/1001"
+    }
+  },
+  "preparation_run_id": "00000000-0000-4000-8000-000000000003",
+  "processing": {
+    "enhancement": {
+      "actual_scale_factor": 2,
+      "model_name": "Synthetic enhancement",
+      "model_version": null
+    },
+    "fi_profile": {
+      "left_context_frames": 32,
+      "minimum_input_frames": 2,
+      "model_name": "Aion",
+      "phase": "even-input-2m-minus-1",
+      "right_context_frames": 32,
+      "software_version": "v1.0",
+      "status": "pending_real_acceptance"
+    },
+    "mr": {
+      "mode": "off"
+    },
+    "program_encode": {
+      "encoder": "cpu"
+    },
+    "settings": {
+      "chapter_selector": {
+        "count": 3,
+        "mode": "average"
+      },
+      "leaf_max_minutes": 5
+    }
+  },
+  "profile_id": "zniku.source-admitted-overlap",
+  "profile_version": "0.3.5",
+  "project_session_id": "00000000-0000-4000-8000-000000000002",
+  "publication": {
+    "output_directory_to_create": null,
+    "output_target_path": "synthetic-output/Example.mkv"
+  },
+  "status": "pending_real_acceptance",
+  "storage_revision": 1,
+  "warnings": []
+}
