@@ -1734,7 +1734,13 @@ class RuntimeRepository:
 
         with self._read_connection() as connection:
             rows = connection.execute("SELECT * FROM latest_results ORDER BY rowid").fetchall()
-            return tuple(self._validated_latest_from_row(connection, row) for row in rows)
+            # 同一固定读 snapshot 内，同一 owner Run 的完整关系只需验证一次。逐 head 的
+            # Result/owner/latest 检查仍保留；不跨事务缓存，避免重复全图解码长时间阻塞写提交。
+            validated_runs: dict[str, Run] = {}
+            return tuple(
+                self._validated_latest_from_row(connection, row, validated_runs=validated_runs)
+                for row in rows
+            )
 
     def mark_latest_stale(
         self,
@@ -2451,11 +2457,15 @@ class RuntimeRepository:
         self,
         connection: sqlite3.Connection,
         result: NodeResult,
+        *,
+        validated_runs: dict[str, Run] | None = None,
     ) -> None:
         """让局部 Result/Artifact/latest 读取复用完整 Run 关系校验。"""
 
         owner = self._read_node_run(connection, result.node_run_id)
-        run = self._read_run(connection, owner.run_id)
+        run = None if validated_runs is None else validated_runs.get(owner.run_id)
+        if run is None:
+            run = self._read_run(connection, owner.run_id)
         if not any(
             item.node_run_id == owner.node_run_id and item.state is NodeRunState.COMPLETED
             for item in run.node_runs
@@ -2464,17 +2474,21 @@ class RuntimeRepository:
                 "E_RESULT_OWNER_RELATION_CORRUPT",
                 "NodeResult owner 必须是其 Run 中的 completed NodeRun",
             )
+        if validated_runs is not None:
+            validated_runs[owner.run_id] = run
 
     def _validated_latest_from_row(
         self,
         connection: sqlite3.Connection,
         row: sqlite3.Row,
+        *,
+        validated_runs: dict[str, Run] | None = None,
     ) -> LatestNodeResult:
         """严格重建 latest，并验证其 Result owner 确实属于同一 node。"""
 
         latest = self._latest_from_row(row)
         result = self._read_result(connection, latest.result_id)
-        self._validate_public_result(connection, result)
+        self._validate_public_result(connection, result, validated_runs=validated_runs)
         owner = self._read_node_run(connection, result.node_run_id)
         if (
             owner.state is not NodeRunState.COMPLETED

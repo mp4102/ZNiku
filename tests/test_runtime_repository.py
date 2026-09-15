@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -2966,3 +2967,88 @@ def test_public_reads_fail_closed_when_work_directories_are_sql_tampered_to_over
         repo.get_run(run.run_id)
     with pytest.raises(RuntimeDataError, match="E_NODE_RUN_WORK_DIR_RELATION_CORRUPT"):
         repo.get_node_run(source.node_run_id)
+
+
+def _latest_pair(
+    repo: RuntimeRepository, *, mixed_runs: bool = False
+) -> tuple[Run, Run, NodeResult]:
+    """仅登记合成源/人工结果，为同一与不同 owner Run 的聚合读取提供夹具。"""
+
+    source_run = running_run(repo)
+    _, source = complete_automatic(
+        repo,
+        source_run,
+        node_id="node.source",
+        version="1.0.0",
+        node_run_number=20,
+        result_number=30,
+        artifact_number=40,
+    )
+    transform_run = source_run
+    if mixed_runs:
+        transform_run = running_run(repo, run_id_number=2, created_at=at(200))
+        attempt = next(item for item in transform_run.node_runs if item.node_id == "node.source")
+        repo.reuse_result(attempt.node_run_id, source.result_id, completed_at=at(202))
+    complete_manual(
+        repo,
+        transform_run,
+        node_run_number=21,
+        result_number=31,
+        artifact_number=41,
+        input_id=source.outputs[0].artifact_id,
+    )
+    return source_run, transform_run, source
+
+
+@pytest.mark.parametrize("mixed_runs", [False, True])
+def test_list_latest_validates_each_owner_run_once_per_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mixed_runs: bool
+) -> None:
+    """长历史查询不能因同一 Run 的每个 head 重复解码而长时间占用 SQLite 读锁。"""
+
+    _, repo = repository(tmp_path)
+    source_run, transform_run, _ = _latest_pair(repo, mixed_runs=mixed_runs)
+    original = RuntimeRepository._read_run
+    calls: Counter[str] = Counter()
+
+    def counted(self: RuntimeRepository, connection: sqlite3.Connection, run_id: str) -> Run:
+        calls[run_id] += 1
+        return original(self, connection, run_id)
+
+    monkeypatch.setattr(RuntimeRepository, "_read_run", counted)
+    first = repo.list_latest()
+    assert {item.node_id for item in first} == {"node.source", "node.transform"}
+    expected = Counter(dict.fromkeys({source_run.run_id, transform_run.run_id}, 1))
+    assert calls == expected
+    assert repo.list_latest() == first
+    # 下一次读取必须重新验证，不能把上次 snapshot 的成功结论当作新 authority。
+    assert calls == Counter({identity: count * 2 for identity, count in expected.items()})
+
+
+def test_list_latest_cached_run_still_checks_every_latest_owner(tmp_path: Path) -> None:
+    """第二个 head 故意指向同一已验证 Run 的错误 owner，仍必须拒绝关联错误。"""
+
+    store, repo = repository(tmp_path)
+    _, _, source = _latest_pair(repo)
+    with sqlite3.connect(store.path) as connection:
+        connection.execute(
+            "UPDATE latest_results SET result_id = ? WHERE node_id = 'node.transform'",
+            (source.result_id,),
+        )
+    with pytest.raises(RuntimeDataError, match="E_LATEST_RESULT_RELATION_CORRUPT"):
+        repo.list_latest()
+
+
+def test_list_latest_rechecks_corrupted_run_on_next_snapshot(tmp_path: Path) -> None:
+    """前一次读取成功后篡改历史，不能被跨事务缓存掩盖。"""
+
+    store, repo = repository(tmp_path)
+    _, _, source = _latest_pair(repo)
+    assert len(repo.list_latest()) == 2
+    with sqlite3.connect(store.path) as connection:
+        connection.execute(
+            "UPDATE node_runs SET exit_code = 9 WHERE node_run_id = ?",
+            (source.node_run_id,),
+        )
+    with pytest.raises(RuntimeDataError, match="E_NODE_RUN_EXIT_CODE_RELATION_CORRUPT"):
+        repo.list_latest()

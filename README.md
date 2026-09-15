@@ -17,7 +17,7 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 
 ## v0.3.3 原片规划与外部前处理（保留基点）
 
-- 当前实现版本：`0.3.3`；目标版本：`ZNIKU Studio v0.3.3`，不是旧工程的自动升级声明。
+- 该基点实现版本：`0.3.3`；原目标版本：`ZNIKU Studio v0.3.3`，不是旧工程的自动升级声明。
 - 用户批准的[执行方案](docs/v0.3.3-execution-plan.md)，开发分支`codex/v0.3.3`，继承`v0.3.2@1018fb4`。
 - 新流程只分析原片，可选外部第0步在确认工作流后运行；实际处理结果经兼容性校验后进入分章分叶。
 - 新旧节点合同独立；旧工程、等待交接和可读数据位置不自动改写，真实外部验收不被合成测试替代。
@@ -287,6 +287,8 @@ ZNiku/
 │   ├── media/                   # 0.2.0 首批媒体 definitions、adapters、probe 与 validators
 │   ├── avenhance_v27/           # 0.2.1 v2.7 专用节点及模板；无第二套 Runtime
 │   ├── chapter_overlap/        # 0.3.2 章叶规划、普通节点、无重编码上下文与裁边
+│   ├── source_aligned/         # 保留的 0.3.3 原片规划与外部前处理节点
+│   └── source_admission/       # 0.3.5 单一 AV2.7 源准入与普通媒体节点适配
 ├── apps/studio/
 │   └── src/studio/              # 0.2.0 唯一正式 Designer 与 Runtime overlay
 ├── tests/                       # 0.2.0 Core 与 v0.2.1 增量单元、集成和架构权威门禁
@@ -309,17 +311,17 @@ ZNiku/
 │   ├── v0.3.0-phase4-acceptance.md # v0.3.0 Phase 4 创作者运行与外部处理证据
 │   └── brand-baseline.md
 ├── AGENTS.md
-└── VERSION                      # 0.3.2 开发产品版本，独立于 wire/definition
+└── VERSION                      # 0.3.5 开发产品版本，独立于 wire/definition
 ```
 
 ## 本地运行与验证
 
-v0.3.2当前以自动化验证和纯数学/短合成实验为主；新GUI尚未接入。下述通用交互启动命令不能直接与原
-v0.3.1实例共用状态、端口和工程，先遵守[v0.3.2隔离要求](docs/v0.3.2-execution-plan.md#3-双线服务与数据隔离)。
+v0.3.5 已接通默认视频流程、源分析和显式外部候选界面。操作者使用独立桌面候选，入口与真实待验项见
+[本机验收说明](docs/v0.3.5-acceptance.md)。不要用旧工程试做格式或节点升级；旧候选、真实工程与媒体保留不动。
+下述命令供开发者运行通用 smoke 与分离的开发服务，不是桌面候选的启动方式；勿与已有开发服务争用端口。
 
 Python 需要 3.12 或更高版本及 `uv`；媒体节点还要求 `ffmpeg` 与 `ffprobe` 可从 `PATH` 解析。以下门禁
-验证 0.2.0 Graph Core、Project Store、Runtime 和媒体节点，以及 v0.3.0 Project Service wire 与
-Presentation 增量：
+验证 Graph Core、Project Store、Runtime、保留的旧 exact 节点，以及 v0.3.5 源准入与服务/展示增量：
 
 ```powershell
 uv lock --check

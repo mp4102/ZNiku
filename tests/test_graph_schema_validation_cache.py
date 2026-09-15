@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Barrier
 from typing import Any
 
@@ -195,7 +196,31 @@ def test_cache_is_bounded_and_concurrent_results_remain_independent() -> None:
         values = tuple(executor.map(worker, range(8)))
     assert len({id(value) for value in values}) == 8
     assert models._check_parameter_schema_cached.cache_info().currsize == 2
-    for ordinal in range(40):
+    for ordinal in range(72):
         _definition(dict(_schema(), description=f"bounded-{ordinal}"))
-    assert models._check_parameter_schema_cached.cache_info().currsize == 32
-    assert models._check_parameter_schema_cached.cache_info().maxsize == 32
+    assert models._check_parameter_schema_cached.cache_info().currsize == 64
+    assert models._check_parameter_schema_cached.cache_info().maxsize == 64
+
+
+def test_complete_desktop_catalog_rebuild_has_no_warm_schema_misses(tmp_path: Path) -> None:
+    """真实 catalog 轮转不能因容量不足重复检查；不以易受机器负载影响的毫秒数作门槛。"""
+    from zniku.desktop.server import build_desktop_application
+
+    application = build_desktop_application(tmp_path)
+    definitions = application._definition_catalog
+    payloads = tuple(definition.model_dump_json() for definition in definitions)
+    models._check_parameter_schema_cached.cache_clear()
+    reconstructed = tuple(NodeDefinition.model_validate_json(payload) for payload in payloads)
+    assert reconstructed == definitions
+    warm = models._check_parameter_schema_cached.cache_info()
+    # v0.3.5 扩容后的正式 catalog 超过旧 32 项容量，回归必须覆盖这个真实触发条件。
+    assert 32 < warm.currsize <= 64
+    for _ in range(3):
+        prior = models._check_parameter_schema_cached.cache_info()
+        assert (
+            tuple(NodeDefinition.model_validate_json(payload) for payload in payloads)
+            == definitions
+        )
+        current = models._check_parameter_schema_cached.cache_info()
+        assert current.misses == prior.misses
+        assert current.hits - prior.hits == len(definitions)

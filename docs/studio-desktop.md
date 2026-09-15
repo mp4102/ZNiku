@@ -95,8 +95,9 @@ Artifact 登记条件，也不隐藏原有有界 stdout/stderr 日志。
 
 ## 当前验收边界
 
-旧包事实保存在 [Phase 5 验收记录](v0.3.0-phase5-acceptance.md)；当前候选的版本、文件位置、已验证项目和
-未完成项目以[批次 C 验收](v0.3.1-desktop-candidate-acceptance.md)为准。
-真实首次用户五条 Journey、至少 5 名用户的量化验收由批次 C 承接，不以开发者测试替代；
-操作者与主持人使用[候选验收任务包](v0.3.1-creator-acceptance-kit.md)分别记录。此入口不提供 WebView2、NLE
+当前 v0.3.5 候选的版本、构建与验证结果以[执行备忘录](v0.3.5-execution-memo.md)为准，操作入口和真实待验项
+见[本机验收说明](v0.3.5-acceptance.md)。旧包事实保存在 [Phase 5 验收记录](v0.3.0-phase5-acceptance.md)及
+[v0.3.1 批次 C 验收](v0.3.1-desktop-candidate-acceptance.md)，不是本版包位置权威。
+保留的 v0.3.1 首次用户五条 Journey、至少 5 名用户量化任务不由本次开发测试自动关闭；
+原任务仍使用[候选验收任务包](v0.3.1-creator-acceptance-kit.md)分别记录。此入口不提供 WebView2、NLE
 时间线、代理播放、内部节点 resume 或外部 AI 工具进度接管。
