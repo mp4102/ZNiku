@@ -17,6 +17,8 @@ from zniku.graph import NodeDefinition, NodeInstance
 from zniku.project.paths import validate_filename_component
 from zniku.runtime import Artifact, NodeRunState, Run, RunnerInput
 from zniku.runtime.runner import OutputPathSpec
+from zniku.source_admission.mosaic_restoration import archive_basename
+from zniku.source_admission.mosaic_restoration import is_definition as is_mosaic
 from zniku.source_aligned.definitions import definition_role
 from zniku.source_aligned.node_contracts import (
     PARAMETER_MODELS,
@@ -40,6 +42,9 @@ def source_aligned_output_paths(
 ) -> tuple[OutputPathSpec, ...]:
     """名称不影响验收；不完整自定义草稿回退，不将命名变成运行门禁。"""
     if (node.type_id, node.definition_version) != (definition.type_id, definition.version):
+        return ()
+    # 新 MR 名称来自直接输入，不能在此仅有工程基名的旧投影中猜测；由服务的输入绑定入口提供。
+    if is_mosaic(definition):
         return ()
     role = role_reader(definition)
     if role is None or role in {"program", "final", "source", "admission"}:
@@ -162,6 +167,7 @@ def project_source_aligned_handoffs(
             "fi": "上下文补帧交付要求",
         }[role]
         batch = node.type_id.startswith(BATCH_PREFIX)
+        automatic_container = definition is not None and is_mosaic(definition)
         if batch:
             title = "章节批量增强交付要求"
         rows = [
@@ -172,7 +178,7 @@ def project_source_aligned_handoffs(
             PureWindowsPath(t.path).name for t in handoff.output_targets if t.port_id == "video"
         ]
         if len(targets) == 1:
-            rows.append(("本次交付文件", targets[0]))
+            rows.append(("建议归档文件" if automatic_container else "本次交付文件", targets[0]))
         video = None
         videos: list[Artifact] = []
         if attempt.input_artifact_ids == handoff.input_artifact_ids:
@@ -233,7 +239,9 @@ def project_source_aligned_handoffs(
                     [
                         (
                             "输出封装",
-                            params.declared_container.upper() + "；必须与真实媒体封装一致",
+                            "按实际 MP4 / MOV / MKV 自动识别；交回文件名不限，检查后规范命名"
+                            if automatic_container
+                            else params.declared_container.upper() + "；必须与真实媒体封装一致",
                         ),
                         ("模型(操作者声明)", params.model_name),
                         ("帧序约定", "原片第k帧对应结果第k帧；不剪辑、不变速、不增删/重排帧"),
@@ -254,6 +262,14 @@ def project_source_aligned_handoffs(
                     and video.artifact_id == params.source.original_video_artifact_id
                 ):
                     media = _metadata_contract(_direct(video))
+                    if automatic_container:
+                        rows.append(
+                            (
+                                "命名规则",
+                                archive_basename((_direct(video),), params.declared_container)
+                                + "；保留实际输入名，扩展名以交回容器为准",
+                            )
+                        )
                     facts = [
                         ("输入与输出帧数", str(media.frame_count)),
                         ("精确帧率", str(media.frame_rate)),
@@ -286,6 +302,7 @@ def project_source_aligned_handoffs(
                 input_artifact_id=None if video is None else video.artifact_id,
                 title=title,
                 fields=tuple(HandoffContractField(label=k, value=v) for k, v in rows),
+                intake_supported=automatic_container,
             )
         )
     return tuple(result)

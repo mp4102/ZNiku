@@ -37,7 +37,7 @@ export function diagnosticValue(value: unknown, roots: ReadonlyArray<string> = [
           clean = clean.split(variant).join('<synthetic-root>')
       }
       // 原始异常可能嵌入 quoted JSON/短票据。敏感行整体省略，不依赖随机值长度猜测安全。
-      clean = clean.split('\n').map((line) => /\b(?:token|ticket|authorization|selection_handle|candidate_handle|user_action_id|bootstrap)\b/i.test(line)
+      clean = clean.split('\n').map((line) => /\b(?:token|ticket|authorization|selection_handle|candidate_handle|user_action_id|ready_id|job_id|bootstrap)\b/i.test(line)
         ? '<redacted-sensitive-line>' : line).join('\n')
       clean = clean
         .replace(/https?:\/\/[^\s"'<>]+/g, (url) => url.split(/[?#]/, 1)[0]!)
@@ -53,7 +53,7 @@ export function diagnosticValue(value: unknown, roots: ReadonlyArray<string> = [
       visited.add(item)
       if (Array.isArray(item)) return item.slice(0, 200).map((entry) => visit(entry, depth + 1))
       return Object.fromEntries(Object.entries(item).slice(0, 100)
-        .filter(([key]) => !/token|header|authorization|bootstrap|user_action_id|selection_handle|candidate_handle|ticket_id|inbox_id|import_id|image_data_url/i.test(key))
+        .filter(([key]) => !/token|header|authorization|bootstrap|user_action_id|selection_handle|candidate_handle|ticket_id|inbox_id|import_id|ready_id|job_id|image_data_url/i.test(key))
         .map(([key, entry]) => [key, visit(entry, depth + 1)]))
     }
     return item

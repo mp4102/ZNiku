@@ -393,6 +393,7 @@ def test_status_summary_and_detail_are_separate_bounded_read_models(tmp_path: Pa
         "artifacts",
         "progress_samples",
         "handoff_contracts",
+        "input_reports",
     }
     assert detail.run == waiting_run
     referenced_ids = {

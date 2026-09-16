@@ -109,3 +109,45 @@ def test_exact_drift_rejected_and_all_new_parameters_are_presented() -> None:
     )
     with pytest.raises(PresentationCatalogError, match="DRIFT"):
         build_builtin_presentation_catalog((altered,))
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+def test_only_new_exact_waiting_mr_enables_check_before_import(automatic: bool) -> None:
+    from test_av27_handoff_projection import _fixture
+    from zniku.project_service.source_aligned_presentation import project_source_aligned_handoffs
+    from zniku.source_admission import definitions as admitted
+    from zniku.source_admission.mosaic_restoration import definition as mosaic_definition
+
+    run, artifact = _fixture("mr")
+    definition = mosaic_definition() if automatic else admitted.external_definition("mp4")
+    node = run.graph_snapshot.nodes[1].model_copy(
+        update={
+            "type_id": definition.type_id,
+            "definition_version": definition.version,
+            "parameters": {
+                "source": {**SOURCE, "original_video_artifact_id": artifact.artifact_id},
+                "declared_container": "mp4",
+                "model_name": "Synthetic",
+                "operator_frame_order_confirmed": True,
+            },
+        }
+    )
+    updated = run.model_copy(
+        update={
+            "graph_snapshot": run.graph_snapshot.model_copy(
+                update={"nodes": (run.graph_snapshot.nodes[0], node)}
+            ),
+            "definitions_snapshot": (run.definitions_snapshot[0], definition),
+            "node_runs": tuple(
+                item.model_copy(update={"definition_version": definition.version})
+                for item in run.node_runs
+            ),
+        }
+    )
+    before = updated.model_dump_json()
+    projections = project_source_aligned_handoffs(
+        updated, (artifact,), role_reader=admitted.definition_role, admitted_source=True
+    )
+    assert len(projections) == 1
+    assert projections[0].intake_supported is automatic
+    assert updated.model_dump_json() == before

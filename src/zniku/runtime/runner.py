@@ -700,8 +700,12 @@ class NodeRunner:
         self,
         request: NodeExecutionRequest,
         handoff: ManualHandoff,
+        submission: ManualSubmission | None = None,
     ) -> tuple[ValidatedOutput, ...]:
         """只读验证一个既有 handoff 的全部声明输出。
+
+        若可信宿主提供 submission，使用与正式 Submit 相同的端口和 attempt 路径限制；
+        不改写持久交接、不登记结果，也不接受外部路径权限。
 
         该入口与正式 Submit 复用 request、handoff、媒体 probe 和节点 validator 合同，但不会创建
         attempt 目录、写日志、构造 Artifact/NodeResult identity 或持久化任何状态。调用方仍必须在
@@ -724,7 +728,10 @@ class NodeRunner:
             ordered_inputs,
             executor.instructions,
         )
-        produced = self._resolve_produced_outputs((), targets, layout.work_dir)
+        submitted = self._normalize_manual_submission(
+            ManualSubmission() if submission is None else submission, layout
+        )
+        produced = self._resolve_produced_outputs(submitted.outputs, targets, layout.work_dir)
         validated, _ = self._validate_outputs(
             request,
             layout,

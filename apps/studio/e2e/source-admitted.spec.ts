@@ -1,10 +1,12 @@
 /** 正式0.3.5资源、服务、SQLite与Runtime；仅原生选择器使用纯合成fixture。 */
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, stat, rename } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
 import axe from 'axe-core'
 import { ProductionJournal, SyntheticFixtureHost, maskedScreenshot } from './production-support'
 import type { StatusEnvelope, RunDetailEnvelope } from '../src/studio/contracts'
 import type { SourceAdmittedCreateRequest, SourceAdmittedFullEnvelope, SourceAdmittedReplaceRequest } from '../src/studio/source-admitted-contracts'
+import type { HandoffIntakeSelectEnvelope } from '../src/studio/handoff-intake-contracts'
 
 const prefix = '/api/studio/templates/source-admitted-overlap'
 let service: SyntheticFixtureHost
@@ -104,7 +106,7 @@ for (const mr of ['off', 'on'] as const) {
     await expect(confirmation).toBeHidden()
     const graph = (await status(page)).snapshot!.project.graph
     expect(graph.nodes.find((node) => node.node_id === 'overlap.split')!.definition_version).toBe('0.3.5')
-    expect(graph.nodes.filter((node) => node.type_id === 'zniku.source_aligned.external.mp4')).toHaveLength(mr === 'on' ? 1 : 0)
+    expect(graph.nodes.filter((node) => node.type_id === 'zniku.source-admitted.mosaic-restoration.external')).toHaveLength(mr === 'on' ? 1 : 0)
     await page.reload()
     await page.getByRole('button', { name: '关闭工程首页', exact: true }).click()
     expect((await status(page)).snapshot!.project.graph).toEqual(graph)
@@ -125,21 +127,44 @@ for (const mr of ['off', 'on'] as const) {
       const candidate = await readFile(service.fixture.source_aligned_mr!)
       await page.getByRole('button', { name: /处理外部文件/ }).first().click()
       const helper = page.getByRole('region', { name: '外部处理助手', exact: true })
+      await helper.getByText('素材分析报告', { exact: true }).click()
+      await expect(helper.getByText('记录已准入素材；无需交给外部软件处理')).toBeVisible()
+      await helper.getByText('高级 → 完整报告 JSON（只读）', { exact: true }).click()
+      await expect(helper.locator('pre:visible')).toContainText('"schema": "zniku.avenhance.v27.admission/1"')
+      await helper.getByText('高级 → 完整报告 JSON（只读）', { exact: true }).click()
+      await helper.getByText('素材分析报告', { exact: true }).click()
       await helper.getByRole('button', { name: '选择处理好的文件', exact: true }).click()
       await expect(page.getByRole('dialog', { name: '确认导入外部处理文件', exact: true })).toBeHidden()
       expect(await stat(target).then(() => true, () => false)).toBe(false)
+      const selecting = page.waitForResponse((response) => response.url() === `${service.origin}/api/studio/handoff-intake/select`)
       await helper.getByRole('button', { name: '选择处理好的文件', exact: true }).click()
-      const importDialog = page.getByRole('dialog', { name: '确认导入外部处理文件', exact: true })
-      await expect(importDialog).toBeVisible()
-      await importDialog.getByRole('button', { name: '确认复制到此任务', exact: true }).click()
-      await expect(importDialog).toBeHidden({ timeout: 45_000 })
-      expect(await readFile(target)).toEqual(candidate)
+      const selected = await (await selecting).json() as HandoffIntakeSelectEnvelope
+      expect(selected).toMatchObject({ source_name: 'source-aligned-mr.mp4', archive_name: 'av27-source.RM.mp4', action: 'copy' })
+      await expect(page.getByRole('dialog', { name: '确认导入外部处理文件', exact: true })).toBeHidden()
+      expect(await stat(selected.incoming_path).then(() => true, () => false)).toBe(false)
+      expect(await stat(selected.output_path).then(() => true, () => false)).toBe(false)
+      await helper.getByRole('button', { name: '检查并导入', exact: true }).click()
+      await expect(helper.getByRole('button', { name: '提交并继续', exact: true })).toBeEnabled({ timeout: 45_000 })
+      expect(await readFile(selected.incoming_path)).toEqual(candidate)
+      expect(await stat(selected.output_path).then(() => true, () => false)).toBe(false)
       expect(await readFile(service.fixture.source_aligned_mr!)).toEqual(candidate)
       expect((await detail(page, runId)).run.node_runs.find((node) => node.node_id === 'source-aligned.mr')!.state).toBe('waiting_external')
-      await helper.getByRole('button', { name: '检查输出', exact: true }).click()
+      // 同一生产服务也覆盖目录交回：任意名称/后缀由实际媒体识别，不靠目标扩展名过滤。
+      const arbitrary = join(dirname(selected.incoming_path), 'external-result.unusual')
+      await rename(selected.incoming_path, arbitrary)
+      await helper.getByRole('button', { name: '刷新文件列表', exact: true }).click()
+      await expect(helper.getByText('external-result.unusual', { exact: true })).toBeVisible()
+      await expect(helper.getByRole('button', { name: '提交并继续', exact: true })).toBeDisabled()
+      await expect(helper.getByRole('button', { name: '检查并导入', exact: true })).toBeEnabled()
+      await helper.getByRole('button', { name: '检查并导入', exact: true }).click()
       await expect(helper.getByRole('button', { name: '提交并继续', exact: true })).toBeEnabled({ timeout: 45_000 })
+      expect(await stat(arbitrary).then(() => true, () => false)).toBe(false)
+      expect(await readFile(selected.incoming_path)).toEqual(candidate)
+      await accessibility(page)
       await helper.getByRole('button', { name: '提交并继续', exact: true }).click()
       await expect.poll(async () => (await detail(page, runId)).run.node_runs.filter((node) => node.state === 'waiting_external').length, { timeout: 90_000 }).toBe(3)
+      expect(await readFile(selected.output_path)).toEqual(candidate)
+      expect(await stat(selected.incoming_path).then(() => true, () => false)).toBe(false)
     }
     const processed = await detail(page, runId)
     expect(processed.run.node_runs.filter((node) => node.state === 'failed')).toEqual([])

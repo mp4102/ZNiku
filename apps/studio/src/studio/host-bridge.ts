@@ -8,6 +8,9 @@
 import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js'
 import projectServiceSchema from '../service/project-service.schema.json'
 import type { RecentProject } from './recent-projects'
+import { assertIntakeBinding, type HandoffIntakeObserveEnvelope, type HandoffIntakeSelectRequest,
+  type HandoffIntakeSelectEnvelope, type HandoffIntakeCheckRequest, type HandoffIntakeJobRequest,
+  type HandoffIntakeJobEnvelope, type HandoffIntakePublishRequest, type HandoffIntakePublishEnvelope } from './handoff-intake-contracts'
 import { assertBatchObservation, type HandoffBatchBinding, type HandoffBatchObserveEnvelope,
   type HandoffBatchPreviewRequest, type HandoffBatchPreviewEnvelope, type HandoffBatchConfirmRequest,
   type HandoffBatchConfirmEnvelope, type HandoffBatchCheckRequest, type HandoffBatchCheckEnvelope } from './handoff-batch-contracts'
@@ -101,6 +104,11 @@ export interface HostBridge {
   previewHandoffBatch?(request: HandoffBatchPreviewRequest): Promise<HandoffBatchPreviewEnvelope>
   confirmHandoffBatch?(request: HandoffBatchConfirmRequest): Promise<HandoffBatchConfirmEnvelope>
   checkHandoffBatch?(request: HandoffBatchCheckRequest): Promise<HandoffBatchCheckEnvelope>
+  observeHandoffIntake?(request: HandoffImportBinding): Promise<HandoffIntakeObserveEnvelope>
+  selectHandoffIntake?(request: HandoffIntakeSelectRequest): Promise<HandoffIntakeSelectEnvelope>
+  checkHandoffIntake?(request: HandoffIntakeCheckRequest): Promise<HandoffIntakeJobRequest>
+  inspectHandoffIntake?(request: HandoffIntakeJobRequest): Promise<HandoffIntakeJobEnvelope>
+  publishHandoffIntake?(request: HandoffIntakePublishRequest): Promise<HandoffIntakePublishEnvelope>
   inspectStorage?(projectSessionId: string): Promise<StorageInspection>
   configureStorage?(request: StorageLocationRequest): Promise<StorageInspection>
   previewStorageMigration?(request: StorageLocationRequest): Promise<StorageMigrationPreview>
@@ -442,6 +450,9 @@ export class FetchHostBridge implements HostBridge {
   private preferenceWrites: Promise<void> = Promise.resolve()
   private readonly importPreviews = new Map<string, HandoffImportPreviewEnvelope>()
   private readonly inboxPreviews = new Map<string, HandoffInboxPreviewEnvelope>()
+  private readonly intakeSelections = new Map<string, HandoffIntakeSelectEnvelope>()
+  private readonly intakeJobs = new Map<string, HandoffIntakeSelectEnvelope>()
+  private readonly intakeReady = new Map<string, HandoffIntakeSelectEnvelope>()
   private readonly batchPreviews = new Map<string, HandoffBatchPreviewEnvelope>()
   private readonly storagePreviews = new Map<string, StorageMigrationPreview>()
 
@@ -568,6 +579,63 @@ export class FetchHostBridge implements HostBridge {
     const result = await this.dataPost<HandoffInboxObserveEnvelope>('handoff-inbox/observe', request,
       'HandoffInboxObserveRequest', 'HandoffInboxObserveEnvelope')
     this.assertInboxBinding(request, result)
+    return result
+  }
+
+  async observeHandoffIntake(request: HandoffImportBinding): Promise<HandoffIntakeObserveEnvelope> {
+    const result = await this.dataPost<HandoffIntakeObserveEnvelope>('handoff-intake/observe', request,
+      'HandoffImportBinding', 'HandoffIntakeObserveEnvelope')
+    assertIntakeBinding(request, result)
+    if (new Set(result.candidates.map((item) => item.candidate_handle)).size !== result.candidates.length) {
+      throw new HostBridgeError('交回来件列表存在重复句柄，请刷新。')
+    }
+    return result
+  }
+
+  async selectHandoffIntake(request: HandoffIntakeSelectRequest): Promise<HandoffIntakeSelectEnvelope> {
+    if ((request.selection_handle === null) === (request.candidate_handle === null)) throw new HostBridgeError('请明确选择一个文件。')
+    const result = await this.dataPost<HandoffIntakeSelectEnvelope>('handoff-intake/select', request,
+      'HandoffIntakeSelectRequest', 'HandoffIntakeSelectEnvelope')
+    assertIntakeBinding(request, result)
+    this.intakeSelections.set(result.ticket_id, result)
+    if (this.intakeSelections.size > 32) this.intakeSelections.delete(this.intakeSelections.keys().next().value!)
+    return result
+  }
+
+  async checkHandoffIntake(request: HandoffIntakeCheckRequest): Promise<HandoffIntakeJobRequest> {
+    const selected = this.intakeSelections.get(request.ticket_id)
+    if (!selected) throw new HostBridgeError('文件选择已失效，请重新选择。')
+    if (selected.replace_existing && !request.overwrite) throw new HostBridgeError('已有文件，请明确允许替换后再检查。')
+    this.intakeSelections.delete(request.ticket_id)
+    const result = await this.dataPost<HandoffIntakeJobRequest>('handoff-intake/check', request,
+      'HandoffIntakeCheckRequest', 'HandoffIntakeJobRequest')
+    this.intakeJobs.set(result.job_id, selected)
+    if (this.intakeJobs.size > 32) this.intakeJobs.delete(this.intakeJobs.keys().next().value!)
+    return result
+  }
+
+  async inspectHandoffIntake(request: HandoffIntakeJobRequest): Promise<HandoffIntakeJobEnvelope> {
+    const selected = this.intakeJobs.get(request.job_id)
+    if (!selected) throw new HostBridgeError('检查任务已失效，请重新选择文件。')
+    const result = await this.dataPost<HandoffIntakeJobEnvelope>('handoff-intake/status', request,
+      'HandoffIntakeJobRequest', 'HandoffIntakeJobEnvelope')
+    if (result.job_id !== request.job_id || (result.phase === 'ready') !== (result.ready_id !== null) ||
+        result.bytes_done > result.total_bytes) throw new HostBridgeError('检查回执与当前任务不一致。')
+    if (result.ready_id) {
+      this.intakeReady.set(result.ready_id, selected)
+      if (this.intakeReady.size > 32) this.intakeReady.delete(this.intakeReady.keys().next().value!)
+    }
+    return result
+  }
+
+  async publishHandoffIntake(request: HandoffIntakePublishRequest): Promise<HandoffIntakePublishEnvelope> {
+    const selected = this.intakeReady.get(request.ready_id)
+    if (!selected) throw new HostBridgeError('检查结果已失效，请重新检查文件。')
+    // 发布不是可重放的读取；响应丢失后不自动再次移动或提交。
+    this.intakeReady.delete(request.ready_id)
+    const result = await this.dataPost<HandoffIntakePublishEnvelope>('handoff-intake/publish', request,
+      'HandoffIntakePublishRequest', 'HandoffIntakePublishEnvelope')
+    if (result.output_path !== selected.output_path) throw new HostBridgeError('发布位置与已检查文件不一致，请核对实际文件。')
     return result
   }
 

@@ -478,6 +478,7 @@ class RuntimeService:
         node_run_id: str,
         *,
         handoff_id: str,
+        submission: ManualSubmission | None = None,
     ) -> tuple[ValidatedOutput, ...]:
         """只读执行 handoff 的完整媒体与节点 validator，不登记任何结果。"""
 
@@ -489,7 +490,18 @@ class RuntimeService:
         run = self._repository.get_run(run_id)
         request = self._execution_request(run, node_run)
         handoff = self._runner_handoff(run, node_run, request.inputs)
-        return self._runner.inspect_manual_outputs(request, handoff)
+        return self._runner.inspect_manual_outputs(request, handoff, submission)
+
+    def inspect_external_request(
+        self, run_id: str, node_run_id: str, *, handoff_id: str
+    ) -> NodeExecutionRequest:
+        """只读返回精确 waiting 绑定的执行上下文，供可信宿主调用同一节点媒体检查。
+
+        这不是任意路径的执行或结果登记入口；候选权限由宿主选择句柄限定，正式 Submit
+        仍走 Runner 的现有路径限制和完整 validator。旧候选接口的 attempt 限制不变。
+        """
+        node_run = self.inspect_external_handoff(run_id, node_run_id, handoff_id=handoff_id)
+        return self._execution_request(self._repository.get_run(run_id), node_run)
 
     def inspect_external_import_candidate(
         self,

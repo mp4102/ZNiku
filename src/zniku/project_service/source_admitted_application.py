@@ -29,6 +29,7 @@ from zniku.runtime import NodeResult, NodeRunState, RunState, RuntimeRepositoryE
 from zniku.source_admission import definitions
 from zniku.source_admission.adapters import cancel_source
 from zniku.source_admission.contracts import SOURCE_NAMESPACE, VERSION
+from zniku.source_admission.mosaic_restoration import definition as mosaic_restoration_definition
 from zniku.source_admission.naming import publication_target
 from zniku.source_aligned.template import build_source_aligned
 
@@ -466,7 +467,7 @@ def full(
             request.processing,
             request.publication,
             definition_factory=batch_definition,
-            external_factory=definitions.external_definition,
+            external_factory=lambda _container: mosaic_restoration_definition(),
             publication_target=publication_target,
             batch_enhancement=True,
         )

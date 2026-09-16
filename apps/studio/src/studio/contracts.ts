@@ -593,6 +593,15 @@ export interface RunDetailEnvelope {
   readonly artifacts: ReadonlyArray<ArtifactWire>
   readonly progress_samples: ReadonlyArray<NodeProgressProjectionWire>
   readonly handoff_contracts: ReadonlyArray<ExternalHandoffContractProjectionWire>
+  readonly input_reports?: ReadonlyArray<ArtifactInputReportWire>
+}
+
+export interface ArtifactInputReportWire {
+  readonly artifact_id: string
+  readonly title: string
+  readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string }>
+  readonly document: JsonObject | null
+  readonly message: string | null
 }
 
 export interface ExternalHandoffContractProjectionWire {
@@ -601,6 +610,7 @@ export interface ExternalHandoffContractProjectionWire {
   readonly input_artifact_id: string | null
   readonly title: string
   readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string }>
+  readonly intake_supported?: boolean
 }
 
 export interface NodeLogWire {

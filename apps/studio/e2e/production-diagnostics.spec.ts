@@ -8,7 +8,7 @@ test('合成失败诊断保留绑定与状态，但剔除秘密和媒体内容',
   const secret = 'synthetic-secret-'.repeat(4)
   const result = diagnosticValue({ token: secret, headers: { Authorization: secret },
     bootstrap: { token: secret }, selection_handle: 'synthetic-selection', candidate_handle: 'synthetic-candidate',
-    ticket_id: 'synthetic-ticket', user_action_id: 'synthetic-action', image_data_url: 'data:image/png;base64,secret',
+    ticket_id: 'synthetic-ticket', user_action_id: 'synthetic-action', ready_id: 'synthetic-ready', job_id: 'synthetic-job', image_data_url: 'data:image/png;base64,secret',
     run_id: '00000000-0000-4000-8000-000000000001', node_run_id: '00000000-0000-4000-8000-000000000002',
     state: 'running', error: `unexpected ${secret}`, path: '/synthetic/root/source.mkv' }, ['/synthetic/root'])
   expect(result).toEqual({ run_id: '00000000-0000-4000-8000-000000000001',

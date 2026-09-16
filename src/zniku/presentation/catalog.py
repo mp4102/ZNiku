@@ -607,6 +607,9 @@ def _parameter_presentations(
         ("zniku.overlap.", "zniku.source_aligned.", "zniku.source-admitted.")
     )
     aligned = overlap and definition.version in {"0.3.3", "0.3.5"}
+    from zniku.source_admission.mosaic_restoration import CONTAINER_HELP, is_definition
+
+    automatic_container = is_definition(definition)
     for order, (name, raw_schema) in enumerate(_schema_properties(definition).items(), start=1):
         label = (
             (aligned_presentation.PARAMETER_LABELS.get(name) if aligned else None)
@@ -640,14 +643,20 @@ def _parameter_presentations(
         parameters.append(
             ParameterPresentation(
                 parameter_pointer=f"/{name.replace('~', '~0').replace('/', '~1')}",
-                label=label,
-                description=(aligned_presentation.PARAMETER_HELP.get(name) if aligned else None)
+                label="建议输出封装"
+                if automatic_container and name == "declared_container"
+                else label,
+                description=CONTAINER_HELP
+                if automatic_container and name == "declared_container"
+                else (aligned_presentation.PARAMETER_HELP.get(name) if aligned else None)
                 or (overlap_presentation.PARAMETER_HELP.get(name) if overlap else None),
                 group_id=group_id,
                 order=order,
                 importance=(
                     ParameterImportance.ADVANCED
-                    if name in _ADVANCED_PARAMETERS or overlap_binding
+                    if name in _ADVANCED_PARAMETERS
+                    or overlap_binding
+                    or (automatic_container and name == "declared_container")
                     else ParameterImportance.PRIMARY
                 ),
                 control_hint=control_hint,

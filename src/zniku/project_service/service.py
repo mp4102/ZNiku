@@ -103,7 +103,7 @@ from zniku.runtime import (
     utc_now,
 )
 from zniku.runtime.progress import MonotonicClock, WallClock
-from zniku.runtime.runner import MediaProbe, NodeValidator, OutputPathSpec
+from zniku.runtime.runner import MediaProbe, NodeValidator, OutputPathSpec, RunnerInput
 
 from .chapter_overlap import (
     ChapterOverlapPreviewEnvelope,
@@ -113,6 +113,9 @@ from .chapter_overlap import (
 from .handoff import project_handoff_contracts
 from .handoff_batch import MAX_BATCH_TARGETS, HandoffBatchBinding
 from .handoff_import import HandoffImportBinding, ImportAuthority
+from .host_bridge import HostBridgeFailure
+from .input_reports import project_input_reports
+from .intake_runtime import published_submission
 from .models import (
     AbandonRunCommand,
     ActiveProjectOperation,
@@ -919,6 +922,7 @@ class ProjectServiceApplication:
                 artifacts=artifacts,
                 progress_samples=self._project_progress(run, runtime),
                 handoff_contracts=project_handoff_contracts(run, artifacts),
+                input_reports=project_input_reports(run, artifacts),
             )
         except (RuntimeRepositoryError, ValidationError) as failure:
             raise self._translate_failure(failure) from failure
@@ -995,7 +999,15 @@ class ProjectServiceApplication:
                 http_status=409,
             )
 
-        targets = [self._inspect_target(target) for target in handoff.output_targets]
+        try:
+            submission, output_targets = published_submission(runtime, node_run)
+        except HostBridgeFailure as failure:
+            raise ProjectServiceError(
+                failure.code, failure.message, http_status=failure.http_status
+            ) from failure
+        except (RuntimeRepositoryError, RuntimeServiceError, ValidationError) as failure:
+            raise self._translate_failure(failure) from failure
+        targets = [self._inspect_target(target) for target in output_targets]
         if probe:
             probe_candidates = [target for target in targets if target.state == "present"]
             if len(probe_candidates) == len(targets):
@@ -1004,6 +1016,7 @@ class ProjectServiceApplication:
                         run_id,
                         node_run_id,
                         handoff_id=handoff.handoff_id,
+                        submission=submission,
                     )
                 except RunnerError as failure:
                     message = str(failure)[:4096]
@@ -2017,6 +2030,12 @@ class ProjectServiceApplication:
             command.node_run_id,
             handoff_id=command.handoff_id,
         )
+        try:
+            submission, _ = published_submission(runtime, node_run)
+        except HostBridgeFailure as failure:
+            raise ProjectServiceError(
+                failure.code, failure.message, http_status=failure.http_status
+            ) from failure
         self._begin_worker(
             "submit_external",
             node_run.run_id,
@@ -2024,6 +2043,7 @@ class ProjectServiceApplication:
                 command.node_run_id,
                 run_id=command.run_id,
                 handoff_id=command.handoff_id,
+                submission=submission,
             ),
         )
 
@@ -2078,6 +2098,29 @@ class ProjectServiceApplication:
         def resolve_paths(
             run: Run, node: NodeInstance, definition: NodeDefinition
         ) -> tuple[OutputPathSpec, ...]:
+            from zniku.source_admission import mosaic_restoration as mr
+            from zniku.source_aligned.node_contracts import ExternalParameters
+
+            if mr.is_definition(definition):
+                # 只决定新交接的建议文件名；正式 validator 仍核对实际直接入边及来源。
+                params = ExternalParameters.model_validate(dict(node.parameters))
+                artifact = RuntimeRepository(store).get_artifact(
+                    params.source.original_video_artifact_id
+                )
+                inputs = (
+                    RunnerInput(
+                        port_id="video",
+                        artifact_id=artifact.artifact_id,
+                        kind=artifact.kind,
+                        path=Path(artifact.path),
+                    ),
+                )
+                return (
+                    OutputPathSpec(
+                        port_id="video",
+                        relative_path=mr.archive_basename(inputs, params.declared_container),
+                    ),
+                )
             if storage is None or storage.media_basename is None:
                 return ()
             from zniku.chapter_batch.definitions import definition_role as batch_role

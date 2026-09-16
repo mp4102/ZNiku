@@ -26,7 +26,7 @@ def test_generated_assets_match_exact_python_contracts() -> None:
                 json.dumps(module[fn](), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
             )
         corpus = module["corpus_document"]()
-    assert len(corpus["definitions"]) == 14
+    assert len(corpus["definitions"]) == 15
     for item in corpus["definitions"]:
         assert item["identity"]["version"] == "0.3.5"
         Draft202012Validator.check_schema(item["parameter_schema"])

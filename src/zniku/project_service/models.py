@@ -15,6 +15,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    JsonValue,
     StringConstraints,
     TypeAdapter,
     field_validator,
@@ -305,6 +306,17 @@ class ExternalHandoffContractProjection(ProjectServiceModel):
     input_artifact_id: Annotated[str, StringConstraints(min_length=1, max_length=160)] | None
     title: Annotated[str, StringConstraints(min_length=1, max_length=160)]
     fields: Annotated[tuple[HandoffContractField, ...], Field(min_length=1, max_length=32)]
+    intake_supported: bool = False
+
+
+class ArtifactInputReport(ProjectServiceModel):
+    """已登记直接输入的有界只读报告；无法读取时只说明原因，不改写原文件。"""
+
+    artifact_id: str
+    title: str
+    fields: tuple[HandoffContractField, ...] = ()
+    document: dict[str, JsonValue] | None = None
+    message: str | None = None
 
 
 class RunDetailEnvelope(ProjectServiceModel):
@@ -315,6 +327,7 @@ class RunDetailEnvelope(ProjectServiceModel):
     artifacts: tuple[Artifact, ...] = ()
     progress_samples: tuple[NodeProgressProjection, ...] = ()
     handoff_contracts: tuple[ExternalHandoffContractProjection, ...] = ()
+    input_reports: tuple[ArtifactInputReport, ...] = ()
 
     @model_validator(mode="after")
     def validate_handoff_contract_bindings(self) -> RunDetailEnvelope:
@@ -326,6 +339,18 @@ class RunDetailEnvelope(ProjectServiceModel):
             latest_attempts[item.node_id] = max(latest_attempts.get(item.node_id, 0), item.attempt)
         seen: set[str] = set()
         artifact_ids = {item.artifact_id for item in self.artifacts}
+        report_ids = [item.artifact_id for item in self.input_reports]
+        report_inputs = {
+            identity
+            for item in self.run.node_runs
+            if item.external_handoff is not None
+            for identity in item.external_handoff.input_artifact_ids
+        }
+        if (
+            len(report_ids) != len(set(report_ids))
+            or not set(report_ids) <= artifact_ids & report_inputs
+        ):
+            raise ValueError("E_INPUT_REPORT_BINDING: 报告必须唯一且属于当前交接输入")
         for contract in self.handoff_contracts:
             node_run = node_runs.get(contract.node_run_id)
             if contract.node_run_id in seen or node_run is None:

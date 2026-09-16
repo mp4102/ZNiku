@@ -45,4 +45,4 @@ def test_new_role_identification_requires_full_exact_schema_and_executor() -> No
     data = source.model_dump()
     data["executor"]["adapter"] = "third.party:source"
     assert definitions.definition_role(type(source).model_validate(data)) is None
-    assert len(definitions.built_in_definitions()) == 13
+    assert len(definitions.built_in_definitions()) == 14

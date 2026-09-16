@@ -6,6 +6,20 @@ import { handoffDetailEnvelope, handoffReadinessEnvelope } from './test-fixtures
 afterEach(cleanup)
 
 describe('只读人工交付说明', () => {
+  it('新 admitted 外部结果展示绑定源事实，未知嵌套对象不作为原始JSON塞入摘要', () => {
+    const artifact = handoffDetailEnvelope().artifacts[0]!
+    render(<ArtifactMediaSummary artifact={{ ...artifact, media_info: {
+      'zniku.source.admitted': { role: 'external', source: { frame_count: 902, frame_rate: '30000/1001' }, geometry: { width: 1920, height: 1080 }, signal: { field_order: 'progressive', color_space: 'bt709' } },
+    } }} />)
+    expect(screen.getByText('已验收外部前处理视频')).toBeVisible()
+    expect(screen.getByText('绑定源帧数')).toBeVisible()
+    expect(screen.getByText('902')).toBeVisible()
+    expect(screen.getByText('绑定源帧率')).toBeVisible()
+    expect(screen.getByText('30000/1001')).toBeVisible()
+    expect(screen.getByText('1920 × 1080')).toBeVisible()
+    expect(screen.getByText('色彩空间：bt709；扫描方式：逐行')).toBeVisible()
+    expect(screen.queryByText('{"width":1920,"height":1080}')).not.toBeInTheDocument()
+  })
   it('新原片绑定媒体仍显示已登记帧数与角色，不推导外部内容是否相同', () => {
     const artifact = handoffDetailEnvelope().artifacts[0]!
     render(<ArtifactMediaSummary artifact={{ ...artifact, media_info: {

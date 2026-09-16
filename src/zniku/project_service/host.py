@@ -22,6 +22,7 @@ from .chapter_overlap import CHAPTER_OVERLAP_PREVIEW_ROUTE, ChapterOverlapPrevie
 from .handoff_batch import HandoffBatchManager
 from .handoff_import import HandoffImportManager
 from .handoff_inbox import HandoffInboxManager
+from .handoff_intake import HandoffIntakeManager
 from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
 from .preview import PreviewCache
 from .service import ProjectServiceApplication, ProjectServiceError
@@ -50,11 +51,16 @@ _HANDOFF_IMPORT_PREVIEW: Final = f"{_HANDOFF_IMPORT_PREFIX}/preview"
 _HANDOFF_IMPORT_CONFIRM: Final = f"{_HANDOFF_IMPORT_PREFIX}/confirm"
 _INBOX_PREFIX: Final = "/api/studio/handoff-inbox"
 _BATCH_PREFIX: Final = "/api/studio/handoff-batch"
+_INTAKE_PREFIX: Final = "/api/studio/handoff-intake"
 _STORAGE_PREFIX: Final = "/api/studio/storage"
 _DATA_ROUTES: Final = frozenset(
     (
         *[f"{_INBOX_PREFIX}/{action}" for action in ("observe", "preview", "confirm")],
         *[f"{_BATCH_PREFIX}/{action}" for action in ("observe", "preview", "confirm", "check")],
+        *[
+            f"{_INTAKE_PREFIX}/{action}"
+            for action in ("observe", "select", "check", "status", "publish")
+        ],
         *[
             f"{_STORAGE_PREFIX}/{action}"
             for action in (
@@ -195,6 +201,7 @@ def make_project_service_handler(
     handoff_import = HandoffImportManager()
     handoff_inbox = HandoffInboxManager()
     handoff_batch = HandoffBatchManager()
+    handoff_intake = HandoffIntakeManager()
     storage_api = StorageApi()
 
     class Handler(BaseHTTPRequestHandler):
@@ -550,6 +557,26 @@ def make_project_service_handler(
                         payload, session=host_bridge, application=application
                     ).model_dump(mode="json")
                     status = HTTPStatus.OK
+                elif parsed.path.startswith(f"{_INTAKE_PREFIX}/"):
+                    intake_operation = {
+                        "observe": handoff_intake.observe,
+                        "select": handoff_intake.select,
+                        "check": handoff_intake.check,
+                        "status": handoff_intake.status,
+                        "publish": handoff_intake.publish,
+                    }[parsed.path.rsplit("/", 1)[-1]]
+                    try:
+                        response_payload = intake_operation(
+                            payload, session=host_bridge, application=application
+                        ).model_dump(mode="json")
+                    except OSError as error:
+                        # 磁盘或NAS占用应显示为交回错误，不能断开HTTP伪装成服务离线。
+                        raise HostBridgeFailure(
+                            "E_HANDOFF_INTAKE_IO",
+                            f"无法读取或收纳文件，请检查占用、磁盘和权限：{error}",
+                            http_status=409,
+                        ) from error
+                    status = HTTPStatus.OK
                 elif parsed.path.startswith(f"{_STORAGE_PREFIX}/"):
                     response_payload = storage_api.invoke(
                         parsed.path.rsplit("/", 1)[-1],
@@ -621,6 +648,7 @@ def make_project_service_handler(
                     _HANDOFF_IMPORT_PREFIX,
                     _INBOX_PREFIX,
                     _BATCH_PREFIX,
+                    _INTAKE_PREFIX,
                     _STORAGE_PREFIX,
                 )
             )

@@ -536,6 +536,7 @@ describe('Studio Project Service 0.3.0 contract', () => {
       input_artifact_id: base.artifacts[0]!.artifact_id,
       title: 'Synthetic 输出合同',
       fields: [{ label: '输入 exact N', value: '100' }],
+      intake_supported: false,
     }
     const valid = { ...base, handoff_contracts: [projection] }
     expect(parseRunDetailEnvelope(valid).handoff_contracts[0]?.fields[0]?.value).toBe('100')

@@ -31,6 +31,15 @@ export function handoffInputNames(nodeRun: NodeRunWire, artifacts: ReadonlyMap<s
   })
 }
 
+/** 只按通用 Artifact kind 组织输入；不从节点类型、端口名或扩展名猜业务职责。 */
+export function handoffInputLabel(artifact: ArtifactWire | undefined): string {
+  if (!artifact) return '输入'
+  if (artifact.kind === 'VideoFile' || artifact.kind === 'MediaFile') return '待处理视频'
+  if (artifact.kind === 'DataFile') return '分析 / 参考报告'
+  if (artifact.kind === 'AudioFile') return '待处理音频'
+  return '参考输入'
+}
+
 /** 与 HandoffContract 的标签翻译相同，只提取正式文本，不转为数值或作为检查资格。 */
 export function handoffExpectedFrames(nodeRun: NodeRunWire, detail: RunDetailEnvelope | null): string[] {
   if (!nodeRun.external_handoff || detail?.run.run_id !== nodeRun.run_id) return []
@@ -41,7 +50,10 @@ export function handoffExpectedFrames(nodeRun: NodeRunWire, detail: RunDetailEnv
 
 export function handoffSummary(nodeRun: NodeRunWire, artifacts: ReadonlyMap<string, ArtifactWire>, detail: RunDetailEnvelope | null): string[] {
   return [
-    ...handoffInputNames(nodeRun, artifacts).map((name) => `输入：${name}`),
+    ...(nodeRun.external_handoff?.input_artifact_ids ?? []).map((id, index) => {
+      const artifact = artifacts.get(id)
+      return `${handoffInputLabel(artifact)}：${artifact ? fileName(artifact.path) : `输入 ${index + 1} 暂不可用`}`
+    }),
     ...handoffExpectedFrames(nodeRun, detail).map((frames) => `预期输出：${frames} 帧`),
   ]
 }

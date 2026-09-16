@@ -2365,6 +2365,155 @@
     {
       "features": {
         "json_types": [
+          "boolean",
+          "integer",
+          "null",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/DeclaredContainer",
+          "#/$defs/ExactSeconds",
+          "#/$defs/Label",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "anyOf",
+          "const",
+          "default",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "maxLength",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source-admitted.mosaic-restoration.external",
+        "version": "0.3.5"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "DeclaredContainer": {
+            "enum": [
+              "mp4",
+              "mov",
+              "mkv"
+            ],
+            "type": "string"
+          },
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "Label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "保留旧向导 wire 的封装建议，但新 exact 不把它当作实际容器限制。",
+        "properties": {
+          "declared_container": {
+            "$ref": "#/$defs/DeclaredContainer",
+            "default": "mp4",
+            "description": "仅建议初始输出封装；交回时按实际 MP4/MOV/MKV 识别，不转码、不靠改后缀转换。"
+          },
+          "model_name": {
+            "$ref": "#/$defs/Label"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Version"
+          },
+          "operator_frame_order_confirmed": {
+            "const": true,
+            "title": "Operator Frame Order Confirmed",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "model_name",
+          "operator_frame_order_confirmed"
+        ],
+        "title": "MosaicRestorationParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
           "array",
           "integer",
           "null",

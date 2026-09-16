@@ -1,5 +1,6 @@
 /** 只展示 Python 的人工交付说明及已登记媒体信息，不推导帧数、FPS 或规划。 */
 
+import { useState } from 'react'
 import type { ArtifactWire, ExternalHandoffContractProjectionWire, ExternalHandoffReadiness, JsonObject } from './contracts'
 import { failurePresentation } from './run-presentation'
 
@@ -77,13 +78,64 @@ function objectValue(value: unknown): JsonObject | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : null
 }
 
+/** 仅对服务端已返回的纯数据做缩进展示与显式复制，不读取磁盘或改写报告。 */
+export function ReadOnlyJson({ value, copyLabel }: { readonly value: JsonObject; readonly copyLabel: string }) {
+  const [notice, setNotice] = useState<string | null>(null)
+  const text = JSON.stringify(value, null, 2)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setNotice('JSON 已复制。')
+    } catch {
+      setNotice('无法复制，请在下方只读文本中手动选择并复制。')
+    }
+  }
+  return <><button type="button" onClick={() => void copy()}>{copyLabel}</button>
+    {notice && <p role="status">{notice}</p>}<pre>{text}</pre></>
+}
+
 function displayValue(value: unknown): string {
-  return value === null || value === undefined ? '不可用（未登记）' : typeof value === 'object' ? JSON.stringify(value) : String(value)
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : '不可用（未登记）'
+}
+
+const signalLabels: Readonly<Record<string, string>> = {
+  color_range: '色彩范围', color_space: '色彩空间', color_transfer: '传递特性', color_primaries: '色彩原色',
+  chroma_location: '色度位置', sample_aspect_ratio: '像素比例', field_order: '扫描方式', rotation: '旋转角度',
+}
+
+function readableSignal(value: unknown): string {
+  const signal = objectValue(value)
+  if (!signal) return displayValue(value)
+  return Object.entries(signalLabels).filter(([key]) => signal[key] !== undefined && signal[key] !== null)
+    .map(([key, label]) => `${label}：${signal[key] === 'progressive' ? '逐行' : displayValue(signal[key])}`).join('；') || '不可用（未登记）'
+}
+
+function readableGeometry(value: unknown): string {
+  const geometry = objectValue(value)
+  return geometry ? `${displayValue(geometry.width)} × ${displayValue(geometry.height)}` : displayValue(value)
+}
+
+function AudioTracks({ value }: { readonly value: unknown }) {
+  if (!Array.isArray(value)) return <span>不可用（未登记）</span>
+  if (!value.length) return <span>无音轨（已登记）</span>
+  return <ul>{value.map((item, index) => {
+    const track = objectValue(item)
+    const fields = track ? [
+      track.codec === undefined ? null : `编码 ${displayValue(track.codec)}`,
+      track.channels === undefined || track.channels === null ? null : `${displayValue(track.channels)} 声道`,
+      track.sample_rate === undefined || track.sample_rate === null ? null : `${displayValue(track.sample_rate)} Hz`,
+      typeof track.language === 'string' ? `语言 ${track.language}` : null,
+      typeof track.title === 'string' ? track.title : null,
+    ].filter(Boolean) : []
+    return <li key={index}>音轨 {index + 1}：{fields.join(' · ') || '详情未登记'}</li>
+  })}</ul>
 }
 
 export function ArtifactMediaSummary({ artifact, label }: { readonly artifact: ArtifactWire; readonly label?: string }) {
-  const overlap = objectValue(artifact.media_info['zniku.source.aligned']) ?? objectValue(artifact.media_info['zniku.chapter.overlap'])
+  const admission = objectValue(artifact.media_info['zniku.source.admission'])
+  const overlap = objectValue(artifact.media_info['zniku.source.admitted']) ?? objectValue(artifact.media_info['zniku.source.aligned']) ?? objectValue(artifact.media_info['zniku.chapter.overlap'])
   const metadata = overlap ?? objectValue(artifact.media_info['zniku.avenhance.v27'])
+  const source = objectValue(metadata?.source)
   const roles: Readonly<Record<string, string>> = { external: '已验收外部前处理视频', context: '包含邻章上下文的补帧输入', fi: '外部原始补帧结果（保留）', crop: '精确裁边后正式章节', split: '正式章内处理段', enhancement: '已增强处理段', merge: '章内合并增强视频', program: '连续编码视频', final: '最终封装媒体' }
   const role = typeof overlap?.role === 'string' && Object.hasOwn(roles, overlap.role) ? roles[overlap.role] : null
   const fiProfile = objectValue(overlap?.fi_profile)
@@ -93,14 +145,21 @@ export function ArtifactMediaSummary({ artifact, label }: { readonly artifact: A
       {metadata && <dl>
         {role && <div><dt>产物角色</dt><dd>{role}</dd></div>}
         {fiProfile && <div><dt>补帧候选声明</dt><dd>{displayValue(fiProfile.model_name)} · 软件 {displayValue(fiProfile.software_version)} · {fiProfile.status === 'pending_real_acceptance' ? '待真实验收' : displayValue(fiProfile.status)}</dd></div>}
-        <div><dt>精确帧数</dt><dd>{displayValue(metadata.frame_count)}</dd></div>
-        <div><dt>精确帧率</dt><dd>{displayValue(metadata.frame_rate)}</dd></div>
-        <div><dt>画面尺寸</dt><dd>{displayValue(metadata.geometry)}</dd></div>
+        <div><dt>{metadata.frame_count === undefined && source ? '绑定源帧数' : '精确帧数'}</dt><dd>{displayValue(metadata.frame_count ?? source?.frame_count)}</dd></div>
+        <div><dt>{metadata.frame_rate === undefined && source ? '绑定源帧率' : '精确帧率'}</dt><dd>{displayValue(metadata.frame_rate ?? source?.frame_rate)}</dd></div>
+        <div><dt>画面尺寸</dt><dd>{readableGeometry(metadata.geometry)}</dd></div>
         {!overlap && <div><dt>探测时长（秒）</dt><dd>{displayValue(metadata.duration_seconds)}</dd></div>}
-        <div><dt>色彩信号</dt><dd>{displayValue(metadata.signal)}</dd></div>
-        {!overlap && <div><dt>原始音轨</dt><dd>{displayValue(metadata.audio_tracks)}</dd></div>}
+        <div><dt>色彩信号</dt><dd>{readableSignal(metadata.signal)}</dd></div>
+        {!overlap && <div><dt>原始音轨</dt><dd><AudioTracks value={metadata.audio_tracks} /></dd></div>}
       </dl>}
-      <details><summary>高级 → 完整媒体登记信息（只读）</summary><code>{artifact.artifact_id}</code><pre>{JSON.stringify(artifact.media_info, null, 2)}</pre></details>
+      {admission && <dl><div><dt>源准入合同</dt><dd>{displayValue(admission.source_contract)}</dd></div></dl>}
+      {Array.isArray(admission?.warnings) && admission.warnings.length > 0 && <details><summary>素材分析提示</summary>
+        <ul>{admission.warnings.filter((item): item is string => typeof item === 'string').map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+      </details>}
+      {!metadata && <p>尚无可展示的媒体摘要；不会由文件名推测媒体属性。</p>}
+      <details><summary>高级 → 完整媒体登记信息（只读）</summary><code>{artifact.artifact_id}</code>
+        <ReadOnlyJson value={artifact.media_info} copyLabel="复制媒体登记 JSON" />
+      </details>
     </section>
   )
 }

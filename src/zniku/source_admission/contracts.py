@@ -45,10 +45,16 @@ def effective_contract(item: RunnerInput, source: shared.SourceExpectation) -> m
             shared.fail("SOURCE_STAGE", "必须为单一 program Source")
         result = media._metadata_contract(item)
     else:
+        from .mosaic_restoration import TYPE_ID, MosaicRestorationMetadata
+
         try:
-            metadata = ExternalMetadata.model_validate(
-                shared._plain(item.media_info.get(NAMESPACE))
+            raw = shared._plain(item.media_info.get(NAMESPACE))
+            model = (
+                MosaicRestorationMetadata
+                if isinstance(raw, dict) and raw.get("producer_type_id") == TYPE_ID
+                else ExternalMetadata
             )
+            metadata = model.model_validate(raw)
         except ValidationError as error:
             shared.fail("EXTERNAL_METADATA", f"缺少本版外部修复 metadata: {error.error_count()}")
         if metadata.source != source:

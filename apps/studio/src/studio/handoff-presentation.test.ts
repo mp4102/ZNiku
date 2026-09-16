@@ -4,6 +4,17 @@ import { distinctNodeLabels, handoffExpectedFrames, handoffSummary } from './han
 import { handoffDetailEnvelope, projectSnapshot } from './test-fixtures'
 
 describe('交接任务可辨识展示', () => {
+  it('摘要按Artifact kind区分视频与报告，不用admission文件名或节点类型猜测', () => {
+    const detail = handoffDetailEnvelope()
+    const node = detail.run.node_runs.find((item) => item.external_handoff)!
+    const video = detail.artifacts[0]!
+    const data = { ...video, artifact_id: 'data', kind: 'DataFile', path: 'D:\\synthetic\\admission.json' }
+    const other = { ...video, artifact_id: 'other', kind: 'CustomPayload', path: 'D:\\synthetic\\looks-like-video.mp4' }
+    const input = { ...node, external_handoff: { ...node.external_handoff!, input_artifact_ids: [video.artifact_id, data.artifact_id, other.artifact_id] } }
+    expect(handoffSummary(input, new Map([video, data, other].map((item) => [item.artifact_id, item])), detail)).toEqual([
+      '待处理视频：source.mkv', '分析 / 参考报告：admission.json', '参考输入：looks-like-video.mp4',
+    ])
+  })
   it('仅重复名称增加稳定序号，原始节点与别名不改变', () => {
     const nodes = projectSnapshot.project.graph.nodes
     const original = structuredClone(nodes)

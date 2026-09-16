@@ -89,6 +89,8 @@ import { distinctNodeLabels, handoffSummary } from './handoff-presentation'
 import { useHandoffImport } from './use-handoff-import'
 import { useHandoffBatch } from './use-handoff-batch'
 import { isBatchHandoff } from './handoff-batch-contracts'
+import { useHandoffIntake } from './use-handoff-intake'
+import { isIntakeHandoff } from './handoff-intake-contracts'
 import { readRecentProjects, rememberRecentProject } from './recent-projects'
 import type { ParameterPickerRequest } from './SchemaParameterForm'
 import { groupStudioDefinitions } from './catalog'
@@ -928,6 +930,7 @@ export function StudioWorkspace({
         const latest = node ? latestNodeRuns(run ?? null).get(node.node_id) : null
         return run?.run_id === runId && latest?.node_run_id === nodeRunId &&
           latest.state === 'waiting_external' && latest.external_handoff !== null &&
+          !isIntakeHandoff(latest, detailRef.current) &&
           !handoffActionRef.current && !busyRef.current && statusRef.current?.active_operation === null &&
           !inboxSubmissionFencesRef.current.has(handoffResourceKey(runId, nodeRunId, latest.external_handoff.handoff_id))
       }
@@ -1914,9 +1917,10 @@ export function StudioWorkspace({
   const executeCommands = useCallback(
     async (
       commands: ReadonlyArray<WorkspaceOperation>,
-      options: { readonly preferCreatedRun?: boolean; readonly discardLocal?: boolean; readonly templatePreview?: AvEnhanceV27TemplatePreviewEnvelope; readonly templateConnectionEpoch?: number } = {},
+      options: { readonly preferCreatedRun?: boolean; readonly discardLocal?: boolean; readonly templatePreview?: AvEnhanceV27TemplatePreviewEnvelope; readonly templateConnectionEpoch?: number; readonly ownedHandoffToken?: symbol } = {},
     ): Promise<StatusEnvelope | null> => {
-      if (busyRef.current) return null
+      // 单文件交回在发布与正式 Submit 之间保持同一互斥；仅持当前令牌的调用可衔接 command。
+      if (busyRef.current && (!options.ownedHandoffToken || options.ownedHandoffToken !== handoffActionRef.current)) return null
       busyRef.current = true
       setBusy(true)
       setBoundaryError(null)
@@ -2462,6 +2466,74 @@ export function StudioWorkspace({
     },
   })
 
+  const handoffIntake = useHandoffIntake({
+    hostBridge: effectiveHostBridge,
+    projectSessionId: status?.project_session_id ?? null,
+    nodeRun: selectedNodeRun && isIntakeHandoff(selectedNodeRun, currentDetail) ? selectedNodeRun : null,
+    scope: JSON.stringify([status?.project_session_id, viewRunId, [...selectedNodeIds].sort(), showRunSnapshot,
+      selectedNodeRun?.node_run_id, selectedNodeRun?.external_handoff?.handoff_id, selectedNodeRun?.state, currentRun?.state]),
+    operationRef: handoffActionRef,
+    canStart: () => !busyRef.current && !homeActionBusyRef.current && !operationActive && !health.status.stale && !health.detail.stale &&
+      !inboxSubmissionFencesRef.current.has(selectedNodeRun?.external_handoff ? handoffResourceKey(selectedNodeRun.run_id, selectedNodeRun.node_run_id, selectedNodeRun.external_handoff.handoff_id) : ''),
+    isCurrent: (nodeRun) => !health.status.stale && !health.detail.stale && selectionGuardRef.current.nodeIds.size === 1 &&
+      selectionGuardRef.current.nodeIds.has(nodeRun.node_id) && handoffIsCurrent(nodeRun, generationRef.current),
+    onBusyChange: setExternalFileBusy,
+    onChanged: (nodeRun) => {
+      const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, nodeRun.external_handoff!.handoff_id)
+      latestIssuedSequenceRef.current.readiness.set(nodeRunResourceKey(nodeRun.run_id, nodeRun.node_run_id), ++sequenceRef.current.readiness)
+      updateCheckedOutputs((previous) => { const next = new Map(previous); next.delete(key); return next })
+      setReadiness((previous) => { const next = new Map(previous); next.delete(nodeRun.node_run_id); return next })
+    },
+    onCheckPublished: (nodeRun, token) => checkPublishedIntake(nodeRun, token),
+    onSubmit: (nodeRun, readyId, token, recoveredPath, isCurrent) => submitIntakeOutput(nodeRun, readyId, token, recoveredPath, isCurrent),
+  })
+
+  const checkPublishedIntake = async (nodeRun: NodeRunWire, token: symbol): Promise<string> => {
+    const generation = generationRef.current, handoff = nodeRun.external_handoff
+    if (!handoff || handoffActionRef.current !== token || !handoffIsCurrent(nodeRun, generation) || !isIntakeHandoff(nodeRun, detailRef.current)) throw new Error('交回任务已变化。')
+    const checked = await effectiveGateway.inspectReadiness(nodeRun.run_id, nodeRun.node_run_id, true)
+    const path = checked.targets.length === 1 ? checked.targets[0]!.path : null
+    const expected: NodeRunWire = { ...nodeRun, external_handoff: { ...handoff,
+      output_targets: [{ ...handoff.output_targets[0]!, path: path ?? '' }] } }
+    if (!path || handoffActionRef.current !== token || !handoffIsCurrent(nodeRun, generation) || !isFullCheck(checked, expected)) throw new Error('未找到通过正式检查的已收纳输出。')
+    return path
+  }
+
+  const submitIntakeOutput = async (nodeRun: NodeRunWire, readyId: string | null, token: symbol, recoveredPath: string | null, currentInteraction: () => boolean): Promise<void> => {
+    const generation = generationRef.current, handoff = nodeRun.external_handoff
+    const current = () => currentInteraction() && handoffActionRef.current === token && handoffIsCurrent(nodeRun, generation) &&
+      selectionGuardRef.current.nodeIds.size === 1 && selectionGuardRef.current.nodeIds.has(nodeRun.node_id)
+    if (!handoff || !current() || !isIntakeHandoff(nodeRun, detailRef.current) || !effectiveHostBridge.publishHandoffIntake) throw new Error('当前交回任务已变化，请重新检查。')
+    setSubmittingNodeRunId(nodeRun.node_run_id)
+    try {
+      const resourceKey = nodeRunResourceKey(nodeRun.run_id, nodeRun.node_run_id)
+      const passive = readinessPassiveFlightRef.current.get(resourceKey)
+      if (passive) {
+        latestIssuedSequenceRef.current.readiness.set(resourceKey, ++sequenceRef.current.readiness)
+        let timer: number | undefined
+        const drained = await Promise.race([passive.promise.then(() => true),
+          new Promise<false>((resolve) => { timer = window.setTimeout(() => resolve(false), 5_000) }),
+        ]).finally(() => window.clearTimeout(timer))
+        if (!drained || !current()) throw new Error('之前的文件状态读取尚未结束，本次未提交，请稍后重试。')
+      }
+      const outputPath = readyId ? (await effectiveHostBridge.publishHandoffIntake({ contract_version: '0.3.0', ready_id: readyId })).output_path : recoveredPath
+      if (!outputPath) throw new Error('没有有效的已检查输出，请重新检查。')
+      if (!current()) throw new Error('已收文件保留，但当前选区或任务已变化，没有提交。')
+      // 实际容器由 Python 确认。只用本次发布回执核验唯一输出，不改写图或历史 handoff 建议路径。
+      const expected: NodeRunWire = { ...nodeRun, external_handoff: { ...handoff,
+        output_targets: [{ ...handoff.output_targets[0]!, path: outputPath }] } }
+      const checked = await effectiveGateway.inspectReadiness(nodeRun.run_id, nodeRun.node_run_id, true)
+      if (!current() || !isFullCheck(checked, expected)) throw new Error('提交前检查未通过；文件保留，任务没有继续，请重新选择并检查。')
+      const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, handoff.handoff_id)
+      const fences = new Set(inboxSubmissionFencesRef.current).add(key)
+      inboxSubmissionFencesRef.current = fences
+      setInboxSubmissionFences(fences)
+      const result = await executeCommands([{ operation: 'submit_external', run_id: nodeRun.run_id,
+        node_run_id: nodeRun.node_run_id, handoff_id: handoff.handoff_id }], { ownedHandoffToken: token })
+      if (!result) throw new Error('没有收到正式提交成功回执，请核对最新节点状态，不要重复移动文件。')
+    } finally { if (handoffActionRef.current === token) setSubmittingNodeRunId(null) }
+  }
+
   const checkOutput = useCallback(async (nodeRun: NodeRunWire) => {
     const generation = generationRef.current
     if (!nodeRun.external_handoff || handoffActionRef.current || busyRef.current ||
@@ -2960,7 +3032,7 @@ export function StudioWorkspace({
       {retryOpen && <RetryImpactDialog preview={retryPreview} nodeLabel={nodeLabel} busy={retryBusy} error={retryError}
         onConfirm={() => void confirmRerun()} onCancel={() => { retryTokenRef.current = null; retryBindingRef.current = null; setRetryOpen(false); setRetryBusy(false) }} />}
       <ProjectHome
-        desktopControls={homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || handoffBatch.busy || dataBusy || inboxBusy} />}
+        desktopControls={homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || handoffBatch.busy || handoffIntake.busy || dataBusy || inboxBusy} />}
         busy={serviceBusy || homeActionBusy}
         hasOpenProject={draft !== null}
         hostBridgeAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file')}
@@ -3046,7 +3118,7 @@ export function StudioWorkspace({
         onToggleLibrary={() => { setLibraryOpen((open) => !open); setInspectorVisible(false) }}
         onOpenHistory={() => openTasks('history')}
         onOpenDiagnostics={() => { setInspectorTab('diagnostics'); setInspectorVisible(true) }}
-        desktopControls={!homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || handoffBatch.busy || dataBusy || inboxBusy} />}
+        desktopControls={!homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || handoffBatch.busy || handoffIntake.busy || dataBusy || inboxBusy} />}
         projectName={draft?.project.name ?? null}
         onOpenStorage={effectiveHostBridge.inspectStorage ? () => {
           void flushAuthoring().then(() => {
@@ -3253,6 +3325,8 @@ export function StudioWorkspace({
             selectedNodeId={selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null}
             importController={handoffImport}
             batchController={handoffBatch}
+            intakeController={handoffIntake}
+            canPickHandoffFile={hostCapabilityAvailable('open_file')}
             canPickHandoffFiles={hostCapabilityAvailable('open_files')}
             canPickHandoffDirectory={hostCapabilityAvailable('select_directory')}
             inboxControls={status?.project_session_id && effectiveHostBridge.observeHandoffInbox ? (nodeRun) => {

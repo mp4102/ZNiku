@@ -27,6 +27,8 @@
 - 2026-09-16 已批准的英文物理目录增量见 `docs/english-readable-storage-plan.md`：新布局按
   `task/[chapter]/round-NNN` 定位，正常交回区不暴露节点/Run 编号或端口哈希；GUI 仍中文。版本化兼容旧
   UUID/readable 布局，旧等待任务不改路径；轮次与正式绑定事务保存，reuse 不复制媒体，不自动迁移真实工程。
+- 2026-09-16 已批准的外部 MR 交回增量见 `docs/mr-handoff-usability-plan.md`：新 exact 按实际容器与
+  直接视频输入命名，选择无复制、检查通过后收纳、显式提交；旧 exact/等待目标不改写，报告只作只读展示。
 
 ## 产品与领域边界
 

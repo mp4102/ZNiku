@@ -11,6 +11,10 @@ import type { HandoffImportController } from '../use-handoff-import'
 import type { HandoffBatchController } from '../use-handoff-batch'
 import { isBatchHandoff } from '../handoff-batch-contracts'
 import { HandoffBatch } from './HandoffBatch'
+import { HandoffInputs } from './HandoffInputs'
+import { HandoffIntake } from './HandoffIntake'
+import type { HandoffIntakeController } from '../use-handoff-intake'
+import { isIntakeHandoff } from '../handoff-intake-contracts'
 
 export function handoffResourceKey(runId: string, nodeRunId: string, handoffId: string): string {
   return `${runId}/${nodeRunId}/${handoffId}`
@@ -44,6 +48,8 @@ export interface HandoffCenterProps {
   readonly selectedNodeId: string | null
   readonly importController?: HandoffImportController
   readonly batchController?: HandoffBatchController
+  readonly intakeController?: HandoffIntakeController
+  readonly canPickHandoffFile?: boolean
   readonly canPickHandoffFiles?: boolean
   readonly canPickHandoffDirectory?: boolean
   readonly inboxControls?: (nodeRun: NodeRunWire) => ReactNode
@@ -116,6 +122,7 @@ export function HandoffCenter(props: HandoffCenterProps) {
         const nodeTitle = props.nodeLabel?.(nodeRun.node_id) ?? '外部处理步骤'
         const failure = props.lastFullPrecheckFailures.get(key) ?? null
         const batch = props.batchController && isBatchHandoff(nodeRun, detail) ? props.batchController : null
+        const intake = props.intakeController && isIntakeHandoff(nodeRun, detail) ? props.intakeController : null
         const contracts = detail?.run.run_id === nodeRun.run_id ? detail.handoff_contracts.filter((item) => item.node_run_id === nodeRun.node_run_id && item.handoff_id === handoff.handoff_id) : []
         return (
           <article aria-label={`外部处理：${nodeTitle}`} key={key}>
@@ -136,21 +143,17 @@ export function HandoffCenter(props: HandoffCenterProps) {
               </li>
               <li className="handoff-step">
                 <h4>打开输入，在外部工具中处理</h4>
-                {handoff.input_artifact_ids.map((artifactId, index) => {
-                  const artifact = artifactsById.get(artifactId)
-                  return <div className="handoff-path" key={artifactId}>
-                    <strong className="handoff-file-name">{artifact ? fileName(artifact.path) : `输入 ${index + 1} 暂不可用`}</strong>
-                    {artifact && <div className="artifact-host-actions">
-                      <button type="button" disabled={props.mutationBlocked || !props.canOpenHandoffInput} onClick={() => props.onLaunchHandoff(nodeRun, 'open_with_system_player', { role: 'input_artifact', artifact_id: artifactId })}>打开输入</button>
-                      <button type="button" disabled={props.mutationBlocked || !props.canRevealHandoff} onClick={() => props.onLaunchHandoff(nodeRun, 'reveal_in_file_manager', { role: 'input_artifact', artifact_id: artifactId })}>显示输入位置</button>
-                      <button type="button" onClick={() => props.onCopyPath(artifact.path)}>复制输入路径</button>
-                    </div>}
-                  </div>
-                })}
+                <HandoffInputs nodeRun={nodeRun} artifactsById={artifactsById}
+                  reports={detail?.run.run_id === nodeRun.run_id ? detail.input_reports ?? [] : []}
+                  mutationBlocked={props.mutationBlocked} canRevealHandoff={props.canRevealHandoff}
+                  canOpenHandoffInput={props.canOpenHandoffInput} onLaunchHandoff={props.onLaunchHandoff} onCopyPath={props.onCopyPath} />
                 <button type="button" disabled={props.mutationBlocked || !props.canRevealHandoff} onClick={() => props.onLaunchHandoff(nodeRun, 'reveal_in_file_manager', { role: 'work_directory' })}>打开工作目录</button>
                 {(!props.canRevealHandoff || !props.canOpenHandoffInput) && <p className="handoff-disabled-reason">本机打开能力不可用时，可复制路径后在外部工具中打开；使用 ZNIKU launcher 启动可连接本机能力。</p>}
               </li>
-              {batch ? <HandoffBatch key={key} controller={batch}
+              {intake ? <HandoffIntake key={key} controller={intake} disabled={props.mutationBlocked}
+                canPick={props.canPickHandoffFile ?? false} canReveal={props.canRevealHandoff}
+                onReveal={() => props.onLaunchHandoff(nodeRun, 'reveal_in_file_manager', { role: 'incoming_directory', port_id: handoff.output_targets[0]!.port_id, ordinal: null })}
+                onCopyPath={props.onCopyPath} /> : batch ? <HandoffBatch key={key} controller={batch}
                 disabled={props.mutationBlocked || !!anyOperation || props.readinessStale}
                 canPickFiles={props.canPickHandoffFiles ?? false} canPickDirectory={props.canPickHandoffDirectory ?? false}
                 canReveal={props.canRevealHandoff} checked={checkStillCurrent} submitting={submitting}

@@ -92,6 +92,8 @@ def external_definition(container: DeclaredContainer = "mp4") -> NodeDefinition:
 
 
 def built_in_definitions(leaf_count: int = 1) -> tuple[NodeDefinition, ...]:
+    from .mosaic_restoration import definition as mosaic_definition
+
     return (
         *(
             definition(role, leaf_count if role == "split" else 1)
@@ -99,12 +101,17 @@ def built_in_definitions(leaf_count: int = 1) -> tuple[NodeDefinition, ...]:
             if role != "external"
         ),
         *(external_definition(container) for container in ("mp4", "mov", "mkv")),
+        mosaic_definition(),
     )
 
 
 def definition_role(value: NodeDefinition) -> str | None:
     if value.version != VERSION:
         return None
+    from .mosaic_restoration import is_definition as is_mosaic_definition
+
+    if is_mosaic_definition(value):
+        return "external"
     if value.type_id.startswith(ATOMIC_SPLIT_TYPE_PREFIX):
         count = len(value.output_ports)
         if not 1 <= count <= 10000:
@@ -129,10 +136,15 @@ def python_adapters() -> Mapping[str, PythonAdapter]:
 
 
 def validators() -> Mapping[str, NodeValidator]:
+    from .mosaic_restoration import VALIDATOR, validate
+
     module = import_module("zniku.source_admission.validators")
     return {
-        f"zniku.source_admission.validators:validate_{name}": cast(
-            NodeValidator, getattr(module, f"validate_{name}")
-        )
-        for name in NAMES.values()
+        VALIDATOR: validate,
+        **{
+            f"zniku.source_admission.validators:validate_{name}": cast(
+                NodeValidator, getattr(module, f"validate_{name}")
+            )
+            for name in NAMES.values()
+        },
     }

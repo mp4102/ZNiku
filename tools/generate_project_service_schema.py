@@ -36,6 +36,7 @@ from zniku.project_service.handoff_batch import (
     HandoffBatchPreviewRequest,
 )
 from zniku.project_service.handoff_import import (
+    HandoffImportBinding,
     HandoffImportConfirmEnvelope,
     HandoffImportConfirmRequest,
     HandoffImportPreviewEnvelope,
@@ -58,6 +59,16 @@ from zniku.project_service.host_bridge import (
     HostSystemArguments,
     HostUserActionEnvelope,
     HostUserActionRequest,
+)
+from zniku.project_service.intake_contracts import (
+    HandoffIntakeCheckRequest,
+    HandoffIntakeJobEnvelope,
+    HandoffIntakeJobRequest,
+    HandoffIntakeObserveEnvelope,
+    HandoffIntakePublishEnvelope,
+    HandoffIntakePublishRequest,
+    HandoffIntakeSelectEnvelope,
+    HandoffIntakeSelectRequest,
 )
 from zniku.project_service.models import (
     ExternalHandoffReadiness,
@@ -208,6 +219,11 @@ def render_schema() -> str:
         HandoffBatchPreviewEnvelope,
         HandoffBatchConfirmEnvelope,
         HandoffBatchCheckEnvelope,
+        HandoffIntakeObserveEnvelope,
+        HandoffIntakeSelectEnvelope,
+        HandoffIntakeJobEnvelope,
+        HandoffIntakeJobRequest,
+        HandoffIntakePublishEnvelope,
         StorageInspection,
         StorageMigrationPreview,
         StoragePathMapping,
@@ -269,6 +285,10 @@ def render_schema() -> str:
         HostSystemArguments,
         MediaPreviewRequest,
         HandoffImportPreviewRequest,
+        HandoffImportBinding,
+        HandoffIntakeSelectRequest,
+        HandoffIntakeCheckRequest,
+        HandoffIntakePublishRequest,
         HandoffImportConfirmRequest,
         HandoffInboxObserveRequest,
         HandoffInboxPreviewRequest,
