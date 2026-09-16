@@ -1,7 +1,8 @@
 """从工程正式记录重建本机可读文件目录，不存第二套运行真值或复制媒体。
 
 HTML 只含转义文字和数据根内已绑定文件的相对链接；根外依赖明确列出但不生成任意文件链接。
-生成必须是操作者显式动作，且全部 Run 已终结。旧索引不被 Runtime 读取，也不会改变 reuse/stale。
+生成必须是操作者显式动作，且全部 Run 已终结。英文布局以 index.html 和任务/轮次展示，
+旧布局保留原索引名称；索引不被 Runtime 读取，也不会改变 reuse/stale 或创建媒体目录。
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from typing import Literal
 from urllib.parse import quote
 
 from zniku.project.models import ProjectModel
-from zniku.project.storage import legacy_project_storage
+from zniku.project.storage import ProjectStorage, legacy_project_storage
 from zniku.project.store import ProjectStore, ProjectStoreError
 from zniku.runtime.repository import RuntimeRepository
 
@@ -23,6 +24,12 @@ from .storage import _assert_terminal, _failure, _identity, _safe_path, _state, 
 
 INDEX_NAME = "文件目录.html"
 _MARKER = "<!-- ZNIKU derived storage index; not runtime authority -->"
+
+
+def index_filename(storage: ProjectStorage) -> str:
+    """按已持久化布局选择固定索引名；不按文件存在情况猜测或覆盖另一布局的文件。"""
+
+    return "index.html" if storage.layout == "english" else INDEX_NAME
 
 
 class StorageIndexResult(ProjectModel):
@@ -87,7 +94,7 @@ def export_storage_index(
     if storage.mode == "legacy":
         raise _failure("INDEX_LOCATION", "旧共享数据位置不写工程索引，请先显式迁移到专属数据目录")
     root = _safe_path(Path(storage.data_root))
-    destination = root / INDEX_NAME
+    destination = root / index_filename(storage)
     _safe_path(destination, missing=True)
     destination_identity = _identity(destination) if destination.exists() else None
     if destination.exists():
@@ -95,7 +102,9 @@ def export_storage_index(
             raise _failure("INDEX_TARGET", "文件目录目标不是普通文件")
         with destination.open("r", encoding="utf-8") as stream:
             if stream.read(len(_MARKER)) != _MARKER:
-                raise _failure("INDEX_TARGET", "文件目录.html 已被其他文件占用，不会覆盖用户文件")
+                raise _failure(
+                    "INDEX_TARGET", f"{destination.name} 已被其他文件占用，不会覆盖用户文件"
+                )
     inspection = inspect_storage(store, legacy_root)
     repository = RuntimeRepository(store)
     latest = {
@@ -109,8 +118,28 @@ def export_storage_index(
         nodes = {item.node_id: item for item in run.graph_snapshot.nodes}
         for attempt in run.node_runs:
             instance = nodes[attempt.node_id]
-            location = storage.layout_state.nodes.get(attempt.node_id)
-            label = instance.node_id if location is None else location.relative_dir
+            if storage.layout == "english":
+                english_location = storage.english_layout_state.nodes[attempt.node_id]
+                binding = storage.english_layout_state.attempts.get(attempt.node_run_id)
+                label = english_location.relative_dir
+                batch_label = (
+                    f"round-{binding.round:03d}"
+                    if binding is not None
+                    else "复用已有结果"
+                    if attempt.reused_from_result_id is not None
+                    else "未开始处理"
+                )
+                # pending/取消/纯 reuse 只有内部逻辑定位，不将未创建的 UUID 路径作为用户交付位置。
+                work_link = (
+                    _file_link(attempt.log_path or attempt.work_dir, root)
+                    if binding is not None
+                    else "未创建处理目录"
+                )
+            else:
+                location = storage.layout_state.nodes.get(attempt.node_id)
+                label = instance.node_id if location is None else location.relative_dir
+                batch_label = f"R{number:03d}-A{attempt.attempt:03d}"
+                work_link = _file_link(attempt.log_path or attempt.work_dir, root)
             declaration = _declaration(instance.parameters) or "无工具或模型声明"
             if not attempt.output_artifact_ids:
                 rows.append(
@@ -119,7 +148,7 @@ def export_storage_index(
                         f"<td>{value}</td>"
                         for value in (
                             _cell(label),
-                            _cell(f"R{number:03d}-A{attempt.attempt:03d}"),
+                            _cell(batch_label),
                             _cell(instance.type_id),
                             _cell(declaration),
                             _cell(attempt.state.value),
@@ -128,7 +157,7 @@ def export_storage_index(
                             "尚无登记成果",
                             "—",
                             "—",
-                            _file_link(attempt.log_path or attempt.work_dir, root),
+                            work_link,
                         )
                     )
                     + "</tr>"
@@ -154,7 +183,7 @@ def export_storage_index(
                         f"<td>{value}</td>"
                         for value in (
                             _cell(label),
-                            _cell(f"R{number:03d}-A{attempt.attempt:03d}"),
+                            _cell(batch_label),
                             _cell(instance.type_id),
                             _cell(declaration),
                             _cell(attempt.state.value),

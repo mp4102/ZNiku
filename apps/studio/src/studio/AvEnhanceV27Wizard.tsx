@@ -1461,7 +1461,7 @@ export function AvEnhanceV27Wizard({
                 </section>
                 <section className="creator-settings-group" aria-label="画质增强">
                   <h4><span>2</span>画质增强</h4>
-                  <p>各处理段交给外部工具增强；以下设置必须与实际提交的文件一致。</p>
+                  <p>{sourceAdmittedEnabled ? '每章一个批量增强节点，章内各段共用一套参数。一次选择本章文件或目录，可分批补件；全部齐全后整章检查，再显式提交。以下设置必须与实际文件一致。' : '各处理段交给外部工具增强；以下设置必须与实际提交的文件一致。'}</p>
                   <div className="template-form-grid">
                     <label>画质增强模型<input aria-label="Enhancement model name" aria-invalid={invalidSetting?.field === 'Enhancement model name' || undefined} disabled={controlsDisabled} onChange={(event) => { setEnhancementModelName(event.target.value); invalidateExpansion() }} value={enhancementModelName} /></label>
                     <label>增强倍率<input aria-label="Enhancement actual scale factor" aria-invalid={invalidSetting?.field === 'Enhancement actual scale factor' || undefined} disabled={controlsDisabled} inputMode="numeric" onChange={(event) => { setActualScaleFactor(event.target.value); invalidateExpansion() }} value={actualScaleFactor} /><small>相对流程的 1920 × 1080 输入：1 为 1080p，2 为 4K。这是外部产物要求，不会自动替你放大。</small></label>

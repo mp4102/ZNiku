@@ -15,13 +15,14 @@ import threading
 from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from zniku.project.models import ProjectModel
-from zniku.project.storage import ProjectStorage, legacy_project_storage
+from zniku.project.storage import ProjectStorage, bound_attempt_path, legacy_project_storage
 from zniku.project.store import ProjectStore, ProjectStoreError
 from zniku.runtime.models import ExternalHandoff, Run
 from zniku.runtime.repository import RuntimeRepository
@@ -230,20 +231,19 @@ def _owned_directories(state: _State, storage: ProjectStorage) -> tuple[Path, ..
         # 尚未开始的准备失败可以保存 root 本身，不把整个共享根视为工程所有物。
         if work == root:
             continue
-        if storage.layout == "uuid":
-            if work != root / node_uuid.hex:
-                raise _failure("ATTEMPT", "执行目录不属于工程已绑定的 UUID attempt 根")
-        else:
-            attempt = attempts[node_run_id]
-            location = storage.layout_state.nodes.get(attempt.node_id)
-            run_number = storage.layout_state.runs.get(attempt.run_id)
-            if location is None or run_number is None:
-                raise _failure("ATTEMPT", "可读执行目录缺少已保存的节点或运行定位")
-            expected = root.joinpath(*location.relative_dir.split("/")) / (
-                f"R{run_number:03d}-A{attempt.attempt:03d}"
+        attempt = attempts[node_run_id]
+        try:
+            expected = bound_attempt_path(
+                storage,
+                node_id=attempt.node_id,
+                run_id=attempt.run_id,
+                attempt=attempt.attempt,
+                node_run_id=node_run_id,
             )
-            if work != expected:
-                raise _failure("ATTEMPT", "可读执行目录与工程精确定位记录不同")
+        except ValueError as error:
+            raise _failure("ATTEMPT", "执行目录缺少已保存的精确定位") from error
+        if work != expected:
+            raise _failure("ATTEMPT", "执行目录与工程精确定位记录不同")
         try:
             safe_attempt_directory(root, work)
         except ValueError as error:
@@ -344,25 +344,72 @@ def _mapped_path(path: Path, mappings: tuple[tuple[Path, Path], ...]) -> Path:
     return path
 
 
+def _backup_before_organize(store: ProjectStore) -> Path:
+    """在调用方持有工程写锁时保存一致 SQLite 副本；失败不切换路径，也不覆盖旧备份。"""
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    name = f"{store.path.stem}.before-storage-{stamp}"
+    suffix = 1
+    try:
+        while True:
+            target = store.path.with_name(f"{name}{'' if suffix == 1 else f'-{suffix}'}.zniku")
+            try:
+                with target.open("xb"):
+                    pass
+                break
+            except FileExistsError:
+                suffix += 1
+        with (
+            closing(sqlite3.connect(store.path)) as source,
+            closing(sqlite3.connect(target)) as destination,
+        ):
+            source.backup(destination)
+            if destination.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise _failure("BACKUP", "整理前工程备份未通过完整性检查")
+    except (OSError, sqlite3.Error) as error:
+        raise _failure("BACKUP", "无法保存整理前工程备份，原工程与源文件保持不变") from error
+    return target
+
+
 def _target_layout(
     state: _State, source: ProjectStorage, target: ProjectStorage, *, organize: bool
 ) -> tuple[ProjectStorage, tuple[tuple[Path, Path], ...]]:
     """历史整理复用 Runtime 的纯分配器；普通迁移保留既有布局和编号。"""
 
-    from zniku.project.storage_layout import StorageLayoutState, allocate_attempt_path
+    from zniku.project.storage_english import (
+        EnglishStorageState,
+        allocate_english_attempt,
+        reserve_english_nodes,
+    )
+    from zniku.project.storage_layout import AttemptLocationRequest, StorageLayoutState
 
-    from .storage_naming import resolve_attempt_naming
+    from .storage_naming import resolve_english_attempt_naming
 
     directories = _owned_directories(state, source)
-    old_root, new_root = Path(source.attempts_root), Path(target.attempts_root)
+    old_root = Path(source.attempts_root)
     if not organize:
         payload = target.model_dump(mode="python")
-        payload.update(layout=source.layout, layout_state=source.layout_state)
+        # 普通换盘严格保持源布局，包括其根形状及已有映射，不因新版默认值自动整理。
+        new_root = Path(target.data_root)
+        if source.layout != "english":
+            relative_root = Path(source.attempts_root).relative_to(Path(source.data_root))
+            new_root /= relative_root
+            # 非 legacy 配置沿用旧产品固定 attempts 根。
+            if source.mode == "legacy":
+                new_root = Path(target.data_root) / "attempts"
+        payload.update(
+            contract_version="0.3.5" if source.layout == "english" else "0.3.2",
+            layout=source.layout,
+            layout_state=source.layout_state,
+            english_layout_state=source.english_layout_state,
+            attempts_root=str(new_root),
+        )
         if source.data_id is not None:
             payload["data_id"] = source.data_id
         target = ProjectStorage.model_validate(payload)
         return target, tuple((path, new_root / path.relative_to(old_root)) for path in directories)
-    layout = source.layout_state if source.layout == "readable" else StorageLayoutState()
+    new_root = Path(target.data_root)
+    layout = source.english_layout_state if source.layout == "english" else EnglishStorageState()
     mapped: dict[Path, Path] = {}
     for run in state.runs:
         nodes = {node.node_id: node for node in run.graph_snapshot.nodes}
@@ -374,14 +421,34 @@ def _target_layout(
             node = nodes[attempt.node_id]
             definition = definitions[(node.type_id, node.definition_version)]
             try:
-                layout, new = allocate_attempt_path(
+                layout = reserve_english_nodes(
                     layout,
-                    root=new_root,
-                    node_id=attempt.node_id,
-                    run_id=run.run_id,
-                    attempt=attempt.attempt,
-                    hint=resolve_attempt_naming(run, node, definition),
+                    (
+                        AttemptLocationRequest(
+                            attempt.node_id,
+                            run.run_id,
+                            attempt.attempt,
+                            resolve_english_attempt_naming(run, node, definition),
+                        ),
+                    ),
                 )
+                # 历史复用和未实际落地的取消记录仅迁移逻辑占位路径，不能制造处理轮次。
+                if attempt.node_run_id not in layout.attempts and (
+                    attempt.reused_from_result_id is not None
+                    or (
+                        not old.exists()
+                        and attempt.log_path is None
+                        and not attempt.output_artifact_ids
+                    )
+                ):
+                    new = new_root / UUID(attempt.node_run_id).hex
+                else:
+                    layout, new = allocate_english_attempt(
+                        layout,
+                        root=new_root,
+                        node_id=attempt.node_id,
+                        node_run_id=attempt.node_run_id,
+                    )
             except (ValueError, OSError) as error:
                 raise _failure(
                     "PATH", "可读目录无法安全分配，请使用更短且可用的数据位置"
@@ -390,7 +457,13 @@ def _target_layout(
     if set(mapped) != set(directories) or len(set(mapped.values())) != len(mapped):
         raise _failure("ATTEMPT", "整理后的执行目录绑定缺失或重复")
     payload = target.model_dump(mode="python")
-    payload.update(contract_version="0.3.2", layout="readable", layout_state=layout)
+    payload.update(
+        contract_version="0.3.5",
+        layout="english",
+        attempts_root=str(new_root),
+        layout_state=StorageLayoutState(),
+        english_layout_state=layout,
+    )
     if source.data_id is not None:
         payload["data_id"] = source.data_id
     return ProjectStorage.model_validate(payload), tuple(
@@ -453,6 +526,14 @@ class StorageMigrationManager:
             operation="organize" if organize else "relocate",
             path_mappings=tuple(
                 StoragePathMapping(source=str(old), target=str(new)) for old, new in mappings
+            ),
+            warnings=(
+                (
+                    "整理前会在工程旁保存 before-storage 备份；原数据保留。",
+                    "整理任务目录层级，历史收件内部结构原样保留；新处理轮次使用平铺 incoming。",
+                )
+                if organize
+                else ()
             ),
         )
         with self._lock:
@@ -675,7 +756,8 @@ class StorageMigrationManager:
                 return inspect_storage(store, ticket.legacy_root)
             _safe_path(target_root, missing=True)
             target_root.mkdir(parents=False, exist_ok=False)
-            target_attempts.mkdir()
+            if target_attempts != target_root:
+                target_attempts.mkdir()
             from .storage_owner import create_storage_owner
 
             create_storage_owner(ticket.preview.target)
@@ -761,6 +843,8 @@ class StorageMigrationManager:
             if current != ticket.state:
                 raise _failure("CHANGED", "工程记录在复制期间改变，未切换任何引用")
             _assert_terminal(current)
+            if ticket.preview.operation == "organize":
+                _backup_before_organize(store)
             store._upgrade_storage_schema(connection)
             for node_run_id, work_dir, log_path, handoff_json in current.nodes:
                 if handoff_json is not None:
@@ -792,5 +876,6 @@ class StorageMigrationManager:
             store._write_project_storage(connection, target, current.revision)
             if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise _failure("REFERENCE", "迁移后的工程引用校验失败")
+            _read_state(connection, store)
             assert_copies_unchanged()
             connection.commit()

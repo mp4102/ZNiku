@@ -43,6 +43,7 @@ from .models import (
     new_runtime_id,
     utc_now,
 )
+from .paths import IncomingLayout
 from .progress import (
     BoundProgressReporter,
     MonotonicClock,
@@ -140,6 +141,9 @@ class RuntimeService:
             raise RuntimeServiceError("E_SERVICE_WORK_ROOT_INVALID", "work_root 必须是目录")
 
         self._repository = RuntimeRepository(store)
+        storage = store.load_storage()
+        self._english_storage = storage is not None and storage.layout == "english"
+        self._incoming_layout: IncomingLayout = "english" if self._english_storage else "port_hash"
         self._runner = NodeRunner(
             self._work_root,
             python_adapters=python_adapters,
@@ -506,6 +510,22 @@ class RuntimeService:
             request, handoff, port_id=port_id, candidate=candidate
         )
 
+    def inspect_external_import_candidates(
+        self,
+        run_id: str,
+        node_run_id: str,
+        *,
+        handoff_id: str,
+        candidates: Mapping[str, Path],
+    ) -> tuple[ValidatedOutput, ...]:
+        """一次检查宿主绑定的多输出候选；完整 validator 通过也不登记 Artifact。"""
+
+        node_run = self.inspect_external_handoff(run_id, node_run_id, handoff_id=handoff_id)
+        run = self._repository.get_run(run_id)
+        request = self._execution_request(run, node_run)
+        handoff = self._runner_handoff(run, node_run, request.inputs)
+        return self._runner.inspect_manual_candidates(request, handoff, candidates=candidates)
+
     def rerun_from_start(
         self, run_id: str, node_id: str, *, expected_storage_revision: int | None = None
     ) -> Run:
@@ -646,6 +666,9 @@ class RuntimeService:
 
         if self._try_reuse(run, node_run):
             return
+        # 只有真正执行才分配可见轮次；复用不占轮次，也不创建另一份媒体目录。
+        if self._english_storage:
+            node_run = self._repository.allocate_execution_storage(node_run.node_run_id)
         request = self._execution_request(run, node_run, resolved=resolved)
         definition = request.definition
         if definition.execution_mode.value == "manual_external":
@@ -970,6 +993,7 @@ class RuntimeService:
             inputs=inputs.runner_inputs,
             output_paths=output_paths,
             work_dir=Path(node_run.work_dir),
+            incoming_layout=self._incoming_layout,
         )
 
     def _resolve_inputs(self, run: Run, node_id: str) -> _ResolvedInputs:

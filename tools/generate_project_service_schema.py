@@ -25,6 +25,16 @@ from zniku.project_service.chapter_overlap import (
     ChapterOverlapProcessingEnvelope,
     ChapterOverlapProcessingRequest,
 )
+from zniku.project_service.handoff_batch import (
+    HandoffBatchBinding,
+    HandoffBatchCheckEnvelope,
+    HandoffBatchCheckRequest,
+    HandoffBatchConfirmEnvelope,
+    HandoffBatchConfirmRequest,
+    HandoffBatchObserveEnvelope,
+    HandoffBatchPreviewEnvelope,
+    HandoffBatchPreviewRequest,
+)
 from zniku.project_service.handoff_import import (
     HandoffImportConfirmEnvelope,
     HandoffImportConfirmRequest,
@@ -194,6 +204,10 @@ def render_schema() -> str:
         HandoffInboxObserveEnvelope,
         HandoffInboxPreviewEnvelope,
         HandoffInboxConfirmEnvelope,
+        HandoffBatchObserveEnvelope,
+        HandoffBatchPreviewEnvelope,
+        HandoffBatchConfirmEnvelope,
+        HandoffBatchCheckEnvelope,
         StorageInspection,
         StorageMigrationPreview,
         StoragePathMapping,
@@ -259,6 +273,10 @@ def render_schema() -> str:
         HandoffInboxObserveRequest,
         HandoffInboxPreviewRequest,
         HandoffInboxConfirmRequest,
+        HandoffBatchBinding,
+        HandoffBatchPreviewRequest,
+        HandoffBatchConfirmRequest,
+        HandoffBatchCheckRequest,
         StorageInspectRequest,
         StorageIndexRequest,
         StorageLocationRequest,

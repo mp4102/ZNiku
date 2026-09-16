@@ -14,6 +14,7 @@ from pydantic import Field, StringConstraints, field_validator, model_validator
 
 from .models import ProjectModel
 from .paths import MEDIA_BASENAME_MAX_UNITS, validate_filename_component
+from .storage_english import EnglishStorageState
 from .storage_layout import StorageLayoutState
 
 StoragePath = Annotated[str, StringConstraints(min_length=1, max_length=32767)]
@@ -31,14 +32,15 @@ def _absolute_path(value: str) -> PurePosixPath | PureWindowsPath:
 class ProjectStorage(ProjectModel):
     """保存工程资产位置；keep 表示完成、退出和重跑均不会自动删除已存资产。"""
 
-    contract_version: Literal["0.3.0", "0.3.2"] = "0.3.0"
+    contract_version: Literal["0.3.0", "0.3.2", "0.3.5"] = "0.3.0"
     mode: Literal["adjacent", "custom", "legacy"]
     data_root: StoragePath
     attempts_root: StoragePath
     retention: Literal["keep"] = "keep"
     media_basename: Annotated[str, StringConstraints(min_length=1, max_length=180)] | None = None
-    layout: Literal["uuid", "readable"] = "uuid"
+    layout: Literal["uuid", "readable", "english"] = "uuid"
     layout_state: StorageLayoutState = Field(default_factory=StorageLayoutState)
+    english_layout_state: EnglishStorageState = Field(default_factory=EnglishStorageState)
     data_id: str | None = None
 
     @field_validator("data_id")
@@ -73,6 +75,14 @@ class ProjectStorage(ProjectModel):
 
     @model_validator(mode="after")
     def validate_roots(self) -> ProjectStorage:
+        if self.layout == "english" and self.contract_version != "0.3.5":
+            raise ValueError("E_PROJECT_STORAGE_VERSION: 英文目录只允许 0.3.5 存储合同")
+        if self.layout != "english" and (
+            self.english_layout_state.nodes or self.english_layout_state.attempts
+        ):
+            raise ValueError("E_PROJECT_STORAGE_LAYOUT: 旧布局不得携带英文目录映射")
+        if self.layout == "english" and (self.layout_state.nodes or self.layout_state.runs):
+            raise ValueError("E_PROJECT_STORAGE_LAYOUT: 英文布局不得携带旧可读目录映射")
         if self.contract_version == "0.3.0" and (
             self.layout != "uuid"
             or self.layout_state.nodes
@@ -83,6 +93,10 @@ class ProjectStorage(ProjectModel):
         if self.layout == "uuid" and (self.layout_state.nodes or self.layout_state.runs):
             raise ValueError("E_PROJECT_STORAGE_LAYOUT: UUID 布局不能携带可读目录映射")
         root, attempts = _absolute_path(self.data_root), _absolute_path(self.attempts_root)
+        if self.layout == "english":
+            if self.mode == "legacy" or root != attempts:
+                raise ValueError("E_PROJECT_STORAGE_ROOT: 英文任务直接位于工程数据根")
+            return self
         if (
             type(root) is not type(attempts)
             or attempts == root
@@ -105,12 +119,12 @@ def new_project_storage(
     project = Path(project_path).absolute()
     root = Path(data_root).absolute() if data_root is not None else project.with_suffix(".data")
     return ProjectStorage(
-        contract_version="0.3.2",
-        layout="readable",
+        contract_version="0.3.5",
+        layout="english",
         data_id=str(uuid4()),
         mode="custom" if data_root is not None else "adjacent",
         data_root=str(root),
-        attempts_root=str(root / "attempts"),
+        attempts_root=str(root),
         media_basename=media_basename,
     )
 
@@ -122,3 +136,34 @@ def legacy_project_storage(legacy_root: str | Path) -> ProjectStorage:
     return ProjectStorage(
         mode="legacy", data_root=str(attempts.parent), attempts_root=str(attempts)
     )
+
+
+def bound_attempt_path(
+    storage: ProjectStorage,
+    *,
+    node_id: str,
+    run_id: str,
+    attempt: int,
+    node_run_id: str,
+) -> Path:
+    """读取唯一已持久化的存储定位；排队及复用任务仅保留未创建的内部 UUID 占位路径。"""
+
+    root = Path(storage.attempts_root)
+    if storage.layout == "uuid":
+        return root / UUID(node_run_id).hex
+    if storage.layout == "readable":
+        location = storage.layout_state.nodes.get(node_id)
+        number = storage.layout_state.runs.get(run_id)
+        if location is None or number is None:
+            raise ValueError("E_STORAGE_LAYOUT_BINDING: 缺少已有节点或 Run 存储映射")
+        return root / location.relative_dir / f"R{number:03d}-A{attempt:03d}"
+    english = storage.english_layout_state
+    node = english.nodes.get(node_id)
+    if node is None:
+        raise ValueError("E_STORAGE_ENGLISH_BINDING: 缺少已有英文节点目录")
+    binding = english.attempts.get(node_run_id)
+    if binding is None:
+        return root / UUID(node_run_id).hex
+    if binding.node_id != node_id:
+        raise ValueError("E_STORAGE_ENGLISH_BINDING: 处理轮次不属于当前节点")
+    return root / node.relative_dir / f"round-{binding.round:03d}"

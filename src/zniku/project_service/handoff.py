@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+from zniku.chapter_batch.contracts import preflight as batch_preflight
+from zniku.chapter_batch.definitions import definition_role as batch_role
 from zniku.media.definitions import VIDEO_TRANSFORM_VALIDATOR
 from zniku.media.probe import MediaNodeError
 from zniku.media.validators import transform_frame_relation
@@ -35,6 +37,13 @@ def project_handoff_contracts(
             artifacts,
             role_reader=admitted_role,
             contract_reader=admitted_preflight,
+            admitted_source=True,
+        ),
+        *project_source_aligned_handoffs(
+            run,
+            artifacts,
+            role_reader=batch_role,
+            contract_reader=batch_preflight,
             admitted_source=True,
         ),
     ]

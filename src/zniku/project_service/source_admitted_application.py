@@ -18,6 +18,8 @@ from zniku.avenhance_v27.template import (
     build_preparation,
     validate_prepare_paths,
 )
+from zniku.chapter_batch.definitions import definition as batch_definition
+from zniku.chapter_batch.presentation import chapter_views
 from zniku.chapter_overlap import ChapterPlanningError
 from zniku.chapter_overlap.context import ContextPlanningError
 from zniku.graph import Graph, GraphValidationError, GraphValidator, NodeInstance
@@ -463,15 +465,17 @@ def full(
             binding,
             request.processing,
             request.publication,
-            definition_factory=definitions.definition,
+            definition_factory=batch_definition,
             external_factory=definitions.external_definition,
             publication_target=publication_target,
+            batch_enhancement=True,
         )
         if expand:
             store.save(
                 build.project,
                 build.definitions,
                 expected_storage_revision=request.expected_storage_revision,
+                studio_state=chapter_views(build, current.studio_state),
             )
             app._last_error = None
             return app.inspect()

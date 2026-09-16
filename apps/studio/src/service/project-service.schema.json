@@ -2792,6 +2792,73 @@
       "title": "Edge",
       "type": "object"
     },
+    "EnglishStorageAttempt": {
+      "additionalProperties": false,
+      "description": "一次实际处理的轮次；node_run_id 为映射键，不出现在实体目录名中。",
+      "properties": {
+        "node_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Node Id",
+          "type": "string"
+        },
+        "round": {
+          "maximum": 999999,
+          "minimum": 1,
+          "title": "Round",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node_id",
+        "round"
+      ],
+      "title": "EnglishStorageAttempt",
+      "type": "object"
+    },
+    "EnglishStorageNode": {
+      "additionalProperties": false,
+      "description": "稳定节点首次分配的英文任务位置；UI 改名不会移动已分配目录。",
+      "properties": {
+        "relative_dir": {
+          "maxLength": 72,
+          "minLength": 1,
+          "title": "Relative Dir",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relative_dir"
+      ],
+      "title": "EnglishStorageNode",
+      "type": "object"
+    },
+    "EnglishStorageState": {
+      "additionalProperties": false,
+      "description": "只保存普通存储绑定；保留全部历史轮次，不回收删除节点或失败任务的编号。",
+      "properties": {
+        "attempts": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EnglishStorageAttempt"
+          },
+          "title": "Attempts",
+          "type": "object"
+        },
+        "nodes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EnglishStorageNode"
+          },
+          "title": "Nodes",
+          "type": "object"
+        }
+      },
+      "required": [
+        "nodes",
+        "attempts"
+      ],
+      "title": "EnglishStorageState",
+      "type": "object"
+    },
     "EnumLabel": {
       "additionalProperties": false,
       "description": "为正式 Schema 已声明的一个 JSON enum 值提供人类标签。",
@@ -3482,6 +3549,781 @@
         "collapsed"
       ],
       "title": "GroupViewState",
+      "type": "object"
+    },
+    "HandoffBatchBinding": {
+      "additionalProperties": false,
+      "description": "绑定当前工程会话中一个最新 waiting handoff，不接受任何原始路径。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id"
+      ],
+      "title": "HandoffBatchBinding",
+      "type": "object"
+    },
+    "HandoffBatchCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "copy",
+            "move"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "candidate_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Candidate Handle",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "size": {
+          "exclusiveMinimum": 0,
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "candidate_handle",
+        "name",
+        "size",
+        "action"
+      ],
+      "title": "HandoffBatchCandidate",
+      "type": "object"
+    },
+    "HandoffBatchCheckEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "inbox_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Inbox Path",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "published": {
+          "title": "Published",
+          "type": "boolean"
+        },
+        "readiness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExternalHandoffReadiness"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/HandoffBatchRow"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "validation_error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HandoffBatchValidationError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "inbox_path",
+        "rows",
+        "complete",
+        "published",
+        "validation_error",
+        "readiness"
+      ],
+      "title": "HandoffBatchCheckEnvelope",
+      "type": "object"
+    },
+    "HandoffBatchCheckRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "overwrite_ports": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "title": "Overwrite Ports",
+          "type": "array"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "overwrite_ports"
+      ],
+      "title": "HandoffBatchCheckRequest",
+      "type": "object"
+    },
+    "HandoffBatchConfirmEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "inbox_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Inbox Path",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/$defs/HandoffBatchItemResult"
+          },
+          "title": "Results",
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/HandoffBatchRow"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "inbox_path",
+        "rows",
+        "complete",
+        "batch_id",
+        "results"
+      ],
+      "title": "HandoffBatchConfirmEnvelope",
+      "type": "object"
+    },
+    "HandoffBatchConfirmRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Host_HandoffBatchConfirmRequest_HandoffBatchSelection"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "batch_id",
+        "items"
+      ],
+      "title": "HandoffBatchConfirmRequest",
+      "type": "object"
+    },
+    "HandoffBatchIncomingDirectorySelector": {
+      "additionalProperties": false,
+      "description": "打开本人工节点统一收件目录；端口映射仍由独立批量收件预览确认。",
+      "properties": {
+        "role": {
+          "const": "batch_incoming_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "HandoffBatchIncomingDirectorySelector",
+      "type": "object"
+    },
+    "HandoffBatchItemResult": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Message"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "collected",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "port_id",
+        "status",
+        "message"
+      ],
+      "title": "HandoffBatchItemResult",
+      "type": "object"
+    },
+    "HandoffBatchMatch": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_handle": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 24,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Candidate Handle"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "matched",
+            "missing",
+            "ambiguous"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "port_id",
+        "candidate_handle",
+        "state"
+      ],
+      "title": "HandoffBatchMatch",
+      "type": "object"
+    },
+    "HandoffBatchObserveEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "inbox_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Inbox Path",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/HandoffBatchRow"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "inbox_path",
+        "rows",
+        "complete"
+      ],
+      "title": "HandoffBatchObserveEnvelope",
+      "type": "object"
+    },
+    "HandoffBatchPreviewEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/HandoffBatchCandidate"
+          },
+          "maxItems": 256,
+          "title": "Candidates",
+          "type": "array"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expires_in_seconds": {
+          "const": 300,
+          "default": 300,
+          "title": "Expires In Seconds",
+          "type": "integer"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "inbox_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Inbox Path",
+          "type": "string"
+        },
+        "matches": {
+          "items": {
+            "$ref": "#/$defs/HandoffBatchMatch"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "title": "Matches",
+          "type": "array"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/HandoffBatchRow"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "inbox_path",
+        "rows",
+        "complete",
+        "batch_id",
+        "candidates",
+        "matches",
+        "expires_in_seconds"
+      ],
+      "title": "HandoffBatchPreviewEnvelope",
+      "type": "object"
+    },
+    "HandoffBatchPreviewRequest": {
+      "additionalProperties": false,
+      "description": "空选择表示观察本任务 incoming 根；目录句柄只允许单层枚举。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "node_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Node Run Id",
+          "type": "string"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "selection_handles": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 24,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Selection Handles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "run_id",
+        "node_run_id",
+        "handoff_id",
+        "selection_handles"
+      ],
+      "title": "HandoffBatchPreviewRequest",
+      "type": "object"
+    },
+    "HandoffBatchRow": {
+      "additionalProperties": false,
+      "properties": {
+        "collected": {
+          "title": "Collected",
+          "type": "boolean"
+        },
+        "incoming_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Incoming Path",
+          "type": "string"
+        },
+        "ordinal": {
+          "default": null,
+          "title": "Ordinal",
+          "type": "null"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Size"
+        },
+        "target_exists": {
+          "title": "Target Exists",
+          "type": "boolean"
+        },
+        "target_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Target Name",
+          "type": "string"
+        },
+        "target_path": {
+          "maxLength": 32767,
+          "minLength": 1,
+          "title": "Target Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "port_id",
+        "ordinal",
+        "target_name",
+        "target_path",
+        "incoming_path",
+        "collected",
+        "target_exists",
+        "size"
+      ],
+      "title": "HandoffBatchRow",
+      "type": "object"
+    },
+    "HandoffBatchValidationError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "HandoffBatchValidationError",
       "type": "object"
     },
     "HandoffContractField": {
@@ -4520,6 +5362,7 @@
     "HandoffPathSelector": {
       "discriminator": {
         "mapping": {
+          "batch_incoming_directory": "#/$defs/HandoffBatchIncomingDirectorySelector",
           "incoming_directory": "#/$defs/HandoffIncomingDirectorySelector",
           "input_artifact": "#/$defs/HandoffInputArtifactSelector",
           "output_target": "#/$defs/HandoffOutputTargetSelector",
@@ -4539,6 +5382,9 @@
         },
         {
           "$ref": "#/$defs/HandoffIncomingDirectorySelector"
+        },
+        {
+          "$ref": "#/$defs/HandoffBatchIncomingDirectorySelector"
         }
       ]
     },
@@ -5567,6 +6413,36 @@
       "title": "DesktopRecentProject",
       "type": "object"
     },
+    "Host_HandoffBatchConfirmRequest_HandoffBatchSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_handle": {
+          "maxLength": 256,
+          "minLength": 24,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Candidate Handle",
+          "type": "string"
+        },
+        "overwrite": {
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "port_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+          "title": "Port Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "port_id",
+        "candidate_handle",
+        "overwrite"
+      ],
+      "title": "HandoffBatchSelection",
+      "type": "object"
+    },
     "Host_HostInvokeRequest_HostCapability": {
       "enum": [
         "open_file",
@@ -5608,6 +6484,22 @@
         "artifact_id"
       ],
       "title": "ArtifactPathReference",
+      "type": "object"
+    },
+    "Host_HostSystemArguments_HandoffBatchIncomingDirectorySelector": {
+      "additionalProperties": false,
+      "description": "打开本人工节点统一收件目录；端口映射仍由独立批量收件预览确认。",
+      "properties": {
+        "role": {
+          "const": "batch_incoming_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "HandoffBatchIncomingDirectorySelector",
       "type": "object"
     },
     "Host_HostSystemArguments_HandoffIncomingDirectorySelector": {
@@ -5755,6 +6647,7 @@
     "Host_HostSystemArguments_HandoffPathSelector": {
       "discriminator": {
         "mapping": {
+          "batch_incoming_directory": "#/$defs/Host_HostSystemArguments_HandoffBatchIncomingDirectorySelector",
           "incoming_directory": "#/$defs/Host_HostSystemArguments_HandoffIncomingDirectorySelector",
           "input_artifact": "#/$defs/Host_HostSystemArguments_HandoffInputArtifactSelector",
           "output_target": "#/$defs/Host_HostSystemArguments_HandoffOutputTargetSelector",
@@ -5774,6 +6667,9 @@
         },
         {
           "$ref": "#/$defs/Host_HostSystemArguments_HandoffIncomingDirectorySelector"
+        },
+        {
+          "$ref": "#/$defs/Host_HostSystemArguments_HandoffBatchIncomingDirectorySelector"
         }
       ]
     },
@@ -5907,6 +6803,22 @@
         "artifact_id"
       ],
       "title": "ArtifactPathReference",
+      "type": "object"
+    },
+    "Host_MediaPreviewRequest_HandoffBatchIncomingDirectorySelector": {
+      "additionalProperties": false,
+      "description": "打开本人工节点统一收件目录；端口映射仍由独立批量收件预览确认。",
+      "properties": {
+        "role": {
+          "const": "batch_incoming_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "HandoffBatchIncomingDirectorySelector",
       "type": "object"
     },
     "Host_MediaPreviewRequest_HandoffIncomingDirectorySelector": {
@@ -6054,6 +6966,7 @@
     "Host_MediaPreviewRequest_HandoffPathSelector": {
       "discriminator": {
         "mapping": {
+          "batch_incoming_directory": "#/$defs/Host_MediaPreviewRequest_HandoffBatchIncomingDirectorySelector",
           "incoming_directory": "#/$defs/Host_MediaPreviewRequest_HandoffIncomingDirectorySelector",
           "input_artifact": "#/$defs/Host_MediaPreviewRequest_HandoffInputArtifactSelector",
           "output_target": "#/$defs/Host_MediaPreviewRequest_HandoffOutputTargetSelector",
@@ -6073,6 +6986,9 @@
         },
         {
           "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffIncomingDirectorySelector"
+        },
+        {
+          "$ref": "#/$defs/Host_MediaPreviewRequest_HandoffBatchIncomingDirectorySelector"
         }
       ]
     },
@@ -6481,6 +7397,22 @@
       "title": "ArtifactPathReference",
       "type": "object"
     },
+    "Host_Reference_HandoffBatchIncomingDirectorySelector": {
+      "additionalProperties": false,
+      "description": "打开本人工节点统一收件目录；端口映射仍由独立批量收件预览确认。",
+      "properties": {
+        "role": {
+          "const": "batch_incoming_directory",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "HandoffBatchIncomingDirectorySelector",
+      "type": "object"
+    },
     "Host_Reference_HandoffIncomingDirectorySelector": {
       "additionalProperties": false,
       "description": "打开当前外部任务的端口收件目录，不能由浏览器提供路径。",
@@ -6626,6 +7558,7 @@
     "Host_Reference_HandoffPathSelector": {
       "discriminator": {
         "mapping": {
+          "batch_incoming_directory": "#/$defs/Host_Reference_HandoffBatchIncomingDirectorySelector",
           "incoming_directory": "#/$defs/Host_Reference_HandoffIncomingDirectorySelector",
           "input_artifact": "#/$defs/Host_Reference_HandoffInputArtifactSelector",
           "output_target": "#/$defs/Host_Reference_HandoffOutputTargetSelector",
@@ -6645,6 +7578,9 @@
         },
         {
           "$ref": "#/$defs/Host_Reference_HandoffIncomingDirectorySelector"
+        },
+        {
+          "$ref": "#/$defs/Host_Reference_HandoffBatchIncomingDirectorySelector"
         }
       ]
     },
@@ -10570,7 +11506,8 @@
           "default": "0.3.0",
           "enum": [
             "0.3.0",
-            "0.3.2"
+            "0.3.2",
+            "0.3.5"
           ],
           "title": "Contract Version",
           "type": "string"
@@ -10593,11 +11530,15 @@
           "title": "Data Root",
           "type": "string"
         },
+        "english_layout_state": {
+          "$ref": "#/$defs/EnglishStorageState"
+        },
         "layout": {
           "default": "uuid",
           "enum": [
             "uuid",
-            "readable"
+            "readable",
+            "english"
           ],
           "title": "Layout",
           "type": "string"
@@ -10644,6 +11585,7 @@
         "media_basename",
         "layout",
         "layout_state",
+        "english_layout_state",
         "data_id"
       ],
       "title": "ProjectStorage",

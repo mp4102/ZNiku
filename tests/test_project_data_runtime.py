@@ -284,12 +284,14 @@ def test_new_generic_project_runs_in_its_configured_persistent_root(
     created = application.command({"operation": "create_project", "path": str(path)})
     assert created.snapshot is not None
     storage = ProjectStore.open(path).load_storage()
-    expected_root = path.with_suffix(".data") / "attempts" if desktop_default else legacy
+    expected_root = path.with_suffix(".data") if desktop_default else legacy
     assert application.work_root == expected_root
     if desktop_default:
         assert storage is not None and storage.mode == "adjacent"
         assert storage.data_root == str(path.with_suffix(".data"))
         assert storage.attempts_root == str(expected_root)
+        assert storage.layout == "english" and storage.contract_version == "0.3.5"
+        assert not storage.english_layout_state.attempts
     else:
         assert storage is None
     authoring_command(
@@ -302,9 +304,8 @@ def test_new_generic_project_runs_in_its_configured_persistent_root(
     run = _run(application)
     assert run.state is RunState.COMPLETED
     if desktop_default:
-        assert Path(run.node_runs[0].work_dir) == (
-            expected_root / "custom" / "source__N001" / "R001-A001"
-        )
+        assert Path(run.node_runs[0].work_dir) == expected_root / "task" / "round-001"
+        assert not (expected_root / "attempts").exists()
     else:
         assert Path(run.node_runs[0].work_dir).parent == expected_root
     assert (Path(run.node_runs[0].work_dir) / "outputs" / "source.txt").is_file()
@@ -377,6 +378,8 @@ def test_av27_atomic_create_uses_final_project_name_and_source_runs_in_that_root
     storage = ProjectStore.open(path).load_storage()
     assert storage is not None
     assert storage.data_root == str(path.with_suffix(".data"))
+    assert storage.attempts_root == storage.data_root
+    assert storage.layout == "english" and storage.contract_version == "0.3.5"
     assert storage.media_basename == source.stem
     node = next(
         item
@@ -386,9 +389,7 @@ def test_av27_atomic_create_uses_final_project_name_and_source_runs_in_that_root
     run = _run(application, node.node_id)
     assert run.state is RunState.COMPLETED
     assert len(run.node_runs) == 1
-    assert Path(run.node_runs[0].work_dir) == (
-        Path(storage.attempts_root) / "common" / "源素材__N001" / "R001-A001"
-    )
+    assert Path(run.node_runs[0].work_dir) == (Path(storage.data_root) / "source" / "round-001")
     assert sorted(item.name for item in tmp_path.glob("*.data")) == ["Final Video Project.data"]
     assert source.read_bytes() == b"synthetic-not-media"
 
@@ -429,16 +430,18 @@ def test_av27_create_custom_parent_and_explicit_media_basename_are_persisted(
     )
     run = _run(application, source.node_id)
     assert run.state is RunState.COMPLETED
-    assert Path(run.node_runs[0].work_dir) == (
-        Path(storage.attempts_root) / "common" / "源素材__N001" / "R001-A001"
-    )
+    assert Path(run.node_runs[0].work_dir) == (Path(storage.data_root) / "source" / "round-001")
     after = store.load_storage()
     assert after is not None
-    assert after.model_dump(exclude={"layout_state"}) == storage.model_dump(
-        exclude={"layout_state"}
+    assert after.model_dump(exclude={"english_layout_state"}) == storage.model_dump(
+        exclude={"english_layout_state"}
     )
-    assert after.layout_state.runs[run.run_id] == 1
-    assert after.layout_state.nodes[source.node_id].relative_dir == "common/源素材__N001"
+    assert not after.layout_state.nodes and not after.layout_state.runs
+    assert after.layout == "english" and after.attempts_root == after.data_root
+    assert after.english_layout_state.nodes[source.node_id].relative_dir == "source"
+    assert len(after.english_layout_state.attempts) == 1
+    binding = after.english_layout_state.attempts[run.node_runs[0].node_run_id]
+    assert binding.node_id == source.node_id and binding.round == 1
 
 
 @pytest.mark.parametrize(

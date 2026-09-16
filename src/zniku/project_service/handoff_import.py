@@ -22,9 +22,10 @@ from typing import TYPE_CHECKING, Annotated, Final, Literal
 
 from pydantic import Field, StringConstraints, ValidationError
 
-from zniku.project.storage import ProjectStorage
+from zniku.project.storage import ProjectStorage, bound_attempt_path
 from zniku.project.storage_layout import safe_attempt_directory
 from zniku.runtime import ExternalOutputTarget, NodeRun, RunnerError, RuntimeService
+from zniku.runtime.paths import incoming_directories
 
 from .host_bridge import (
     HostBridgeFailure,
@@ -178,14 +179,19 @@ def _target_path(authority: ImportAuthority) -> Path:
     root = _safe_path(authority.work_root)
     raw_work = Path(authority.node_run.work_dir)
     storage = authority.storage
-    if storage is not None and storage.layout == "readable":
-        location = storage.layout_state.nodes.get(authority.node_run.node_id)
-        run_number = storage.layout_state.runs.get(authority.node_run.run_id)
-        if location is None or run_number is None or Path(storage.attempts_root) != root:
+    if storage is not None:
+        if Path(storage.attempts_root) != root:
             raise _failure("PATH", "任务缺少当前工程已保存的存储绑定", 422)
-        expected = (
-            root / location.relative_dir / f"R{run_number:03d}-A{authority.node_run.attempt:03d}"
-        )
+        try:
+            expected = bound_attempt_path(
+                storage,
+                node_id=authority.node_run.node_id,
+                run_id=authority.node_run.run_id,
+                attempt=authority.node_run.attempt,
+                node_run_id=authority.node_run.node_run_id,
+            )
+        except ValueError as error:
+            raise _failure("PATH", "任务缺少当前工程已保存的存储绑定", 422) from error
     else:
         expected = root / authority.node_run.node_run_id.replace("-", "")
     try:
@@ -209,6 +215,30 @@ def _target_path(authority: ImportAuthority) -> Path:
     if target == output_root or target == authority.project_path.resolve(strict=True):
         raise _failure("PATH", "禁止覆盖工程文件", 422)
     return target
+
+
+def _incoming_path(authority: ImportAuthority) -> Path:
+    """使用同一版本化算法解析当前交接收件目录；绝不由文件是否存在选择布局。"""
+
+    _target_path(authority)
+    handoff = authority.node_run.external_handoff
+    if handoff is None:
+        raise _failure("PATH", "任务缺少当前交接绑定", 422)
+    work = _safe_path(Path(authority.node_run.work_dir))
+    directories = incoming_directories(
+        work,
+        tuple((target.port_id, target.path) for target in handoff.output_targets),
+        layout=(
+            "english"
+            if authority.storage is not None and authority.storage.layout == "english"
+            else "port_hash"
+        ),
+    )
+    expected = directories[authority.target.port_id]
+    directory = _safe_path(expected)
+    if directory != expected or not directory.is_dir():
+        raise _failure("PATH", "收件目录与当前任务绑定不一致", 422)
+    return directory
 
 
 class HandoffImportManager:
@@ -351,9 +381,17 @@ class HandoffImportManager:
             if _identity(candidate) != candidate_identity:
                 raise _failure("CHANGED", "验证期间候选文件发生变化，未发布目标")
             if ticket.target_identity is None:
-                # hard-link publication 是同盘原子 no-replace；并发出现目标时绝不隐式覆盖。
-                os.link(candidate, ticket.target)
-                candidate.unlink()
+                if (
+                    os.name == "nt"
+                    and authority.storage is not None
+                    and authority.storage.layout == "english"
+                ):
+                    # Windows 同盘 rename 是 no-replace；NAS 不需要硬链接能力。
+                    os.rename(candidate, ticket.target)
+                else:
+                    # 旧格式及 POSIX 保留同盘原子 no-replace 行为。
+                    os.link(candidate, ticket.target)
+                    candidate.unlink()
             else:
                 os.replace(candidate, ticket.target)
         finally:

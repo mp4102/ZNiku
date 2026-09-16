@@ -68,8 +68,11 @@ def _validate(
     metadata_model: type[OverlapMetadata] = OverlapMetadata,
     namespace: str = OVERLAP_NAMESPACE,
     verify_original_audio_origins: bool = True,
+    output_name: Callable[[str, str], str] | None = None,
+    report_output_port: bool = False,
 ) -> NodeValidatorResult:
     """结果是一次轻量验收；失败时不返回任何 namespace，不能局部登记成功输出。"""
+    active_port: str | None = None
     try:
         contract = contract_reader(role, context.request.inputs, context.request.node.parameters)
         planned = {item.port_id: item.metadata for item in contract.outputs}
@@ -86,12 +89,17 @@ def _validate(
         extensions: dict[str, dict[str, dict[str, object]]] = {}
         warnings: list[str] = []
         for port, metadata in planned.items():
+            active_port = port
             output = outputs[port]
             expected_kind = "MediaFile" if role == "final" else "VideoFile"
             if output.kind != expected_kind or output.size <= 0:
                 fail("OUTPUT_KIND", "输出类型错误或媒体为空")
             legacy._require_fixed_name(
-                context, output, f"{port}.mkv" if role == "split" else _NAMES[role]
+                context,
+                output,
+                output_name(role, port)
+                if output_name
+                else (f"{port}.mkv" if role == "split" else _NAMES[role]),
             )
             if role in {"enhancement", "fi"}:
                 legacy._require_no_producer_metadata(output)
@@ -198,6 +206,12 @@ def _validate(
         )
     except (Av27MediaError, ValidationError) as error:
         code = error.code if isinstance(error, Av27MediaError) else "E_SOURCE_ALIGNED_METADATA"
+        if report_output_port and active_port is not None:
+            return NodeValidatorResult(
+                passed=False,
+                summary={"code": code, "output_port": active_port},
+                message=f"分叶 {active_port} 检查失败：{error}",
+            )
         return NodeValidatorResult(passed=False, summary={"code": code}, message=str(error))
 
 

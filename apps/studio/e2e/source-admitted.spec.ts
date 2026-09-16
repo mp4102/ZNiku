@@ -145,6 +145,22 @@ for (const mr of ['off', 'on'] as const) {
     expect(processed.run.node_runs.filter((node) => node.state === 'failed')).toEqual([])
     expect(processed.run.node_runs.find((node) => node.node_id === 'overlap.split')!.state).toBe('completed')
     expect(processed.run.node_runs.filter((node) => node.state === 'waiting_external').every((node) => node.node_id.startsWith('overlap.enhance.'))).toBe(true)
+    const waitingEnhancements = processed.run.node_runs.filter((node) => node.state === 'waiting_external')
+    expect(waitingEnhancements).toHaveLength(3)
+    expect(waitingEnhancements.every((node) => node.external_handoff?.output_targets.length === 1)).toBe(true)
+    expect(processed.run.graph_snapshot.nodes.filter((node) => node.type_id.startsWith('zniku.source-admitted.enhancement-batch.'))).toHaveLength(3)
+    await page.getByRole('button', { name: /处理外部文件/ }).first().click()
+    await page.getByRole('button', { name: 'A 章 · 批量增强 (1 份) 等待外部处理', exact: true }).click()
+    const chapterHelper = page.getByRole('region', { name: '外部处理助手', exact: true })
+    await expect(chapterHelper.getByRole('button', { name: '选择本章多个文件' })).toBeVisible()
+    await expect(chapterHelper.getByRole('button', { name: '提交本章并继续' })).toBeDisabled()
+    await expect(chapterHelper.getByRole('button', { name: '选择处理好的文件', exact: true })).toHaveCount(0)
+    const chapterBoxes = await Promise.all(waitingEnhancements.map((node) => page.locator(`.react-flow__node[data-id="${node.node_id}"]`).boundingBox()))
+    expect(chapterBoxes.every((box) => box !== null)).toBe(true)
+    for (let left = 0; left < chapterBoxes.length; left++) for (let right = left + 1; right < chapterBoxes.length; right++) {
+      const a = chapterBoxes[left]!, b = chapterBoxes[right]!
+      expect(a!.x + a!.width <= b!.x || b!.x + b!.width <= a!.x || a!.y + a!.height <= b!.y || b!.y + b!.height <= a!.y).toBe(true)
+    }
     expect(processed.run.graph_snapshot).toEqual(graph)
     expect((await status(page)).snapshot!.project.graph).toEqual(graph)
     expect(await readFile(service.fixture.original_source!)).toEqual(original)

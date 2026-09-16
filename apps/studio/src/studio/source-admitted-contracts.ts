@@ -43,9 +43,9 @@ export interface SourceAdmittedFailureEnvelope extends Omit<SourceAlignedFailure
 export function sourceAdmittedCatalogAvailable(nodes: ReadonlyArray<{ readonly type_id: string; readonly definition_version: string }>): boolean {
   const published = new Set(nodes.filter((node) => node.definition_version === '0.3.5').map((node) => node.type_id))
   return ['zniku.avenhance.v27.source_program', 'zniku.avenhance.v27.source_admission',
-    'zniku.overlap.split.leaves.1', 'zniku.overlap.enhancement.external', 'zniku.overlap.merge_video',
-    'zniku.overlap.fi_context', 'zniku.overlap.frame_interpolation.external', 'zniku.overlap.fi_crop',
-    'zniku.overlap.program_encode', 'zniku.overlap.final_mux', 'zniku.source_aligned.external.mp4',
+    'zniku.overlap.split.leaves.1', 'zniku.source-admitted.enhancement-batch.1', 'zniku.source-admitted.chapter-batch.merge',
+    'zniku.source-admitted.chapter-batch.context', 'zniku.source-admitted.chapter-batch.fi', 'zniku.source-admitted.chapter-batch.crop',
+    'zniku.source-admitted.chapter-batch.program', 'zniku.source-admitted.chapter-batch.final', 'zniku.source_aligned.external.mp4',
     'zniku.source_aligned.external.mov', 'zniku.source_aligned.external.mkv'].every((id) => published.has(id))
 }
 const validators = new Map<string, ValidateFunction>()

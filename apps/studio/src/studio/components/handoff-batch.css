@@ -1,0 +1,10 @@
+.handoff-batch-count { font-weight: 700; }
+.handoff-batch-targets { display: grid; gap: .75rem; padding: 0; list-style: none; }
+.handoff-batch-targets > li, .handoff-batch-match { display: grid; gap: .5rem; padding: .8rem; border: 1px solid var(--border-color, #45505f); border-radius: .5rem; min-width: 0; }
+.handoff-batch-targets strong, .handoff-batch code, .handoff-batch-match code { overflow-wrap: anywhere; white-space: normal; }
+.handoff-batch-targets button { justify-self: start; }
+.handoff-batch-matches { display: grid; gap: .75rem; max-height: 55vh; overflow: auto; }
+.handoff-batch-match label { display: grid; gap: .5rem; }
+.handoff-batch-match select { width: 100%; min-width: 0; }
+.handoff-batch-overwrite { display: flex !important; align-items: start; gap: .5rem; margin-block: .5rem; overflow-wrap: anywhere; }
+.handoff-batch-dialog { width: min(760px, calc(100vw - 2rem)); }

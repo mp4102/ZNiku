@@ -37,6 +37,8 @@ from zniku.project import (
     ProjectSnapshot,
     ProjectStore,
 )
+from zniku.project.storage import bound_attempt_path
+from zniku.project.storage_english import allocate_english_attempt, reserve_english_nodes
 from zniku.project.storage_layout import (
     AttemptLocationRequest,
     AttemptNamingHint,
@@ -789,6 +791,57 @@ class RuntimeRepository:
             raise RuntimeRepositoryError("E_RUN_ABANDON_FAILED", str(error)) from error
         return self.get_run(run_id)
 
+    def allocate_execution_storage(self, node_run_id: str) -> NodeRun:
+        """复用已排除后才绑定英文处理轮次；新定位与 NodeRun 在同一事务提交。
+
+        只分配路径，不创建文件。并发重复调用返回同一轮次，排队、取消或复用不占轮次；
+        仍保持全历史 NodeRun 的独立逻辑工作位置，不将复用记录指向 producer 的工作目录。
+        """
+
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = self._read_node_run(connection, node_run_id)
+            run = self._read_run(connection, current.run_id)
+            if current.state is not NodeRunState.PENDING or run.state is not RunState.RUNNING:
+                raise RuntimeConflictError(
+                    "E_RUNTIME_STORAGE_STATE", "只有待启动任务可以分配处理目录"
+                )
+            self._assert_latest_attempt(connection, current)
+            storage = ProjectStore._read_project_storage(connection)
+            if storage is None or storage.layout != "english":
+                return current
+            if current.input_artifact_ids != self._expected_run_input_artifact_ids(
+                connection, run, current.node_id
+            ):
+                raise RuntimeConflictError("E_RUNTIME_STORAGE_INPUTS", "任务尚未绑定完整直接输入")
+            try:
+                state, path = allocate_english_attempt(
+                    storage.english_layout_state,
+                    root=Path(storage.attempts_root),
+                    node_id=current.node_id,
+                    node_run_id=current.node_run_id,
+                )
+                connection.execute(
+                    "UPDATE project_storage SET payload_json = ? WHERE singleton = 1",
+                    (storage.model_copy(update={"english_layout_state": state}).model_dump_json(),),
+                )
+                # work_dir 一般不可变；这里只允许在首次执行前，将已验证占位位置与同事务
+                # 持久映射一起绑定。其他状态迁移继续经过 immutable 检查，不能借此任意搬家。
+                changed = connection.execute(
+                    "UPDATE node_runs SET work_dir = ? "
+                    "WHERE node_run_id = ? AND state = ? AND work_dir = ?",
+                    (str(path), current.node_run_id, NodeRunState.PENDING.value, current.work_dir),
+                ).rowcount
+                if changed != 1:
+                    raise RuntimeConflictError("E_RUNTIME_STORAGE_RACE", "目录绑定前任务状态已改变")
+                self._read_run(connection, current.run_id)
+                connection.commit()
+            except (ValueError, OSError) as error:
+                raise RuntimeConflictError("E_RUNTIME_STORAGE_LAYOUT", str(error)) from error
+            except sqlite3.Error as error:
+                raise RuntimeRepositoryError("E_RUNTIME_STORAGE_WRITE", str(error)) from error
+        return self.get_node_run(node_run_id)
+
     def create_node_run(self, node_run: NodeRun) -> NodeRun:
         """新增 pending attempt；同一 node 的 attempt 必须从 1 连续递增。"""
 
@@ -1096,6 +1149,15 @@ class RuntimeRepository:
                     "Run snapshot 缺少 NodeRun 的 NodeDefinition",
                 )
             if current.state is NodeRunState.PENDING:
+                storage = ProjectStore._read_project_storage(connection)
+                if (
+                    storage is not None
+                    and storage.layout == "english"
+                    and current.node_run_id not in storage.english_layout_state.attempts
+                ):
+                    raise RuntimeConflictError(
+                        "E_RUNTIME_STORAGE_BINDING", "实际开始前必须绑定英文处理目录"
+                    )
                 if progress is not None:
                     connection.rollback()
                     raise RuntimeConflictError(
@@ -2515,7 +2577,7 @@ class RuntimeRepository:
         """
 
         storage = ProjectStore._read_project_storage(connection)
-        if storage is None or storage.layout != "readable" or not candidates:
+        if storage is None or storage.layout == "uuid" or not candidates:
             return candidates
         root = Path(storage.attempts_root)
         rebound: dict[str, NodeRun] = {}
@@ -2524,18 +2586,42 @@ class RuntimeRepository:
             ordered = sorted(candidates, key=lambda item: (item.node_id, item.attempt))
             for candidate in ordered:
                 safe_attempt_directory(root, Path(candidate.work_dir))
+            requests = tuple(
+                AttemptLocationRequest(
+                    node_id=item.node_id,
+                    run_id=item.run_id,
+                    attempt=item.attempt,
+                    hint=None if hints is None else hints.get(item.node_id),
+                )
+                for item in ordered
+            )
+            if storage.layout == "english":
+                english = reserve_english_nodes(storage.english_layout_state, requests)
+                updated = storage.model_copy(update={"english_layout_state": english})
+                connection.execute(
+                    "UPDATE project_storage SET payload_json = ? WHERE singleton = 1",
+                    (updated.model_dump_json(),),
+                )
+                return tuple(
+                    item.model_copy(
+                        update={
+                            "work_dir": str(
+                                bound_attempt_path(
+                                    updated,
+                                    node_id=item.node_id,
+                                    run_id=item.run_id,
+                                    attempt=item.attempt,
+                                    node_run_id=item.node_run_id,
+                                )
+                            )
+                        }
+                    )
+                    for item in candidates
+                )
             state, paths = allocate_attempt_paths(
                 storage.layout_state,
                 root=root,
-                requests=tuple(
-                    AttemptLocationRequest(
-                        node_id=item.node_id,
-                        run_id=item.run_id,
-                        attempt=item.attempt,
-                        hint=None if hints is None else hints.get(item.node_id),
-                    )
-                    for item in ordered
-                ),
+                requests=requests,
             )
             for candidate, path in zip(ordered, paths, strict=True):
                 rebound[candidate.node_run_id] = candidate.model_copy(
@@ -2870,20 +2956,35 @@ class RuntimeRepository:
         """交叉校验 attempt 状态、own/reused Result 与有序 outputs，拒绝关系篡改。"""
 
         storage = self._store._read_project_storage(connection)
-        if storage is not None and storage.layout == "readable":
+        if storage is not None and storage.layout != "uuid":
             # 只有已有持久映射可解释历史目录；读取不补号或按当前名字重新推导。
             for node_run in run.node_runs:
-                location = storage.layout_state.nodes.get(node_run.node_id)
-                number = storage.layout_state.runs.get(run.run_id)
-                if location is None or number is None:
+                try:
+                    expected = bound_attempt_path(
+                        storage,
+                        node_id=node_run.node_id,
+                        run_id=run.run_id,
+                        attempt=node_run.attempt,
+                        node_run_id=node_run.node_run_id,
+                    )
+                except ValueError as error:
                     raise RuntimeDataError(
                         "E_NODE_RUN_STORAGE_BINDING", "可读目录缺少既有 node 或 Run 存储映射"
+                    ) from error
+                if (
+                    storage.layout == "english"
+                    and node_run.node_run_id not in storage.english_layout_state.attempts
+                    and (
+                        node_run.state in {NodeRunState.RUNNING, NodeRunState.WAITING_EXTERNAL}
+                        or (
+                            node_run.state is NodeRunState.COMPLETED
+                            and node_run.reused_from_result_id is None
+                        )
                     )
-                expected = (
-                    Path(storage.attempts_root)
-                    / location.relative_dir
-                    / f"R{number:03d}-A{node_run.attempt:03d}"
-                )
+                ):
+                    raise RuntimeDataError(
+                        "E_NODE_RUN_STORAGE_BINDING", "实际处理任务缺少持久英文轮次绑定"
+                    )
                 if Path(node_run.work_dir) != expected:
                     raise RuntimeDataError(
                         "E_NODE_RUN_STORAGE_BINDING", "NodeRun 工作目录与持久存储映射不一致"

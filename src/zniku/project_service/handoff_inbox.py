@@ -1,8 +1,8 @@
 """把当前外部任务收件箱中的明确候选收纳为规范产物，不自动提交或登记 Artifact。
 
 观察只扫描精确绑定的单层目录，浏览器仅持有短时 opaque 句柄；收纳须再次预览并明确确认。
-候选通过同一 Runtime validator 后才在同盘移动。临时硬链接只提供 validator 所需的正式
-basename，不复制大文件、不作为归档副本；异常默认保留来件及旧目标，绝不递归清理用户目录。
+候选通过同一 Runtime validator 后才在同盘发布。新版 Windows 收件使用可回退的 rename
+暂存，旧格式保留既有行为；不复制大文件，异常保留来件及旧目标，不递归清理用户目录。
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Annotated, Final, Literal
 from pydantic import Field, StringConstraints, ValidationError
 
 from zniku.runtime import RunnerError
-from zniku.runtime.paths import incoming_directory_name
 
 from .handoff_import import (
     IMPORT_TTL_SECONDS,
@@ -30,6 +29,7 @@ from .handoff_import import (
     ImportAuthority,
     _FileIdentity,
     _identity,
+    _incoming_path,
     _safe_path,
     _target_path,
 )
@@ -133,12 +133,9 @@ def _failure(code: str, message: str, status: int = 409) -> HostBridgeFailure:
 
 
 def _inbox_path(authority: ImportAuthority, binding: HandoffImportBinding) -> Path:
-    _target_path(authority)
-    work = _safe_path(Path(authority.node_run.work_dir))
-    inbox = _safe_path(work / "incoming" / incoming_directory_name(binding.port_id))
-    if not inbox.is_dir() or inbox.parent.parent != work:
+    if authority.target.port_id != binding.port_id:
         raise _failure("PATH", "当前任务收件目录无效，不能改用其他任务的目录", 422)
-    return inbox
+    return _incoming_path(authority)
 
 
 def _source_identity(path: Path) -> _FileIdentity:
@@ -338,6 +335,13 @@ class HandoffInboxManager:
         )
 
     def _collect(self, ticket: _InboxTicket, authority: ImportAuthority) -> None:
+        if (
+            os.name == "nt"
+            and authority.storage is not None
+            and authority.storage.layout == "english"
+        ):
+            self._collect_windows(ticket, authority)
+            return
         candidate = ticket.candidate
         self._assert_unchanged(ticket, authority, candidate.identity)
         work = _safe_path(Path(authority.node_run.work_dir))
@@ -408,6 +412,82 @@ class HandoffInboxManager:
                     staging.rmdir()
             except (OSError, ValueError, HostBridgeFailure):
                 pass
+
+    def _collect_windows(self, ticket: _InboxTicket, authority: ImportAuthority) -> None:
+        """以同盘不覆盖 rename 暂存任意来件名；NAS 不需要硬链接或大文件副本。
+
+        rename 可能改变 ctime，检查固定 inode/size/mtime；校验失败恢复原位置，若原位置
+        被另一个文件占用则保留暂存并明确报错。网络操作结果不明不自动重试或删除唯一副本。
+        """
+
+        candidate = ticket.candidate
+        self._assert_unchanged(ticket, authority, candidate.identity)
+        work = _safe_path(Path(authority.node_run.work_dir))
+        staging = Path(tempfile.mkdtemp(prefix=".handoff-inbox-", dir=work))
+        staging_identity = (staging.stat().st_dev, staging.stat().st_ino)
+        temporary = staging / ticket.target.name
+        published = False
+
+        def same_file(path: Path) -> bool:
+            current = _identity(path, allow_missing=True)
+            expected = candidate.identity
+            return current is not None and (
+                current.device,
+                current.inode,
+                current.size,
+                current.mtime_ns,
+            ) == (expected.device, expected.inode, expected.size, expected.mtime_ns)
+
+        try:
+            os.rename(candidate.path, temporary)
+            if not same_file(temporary):
+                raise _failure("CHANGED", "暂存期间来件发生变化，实际文件已保留")
+            binding = candidate.binding
+            authority.runtime.inspect_external_import_candidate(
+                binding.run_id,
+                binding.node_run_id,
+                handoff_id=binding.handoff_id,
+                port_id=binding.port_id,
+                candidate=temporary,
+            )
+            authority.runtime.inspect_external_handoff(
+                binding.run_id, binding.node_run_id, handoff_id=binding.handoff_id
+            )
+            if (
+                _inbox_path(authority, binding) != candidate.inbox
+                or _target_path(authority) != ticket.target
+                or not same_file(temporary)
+                or _identity(ticket.target, allow_missing=True, target=True)
+                != ticket.target_identity
+            ):
+                raise _failure("CHANGED", "检查期间来件或目标发生变化，未覆盖已有产物")
+            if ticket.target_identity is None:
+                os.rename(temporary, ticket.target)  # Windows rename 不覆盖已有文件。
+            else:
+                os.replace(temporary, ticket.target)
+            published = True
+        finally:
+            # 恢复不覆盖新来件；只移回仍是暂存的那个 inode，异常保留文件供人工检查。
+            try:
+                if (
+                    _safe_path(staging) != staging
+                    or (staging.stat().st_dev, staging.stat().st_ino) != staging_identity
+                ):
+                    raise _failure("PARTIAL", "暂存目录发生变化，保留文件供检查")
+                if not published and temporary.exists():
+                    current = _identity(temporary)
+                    if current is not None and (current.device, current.inode) == (
+                        candidate.identity.device,
+                        candidate.identity.inode,
+                    ):
+                        os.rename(temporary, candidate.path)
+                    else:
+                        raise _failure("PARTIAL", f"来件位置已变化，保留暂存文件：{temporary}")
+                staging.rmdir()
+            except (OSError, HostBridgeFailure) as error:
+                raise _failure(
+                    "PARTIAL", f"文件需要确认，已保留来件或暂存文件：{staging}；没有提交"
+                ) from error
 
     @staticmethod
     def _move_no_replace(source: Path, target: Path, identity: _FileIdentity) -> None:

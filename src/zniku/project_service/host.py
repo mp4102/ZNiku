@@ -19,6 +19,7 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 from pydantic import BaseModel
 
 from .chapter_overlap import CHAPTER_OVERLAP_PREVIEW_ROUTE, ChapterOverlapPreviewError
+from .handoff_batch import HandoffBatchManager
 from .handoff_import import HandoffImportManager
 from .handoff_inbox import HandoffInboxManager
 from .host_bridge import HOST_TOKEN_HEADER, HostBridgeFailure, HostBridgeSession
@@ -48,10 +49,12 @@ _HANDOFF_IMPORT_PREFIX: Final = "/api/studio/handoff-import"
 _HANDOFF_IMPORT_PREVIEW: Final = f"{_HANDOFF_IMPORT_PREFIX}/preview"
 _HANDOFF_IMPORT_CONFIRM: Final = f"{_HANDOFF_IMPORT_PREFIX}/confirm"
 _INBOX_PREFIX: Final = "/api/studio/handoff-inbox"
+_BATCH_PREFIX: Final = "/api/studio/handoff-batch"
 _STORAGE_PREFIX: Final = "/api/studio/storage"
 _DATA_ROUTES: Final = frozenset(
     (
         *[f"{_INBOX_PREFIX}/{action}" for action in ("observe", "preview", "confirm")],
+        *[f"{_BATCH_PREFIX}/{action}" for action in ("observe", "preview", "confirm", "check")],
         *[
             f"{_STORAGE_PREFIX}/{action}"
             for action in (
@@ -191,6 +194,7 @@ def make_project_service_handler(
 
     handoff_import = HandoffImportManager()
     handoff_inbox = HandoffInboxManager()
+    handoff_batch = HandoffBatchManager()
     storage_api = StorageApi()
 
     class Handler(BaseHTTPRequestHandler):
@@ -494,7 +498,11 @@ def make_project_service_handler(
                         "未知 HostBridge route",
                         http_status=HTTPStatus.NOT_FOUND,
                     )
-                payload = self._read_host_payload()
+                payload = self._read_host_payload(
+                    max_bytes=4 * 1024 * 1024
+                    if parsed.path.startswith(f"{_BATCH_PREFIX}/")
+                    else _MAX_HOST_BODY_BYTES
+                )
                 if parsed.path == _HOST_ACTIONS_ROUTE:
                     response_payload = host_bridge.issue_user_action(payload).model_dump(
                         mode="json"
@@ -531,6 +539,17 @@ def make_project_service_handler(
                         payload, session=host_bridge, application=application
                     ).model_dump(mode="json")
                     status = HTTPStatus.OK
+                elif parsed.path.startswith(f"{_BATCH_PREFIX}/"):
+                    batch_operation = {
+                        "observe": handoff_batch.observe,
+                        "preview": handoff_batch.preview,
+                        "confirm": handoff_batch.confirm,
+                        "check": handoff_batch.check,
+                    }[parsed.path.rsplit("/", 1)[-1]]
+                    response_payload = batch_operation(
+                        payload, session=host_bridge, application=application
+                    ).model_dump(mode="json")
+                    status = HTTPStatus.OK
                 elif parsed.path.startswith(f"{_STORAGE_PREFIX}/"):
                     response_payload = storage_api.invoke(
                         parsed.path.rsplit("/", 1)[-1],
@@ -553,7 +572,7 @@ def make_project_service_handler(
                 return
             self._host_json(status, response_payload, host_bridge, methods="POST, OPTIONS")
 
-        def _read_host_payload(self) -> object:
+        def _read_host_payload(self, *, max_bytes: int = _MAX_HOST_BODY_BYTES) -> object:
             content_types = self.headers.get_all("Content-Type", [])
             if (
                 len(content_types) != 1
@@ -568,7 +587,7 @@ def make_project_service_handler(
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
                 length = 0
-            if not 1 <= length <= _MAX_HOST_BODY_BYTES:
+            if not 1 <= length <= max_bytes:
                 raise HostBridgeFailure(
                     "E_HOST_BRIDGE_BODY_SIZE",
                     "HostBridge request body 大小非法",
@@ -597,7 +616,13 @@ def make_project_service_handler(
             """用 path 前缀隔离 HostBridge，畸形 target 也不得落入普通 CORS。"""
 
             return self.path.startswith(
-                (_HOST_BRIDGE_PREFIX, _HANDOFF_IMPORT_PREFIX, _INBOX_PREFIX, _STORAGE_PREFIX)
+                (
+                    _HOST_BRIDGE_PREFIX,
+                    _HANDOFF_IMPORT_PREFIX,
+                    _INBOX_PREFIX,
+                    _BATCH_PREFIX,
+                    _STORAGE_PREFIX,
+                )
             )
 
         def _authorize_host(self, session: HostBridgeSession) -> None:

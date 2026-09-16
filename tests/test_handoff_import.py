@@ -32,7 +32,7 @@ from zniku.graph import (
     ValidatorSpec,
 )
 from zniku.project import Project, ProjectStore
-from zniku.project.storage import new_project_storage
+from zniku.project.storage import ProjectStorage, new_project_storage
 from zniku.project_service import (
     HostBridgeFailure,
     HostBridgeSession,
@@ -119,6 +119,7 @@ def _setup(
     validator: Any = _validator,
     multiple_outputs: bool = False,
     readable: bool = False,
+    legacy_readable: bool = False,
 ) -> Setup:
     definition = NodeDefinition(
         type_id="test.import.external",
@@ -155,7 +156,18 @@ def _setup(
             )
         ),
     )
-    config = new_project_storage(tmp_path / "project.zniku") if readable else None
+    config = (
+        new_project_storage(tmp_path / "project.zniku") if readable or legacy_readable else None
+    )
+    if config is not None and legacy_readable:
+        config = ProjectStorage.model_validate(
+            config.model_dump(mode="python")
+            | {
+                "contract_version": "0.3.2",
+                "layout": "readable",
+                "attempts_root": str(Path(config.data_root) / "attempts"),
+            }
+        )
     if config is not None:
         prepare_storage_location(config, current=None)
     store = ProjectStore.create(tmp_path / "project.zniku", project, (definition,), storage=config)

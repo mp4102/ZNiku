@@ -57,7 +57,9 @@ def test_http_organize_index_and_restore_preserve_manual_bindings(
     with _serve(value.base.application, value.base.session) as (base, _):
         request = _selection(value, destination)
         preview = _post(value, base, "organize-preview", request)
-        assert preview["operation"] == "organize" and preview["target"]["layout"] == "readable"
+        assert preview["operation"] == "organize" and preview["target"]["layout"] == "english"
+        assert preview["target"]["contract_version"] == "0.3.5"
+        assert preview["target"]["attempts_root"] == preview["target"]["data_root"]
         assert len(preview["path_mappings"]) == 2
         target_root = Path(preview["target"]["data_root"])
         assert not target_root.exists()
@@ -68,7 +70,8 @@ def test_http_organize_index_and_restore_preserve_manual_bindings(
             {key: val for key, val in request.items() if key != "selection_handle"}
             | {"ticket_id": preview["ticket_id"]},
         )
-        assert confirmed["storage"]["layout"] == "readable" and original.read_bytes() == b"899"
+        assert confirmed["storage"]["layout"] == "english" and original.read_bytes() == b"899"
+        assert not (target_root / "attempts").exists()
         moved_a = next(
             item for item in preview["path_mappings"] if item["source"] == str(historical.parent)
         )
@@ -89,6 +92,7 @@ def test_http_organize_index_and_restore_preserve_manual_bindings(
             },
         )
         assert Path(index["path"]).is_file() and index["artifact_count"] == 2
+        assert Path(index["path"]).name == "index.html"
         action = value.base.session.issue_user_action({"capability": "reveal_in_file_manager"})
         revealed = value.base.session.invoke(
             {

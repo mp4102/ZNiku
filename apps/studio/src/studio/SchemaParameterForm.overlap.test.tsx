@@ -2,13 +2,14 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import corpus from '../../../../docs/architecture/studio-overlap-schema-corpus.json'
+import batchCorpus from '../../../../docs/architecture/studio-chapter-batch-schema-corpus.json'
 import { SchemaParameterForm } from './SchemaParameterForm'
 import { asParameterSchema, directRenderIssue, resolveLocalRenderSchema, validateParameterDraft, type ParameterSchema } from './parameter-draft'
 import type { JsonObject } from './contracts'
 
 afterEach(cleanup)
 describe('新 Python Schema 展示合同', () => {
-  it.each(corpus.definitions)('$identity.type_id 全量局部引用和 nullable 可直接展示', (entry) => {
+  it.each([...corpus.definitions, ...batchCorpus.definitions])('$identity.type_id 全量局部引用和 nullable 可直接展示', (entry) => {
     expect(directRenderIssue(asParameterSchema(entry.parameter_schema as unknown as JsonObject))).toBeNull()
   })
   it.each([

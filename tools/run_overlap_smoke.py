@@ -434,9 +434,10 @@ def run_smoke(
     if readable_storage:
         # 同一真实 Runtime 媒体链只切换物理定位；不能注入状态或把路径名视为结果证明。
         storage = ProjectStore.open(project_path).load_storage()
-        assert storage is not None and storage.layout == "readable"
-        assert storage.layout_state.nodes["overlap.fi.A"].relative_dir.startswith(
-            "chapters/0001-A/外部FI补帧__N"
+        assert storage is not None and storage.layout == "english"
+        assert (
+            storage.english_layout_state.nodes["overlap.fi.A"].relative_dir
+            == "frame-interpolation/A"
         )
         report["storage_layout"] = storage.layout
         report["data_root"] = storage.data_root

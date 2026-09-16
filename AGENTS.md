@@ -24,8 +24,16 @@
   候选明确`pending_real_acceptance`，不得把合成媒体测试说成模型能力证明。
 - 已批准的可读目录增量见`docs/v0.3.2-readable-storage-plan.md`：新工程可读布局、旧UUID兼容、显式整理与
   重新定位、非权威文件索引；不自动迁移既有工程，不改变Graph/媒体合同，不自动清理或替换受测包。
+- 2026-09-16 已批准的英文物理目录增量见 `docs/english-readable-storage-plan.md`：新布局按
+  `task/[chapter]/round-NNN` 定位，正常交回区不暴露节点/Run 编号或端口哈希；GUI 仍中文。版本化兼容旧
+  UUID/readable 布局，旧等待任务不改路径；轮次与正式绑定事务保存，reuse 不复制媒体，不自动迁移真实工程。
 
 ## 产品与领域边界
+
+- 用户已批准章级批量增强增量，入口为 `docs/chapter-batch-enhancement-plan.md`。新默认流程每章一个
+  真正多输出人工增强节点；旧精确定义、工程、waiting handoff 不改写。分批收件不等于部分完成，
+  整章全部检查通过后显式 Submit；正式失败仍整节点新 attempt。不得以批处理为由新增 Core
+  scope、ArtifactSet、Map/Collect、动态输出或节点内 checkpoint。
 
 - `v0.3.5` 已批准的执行入口为 `docs/v0.3.5-execution-memo.md`，从 v0.3.3 基点独立实施。
   默认新流程采用 AVEnhanceFlow 2.7.0 的源准入，失败时允许外部修复候选通过同一准入后作为新参考。

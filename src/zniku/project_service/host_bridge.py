@@ -38,7 +38,7 @@ from pydantic import (
 
 from zniku.media.probe import MediaNodeError, probe_media, require_media_kind
 from zniku.runtime import NodeRunState
-from zniku.runtime.paths import incoming_directory_name
+from zniku.runtime.paths import IncomingLayout, incoming_directories
 
 from .native_picker import run_picker_process
 
@@ -290,11 +290,18 @@ class HandoffIncomingDirectorySelector(HostBridgeModel):
     ordinal: Annotated[int, Field(ge=0)] | None = None
 
 
+class HandoffBatchIncomingDirectorySelector(HostBridgeModel):
+    """打开本人工节点统一收件目录；端口映射仍由独立批量收件预览确认。"""
+
+    role: Literal["batch_incoming_directory"]
+
+
 type HandoffPathSelector = Annotated[
     HandoffWorkDirectorySelector
     | HandoffInputArtifactSelector
     | HandoffOutputTargetSelector
-    | HandoffIncomingDirectorySelector,
+    | HandoffIncomingDirectorySelector
+    | HandoffBatchIncomingDirectorySelector,
     Field(discriminator="role"),
 ]
 
@@ -413,7 +420,11 @@ class HostProjectReadAuthority(Protocol):
 
     @property
     def work_root(self) -> Path:
-        """返回 launcher 固定的 attempt 根。"""
+        """返回当前工程生效的持久 attempt 根；旧工程按既有配置解析。"""
+
+    @property
+    def incoming_layout(self) -> IncomingLayout:
+        """返回已保存的收件格式，不能从磁盘结构猜测版本。"""
 
     def inspect_run_detail(self, run_id: str) -> Any:
         """返回精确 Run detail；不存在或绑定错误时失败关闭。"""
@@ -544,6 +555,21 @@ class ProjectServiceHostPathResolver:
                 )
             return _existing_absolute_path(matches[0].path)
 
+        if isinstance(selector, HandoffBatchIncomingDirectorySelector):
+            root = self._application.work_root.resolve(strict=True)
+            work = _existing_absolute_path(node_run.work_dir)
+            incoming = _existing_absolute_path(work / "incoming")
+            if (
+                not work.is_relative_to(root)
+                or work == root
+                or incoming != work / "incoming"
+                or not incoming.is_dir()
+            ):
+                raise HostBridgeFailure(
+                    "E_HOST_BRIDGE_REFERENCE", "收件目录不在当前 attempt 内", http_status=409
+                )
+            return incoming
+
         matches = tuple(
             target
             for target in handoff.output_targets
@@ -558,13 +584,16 @@ class ProjectServiceHostPathResolver:
         if isinstance(selector, HandoffIncomingDirectorySelector):
             root = self._application.work_root.resolve(strict=True)
             work = _existing_absolute_path(node_run.work_dir)
-            incoming = _existing_absolute_path(
-                work / "incoming" / incoming_directory_name(selector.port_id)
-            )
+            expected = incoming_directories(
+                work,
+                tuple((target.port_id, target.path) for target in handoff.output_targets),
+                layout=self._application.incoming_layout,
+            )[selector.port_id]
+            incoming = _existing_absolute_path(expected)
             if (
                 not work.is_relative_to(root)
                 or work == root
-                or incoming != work / "incoming" / incoming_directory_name(selector.port_id)
+                or incoming != expected
                 or not incoming.is_dir()
             ):
                 raise HostBridgeFailure(

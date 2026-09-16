@@ -32,7 +32,7 @@ from zniku.graph import (
 from zniku.project.storage_layout import safe_attempt_directory
 from zniku.runtime.models import FrameRange
 
-from .paths import incoming_directory_name
+from .paths import IncomingLayout, incoming_directories
 from .process_window import background_creation_flags
 from .progress import ProgressError, ProgressInfrastructureError, ProgressReporter
 
@@ -176,6 +176,7 @@ class NodeExecutionRequest:
     inputs: tuple[RunnerInput, ...] = ()
     output_paths: tuple[OutputPathSpec, ...] = ()
     work_dir: Path | None = None
+    incoming_layout: IncomingLayout = "port_hash"
 
 
 @dataclass(frozen=True, slots=True)
@@ -603,11 +604,14 @@ class NodeRunner:
         layout = self._create_layout(request)
         targets = self._output_targets(request, layout)
         self._create_output_parents(targets, layout)
-        # 收件目录按 attempt 与输出端口隔离；创建失败不得发布 waiting handoff。
-        for target in targets:
-            (layout.work_dir / "incoming" / incoming_directory_name(target.port_id)).mkdir(
-                parents=True, exist_ok=False
-            )
+        # 完整目标集合决定平铺或重名分流；旧工程继续保留原端口目录，失败不发布 handoff。
+        directories = incoming_directories(
+            layout.work_dir,
+            tuple((target.port_id, str(target.path)) for target in targets),
+            layout=request.incoming_layout,
+        )
+        for directory in set(directories.values()):
+            directory.mkdir(parents=True, exist_ok=False)
         return ManualHandoff(
             schema_version=_HANDOFF_SCHEMA_VERSION,
             node_run_id=request.node_run_id,
@@ -745,6 +749,21 @@ class NodeRunner:
         该入口不接收前端任意路径，Project Service 必须先完成选择句柄、目标及文件变化检查。
         """
 
+        return self.inspect_manual_candidates(request, handoff, candidates={port_id: candidate})
+
+    def inspect_manual_candidates(
+        self,
+        request: NodeExecutionRequest,
+        handoff: ManualHandoff,
+        *,
+        candidates: Mapping[str, Path],
+    ) -> tuple[ValidatedOutput, ...]:
+        """在一次完整节点校验中替换若干候选路径，不登记结果或改变状态。
+
+        路径只来自宿主已绑定 attempt 的暂存别名；未提供的端口仍使用正式目标。无论替换几项，
+        媒体检查和节点 validator 都接收完整声明输出，不能把部分来件当作已完成的节点。
+        """
+
         ordered_inputs = self._validate_request(request)
         executor = request.definition.executor
         if request.definition.execution_mode is not ExecutionMode.MANUAL_EXTERNAL or not isinstance(
@@ -756,22 +775,31 @@ class NodeRunner:
         self._assert_handoff_matches(
             request, handoff, layout, targets, ordered_inputs, executor.instructions
         )
-        matched = [target for target in targets if target.port_id == port_id]
-        if len(matched) != 1:
-            raise self._configuration_error("E_RUNNER_OUTPUT_PORT_UNKNOWN", "候选输出端口不存在")
-        resolved = candidate.resolve(strict=True)
-        try:
-            resolved.relative_to(layout.work_dir.resolve(strict=True))
-        except ValueError as error:
-            raise self._configuration_error(
-                "E_RUNNER_PATH_ESCAPE", "候选输出必须位于已绑定 attempt 内"
-            ) from error
-        if resolved.name != matched[0].path.name or resolved == matched[0].path:
-            raise self._configuration_error(
-                "E_RUNNER_CANDIDATE_PATH", "候选必须保留声明文件名且不得替代正式目标路径"
-            )
+        if not candidates:
+            raise self._configuration_error("E_RUNNER_OUTPUT_PORT_UNKNOWN", "必须提供候选输出")
+        replacements: dict[str, Path] = {}
+        for port_id, candidate in candidates.items():
+            matched = [target for target in targets if target.port_id == port_id]
+            if len(matched) != 1:
+                raise self._configuration_error(
+                    "E_RUNNER_OUTPUT_PORT_UNKNOWN", "候选输出端口不存在"
+                )
+            resolved = candidate.resolve(strict=True)
+            try:
+                resolved.relative_to(layout.work_dir.resolve(strict=True))
+            except ValueError as error:
+                raise self._configuration_error(
+                    "E_RUNNER_PATH_ESCAPE", "候选输出必须位于已绑定 attempt 内"
+                ) from error
+            if resolved.name != matched[0].path.name or resolved == matched[0].path:
+                raise self._configuration_error(
+                    "E_RUNNER_CANDIDATE_PATH", "候选必须保留声明文件名且不得替代正式目标路径"
+                )
+            replacements[port_id] = resolved
         produced = tuple(
-            replace(target, path=resolved) if target.port_id == port_id else target
+            replace(target, path=replacements[target.port_id])
+            if target.port_id in replacements
+            else target
             for target in targets
         )
         validated, _ = self._validate_outputs(

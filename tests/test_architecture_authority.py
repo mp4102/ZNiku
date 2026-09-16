@@ -58,6 +58,7 @@ def test_graph_core_is_the_upper_authority_and_designs_are_subordinate() -> None
         Path("studio-overlap-schema-corpus.json"),
         Path("studio-source-aligned-schema-corpus.json"),
         Path("studio-source-admitted-schema-corpus.json"),
+        Path("studio-chapter-batch-schema-corpus.json"),
         Path("studio-run-observability.md"),
         Path("studio-ux-baseline.md"),
     }
@@ -196,6 +197,7 @@ def test_legacy_python_implementation_is_not_shipped_as_product_code() -> None:
         "graph",
         "avenhance_v27",
         "chapter_overlap",
+        "chapter_batch",
         "media",
         "project",
         "project_service",

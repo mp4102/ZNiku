@@ -79,6 +79,9 @@ jobs:
       - name: Verify source-admitted Presentation corpus and Python preview fixture
         run: uv run --locked --extra dev python tools/generate_source_admitted_studio_corpus.py
 
+      - name: Verify chapter-batch Presentation corpus
+        run: uv run --locked --extra dev python tools/generate_chapter_batch_studio_corpus.py
+
       - name: Verify deterministic source admission scenario matrix
         run: uv run --locked --extra dev python -m tools.check_source_admission_parity
 

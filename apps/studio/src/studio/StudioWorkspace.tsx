@@ -87,6 +87,8 @@ import { formatHostBridgeError } from './host-error-presentation'
 import { isFullCheck, readinessMatchesHandoff, sameObservedOutputs } from './handoff-check'
 import { distinctNodeLabels, handoffSummary } from './handoff-presentation'
 import { useHandoffImport } from './use-handoff-import'
+import { useHandoffBatch } from './use-handoff-batch'
+import { isBatchHandoff } from './handoff-batch-contracts'
 import { readRecentProjects, rememberRecentProject } from './recent-projects'
 import type { ParameterPickerRequest } from './SchemaParameterForm'
 import { groupStudioDefinitions } from './catalog'
@@ -2432,6 +2434,34 @@ export function StudioWorkspace({
     onImported: async (nodeRun) => { await loadReadiness(nodeRun.run_id, nodeRun.node_run_id, false, generationRef.current) },
   })
 
+  const handoffBatch = useHandoffBatch({
+    hostBridge: effectiveHostBridge,
+    projectSessionId: status?.project_session_id ?? null,
+    nodeRun: selectedNodeRun && isBatchHandoff(selectedNodeRun, currentDetail) ? selectedNodeRun : null,
+    scope: JSON.stringify([status?.project_session_id, viewRunId, [...selectedNodeIds].sort(), showRunSnapshot,
+      selectedNodeRun?.node_run_id, selectedNodeRun?.external_handoff?.handoff_id, selectedNodeRun?.state, currentRun?.state]),
+    operationRef: handoffActionRef,
+    canStart: () => !busyRef.current && !homeActionBusyRef.current && !operationActive && !health.status.stale && !health.detail.stale &&
+      !inboxSubmissionFencesRef.current.has(selectedNodeRun?.external_handoff ? handoffResourceKey(selectedNodeRun.run_id, selectedNodeRun.node_run_id, selectedNodeRun.external_handoff.handoff_id) : ''),
+    isCurrent: (nodeRun) => !health.status.stale && !health.detail.stale && selectionGuardRef.current.nodeIds.size === 1 &&
+      selectionGuardRef.current.nodeIds.has(nodeRun.node_id) && handoffIsCurrent(nodeRun, generationRef.current),
+    onBusyChange: setExternalFileBusy,
+    onChanged: (nodeRun) => {
+      const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, nodeRun.external_handoff!.handoff_id)
+      // 使已发出的被动观察失效，不能让复制前的迟到 stat 覆盖新的整章检查结果。
+      latestIssuedSequenceRef.current.readiness.set(nodeRunResourceKey(nodeRun.run_id, nodeRun.node_run_id), ++sequenceRef.current.readiness)
+      updateCheckedOutputs((previous) => { const next = new Map(previous); next.delete(key); return next })
+      setReadiness((previous) => { const next = new Map(previous); next.delete(nodeRun.node_run_id); return next })
+    },
+    onChecked: (nodeRun, checked) => {
+      const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, checked.handoff_id)
+      setReadiness((previous) => new Map(previous).set(nodeRun.node_run_id, checked))
+      updateCheckedOutputs((previous) => new Map(previous).set(key, checked))
+      markResourceHealth('readiness', nodeRunResourceKey(nodeRun.run_id, nodeRun.node_run_id), false)
+      setLastFullPrecheckFailures((previous) => { const next = new Map(previous); next.delete(key); return next })
+    },
+  })
+
   const checkOutput = useCallback(async (nodeRun: NodeRunWire) => {
     const generation = generationRef.current
     if (!nodeRun.external_handoff || handoffActionRef.current || busyRef.current ||
@@ -2930,7 +2960,7 @@ export function StudioWorkspace({
       {retryOpen && <RetryImpactDialog preview={retryPreview} nodeLabel={nodeLabel} busy={retryBusy} error={retryError}
         onConfirm={() => void confirmRerun()} onCancel={() => { retryTokenRef.current = null; retryBindingRef.current = null; setRetryOpen(false); setRetryBusy(false) }} />}
       <ProjectHome
-        desktopControls={homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || dataBusy || inboxBusy} />}
+        desktopControls={homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || handoffBatch.busy || dataBusy || inboxBusy} />}
         busy={serviceBusy || homeActionBusy}
         hasOpenProject={draft !== null}
         hostBridgeAvailable={hostCapabilityAvailable('open_file') && hostCapabilityAvailable('save_file')}
@@ -3016,7 +3046,7 @@ export function StudioWorkspace({
         onToggleLibrary={() => { setLibraryOpen((open) => !open); setInspectorVisible(false) }}
         onOpenHistory={() => openTasks('history')}
         onOpenDiagnostics={() => { setInspectorTab('diagnostics'); setInspectorVisible(true) }}
-        desktopControls={!homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || dataBusy || inboxBusy} />}
+        desktopControls={!homeOpen && <DesktopExit hostBridge={effectiveHostBridge} unsaved={dirty || parameterDraftDirty || authoring.saving} operationBusy={handoffImport.busy || handoffBatch.busy || dataBusy || inboxBusy} />}
         projectName={draft?.project.name ?? null}
         onOpenStorage={effectiveHostBridge.inspectStorage ? () => {
           void flushAuthoring().then(() => {
@@ -3222,6 +3252,9 @@ export function StudioWorkspace({
             nodeLabel={nodeLabel}
             selectedNodeId={selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null}
             importController={handoffImport}
+            batchController={handoffBatch}
+            canPickHandoffFiles={hostCapabilityAvailable('open_files')}
+            canPickHandoffDirectory={hostCapabilityAvailable('select_directory')}
             inboxControls={status?.project_session_id && effectiveHostBridge.observeHandoffInbox ? (nodeRun) => {
               const handoff = nodeRun.external_handoff!
               const target = handoff.output_targets.length === 1 ? handoff.output_targets[0] : null

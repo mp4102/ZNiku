@@ -28,6 +28,7 @@ from zniku.avenhance_v27 import (
     built_in_av27_definitions,
     is_av27_definition,
 )
+from zniku.chapter_batch import definitions as batch_definitions
 from zniku.chapter_overlap.definitions import built_in_overlap_definitions
 from zniku.graph import NodeDefinition, PortSpec
 from zniku.media import built_in_media_definitions
@@ -527,7 +528,13 @@ def _is_builtin_definition(definition: NodeDefinition) -> bool:
     """按受控 namespace 识别必须失败关闭的仓库内 definition。"""
 
     return definition.type_id.startswith(
-        ("zniku.media.", "zniku.avenhance.v27.", "zniku.overlap.", "zniku.source_aligned.")
+        (
+            "zniku.media.",
+            "zniku.avenhance.v27.",
+            "zniku.overlap.",
+            "zniku.source_aligned.",
+            "zniku.source-admitted.",
+        )
     )
 
 
@@ -596,7 +603,9 @@ def _parameter_presentations(
 ) -> tuple[tuple[ParameterGroupPresentation, ...], tuple[ParameterPresentation, ...]]:
     parameters: list[ParameterPresentation] = []
     groups_in_use: set[str] = set()
-    overlap = definition.type_id.startswith(("zniku.overlap.", "zniku.source_aligned."))
+    overlap = definition.type_id.startswith(
+        ("zniku.overlap.", "zniku.source_aligned.", "zniku.source-admitted.")
+    )
     aligned = overlap and definition.version in {"0.3.3", "0.3.5"}
     for order, (name, raw_schema) in enumerate(_schema_properties(definition).items(), start=1):
         label = (
@@ -615,7 +624,7 @@ def _parameter_presentations(
                 f"/{name} 的 Schema 必须是 object",
             )
         schema = cast(Mapping[str, object], raw_schema)
-        overlap_binding = overlap and name in overlap_presentation.BINDING_PARAMETERS
+        overlap_binding = overlap and name in {*overlap_presentation.BINDING_PARAMETERS, "leaves"}
         group_id = "binding" if overlap_binding else _parameter_group(name)
         groups_in_use.add(group_id)
         control_hint = _control_hint(name, schema)
@@ -911,6 +920,7 @@ def build_builtin_presentation_catalog(
             aligned_definitions.external_definition("mov"),
             aligned_definitions.external_definition("mkv"),
             *admitted_definitions.built_in_definitions(),
+            *batch_definitions.built_in_definitions(),
         )
         if definitions is None
         else tuple(definitions)

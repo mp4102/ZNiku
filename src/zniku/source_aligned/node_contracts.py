@@ -279,6 +279,17 @@ class OverlapMetadata(ChapterModel):
     geometry: Geometry
     signal: Signal
 
+    @classmethod
+    def producer_type(
+        cls, role: Role, split_count: int = 0, leaf: LeafBinding | None = None
+    ) -> str:
+        """节点族可复用区间数学，但必须声明自己的真实精确生产者，旧入口保持旧映射。"""
+        return f"{ATOMIC_SPLIT_TYPE_PREFIX}{split_count}" if role == "split" else ROLE_TYPES[role]
+
+    def producer_port(self) -> str:
+        """返回本族真实输出端口；不是根据文件名推测媒体身份。"""
+        return self.leaf.leaf_id if self.role == "split" and self.leaf else "video"
+
     @model_validator(mode="after")
     def all_bindings(self) -> Self:
         if self.role == "split":
@@ -290,7 +301,7 @@ class OverlapMetadata(ChapterModel):
                 or not 1 <= int(suffix) <= 10000
             ):
                 fail("PRODUCER", "Split producer shape 超界")
-        elif self.producer_type_id != ROLE_TYPES[self.role]:
+        elif self.producer_type_id != self.producer_type(self.role, leaf=self.leaf):
             fail("PRODUCER", "producer type/version 与新节点职责不匹配")
         chapter_roles = {"split", "enhancement", "merge", "context", "fi", "crop"}
         if (self.chapter is not None) != (self.role in chapter_roles):
@@ -458,7 +469,7 @@ def read_metadata(
         result = metadata_model.model_validate(_plain(item.media_info.get(namespace)))
     except ValidationError as exc:
         raise Av27MediaError("E_SOURCE_ALIGNED_METADATA", "缺少或非法的新节点 metadata") from exc
-    expected_port = result.leaf.leaf_id if result.role == "split" and result.leaf else "video"
+    expected_port = result.producer_port()
     if item.producer_port_id != expected_port or item.kind != "VideoFile":
         fail("INPUT_PRODUCER", "直接输入 output port/kind 与新 producer 不匹配")
     return result
@@ -576,9 +587,7 @@ def _metadata(
 ) -> OverlapMetadata:
     rate = Fraction(source.frame_rate) * (2 if role in {"fi", "crop", "program", "final"} else 1)
     return metadata_model(
-        producer_type_id=f"{ATOMIC_SPLIT_TYPE_PREFIX}{split_count}"
-        if role == "split"
-        else ROLE_TYPES[role],
+        producer_type_id=metadata_model.producer_type(role, split_count, leaf),
         role=role,
         source=source,
         chapter=chapter,

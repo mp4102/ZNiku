@@ -18,7 +18,7 @@ from datetime import datetime
 from fractions import Fraction
 from pathlib import Path
 from time import monotonic
-from typing import Final, cast
+from typing import Final, Literal, cast
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -111,6 +111,7 @@ from .chapter_overlap import (
     ChapterOverlapPreviewRequest,
 )
 from .handoff import project_handoff_contracts
+from .handoff_batch import MAX_BATCH_TARGETS, HandoffBatchBinding
 from .handoff_import import HandoffImportBinding, ImportAuthority
 from .models import (
     AbandonRunCommand,
@@ -149,7 +150,7 @@ from .models import (
     parse_template_preview_request,
 )
 from .source_aligned import SourceAlignedFullEnvelope, SourceAlignedProcessingEnvelope
-from .storage_naming import resolve_attempt_naming
+from .storage_naming import resolve_attempt_naming, resolve_english_attempt_naming
 from .storage_paths import existing_storage_root, prepare_storage_location
 
 _LOG_TAIL_LIMIT: Final = 128 * 1024
@@ -266,6 +267,14 @@ class ProjectServiceApplication:
         with self._state:
             return self._effective_work_root(self._store)
 
+    @property
+    def incoming_layout(self) -> Literal["port_hash", "english"]:
+        """返回当前工程版本化收件格式；旧工程不按目录存在情况自动升级。"""
+
+        with self._state:
+            storage = None if self._store is None else self._store.load_storage()
+            return "english" if storage is not None and storage.layout == "english" else "port_hash"
+
     def _effective_work_root(self, store: ProjectStore | None) -> Path:
         storage = None if store is None else store.load_storage()
         return self._work_root if storage is None else existing_storage_root(storage)
@@ -306,6 +315,7 @@ class ProjectServiceApplication:
         """只允许显式定位当前工程的固定HTML索引，不接受浏览器本机路径或执行HTML。"""
 
         from .storage import _safe_path
+        from .storage_index import index_filename
 
         with self.storage_authority(project_session_id) as (store, _legacy):
             storage = store.load_storage()
@@ -314,7 +324,7 @@ class ProjectServiceApplication:
                     "E_PROJECT_STORAGE_INDEX", "请先配置工程数据并生成文件目录", http_status=409
                 )
             root = _safe_path(Path(storage.data_root))
-            path = _safe_path(root / "文件目录.html")
+            path = _safe_path(root / index_filename(storage))
             if not path.is_file() or path.parent != root:
                 raise ProjectServiceError(
                     "E_PROJECT_STORAGE_INDEX",
@@ -333,6 +343,65 @@ class ProjectServiceApplication:
                     "工程会话已切换，请重新选择预览素材",
                     http_status=409,
                 )
+
+    @contextmanager
+    def handoff_batch_authority(
+        self, binding: HandoffBatchBinding, *, importing: bool = False
+    ) -> Iterator[tuple[ImportAuthority, ...]]:
+        """一个人工节点的多输出收件共用现有互斥，不创建第二份运行状态。
+
+        全部端口由当前 handoff 解析；文件复制/检查时释放状态锁供 status 读取，但禁止
+        open/create/run/Submit 与退出。复制完成仅保留 incoming，正式 Submit 仍独立发生。
+        """
+        with self._state:
+            self._assert_idle()
+            if self._desktop_closing:
+                raise ProjectServiceError("E_DESKTOP_CLOSING", "应用正在关闭", http_status=409)
+            if binding.project_session_id != self._project_session_id:
+                raise ProjectServiceError(
+                    "E_PROJECT_SESSION_CONFLICT", "工程会话已变化", http_status=409
+                )
+            store, runtime = self._require_session()
+            try:
+                node_run = runtime.inspect_external_handoff(
+                    binding.run_id, binding.node_run_id, handoff_id=binding.handoff_id
+                )
+            except (RuntimeServiceError, RuntimeRepositoryError) as error:
+                raise self._translate_failure(error) from error
+            handoff = node_run.external_handoff
+            assert handoff is not None
+            if not 1 <= len(handoff.output_targets) <= MAX_BATCH_TARGETS or any(
+                target.ordinal is not None for target in handoff.output_targets
+            ):
+                raise ProjectServiceError(
+                    "E_HANDOFF_BATCH_TARGET", "批量收件只支持固定的单值输出端口", http_status=422
+                )
+            authorities = tuple(
+                ImportAuthority(
+                    runtime,
+                    node_run,
+                    target,
+                    self._effective_work_root(store),
+                    store.path,
+                    storage=store.load_storage(),
+                )
+                for target in handoff.output_targets
+            )
+            previous_run_id = self._active_run_id
+            if importing:
+                self._active_operation = "import_external"
+                self._active_run_id = node_run.run_id
+        try:
+            yield authorities
+            self.assert_preview_session(binding.project_session_id)
+        except (RuntimeServiceError, RuntimeRepositoryError) as error:
+            raise self._translate_failure(error) from error
+        finally:
+            if importing:
+                with self._state:
+                    self._active_operation = None
+                    self._active_run_id = previous_run_id
+                    self._state.notify_all()
 
     @contextmanager
     def handoff_import_authority(
@@ -2011,17 +2080,24 @@ class ProjectServiceApplication:
         ) -> tuple[OutputPathSpec, ...]:
             if storage is None or storage.media_basename is None:
                 return ()
+            from zniku.chapter_batch.definitions import definition_role as batch_role
             from zniku.source_admission.definitions import definition_role as admitted_role
 
             from .source_aligned_presentation import source_aligned_output_paths
 
-            return (
+            paths = (
                 source_aligned_output_paths(node, definition, media_basename=storage.media_basename)
                 or source_aligned_output_paths(
                     node,
                     definition,
                     media_basename=storage.media_basename,
                     role_reader=admitted_role,
+                )
+                or source_aligned_output_paths(
+                    node,
+                    definition,
+                    media_basename=storage.media_basename,
+                    role_reader=batch_role,
                 )
                 or overlap_output_paths(node, definition, media_basename=storage.media_basename)
                 or descriptive_output_paths(
@@ -2031,6 +2107,24 @@ class ProjectServiceApplication:
                     graph=run.graph_snapshot,
                 )
             )
+            if storage.layout == "english":
+                hint = resolve_english_attempt_naming(run, node, definition)
+                # 章节已在 attempt 上层可见，去掉命名策略重复的章节层；Split 仍保留 A/B/C。
+                # 只处理宿主明确声明的章级路径，旧 waiting 使用持久 targets，不重解释历史。
+                parts = tuple(Path(item.relative_path).parts for item in paths)
+                if (
+                    paths
+                    and hint.category == "chapters"
+                    and all(len(item) == 2 and item[0] == hint.chapter_name for item in parts)
+                    and len({item[-1].casefold() for item in parts}) == len(parts)
+                ):
+                    return tuple(
+                        OutputPathSpec(
+                            port_id=item.port_id, relative_path=Path(item.relative_path).name
+                        )
+                        for item in paths
+                    )
+            return paths
 
         return RuntimeService(
             store,
@@ -2042,7 +2136,11 @@ class ProjectServiceApplication:
             progress_wall_clock=self._progress_wall_clock,
             progress_monotonic_clock=self._progress_monotonic_clock,
             output_path_resolver=resolve_paths,
-            attempt_naming_resolver=resolve_attempt_naming,
+            attempt_naming_resolver=(
+                resolve_english_attempt_naming
+                if storage is not None and storage.layout == "english"
+                else resolve_attempt_naming
+            ),
         )
 
     def _session_view(

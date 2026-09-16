@@ -18,6 +18,9 @@ from test_project_service_host import _request, _serve
 from test_source_aligned_media import media
 from zniku.avenhance_v27 import av27_python_adapters, av27_validators
 from zniku.avenhance_v27.probe import Av27MediaError, probe_header
+from zniku.chapter_batch import definitions as chapter_batch
+from zniku.chapter_batch.contracts import NAMESPACE as BATCH_NAMESPACE
+from zniku.chapter_batch.contracts import BatchMetadata
 from zniku.media import media_python_adapters, media_validators
 from zniku.project import Project, ProjectStore, ProjectStoreError
 from zniku.project_service.models import StatusEnvelope
@@ -44,13 +47,22 @@ TOOLS = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not No
 def application(tmp_path: Path) -> ProjectServiceApplication:
     return ProjectServiceApplication(
         work_root=tmp_path / "fallback",
-        definition_catalog=definitions.built_in_definitions(),
+        definition_catalog=(
+            *definitions.built_in_definitions(),
+            *chapter_batch.built_in_definitions(),
+        ),
         python_adapters={
             **media_python_adapters(),
             **av27_python_adapters(),
             **definitions.python_adapters(),
+            **chapter_batch.python_adapters(),
         },
-        validators={**media_validators(), **av27_validators(), **definitions.validators()},
+        validators={
+            **media_validators(),
+            **av27_validators(),
+            **definitions.validators(),
+            **chapter_batch.validators(),
+        },
     )
 
 
@@ -462,7 +474,18 @@ def test_synthetic_manual_chain_to_final_preserves_three_chapters(tmp_path: Path
     assert final_result_id is not None
     final = runtime.repository.get_result(final_result_id.result_id).outputs[0]
     assert probe_header(Path(final.path), count_frames=True).video.frame_count == 120
-    assert OverlapMetadata.model_validate(final.media_info[NAMESPACE]).producer_version == "0.3.5"
+    assert (
+        BatchMetadata.model_validate(final.media_info[BATCH_NAMESPACE]).producer_version == "0.3.5"
+    )
+    assert NAMESPACE not in final.media_info
+    # 新默认每章恰好一个真实增强 NodeRun，三章分别完成，而不是仅隐藏逐叶卡片。
+    assert (
+        sum(
+            node.type_id.startswith("zniku.source-admitted.enhancement-batch.")
+            for node in run.graph_snapshot.nodes
+        )
+        == 3
+    )
     assert len(probe_header(Path(final.path)).audios) == (0 if mr else 1)
     assert Path(request["publication"]["output_root"]).exists()
 

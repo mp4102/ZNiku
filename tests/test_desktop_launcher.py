@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 import pytest
 from pydantic import ValidationError
 
+from zniku.chapter_batch.definitions import built_in_definitions as batch_definitions
 from zniku.desktop.contracts import (
     DesktopCloseRequest,
     DesktopPreferences,
@@ -117,6 +118,20 @@ def test_reload_asset_burst_is_queued_before_http_loop_accepts(tmp_path: Path) -
         for client in clients:
             client.close()
         server.close()
+
+
+def test_desktop_presentation_endpoint_keeps_chapter_batch_builtin(desktop: DesktopServer) -> None:
+    """通过真实桌面 HTTP 路由验证内建章批量族，不允许误判为缺失第三方条目。"""
+
+    status, payload, _ = request(desktop, "/api/studio/presentations")
+    assert status == 200
+    assert payload["diagnostics"] == []
+    identities = {
+        (node["type_id"], node["definition_version"]) for node in payload["catalog"]["nodes"]
+    }
+    assert {
+        (definition.type_id, definition.version) for definition in batch_definitions()
+    } <= identities
 
 
 def test_random_port_bootstrap_health_and_no_token_record(

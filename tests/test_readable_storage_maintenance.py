@@ -19,7 +19,7 @@ from zniku.graph import (
     PythonExecutorSpec,
 )
 from zniku.project import Project, ProjectStore, ProjectStoreError
-from zniku.project.storage import new_project_storage
+from zniku.project.storage import ProjectStorage, new_project_storage
 from zniku.project_service.storage import StorageMigrationManager, inspect_storage
 from zniku.project_service.storage_index import export_storage_index
 from zniku.project_service.storage_owner import OWNER_NAME
@@ -44,6 +44,16 @@ def _project(
         executor=PythonExecutorSpec(adapter="tests.archive:source"),
     )
     storage = new_project_storage(tmp_path / "archive.zniku") if readable else None
+    if storage is not None:
+        # 此文件继续回归旧可读布局的显式整理与原样换盘兼容。
+        storage = ProjectStorage.model_validate(
+            storage.model_dump(mode="python")
+            | {
+                "contract_version": "0.3.2",
+                "layout": "readable",
+                "attempts_root": str(Path(storage.data_root) / "attempts"),
+            }
+        )
     root = Path(storage.attempts_root) if storage else tmp_path / "old"
     store = ProjectStore.create(
         tmp_path / "archive.zniku",
@@ -95,11 +105,17 @@ def test_organize_legacy_copies_only_bound_attempts_and_preserves_semantics(tmp_
         expected_storage_revision=store.load_authoring().storage_revision,
         organize=True,
     )
-    assert preview.operation == "organize" and preview.target.layout == "readable"
-    assert "__N001" in preview.path_mappings[0].target
-    assert preview.path_mappings[0].target.endswith("R001-A001")
+    assert preview.operation == "organize" and preview.target.layout == "english"
+    assert (
+        Path(preview.path_mappings[0].target).relative_to(Path(target.data_root)).as_posix()
+        == "task/round-001"
+    )
     assert not Path(target.data_root).exists()
     _confirm(store, manager, preview.ticket_id)
+    backups = tuple(store.path.parent.glob(f"{store.path.stem}.before-storage-*.zniku"))
+    assert len(backups) == 1
+    previous = ProjectStore.open(backups[0])
+    assert previous.load() == before_graph and previous.load_storage() is None
     assert source.exists() and not (Path(target.attempts_root) / "unowned").exists()
     assert store.load() == before_graph and runtime.repository.list_latest() == before_latest
     after = runtime.repository.get_run(original.run_id)
@@ -108,7 +124,7 @@ def test_organize_legacy_copies_only_bound_attempts_and_preserves_semantics(tmp_
     assert after.node_runs[0].started_at == original.node_runs[0].started_at
     assert Path(after.node_runs[0].work_dir) == Path(preview.path_mappings[0].target)
     inspection = inspect_storage(store, root)
-    assert inspection.storage.layout == "readable" and not inspection.missing
+    assert inspection.storage.layout == "english" and not inspection.missing
     reopened = RuntimeService(
         store, Path(target.attempts_root), python_adapters={"tests.archive:source": _adapter}
     )

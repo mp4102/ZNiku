@@ -136,6 +136,7 @@ def build_source_aligned(
     definition_factory: Callable[[str, int], NodeDefinition] | None = None,
     external_factory: Callable[[DeclaredContainer], NodeDefinition] = external_definition,
     publication_target: Callable[..., Path] = canonical_publication_target,
+    batch_enhancement: bool = False,
 ) -> SourceAlignedBuild:
     """仅扩展严格preparation；所有来源、区间、媒体尺寸均由已登记Artifact派生。"""
 
@@ -299,7 +300,12 @@ def build_source_aligned(
             "end_frame": chapter.end_frame,
         }
         y = chapter_y
-        chapter_y += max(320, len(chapter.leaves) * leaf_pitch)
+        # 批量节点仍显式显示各 output 行；按卡片高度预留槽位，不为每叶留一整张节点的高度。
+        chapter_y += (
+            max(400, 280 + len(chapter.leaves) * 48)
+            if batch_enhancement
+            else max(320, len(chapter.leaves) * leaf_pitch)
+        )
         merge = node(
             f"overlap.merge.{chapter.label}",
             merge_def,
@@ -308,7 +314,37 @@ def build_source_aligned(
             y,
         )
         merges.append(merge)
-        for leaf in chapter.leaves:
+        leaf_parameters = [
+            {
+                "leaf_id": leaf.leaf_id,
+                "global_ordinal": leaf.global_ordinal,
+                "ordinal": leaf.ordinal,
+                "count": len(chapter.leaves),
+                "start_frame": leaf.start_frame,
+                "end_frame": leaf.end_frame,
+            }
+            for leaf in chapter.leaves
+        ]
+        if batch_enhancement:
+            # 一个普通多输出节点是本章的完整完成/重跑单位；没有隐藏逐叶 NodeRun。
+            enhancement = node(
+                f"overlap.enhance.{chapter.label}",
+                selected("enhancement", len(chapter.leaves)),
+                {
+                    "source": source_data,
+                    "chapter": chapter_data,
+                    "leaves": leaf_parameters,
+                    "expected_input_geometry": input_geometry,
+                    "expected_output_geometry": output_geometry,
+                    **processing.enhancement.model_dump(mode="json", exclude_none=True),
+                },
+                split_column + 1,
+                y,
+            )
+            for leaf in chapter.leaves:
+                edge(split, leaf.leaf_id, enhancement, "videos", leaf.ordinal)
+                edge(enhancement, f"leaf-{leaf.ordinal + 1:04d}", merge, "videos", leaf.ordinal)
+        for leaf in () if batch_enhancement else chapter.leaves:
             enhancement = node(
                 f"overlap.enhance.{chapter.label}.{leaf.ordinal + 1:03d}",
                 enhancement_def,

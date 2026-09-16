@@ -10,7 +10,9 @@ from pydantic import ValidationError
 
 from zniku.avenhance_v27.naming import _path, validate_media_basename
 from zniku.avenhance_v27.probe import Av27MediaError
+from zniku.avenhance_v27.template import excel_chapter_label
 from zniku.avenhance_v27.validators import _metadata_contract
+from zniku.chapter_batch.contracts import BATCH_PREFIX, BatchParameters
 from zniku.graph import NodeDefinition, NodeInstance
 from zniku.project.paths import validate_filename_component
 from zniku.runtime import Artifact, NodeRunState, Run, RunnerInput
@@ -43,7 +45,13 @@ def source_aligned_output_paths(
     if role is None or role in {"program", "final", "source", "admission"}:
         return ()
     try:
-        model = ExternalParameters if role == "external" else PARAMETER_MODELS[role]
+        model = (
+            BatchParameters
+            if node.type_id.startswith(BATCH_PREFIX)
+            else ExternalParameters
+            if role == "external"
+            else PARAMETER_MODELS[role]
+        )
         params = model.model_validate(node.model_dump(mode="json")["parameters"], strict=True)
     except (ValidationError, Av27MediaError, ValueError):
         return ()
@@ -65,6 +73,20 @@ def source_aligned_output_paths(
         )
     if not isinstance(params, ChapterParameters):
         return ()
+    if isinstance(params, BatchParameters):
+        if len(params.leaves) != len(definition.output_ports):
+            return ()
+        return tuple(
+            OutputPathSpec(
+                f"leaf-{leaf.ordinal + 1:04d}",
+                _path(
+                    media_basename,
+                    params.chapter.ordinal,
+                    f"leaf-{leaf.ordinal + 1:04d}.enhancement.mov",
+                ),
+            )
+            for leaf in params.leaves
+        )
     suffix = {
         "merge": "enhancement.mov",
         "context": "enhancement.fi-input.mov",
@@ -139,6 +161,9 @@ def project_source_aligned_handoffs(
             "enhancement": "逐叶增强交付要求",
             "fi": "上下文补帧交付要求",
         }[role]
+        batch = node.type_id.startswith(BATCH_PREFIX)
+        if batch:
+            title = "章节批量增强交付要求"
         rows = [
             ("提交规则", "选择文件或复制到专属收件目录；检查通过后显式提交，文件出现不会自动推进"),
             ("文件保留", "原片、外部原件和历史结果保留；导入不转码、不改速、不自动补丢帧"),
@@ -149,6 +174,7 @@ def project_source_aligned_handoffs(
         if len(targets) == 1:
             rows.append(("本次交付文件", targets[0]))
         video = None
+        videos: list[Artifact] = []
         if attempt.input_artifact_ids == handoff.input_artifact_ids:
             videos = [
                 known[i]
@@ -159,7 +185,47 @@ def project_source_aligned_handoffs(
                 video = videos[0]
         facts: list[tuple[str, str]] = []
         with suppress(ValidationError, Av27MediaError, ValueError):
-            if role == "external":
+            if batch:
+                from dataclasses import replace
+
+                params_batch = BatchParameters.model_validate(
+                    node.model_dump(mode="json")["parameters"]
+                )
+                rows.extend(
+                    [
+                        ("所属章节", excel_chapter_label(params_batch.chapter.ordinal)),
+                        (
+                            "本章分叶",
+                            f"{len(params_batch.leaves)} 份；可以分批收件，齐全后整章提交",
+                        ),
+                        ("共享模型(操作者声明)", params_batch.model_name),
+                        ("交付单位", "每叶一个文件；按规范叶名匹配，不把章内多叶拼成一个来件"),
+                    ]
+                )
+                contract = contract_reader(
+                    role,
+                    tuple(
+                        replace(_direct(item), port_id="videos", ordinal=i)
+                        for i, item in enumerate(videos)
+                    ),
+                    node.parameters,
+                )
+                expected = contract.outputs[0].metadata
+                facts = [
+                    (
+                        "本章总帧数",
+                        str(sum(item.metadata.frame_count for item in contract.outputs)),
+                    ),
+                    (
+                        "逐叶帧数",
+                        "、".join(str(item.metadata.frame_count) for item in contract.outputs[:32])
+                        + ("；其余详见本章分叶清单" if len(contract.outputs) > 32 else ""),
+                    ),
+                    ("输出帧率", expected.frame_rate),
+                    ("输出尺寸", f"{expected.geometry.width} x {expected.geometry.height}"),
+                    ("输出媒体", "MOV / ProRes 422 HQ / yuv422p10le"),
+                ]
+            elif role == "external":
                 params = ExternalParameters.model_validate(
                     node.model_dump(mode="json")["parameters"]
                 )

@@ -6,7 +6,23 @@
 
 ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用已完成结果的 GUI Studio。
 
-## v0.3.5 单一源准入（当前开发线）
+## 英文可读工程目录（已实现，待真实验收）
+
+- 新布局使用 `task/[chapter]/round-NNN/{incoming,outputs,logs}`，例如
+  `source-repair/round-001/incoming`、`enhancement/A/round-001/incoming`；磁盘英文、GUI 中文。
+- 内部身份仍保存在工程中；节点跨 Run 的处理位置事务分配，复用不复制媒体，别名不自动改路径。
+- 旧 UUID/readable 工程与等待交接原样兼容，不自动迁移或清理真实数据；新目录不意味着旧候选可读取新格式。
+- 实施结果、兼容与安全边界、自动化门禁和新候选入口见[英文可读存储计划](docs/english-readable-storage-plan.md)。
+
+## 章级批量增强（已实现，待真实验收）
+
+- 从 `codex/v0.3.5@1a9f3e4` 建立隔离分支 `codex/chapter-batch-enhancement`，产品版本保持 `0.3.5`。
+- 新建默认流程按章内分叶，一个章节只生成一个真正的批量增强节点；例如三章十五叶对应三个增强节点。
+- 每章共享增强参数，支持多选文件、目录匹配和分批补件；收齐后整章检查，再显式提交，不自动认领或完成。
+- 原有逐叶定义、旧工程和等待交接保持不变，不自动把正在运行的十五个节点改成三个。
+- 实施边界、验证记录及候选使用方法见[章级批量增强执行与验收记录](docs/chapter-batch-enhancement-plan.md)。
+
+## v0.3.5 单一源准入（本次增量的基点）
 
 - 当前实现版本 `0.3.5`，分支 `codex/v0.3.5`；从 `v0.3.3@cb7f295` 独立建立，保留 v0.3.4，不整体回退或迁入其修复体系。
 - [执行备忘录](docs/v0.3.5-execution-memo.md)先行；[源准入合同](docs/v0.3.5-source-admission-contract.md)记录实际 AV2.7 对齐范围。

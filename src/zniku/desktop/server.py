@@ -18,6 +18,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from zniku.avenhance_v27 import av27_python_adapters, av27_validators, built_in_av27_definitions
+from zniku.chapter_batch import definitions as chapter_batch
 from zniku.chapter_overlap.definitions import (
     built_in_overlap_definitions,
     overlap_python_adapters,
@@ -68,6 +69,7 @@ def build_desktop_application(work_root: Path) -> ProjectServiceApplication:
             source_aligned.external_definition("mov"),
             source_aligned.external_definition("mkv"),
             *source_admitted.built_in_definitions(),
+            *chapter_batch.built_in_definitions(),
         ),
         python_adapters={
             **media_python_adapters(),
@@ -75,6 +77,7 @@ def build_desktop_application(work_root: Path) -> ProjectServiceApplication:
             **overlap_python_adapters(),
             **source_aligned.overlap_python_adapters(),
             **source_admitted.python_adapters(),
+            **chapter_batch.python_adapters(),
         },
         validators={
             **media_validators(),
@@ -82,6 +85,7 @@ def build_desktop_application(work_root: Path) -> ProjectServiceApplication:
             **overlap_validators(),
             **source_aligned.overlap_validators(),
             **source_admitted.validators(),
+            **chapter_batch.validators(),
         },
         media_probe=runner_media_probe,
         artifact_quick_probe=media_artifact_quick_probe,

@@ -1,7 +1,7 @@
 /** 生产资源 + 真 Python/SQLite/Runtime；仅原生选择窗口使用显式的合成测试平台。 */
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { copyFile, readFile, readdir, stat, writeFile } from 'node:fs/promises'
-import { dirname, join, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import axe from 'axe-core'
 import type { GraphWire, RunDetailEnvelope, StatusEnvelope } from '../src/studio/contracts'
 import type { StorageIndexResult, StorageInspection } from '../src/studio/host-bridge'
@@ -792,9 +792,9 @@ test('生产向导：显式直存与片名子目录预览不落盘，布局变�
   await page.getByRole('button', { name: '工程数据', exact: true }).click()
   const inspected = await (await storageResponse).json() as StorageInspection
   expect(inspected.storage).toMatchObject({
-    mode: 'adjacent', retention: 'keep',
+    mode: 'adjacent', retention: 'keep', layout: 'english', contract_version: '0.3.5',
     data_root: fixture.wizard_project.replace(/\.zniku$/, '.data'),
-    attempts_root: join(fixture.wizard_project.replace(/\.zniku$/, '.data'), 'attempts'),
+    attempts_root: fixture.wizard_project.replace(/\.zniku$/, '.data'),
   })
   await page.getByRole('button', { name: '关闭工程数据与归档检查', exact: true }).click()
   expect(errors).toEqual([])
@@ -1076,7 +1076,7 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   const node = before.run.node_runs.find((item) => item.node_id === 'enhance-A')!
   const target = node.external_handoff!.output_targets[0]!.path
   const dataRoot = projectPath.replace(/\.zniku$/, '.data')
-  expect(node.work_dir.startsWith(join(dataRoot, 'attempts') + sep)).toBe(true)
+  expect(relative(dataRoot, node.work_dir).split(sep)).toEqual([expect.stringMatching(/^task(?:-[1-9][0-9]*)?$/), 'round-001'])
   expect(target.startsWith(node.work_dir + sep)).toBe(true)
   await page.locator('.react-flow__node[data-id="enhance-A"]').click()
   await page.getByRole('tab', { name: '文件', exact: true }).click()
@@ -1084,7 +1084,7 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   await expect(inbox).toBeVisible()
   await expect(inbox.getByText(/收件箱中尚无可用的/)).toBeVisible()
   const inboxPath = await inbox.locator('code.handoff-target-path').innerText()
-  expect(inboxPath.startsWith(join(node.work_dir, 'incoming') + sep)).toBe(true)
+  expect(inboxPath).toBe(join(node.work_dir, 'incoming'))
   expect((await stat(inboxPath)).isDirectory()).toBe(true)
   const original = join(dirname(fixture.external_project), 'external-A-12.mkv')
   const arrival = join(inboxPath, 'Topaz_export_arbitrary_name.mkv')
@@ -1131,6 +1131,7 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   await page.getByRole('button', { name: '工程数据', exact: true }).click()
   const panel = page.getByRole('dialog', { name: '工程数据与归档检查', exact: true })
   await expect(panel.getByText(dataRoot, { exact: true })).toBeVisible()
+  await expect(panel.getByText('英文目录：任务／章节／处理轮次', { exact: true })).toBeVisible()
   await expect(panel.getByText('工程文件旁', { exact: true })).toBeVisible()
   await expect(panel.getByText('工程资产长期保留。', { exact: true })).toBeVisible()
   await expect(panel.getByText('已登记文件未发现缺失。', { exact: true })).toBeVisible()
@@ -1145,7 +1146,7 @@ test('生产工程数据：工程旁目录、任意来件名显式收纳和归�
   const generated = await generatedResponse
   expect(generated.status()).toBe(200)
   const indexResult = await generated.json() as StorageIndexResult
-  expect(indexResult.path).toBe(join(dataRoot, '文件目录.html'))
+  expect(indexResult.path).toBe(join(dataRoot, 'index.html'))
   expect(indexResult.artifact_count).toBe(beforeIndex.artifacts.length)
   const indexView = panel.getByRole('region', { name: '已生成的文件目录', exact: true })
   await expect(indexView).toContainText(indexResult.path)

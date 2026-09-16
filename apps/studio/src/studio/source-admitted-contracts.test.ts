@@ -92,12 +92,18 @@ describe('0.3.5 单一准入 Schema 和响应绑定', () => {
   })
   it('仅完整新 exact 目录启用，不把旧节点组合当作 0.3.5 能力', () => {
     const ids = ['zniku.avenhance.v27.source_program', 'zniku.avenhance.v27.source_admission',
-      'zniku.overlap.split.leaves.1', 'zniku.overlap.enhancement.external', 'zniku.overlap.merge_video',
-      'zniku.overlap.fi_context', 'zniku.overlap.frame_interpolation.external', 'zniku.overlap.fi_crop',
-      'zniku.overlap.program_encode', 'zniku.overlap.final_mux', 'zniku.source_aligned.external.mp4',
+      'zniku.overlap.split.leaves.1', 'zniku.source-admitted.enhancement-batch.1', 'zniku.source-admitted.chapter-batch.merge',
+      'zniku.source-admitted.chapter-batch.context', 'zniku.source-admitted.chapter-batch.fi', 'zniku.source-admitted.chapter-batch.crop',
+      'zniku.source-admitted.chapter-batch.program', 'zniku.source-admitted.chapter-batch.final', 'zniku.source_aligned.external.mp4',
       'zniku.source_aligned.external.mov', 'zniku.source_aligned.external.mkv']
     const nodes = ids.map((type_id) => ({ type_id, definition_version: '0.3.5' }))
     expect(sourceAdmittedCatalogAvailable(nodes)).toBe(true)
+    // 同版本旧单叶目录不能冒充新的章级能力；任一新下游角色缺失也不可混搭启用。
+    const oldRoles = ['zniku.overlap.enhancement.external', 'zniku.overlap.merge_video', 'zniku.overlap.fi_context',
+      'zniku.overlap.frame_interpolation.external', 'zniku.overlap.fi_crop', 'zniku.overlap.program_encode', 'zniku.overlap.final_mux']
+    const common = nodes.filter((node) => !node.type_id.startsWith('zniku.source-admitted.'))
+    expect(sourceAdmittedCatalogAvailable([...common, ...oldRoles.map((type_id) => ({ type_id, definition_version: '0.3.5' }))])).toBe(false)
+    for (const missing of nodes) expect(sourceAdmittedCatalogAvailable(nodes.filter((node) => node !== missing))).toBe(false)
     expect(sourceAdmittedCatalogAvailable(nodes.slice(1))).toBe(false)
     expect(sourceAdmittedCatalogAvailable(nodes.map((node) => ({ ...node, definition_version: '0.3.3' })))).toBe(false)
   })

@@ -8,6 +8,9 @@ import type { HostPathReference, HostSystemCapability } from '../host-bridge'
 import { handoffSummary } from '../handoff-presentation'
 import { HandoffImportDialog } from './HandoffImportDialog'
 import type { HandoffImportController } from '../use-handoff-import'
+import type { HandoffBatchController } from '../use-handoff-batch'
+import { isBatchHandoff } from '../handoff-batch-contracts'
+import { HandoffBatch } from './HandoffBatch'
 
 export function handoffResourceKey(runId: string, nodeRunId: string, handoffId: string): string {
   return `${runId}/${nodeRunId}/${handoffId}`
@@ -40,6 +43,9 @@ export interface HandoffCenterProps {
   readonly waitingNodeRuns: ReadonlyArray<NodeRunWire>
   readonly selectedNodeId: string | null
   readonly importController?: HandoffImportController
+  readonly batchController?: HandoffBatchController
+  readonly canPickHandoffFiles?: boolean
+  readonly canPickHandoffDirectory?: boolean
   readonly inboxControls?: (nodeRun: NodeRunWire) => ReactNode
   readonly canImportHandoff?: boolean
   readonly detail: RunDetailEnvelope | null
@@ -109,6 +115,7 @@ export function HandoffCenter(props: HandoffCenterProps) {
           : null)
         const nodeTitle = props.nodeLabel?.(nodeRun.node_id) ?? '外部处理步骤'
         const failure = props.lastFullPrecheckFailures.get(key) ?? null
+        const batch = props.batchController && isBatchHandoff(nodeRun, detail) ? props.batchController : null
         const contracts = detail?.run.run_id === nodeRun.run_id ? detail.handoff_contracts.filter((item) => item.node_run_id === nodeRun.node_run_id && item.handoff_id === handoff.handoff_id) : []
         return (
           <article aria-label={`外部处理：${nodeTitle}`} key={key}>
@@ -143,6 +150,13 @@ export function HandoffCenter(props: HandoffCenterProps) {
                 <button type="button" disabled={props.mutationBlocked || !props.canRevealHandoff} onClick={() => props.onLaunchHandoff(nodeRun, 'reveal_in_file_manager', { role: 'work_directory' })}>打开工作目录</button>
                 {(!props.canRevealHandoff || !props.canOpenHandoffInput) && <p className="handoff-disabled-reason">本机打开能力不可用时，可复制路径后在外部工具中打开；使用 ZNIKU launcher 启动可连接本机能力。</p>}
               </li>
+              {batch ? <HandoffBatch key={key} controller={batch}
+                disabled={props.mutationBlocked || !!anyOperation || props.readinessStale}
+                canPickFiles={props.canPickHandoffFiles ?? false} canPickDirectory={props.canPickHandoffDirectory ?? false}
+                canReveal={props.canRevealHandoff} checked={checkStillCurrent} submitting={submitting}
+                submitReason={submitReason} readiness={observed} failure={failure}
+                onReveal={() => props.onLaunchHandoff(nodeRun, 'reveal_in_file_manager', { role: 'batch_incoming_directory' })}
+                onCopyPath={props.onCopyPath} onSubmit={() => props.onSubmitOutput(nodeRun)} /> : <>
               <li className="handoff-step">
                 <h4>交回处理好的文件</h4>
                 {props.inboxControls?.(nodeRun)}
@@ -177,6 +191,7 @@ export function HandoffCenter(props: HandoffCenterProps) {
                 {submitReason && <p className="handoff-disabled-reason">{submitReason}</p>}
                 <p>提交时会再次完整检查；失败不会登记输出，已完成的上游结果保留。替换文件后必须重新检查。</p>
               </li>
+              </>}
             </ol>
             <details className="handoff-advanced" open={props.advanced || undefined}>
               <summary>高级 → 交接身份与完整路径</summary>

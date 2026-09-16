@@ -138,10 +138,16 @@ def safe_attempt_directory(root: Path, path: Path) -> Path:
         and parts[0] == "chapters"
         and _CHAPTER_PATTERN.fullmatch(parts[1]) is not None
     )
-    if not legacy and not (
-        readable
-        and _NODE_PATTERN.fullmatch(parts[-2]) is not None
-        and _BATCH_PATTERN.fullmatch(parts[-1]) is not None
+    from .storage_english import english_attempt_parts
+
+    if (
+        not legacy
+        and not english_attempt_parts(parts)
+        and not (
+            readable
+            and _NODE_PATTERN.fullmatch(parts[-2]) is not None
+            and _BATCH_PATTERN.fullmatch(parts[-1]) is not None
+        )
     ):
         raise ValueError("E_STORAGE_LAYOUT_PATH: 不是已支持的独立 attempt 目录形状")
     for part in parts:

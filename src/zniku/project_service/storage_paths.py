@@ -1,6 +1,6 @@
 """在保存工程数据定位前准备受控目录；失败不修改配置，也不回退其他磁盘。
 
-此处只创建指定的新数据根与 attempts 子目录，不删除用户目录。CAS 或建项随后失败时，
+此处只创建指定的新数据根，旧布局另有 attempts 子目录，不删除用户目录。CAS 或建项随后失败时，
 本次创建的空目录也保留，避免把另一进程刚写入的用户资产误删。
 """
 
@@ -43,7 +43,8 @@ def prepare_storage_location(storage: ProjectStorage, *, current: ProjectStorage
         root.mkdir(exist_ok=same_root)
         attempts = Path(storage.attempts_root)
         _safe_path(attempts, missing=True)
-        attempts.mkdir(exist_ok=same_root)
+        if attempts != root:
+            attempts.mkdir(exist_ok=same_root)
         # 排他临时写入只验证当前目录可写，不枚举、探测或删除媒体。
         with tempfile.TemporaryFile(dir=attempts) as stream:
             stream.write(b"ZNIKU storage check")

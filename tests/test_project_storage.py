@@ -109,7 +109,8 @@ def test_default_adjacent_custom_and_legacy_paths_are_pure(tmp_path: Path) -> No
     project = tmp_path / "synthetic.zniku"
     adjacent = new_project_storage(project, media_basename="TITLE (2026)")
     assert adjacent.mode == "adjacent" and Path(adjacent.data_root) == tmp_path / "synthetic.data"
-    assert Path(adjacent.attempts_root) == tmp_path / "synthetic.data" / "attempts"
+    assert Path(adjacent.attempts_root) == tmp_path / "synthetic.data"
+    assert adjacent.layout == "english" and adjacent.contract_version == "0.3.5"
     assert not Path(adjacent.data_root).exists()
     custom = new_project_storage(project, data_root=tmp_path / "other")
     assert custom.mode == "custom"

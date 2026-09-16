@@ -74,11 +74,20 @@ def _write(context: PythonAdapterContext) -> PythonAdapterResult:
 def _store(tmp_path: Path, *, manual: bool = False, readable: bool = True) -> ProjectStore:
     definition = _definition(manual=manual)
     config = new_project_storage(tmp_path / "p.zniku")
+    config = ProjectStorage.model_validate(
+        config.model_dump(mode="python")
+        | {
+            "contract_version": "0.3.2",
+            "layout": "readable",
+            "attempts_root": str(Path(config.data_root) / "attempts"),
+        }
+    )
     if not readable:
         payload = config.model_dump(mode="json")
         payload["contract_version"] = "0.3.0"
         payload.pop("layout")
         payload.pop("layout_state")
+        payload.pop("english_layout_state")
         payload.pop("data_id")
         config = ProjectStorage.model_validate(payload)
     return ProjectStore.create(
@@ -321,7 +330,7 @@ def test_reparse_parent_is_rejected_before_directory_creation(
 
 
 def test_readable_root_budget_fails_without_allocating(tmp_path: Path) -> None:
-    root = tmp_path / ("x" * 100)
+    root = tmp_path / ("x" * 180)
     with pytest.raises(ValueError, match="E_STORAGE_LAYOUT_PATH_BUDGET"):
         allocate_attempt_path(
             StorageLayoutState(), root=root, node_id="n", run_id=str(uuid4()), attempt=1

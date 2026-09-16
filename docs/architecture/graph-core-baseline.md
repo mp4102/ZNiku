@@ -164,6 +164,13 @@ NodeRun 工作/日志及 handoff 目标路径，保留原位置文件；不改�
 文件目录索引是可重建的用户浏览导出，不是新authority。具体边界见
 [`v0.3.2-readable-storage-plan.md`](../v0.3.2-readable-storage-plan.md)。
 
+2026-09-16 经操作者批准的英文物理目录补充：新的版本化布局允许任务直接位于工程 `.data` 下，按
+`task/[chapter]/round-NNN` 持久定位，不要求暴露 `attempts`、内部节点/运行编号或端口哈希。轮次属于稳定
+节点、跨 Run 分配，与 NodeRun 定位同一事务提交；复用不创建媒体副本。正式身份、独立 attempt、不重叠
+路径和受控副作用边界不变，不能把数据根本身当 attempt。旧 UUID/readable 布局与等待 handoff 原样兼容，
+打开或继续运行不自动迁移。英文任务/章节仍只是宿主命名提示，不是固定拓扑或 Core scope。具体实施及
+待验边界见 [`english-readable-storage-plan.md`](../english-readable-storage-plan.md)。
+
 同一个 `Project.graph` 既是 Studio 正在编辑的 Graph，也是下一次 Run 的唯一候选来源。为支持逐步编排、
 自动保存和崩溃恢复，它可以保存仅带有第 7.1 节闭合集合 authoring diagnostics 的暂不可运行状态；不得另存
 一张隐藏的“最后可运行 Graph”，也不得生成 Compiler、Freeze、ExecutionPlan 或领域级 Revision authority。
@@ -434,11 +441,17 @@ pending → failed  （executor、attempt 目录或 handoff 准备失败）
 每个 attempt 使用独立工作目录。成功退出并通过最小校验后才登记 Artifact，避免半成品被下游消费；这属于
 基本执行正确性，不是 Evidence 或安全协议。
 
-外部 attempt 在进入等待前建立自己的单层 `incoming/<端口安全编码>` 收件目录。目录编码只避免文件系统
-逃逸和命名冲突，不限制 Graph port ID，也不是领域 digest。自动发现仅返回有界候选，不
+外部 attempt 在进入等待前建立自己的收件目录；既有布局保留 `incoming/<端口安全编码>`，新的英文布局
+单输出使用平铺 `incoming`，多输出只有名称冲突时才需要可读且安全的端口子目录。路径由服务端按正式
+绑定生成，不直接使用任意 Graph port ID，不是领域 digest。自动发现仅返回有界候选，不
 认定外部工具完成、登记 Artifact 或自动 Submit。用户明确确认后才检查并将本目录候选按正式目标名称收纳；
 外部位置的文件仍只复制、保留源。失败保留候选和旧正式产物；多候选不得按名称、大小或时间猜选。
 已登记成果、外部来件和历史结果默认长期保留，完成、关闭、重跑或删除画布节点不触发媒体回收。
+
+2026-09-16 用户批准的多输出交付补充：同一人工 attempt 可在 `incoming` 根目录接收一批平铺文件，
+供操作者一次粘贴和显式匹配；这不是新输出端口、运行状态或 Artifact。仍只观察有界单层目录，
+确认后按各声明输出收纳，全部输出满足现有节点 validator 后才能显式 Submit。外部任意目录来件仍复制
+并保留原件；仅本 attempt 专属收件中的文件可在明确收纳时同盘移位，失败保留来件和可恢复产物。
 
 ## 11. 复用、失效与缓存
 

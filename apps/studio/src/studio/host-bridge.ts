@@ -8,6 +8,9 @@
 import Ajv2020, { type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js'
 import projectServiceSchema from '../service/project-service.schema.json'
 import type { RecentProject } from './recent-projects'
+import { assertBatchObservation, type HandoffBatchBinding, type HandoffBatchObserveEnvelope,
+  type HandoffBatchPreviewRequest, type HandoffBatchPreviewEnvelope, type HandoffBatchConfirmRequest,
+  type HandoffBatchConfirmEnvelope, type HandoffBatchCheckRequest, type HandoffBatchCheckEnvelope } from './handoff-batch-contracts'
 
 export type HostCapability =
   | 'open_file'
@@ -53,6 +56,7 @@ export type HostPathReference =
       readonly handoff_id: string
       readonly selector:
         | { readonly role: 'work_directory' }
+        | { readonly role: 'batch_incoming_directory' }
         | { readonly role: 'input_artifact'; readonly artifact_id: string }
         | { readonly role: 'output_target'; readonly port_id: string; readonly ordinal?: number | null }
         | { readonly role: 'incoming_directory'; readonly port_id: string; readonly ordinal?: number | null }
@@ -93,6 +97,10 @@ export interface HostBridge {
   observeHandoffInbox?(request: HandoffImportBinding): Promise<HandoffInboxObserveEnvelope>
   previewHandoffInbox?(request: HandoffInboxPreviewRequest): Promise<HandoffInboxPreviewEnvelope>
   confirmHandoffInbox?(request: HandoffInboxConfirmRequest): Promise<HandoffInboxConfirmEnvelope>
+  observeHandoffBatch?(request: HandoffBatchBinding): Promise<HandoffBatchObserveEnvelope>
+  previewHandoffBatch?(request: HandoffBatchPreviewRequest): Promise<HandoffBatchPreviewEnvelope>
+  confirmHandoffBatch?(request: HandoffBatchConfirmRequest): Promise<HandoffBatchConfirmEnvelope>
+  checkHandoffBatch?(request: HandoffBatchCheckRequest): Promise<HandoffBatchCheckEnvelope>
   inspectStorage?(projectSessionId: string): Promise<StorageInspection>
   configureStorage?(request: StorageLocationRequest): Promise<StorageInspection>
   previewStorageMigration?(request: StorageLocationRequest): Promise<StorageMigrationPreview>
@@ -203,17 +211,21 @@ export interface HandoffInboxConfirmEnvelope extends HandoffImportBinding {
   readonly status: 'collected'
 }
 export interface ProjectStorage {
-  readonly contract_version: '0.3.0' | '0.3.2'
+  readonly contract_version: '0.3.0' | '0.3.2' | '0.3.5'
   readonly mode: 'adjacent' | 'custom' | 'legacy'
   readonly data_root: string
   readonly attempts_root: string
   readonly retention: 'keep'
   readonly media_basename: string | null
   readonly data_id?: string | null
-  readonly layout?: 'uuid' | 'readable'
+  readonly layout?: 'uuid' | 'readable' | 'english'
   readonly layout_state?: {
     readonly nodes: Readonly<Record<string, { readonly number: number; readonly relative_dir: string }>>
     readonly runs: Readonly<Record<string, number>>
+  }
+  readonly english_layout_state?: {
+    readonly nodes: Readonly<Record<string, { readonly relative_dir: string }>>
+    readonly attempts: Readonly<Record<string, { readonly node_id: string; readonly round: number }>>
   }
 }
 export interface StorageDependency {
@@ -430,6 +442,7 @@ export class FetchHostBridge implements HostBridge {
   private preferenceWrites: Promise<void> = Promise.resolve()
   private readonly importPreviews = new Map<string, HandoffImportPreviewEnvelope>()
   private readonly inboxPreviews = new Map<string, HandoffInboxPreviewEnvelope>()
+  private readonly batchPreviews = new Map<string, HandoffBatchPreviewEnvelope>()
   private readonly storagePreviews = new Map<string, StorageMigrationPreview>()
 
   constructor(bootstrap: HostBridgeBootstrap | undefined = window.__ZNIKU_HOST_BRIDGE__) {
@@ -581,6 +594,76 @@ export class FetchHostBridge implements HostBridge {
     this.assertInboxBinding(preview, result)
     const keys = ['inbox_id', 'source_name', 'source_size', 'target_path'] as const
     if (keys.some((key) => preview[key] !== result[key])) throw new HostBridgeError('收纳结果与预览不一致，请检查实际文件，不要重复确认。')
+    return result
+  }
+
+  async observeHandoffBatch(request: HandoffBatchBinding): Promise<HandoffBatchObserveEnvelope> {
+    const result = await this.dataPost<HandoffBatchObserveEnvelope>('handoff-batch/observe', request,
+      'HandoffBatchBinding', 'HandoffBatchObserveEnvelope')
+    assertBatchObservation(request, result)
+    return result
+  }
+
+  async previewHandoffBatch(request: HandoffBatchPreviewRequest): Promise<HandoffBatchPreviewEnvelope> {
+    const result = await this.dataPost<HandoffBatchPreviewEnvelope>('handoff-batch/preview', request,
+      'HandoffBatchPreviewRequest', 'HandoffBatchPreviewEnvelope')
+    assertBatchObservation(request, result)
+    const handles = new Set(result.candidates.map((candidate) => candidate.candidate_handle))
+    const ports = new Set(result.rows.map((row) => row.port_id))
+    const assigned = result.matches.flatMap((match) => match.candidate_handle === null ? [] : [match.candidate_handle])
+    if (handles.size !== result.candidates.length || result.matches.length !== ports.size ||
+        new Set(result.matches.map((match) => match.port_id)).size !== ports.size ||
+        new Set(assigned).size !== assigned.length || result.matches.some((match) => !ports.has(match.port_id) ||
+          (match.state === 'matched') !== (match.candidate_handle !== null) ||
+          (match.candidate_handle !== null && !handles.has(match.candidate_handle)))) {
+      throw new HostBridgeError('批量匹配预览含有重复或未知的文件与目标。')
+    }
+    this.batchPreviews.set(result.batch_id, result)
+    if (this.batchPreviews.size > 32) this.batchPreviews.delete(this.batchPreviews.keys().next().value!)
+    return result
+  }
+
+  async confirmHandoffBatch(request: HandoffBatchConfirmRequest): Promise<HandoffBatchConfirmEnvelope> {
+    parseWith(request, compileDefinition('HandoffBatchConfirmRequest'), 'Handoff batch confirm request')
+    const preview = this.batchPreviews.get(request.batch_id)
+    if (!preview) throw new HostBridgeError('批量收件预览已失效，请重新选择文件。')
+    if (request.items.length === 0 || new Set(request.items.map((item) => item.port_id)).size !== request.items.length ||
+        new Set(request.items.map((item) => item.candidate_handle)).size !== request.items.length || request.items.some((item) =>
+          !preview.rows.some((row) => row.port_id === item.port_id && (!row.collected || item.overwrite)) ||
+          !preview.candidates.some((candidate) => candidate.candidate_handle === item.candidate_handle))) {
+      throw new HostBridgeError('请逐项确认唯一文件与目标，覆盖已有收件必须明确允许。')
+    }
+    // 副作用前消费预览；网络结果不明时不自动重试或再次复制。
+    this.batchPreviews.delete(request.batch_id)
+    const result = await this.dataPost<HandoffBatchConfirmEnvelope>('handoff-batch/confirm', request,
+      'HandoffBatchConfirmRequest', 'HandoffBatchConfirmEnvelope')
+    assertBatchObservation(preview, result)
+    const originalRows = new Map(preview.rows.map((row) => [row.port_id, row]))
+    if (result.batch_id !== preview.batch_id || result.rows.length !== preview.rows.length ||
+        result.rows.some((row) => originalRows.get(row.port_id)?.target_path !== row.target_path ||
+          originalRows.get(row.port_id)?.incoming_path !== row.incoming_path) ||
+        result.results.length !== request.items.length || new Set(result.results.map((item) => item.port_id)).size !== request.items.length ||
+        result.results.some((item) => !request.items.some((expected) => expected.port_id === item.port_id) ||
+          (item.status === 'collected' && !result.rows.some((row) => row.port_id === item.port_id && row.collected)))) {
+      throw new HostBridgeError('批量收件回执与已确认的清单不一致，请刷新核对，不要重复确认。')
+    }
+    return result
+  }
+
+  async checkHandoffBatch(request: HandoffBatchCheckRequest): Promise<HandoffBatchCheckEnvelope> {
+    const result = await this.dataPost<HandoffBatchCheckEnvelope>('handoff-batch/check', request,
+      'HandoffBatchCheckRequest', 'HandoffBatchCheckEnvelope')
+    assertBatchObservation(request, result)
+    const checked = result.readiness
+    const rows = new Map(result.rows.map((row) => [row.port_id, row]))
+    if (result.published !== (checked !== null) || (result.published && (!result.complete || result.validation_error !== null ||
+        !checked?.probe_requested || !checked.ready_for_submit || checked.run_id !== request.run_id ||
+        checked.node_run_id !== request.node_run_id || checked.handoff_id !== request.handoff_id ||
+        checked.targets.length !== result.rows.length || new Set(checked.targets.map((target) => target.port_id)).size !== result.rows.length ||
+        checked.targets.some((target) => target.state !== 'probe_passed' || rows.get(target.port_id)?.ordinal !== target.ordinal ||
+          rows.get(target.port_id)?.target_path !== target.path)))) {
+      throw new HostBridgeError('整章检查回执不完整；请重新检查，不会自动提交。')
+    }
     return result
   }
 

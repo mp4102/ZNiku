@@ -58,6 +58,10 @@ jobs:
         working-directory: .
         run: uv run --locked --extra dev python tools/generate_source_admitted_studio_corpus.py
 
+      - name: Verify chapter-batch Presentation corpus
+        working-directory: .
+        run: uv run --locked --extra dev python tools/generate_chapter_batch_studio_corpus.py
+
       - name: Install locked dependencies
         run: npm ci
 

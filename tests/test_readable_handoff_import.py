@@ -10,18 +10,26 @@ import pytest
 from authoring_helpers import authoring_command
 from test_handoff_import import _persistent_state
 from test_handoff_inbox import _inbox_setup
+from zniku.project import ProjectStore
 from zniku.project_service import HostBridgeFailure
 from zniku.project_service.handoff_import import HandoffImportBinding, _target_path
 from zniku.runtime import ExternalOutputTarget, NodeRunState, RunState
 
 
 def test_readable_ui_import_and_inbox_observe_collect_submit(tmp_path: Path) -> None:
-    value = _inbox_setup(tmp_path, readable=True)
+    value = _inbox_setup(tmp_path, legacy_readable=True)
     base = value.base
     before = _persistent_state(base)
     first, second = base.nodes["a"], base.nodes["b"]
     assert "__N001" in first.work_dir and "__N002" in second.work_dir
     assert Path(first.work_dir).name == "R001-A001"
+    # 新包重开旧 waiting handoff 不整理或改写其既有 UUID/端口哈希收件位置。
+    before_storage = ProjectStore.open(base.project_path).load_storage()
+    base.application.command({"operation": "open_project", "path": str(base.project_path)})
+    reopened = base.application.inspect_run_detail(first.run_id).run
+    assert reopened.node_runs == tuple(sorted((first, second), key=lambda item: item.node_id))
+    assert ProjectStore.open(base.project_path).load_storage() == before_storage
+    before = _persistent_state(base)
     assert value.observe().candidates == ()
 
     # UI 选择文件只复制到精确目标，源文件保留，Run 仍等待。
@@ -64,7 +72,7 @@ def test_readable_ui_import_and_inbox_observe_collect_submit(tmp_path: Path) -> 
 def test_readable_import_never_accepts_a_different_persisted_attempt(
     tmp_path: Path, change: str
 ) -> None:
-    value = _inbox_setup(tmp_path, readable=True)
+    value = _inbox_setup(tmp_path, legacy_readable=True)
     before = _persistent_state(value.base)
     binding = HandoffImportBinding.model_validate(value.binding())
     with value.base.application.handoff_import_authority(binding) as authority:

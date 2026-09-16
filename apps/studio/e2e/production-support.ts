@@ -6,6 +6,7 @@ import { writeFile } from 'node:fs/promises'
 import type { ConsoleMessage, Page, Request, Response, TestInfo } from '@playwright/test'
 
 export interface SyntheticFixture {
+  readonly project_path?: string
   readonly source_aligned_mr?: string
   readonly repair_candidate?: string
   readonly original_source?: string
@@ -90,7 +91,7 @@ export class SyntheticFixtureHost {
       lines.on('line', (line) => {
         try {
           const parsed = JSON.parse(line) as SyntheticFixture & { origin?: string }
-          if (parsed.origin && /^http:\/\/127\.0\.0\.1:\d+$/.test(parsed.origin) && parsed.external_project && parsed.wizard_project) {
+          if (parsed.origin && /^http:\/\/127\.0\.0\.1:\d+$/.test(parsed.origin) && ((parsed.external_project && parsed.wizard_project) || parsed.project_path)) {
             this.origin = parsed.origin
             this.fixture = parsed
             clearTimeout(timer)
@@ -103,7 +104,7 @@ export class SyntheticFixtureHost {
     })
   }
 
-  roots(): string[] { return [this.fixture?.external_project ? dirname(this.fixture.external_project) : '', resolve('../..'), process.env.TEMP ?? '', process.env.TMP ?? ''] }
+  roots(): string[] { return [this.fixture?.external_project ? dirname(this.fixture.external_project) : this.fixture?.project_path ? dirname(this.fixture.project_path) : '', resolve('../..'), process.env.TEMP ?? '', process.env.TMP ?? ''] }
   stderr(): unknown { return diagnosticValue(this.stderrTail, this.roots()) }
 
   async stop(): Promise<void> {

@@ -10,6 +10,7 @@ import pytest
 from pydantic import JsonValue, ValidationError
 
 from zniku.avenhance_v27 import atomic_split_definition, built_in_av27_definitions
+from zniku.chapter_batch import definitions as chapter_batch
 from zniku.chapter_overlap.definitions import built_in_overlap_definitions
 from zniku.graph import (
     ExecutionMode,
@@ -155,12 +156,13 @@ def test_builtin_catalog_covers_all_generic_av27_and_overlap_definitions() -> No
         source_aligned.external_definition("mov"),
         source_aligned.external_definition("mkv"),
         *source_admitted.built_in_definitions(),
+        *chapter_batch.built_in_definitions(),
     )
     catalog = build_builtin_presentation_catalog()
 
     assert catalog.contract_version == "0.3.0"
     assert catalog.locale == "zh-CN"
-    assert len(catalog.nodes) == 55
+    assert len(catalog.nodes) == len(definitions)
     assert tuple((node.type_id, node.definition_version) for node in catalog.nodes) == tuple(
         (definition.type_id, definition.version) for definition in definitions
     )
@@ -177,12 +179,33 @@ def test_builtin_catalog_covers_all_generic_av27_and_overlap_definitions() -> No
         }
         validate_node_presentation(presentation, definition, require_complete=True)
 
+    # Project Service 使用 resolver，不能只有直接生成 catalog 的路径支持新内建族。
+    resolution = resolve_presentation_catalog(definitions)
+    assert not resolution.diagnostics
+    assert resolution.catalog.nodes == catalog.nodes
+    assert set(resolution.catalog.categories) == set(catalog.categories)
+
     source_program = next(
         node for node in catalog.nodes if node.type_id.endswith(".source_program")
     )
     assert next(port.label for port in source_program.ports if port.port_id == "source_media") == (
         "节目源媒体"
     )
+
+
+def test_dynamic_chapter_batch_presentation_resolves_as_fail_closed_builtin() -> None:
+    definition = chapter_batch.definition("enhancement", count=5)
+    resolution = resolve_presentation_catalog((definition,))
+    assert not resolution.diagnostics
+    assert len(resolution.catalog.nodes) == 1
+    assert resolution.catalog.nodes[0].type_id == definition.type_id
+    assert len(resolution.catalog.nodes[0].ports) == 6
+
+    payload = definition.model_dump(mode="python", round_trip=True)
+    payload["parameter_schema"]["properties"]["drift"] = {"type": "string"}
+    drifted = NodeDefinition.model_validate(payload, strict=True)
+    with pytest.raises(PresentationCatalogError, match="E_PRESENTATION_BUILTIN_DEFINITION_DRIFT"):
+        resolve_presentation_catalog((drifted,))
 
 
 def test_presentation_payload_has_no_execution_or_parameter_constraint_fields() -> None:

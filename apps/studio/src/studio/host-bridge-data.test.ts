@@ -20,7 +20,7 @@ const inboxPreview = { ...binding, inbox_id: 'inbox_1234567890_1234567890', sour
 const inboxResult = { ...binding, inbox_id: inboxPreview.inbox_id, source_name: inboxPreview.source_name,
   source_size: inboxPreview.source_size, target_path: inboxPreview.target_path, status: 'collected' }
 const storage: ProjectStorage = { contract_version: '0.3.0', mode: 'custom', data_root: 'D:\\archive\\project.data',
-  attempts_root: 'D:\\archive\\project.data\\attempts', retention: 'keep', media_basename: 'SYN-001 (2020)', data_id: null, layout: 'uuid', layout_state: { nodes: {}, runs: {} } }
+  attempts_root: 'D:\\archive\\project.data\\attempts', retention: 'keep', media_basename: 'SYN-001 (2020)', data_id: null, layout: 'uuid', layout_state: { nodes: {}, runs: {} }, english_layout_state: { nodes: {}, attempts: {} } }
 const inspection: StorageInspection = { contract_version: '0.3.0', storage, configured: true, attempt_count: 2,
   registered_file_count: 2, registered_bytes: 2048, managed_file_count: 2, managed_bytes: 2048,
   missing: [], external_dependencies: [], coverage: 'registered_artifacts', warnings: [] }
@@ -31,6 +31,8 @@ const storagePreview: StorageMigrationPreview = { contract_version: '0.3.0', tic
   target: storage, attempt_count: 2, file_count: 2, byte_count: 2048, external_dependencies: [], originals_retained: true,
   operation: 'relocate', path_mappings: [], warnings: [] }
 const readableStorage: ProjectStorage = { ...storage, contract_version: '0.3.2', data_id: '00000000-0000-4000-8000-000000000006', layout: 'readable', layout_state: { nodes: {}, runs: {} } }
+const englishStorage: ProjectStorage = { ...readableStorage, contract_version: '0.3.5', layout: 'english', attempts_root: storage.data_root,
+  english_layout_state: { nodes: { repair: { relative_dir: 'source-repair' } }, attempts: { [binding.node_run_id]: { node_id: 'repair', round: 1 } } } }
 const organizePreview: StorageMigrationPreview = { ...storagePreview, operation: 'organize', target: readableStorage,
   path_mappings: [{ source: 'C:\\synthetic\\attempts\\opaque', target: 'D:\\archive\\project.data\\attempts\\custom\\任务__N001\\R001-A001' }] }
 const indexResult: StorageIndexResult = { contract_version: '0.3.2', project_session_id: session, expected_storage_revision: 3,
@@ -43,6 +45,24 @@ function bridge() {
 }
 
 describe('工程数据 HostBridge wire', () => {
+  it('英文布局按Python Schema读取与显式整理，确认仍核对布局与目标', async () => {
+    const preview = { ...organizePreview, target: englishStorage,
+      path_mappings: [{ source: 'C:\\synthetic\\attempts\\old', target: 'D:\\archive\\project.data\\source-repair\\round-001' }] }
+    const fetch = vi.fn().mockResolvedValueOnce(response({ ...inspection, storage: englishStorage }))
+      .mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(response({ ...inspection, storage: englishStorage }))
+      .mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(response({ ...inspection, storage: readableStorage }))
+    vi.stubGlobal('fetch', fetch)
+    const host = bridge()
+    await expect(host.inspectStorage(session)).resolves.toMatchObject({ storage: englishStorage })
+    const confirm = { project_session_id: session, expected_storage_revision: 3, ticket_id: preview.ticket_id }
+    await expect(host.previewStorageOrganization(storageRequest)).resolves.toEqual(preview)
+    await expect(host.confirmStorageMigration(confirm)).resolves.toMatchObject({ storage: { layout: 'english' } })
+    await host.previewStorageOrganization(storageRequest)
+    await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('不一致')
+    await expect(host.confirmStorageMigration(confirm)).rejects.toThrow('已失效')
+    expect(fetch).toHaveBeenCalledTimes(5)
+  })
+
   it('收件观察和预览只传精确身份及opaque句柄，token只在header', async () => {
     const fetch = vi.fn().mockResolvedValueOnce(response(inboxObserved)).mockResolvedValueOnce(response(inboxPreview))
     vi.stubGlobal('fetch', fetch)
