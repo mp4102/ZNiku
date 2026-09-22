@@ -590,7 +590,7 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     }
     expect(await screen.findByRole('alert')).toHaveTextContent('已有文件/文件夹选择窗口打开，请先完成或取消；它可能在浏览器后面。')
     expect(screen.getByText(rawMessage)).not.toBeVisible()
-    await user.click(screen.getByText('高级 → 选择窗口原始详情'))
+    await user.click(screen.getByText('高级 → 原始错误详情'))
     expect(screen.getByText(rawMessage)).toBeVisible()
     expect(pick).toHaveBeenCalledTimes(1)
     expect(gateway.commands).toEqual([])
@@ -682,8 +682,70 @@ describe('ZNIKU Studio 0.3.0 Project workspace', () => {
     })
     render(<App gateway={gateway} />)
     await userEvent.click(await screen.findByRole('button', { name: /Missing project/ }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('这个最近工程当前无法打开')
+    expect(await screen.findByRole('alert')).toHaveTextContent('未找到工程文件')
     for (const raw of screen.queryAllByText(/D:\\private\\missing\.zniku already vanished/)) expect(raw).not.toBeVisible()
+    await userEvent.click(screen.getByText('高级 → 原始错误详情'))
+    expect(screen.getByText('E_PROJECT_SERVICE_PROJECT_NOT_FOUND: D:\\private\\missing.zniku already vanished')).toBeVisible()
+  })
+
+  it.each(['E_PROJECT_SAVE_FAILED', 'E_PROJECT_LOAD_FAILED'])('最近工程打开触发 %s 时保留真实原因，不一律提示重新选文件', async (code) => {
+    window.localStorage.removeItem('zniku.studio.density')
+    window.localStorage.setItem('zniku.studio.recent-projects.v1', JSON.stringify({ version: 1, projects: [{
+      path: 'D:\\Synthetic\\storage.zniku', name: '存储测试工程', opened_at: '2026-09-04T02:00:00Z',
+    }] }))
+    const raw = 'unable to open database file'
+    const gateway = new RecordingGateway(studioEnvelope(), { command: () => {
+      throw new StudioGatewayError(`Project Service command 失败：${code}: ${raw}`, { code, serviceMessage: raw })
+    } })
+    render(<App gateway={gateway} />)
+    await userEvent.click(await screen.findByRole('button', { name: /存储测试工程/ }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(code === 'E_PROJECT_SAVE_FAILED' ? '工程记录未能保存' : '暂时无法读取工程记录')
+    expect(alert).toHaveTextContent('配额')
+    expect(alert).toHaveTextContent('重新打开工程')
+    expect(alert).not.toHaveTextContent('请重新选择文件')
+    expect(alert).not.toHaveTextContent('都没有被修改')
+    await userEvent.click(screen.getByText('高级 → 原始错误详情'))
+    expect(screen.getByText(`${code}: ${raw}`)).toBeVisible()
+    expect(gateway.commands.filter((item) => item.operation === 'open_project')).toHaveLength(1)
+  })
+
+  it('状态读取失败仍在首页保留稳定存储码与原文，不能误报工程未改动', async () => {
+    window.localStorage.removeItem('zniku.studio.density')
+    const raw = 'synthetic database read failed'
+    const gateway = new RecordingGateway(studioEnvelope(), { inspect: () => {
+      throw new StudioGatewayError(raw, { code: 'E_RUNTIME_STORAGE_UNAVAILABLE', serviceMessage: raw })
+    } })
+    render(<App gateway={gateway} />)
+    const home = await screen.findByRole('dialog', { name: 'ZNIKU Studio 工程首页' })
+    await waitFor(() => expect(within(home).getByRole('alert')).toHaveTextContent('暂时无法读取工程记录'))
+    expect(within(home).getByRole('alert')).not.toHaveTextContent('都没有被修改')
+    await userEvent.click(within(home).getByText('高级 → 原始错误详情'))
+    expect(within(home).getByText(`E_RUNTIME_STORAGE_UNAVAILABLE: ${raw}`)).toBeVisible()
+    expect(gateway.commands).toEqual([])
+  })
+
+  it('后台已停止但遗留 running 时首页仍可显式重新打开，不自动改状态或重跑', async () => {
+    const status = { ...runningProgressEnvelope(0.37, null), error: {
+      code: 'E_SERVICE_STORAGE_RECOVERY_REQUIRED', message: 'synthetic state could not be persisted', related_run_ids: [handoffFixtureIds.run],
+    } }
+    window.localStorage.setItem('zniku.studio.recent-projects.v1', JSON.stringify({ version: 1, projects: [{
+      path: status.project_path, name: '等待恢复的工程', opened_at: '2026-09-04T02:00:00Z',
+    }] }))
+    const detail = runningProgressDetail(0.37)
+    const original = JSON.stringify(detail)
+    const gateway = new RecordingGateway(status, { detail: () => detail, command: () => status })
+    render(<App gateway={gateway} />)
+    expect(await screen.findByRole('alert', { name: '工程服务问题' })).toHaveTextContent('百分比可能是旧记录')
+    const homeButton = projectButton('工程首页')
+    expect(homeButton).toBeEnabled()
+    await userEvent.click(homeButton)
+    const recent = await screen.findByRole('button', { name: /等待恢复的工程/ })
+    expect(recent).toBeEnabled()
+    expect(gateway.commands).toEqual([])
+    await userEvent.click(recent)
+    await waitFor(() => expect(gateway.commands).toEqual([{ operation: 'open_project', path: status.project_path }]))
+    expect(JSON.stringify(detail)).toBe(original)
   })
 
   it.each([false, true])('创作者向导绑定 exact Run；展开回执冲突=%s 时隔离并发内容', async (responseConflict) => {

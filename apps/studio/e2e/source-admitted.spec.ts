@@ -106,6 +106,13 @@ for (const mr of ['off', 'on'] as const) {
     await expect(confirmation).toBeHidden()
     const graph = (await status(page)).snapshot!.project.graph
     expect(graph.nodes.find((node) => node.node_id === 'overlap.split')!.definition_version).toBe('0.3.5')
+    // 新创建图直接封装发布；后续 Output 只引用，不能再次复制完整成片。
+    expect(graph.nodes.find((node) => node.node_id === 'overlap.final')).toMatchObject({
+      type_id: 'zniku.source-admitted.chapter-batch.final-publish', definition_version: '0.3.5',
+      parameters: { overwrite: false, create_parent: true },
+    })
+    expect(graph.nodes.find((node) => node.node_id === 'output')!.parameters).toEqual({ mode: 'reference', overwrite: false })
+    expect(graph.edges).toContainEqual({ source_node_id: 'overlap.final', source_port_id: 'media', target_node_id: 'output', target_port_id: 'in', ordinal: null })
     expect(graph.nodes.filter((node) => node.type_id === 'zniku.source-admitted.mosaic-restoration.external')).toHaveLength(mr === 'on' ? 1 : 0)
     await page.reload()
     await page.getByRole('button', { name: '关闭工程首页', exact: true }).click()

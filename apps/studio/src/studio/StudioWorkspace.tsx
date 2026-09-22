@@ -112,6 +112,7 @@ import { TaskDrawer, type TaskDrawerTab } from './components/TaskDrawer'
 import { workspacePrimaryAction } from './workspace-primary-action'
 import { cardSummaryValue } from './card-summary'
 import { failurePresentation } from './run-presentation'
+import { copyProgressOperation } from './copy-progress'
 import { RetryImpactDialog } from './components/RetryImpactDialog'
 import './workspace-shell.css'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
@@ -219,6 +220,23 @@ function safeVisibleServiceError(message: string, fallback: string): string {
   return /(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/])/.test(message) ? fallback : message
 }
 
+/** 保留 Python 稳定码与原文；友好说明不能代替服务端状态或成为重跑资格。 */
+function serviceFailure(error: unknown): StudioServiceError {
+  return error instanceof StudioGatewayError && error.code
+    ? { code: error.code, message: error.serviceMessage ?? error.message, related_run_ids: error.relatedRunIds }
+    : { code: 'E_STUDIO_REQUEST_FAILED', message: error instanceof Error ? error.message : String(error), related_run_ids: [] }
+}
+
+function serviceFailureMessage(error: StudioServiceError | null, fallback: string): string {
+  if (!error) return fallback
+  const explanation = failurePresentation(error.code, error.message)
+  return explanation.known ? `${explanation.title}。${explanation.cause}${explanation.recovery}` : fallback
+}
+
+function serviceFailureDetails(error: StudioServiceError | null): string | null {
+  return error ? `${error.code}: ${error.message}` : null
+}
+
 function replaceGraph(snapshot: ProjectSnapshotWire, graph: GraphWire): ProjectSnapshotWire {
   return {
     ...snapshot,
@@ -308,6 +326,7 @@ function nodeProgressView(
   nodeRun: NodeRunWire | null,
   definition: NodeDefinitionWire,
   projection: NodeProgressProjectionWire | null,
+  parameters?: JsonObject,
 ): WorkflowProgressData {
   if (!nodeRun) return { mode: 'none', fraction: null, measurement: null, elapsed: null }
   const elapsed = runtimeElapsedLabel(nodeRun)
@@ -323,6 +342,7 @@ function nodeProgressView(
     if (supportsDeterminateProgress && projection) {
       return {
         mode: 'determinate',
+        operation: copyProgressOperation(definition, parameters),
         fraction: projection.fraction,
         measurement: projection.current === null ? null : projection,
         elapsed,
@@ -488,6 +508,8 @@ export function StudioWorkspace({
   const inboxSubmissionFencesRef = useRef<ReadonlySet<string>>(new Set())
   const [historyBusy, setHistoryBusy] = useState(false)
   const [boundaryError, setBoundaryError] = useState<string | null>(null)
+  const [statusFailure, setStatusFailure] = useState<StudioServiceError | null>(null)
+  const [detailFailure, setDetailFailure] = useState<StudioServiceError | null>(null)
   const [clientHint, setClientHint] = useState<string | null>(null)
   const [commandFailure, setCommandFailure] = useState<StudioServiceError | null>(null)
   const [projectPath, setProjectPath] = useState('')
@@ -588,6 +610,7 @@ export function StudioWorkspace({
   const homeActionBusyRef = useRef(false)
   const homeActionEpochRef = useRef(0)
   const commandErrorRef = useRef<string | null>(null)
+  const commandFailureRef = useRef<StudioServiceError | null>(null)
   const detailSummaryRevisionRef = useRef('')
   const detailRequestedSummaryRevisionRef = useRef('')
   const selectionGuardRef = useRef<{
@@ -747,6 +770,7 @@ export function StudioWorkspace({
       }
       const priorStatusError = statusBoundaryErrorRef.current
       statusBoundaryErrorRef.current = null
+      setStatusFailure(null)
       if (priorStatusError !== null) {
         setBoundaryError((current) =>
           current === priorStatusError ? detailBoundaryErrorRef.current : current,
@@ -766,6 +790,7 @@ export function StudioWorkspace({
     if (clearResources) {
       detailRef.current = null
       setDetail(null)
+      setDetailFailure(null)
       setReadiness(new Map())
       updateCheckedOutputs(() => new Map())
       handoffActionRef.current = null
@@ -846,6 +871,7 @@ export function StudioWorkspace({
           detailBackoffRef.current.delete(resourceKey)
           const priorDetailError = detailBoundaryErrorRef.current
           detailBoundaryErrorRef.current = null
+          setDetailFailure(null)
           if (priorDetailError !== null) {
             setBoundaryError((current) => (current === priorDetailError ? null : current))
           }
@@ -877,6 +903,7 @@ export function StudioWorkspace({
               retryAt: Date.now() + delay,
             })
             markResourceHealth('detail', resourceKey, true)
+            setDetailFailure(serviceFailure(error))
             const message = safeVisibleServiceError(
               error instanceof Error ? error.message : 'Run detail 读取失败',
               'Run detail 读取失败；本机路径未显示。',
@@ -1055,6 +1082,8 @@ export function StudioWorkspace({
     let active = true
     setLoading(true)
     setBoundaryError(null)
+    setStatusFailure(null)
+    setDetailFailure(null)
     detailBoundaryErrorRef.current = null
     statusBoundaryErrorRef.current = null
     const sequence = ++sequenceRef.current.status
@@ -1084,6 +1113,7 @@ export function StudioWorkspace({
       .catch((error: unknown) => {
         if (active && generation === generationRef.current) {
           markStatusHealth(true)
+          setStatusFailure(serviceFailure(error))
           const message = safeVisibleServiceError(
             error instanceof Error ? error.message : 'Project Service inspect 失败',
             '本机工程服务暂时不可用。',
@@ -1147,6 +1177,7 @@ export function StudioWorkspace({
         }
         if (!nextStatus && generation === generationRef.current) {
           markStatusHealth(true)
+          setStatusFailure(serviceFailure(error))
           const message = safeVisibleServiceError(
             error instanceof Error ? error.message : 'Project Service status 读取失败',
             '本机工程服务暂时不可用。',
@@ -1426,6 +1457,7 @@ export function StudioWorkspace({
             nodeRun,
             definition,
             nodeRun ? progressSamplesByNodeRun.get(nodeRun.node_run_id) ?? null : null,
+            node.parameters,
           ),
           latestResult: latestResults.get(node.node_id) ?? null,
         }
@@ -1497,6 +1529,7 @@ export function StudioWorkspace({
           selectedNodeRunAuthority,
           selectedDefinition,
           progressSamplesByNodeRun.get(selectedNodeRunAuthority.node_run_id) ?? null,
+          selectedNode?.parameters,
         )
       : null
   const selectedNodeRun = selectedNodeRunAuthority
@@ -1926,6 +1959,7 @@ export function StudioWorkspace({
       setBoundaryError(null)
       setClientHint(null)
       commandErrorRef.current = null
+      commandFailureRef.current = null
       setCommandFailure(null)
       const previousPath = statusRef.current?.project_path ?? null
       const previousViewRunId = viewRunIdRef.current
@@ -2060,6 +2094,7 @@ export function StudioWorkspace({
         if (selected) await loadDetail(selected, generation)
         return next
       } catch (error) {
+        commandFailureRef.current = serviceFailure(error)
         if (
           error instanceof StudioGatewayError &&
           error.code === 'E_PROJECT_SERVICE_RUN_CONFLICT'
@@ -2074,12 +2109,12 @@ export function StudioWorkspace({
           }
         } else if (error instanceof StudioGatewayError && error.code) {
           commandErrorRef.current = error.message
-          setCommandFailure({ code: error.code, message: error.message, related_run_ids: error.relatedRunIds })
+          setCommandFailure(commandFailureRef.current)
           setClientHint('本次操作未完成；本地编辑仍保留，请查看问题清单和最新处理记录。')
         } else {
           const message = error instanceof Error ? error.message : '本机工程服务操作失败'
           commandErrorRef.current = message
-          setCommandFailure({ code: 'E_STUDIO_REQUEST_FAILED', message, related_run_ids: [] })
+          setCommandFailure(commandFailureRef.current)
           setBoundaryError('本次操作未完成；本地编辑已保留，请检查工程状态后重试。')
         }
         return null
@@ -2778,7 +2813,10 @@ export function StudioWorkspace({
       const next = await executeCommands([{ operation: 'open_project', path: paths[0] }])
       if (!homeActionIsCurrent(epoch)) return
       if (next) setHomeOpen(false)
-      else setHostError('无法打开所选工程；请确认文件仍然存在且未被其他程序占用。')
+      else {
+        setHostError(serviceFailureMessage(commandFailureRef.current, '未能完成打开工程。请保留工程和已有媒体，展开原始错误详情检查原因后再操作。'))
+        setHostErrorDetails(serviceFailureDetails(commandFailureRef.current))
+      }
     } catch (error) {
       if (!homeActionIsCurrent(epoch)) return
       setHostError(formatHostBridgeError(error) ?? '无法打开工程选择器；工程和媒体都没有被修改。')
@@ -2824,7 +2862,10 @@ export function StudioWorkspace({
       const next = await executeCommands([{ operation: 'open_project', path }])
       if (!homeActionIsCurrent(epoch)) return
       if (next) setHomeOpen(false)
-      else setHostError('这个最近工程当前无法打开；请重新选择文件，最近列表不会代替正式工程。')
+      else {
+        setHostError(serviceFailureMessage(commandFailureRef.current, '未能完成打开最近工程。请保留工程和已有媒体，展开原始错误详情检查原因后再操作；最近列表不会代替正式工程。'))
+        setHostErrorDetails(serviceFailureDetails(commandFailureRef.current))
+      }
     } finally {
       finishHomeAction(epoch)
     }
@@ -3053,8 +3094,8 @@ export function StudioWorkspace({
         onRetryService={() => setReconnectEpoch((value) => value + 1)}
         open={homeOpen}
         recentProjects={recentProjects}
-        serviceMessage={statusHealth.stale ? '无法连接本机工程服务；工程和媒体都没有被修改。' : hostError}
-        serviceErrorDetails={statusHealth.stale ? null : hostErrorDetails}
+        serviceMessage={hostError ?? (statusHealth.stale ? serviceFailureMessage(statusFailure, '工程状态暂时无法读取，最新保存及运行状态尚不能确认。请保留工程和已有媒体，检查服务及工程存储。') : null)}
+        serviceErrorDetails={hostError ? hostErrorDetails : serviceFailureDetails(statusFailure)}
         serviceUnavailable={!loading && statusHealth.stale}
       />
       <AvEnhanceV27Wizard
@@ -3110,7 +3151,7 @@ export function StudioWorkspace({
         analysisProblems={currentRun ? { run_id: currentRun.run_id,
           problems: [...runLatestAttempts.values()].flatMap((item) => item.state === 'failed' && item.error ? [{ label: nodeLabel(item.node_id), error: item.error }] : []),
         } : null}
-        serviceError={boundaryError ? '本机工程服务暂时不可用；当前工程和媒体没有被修改。' : null}
+        serviceError={boundaryError ? serviceFailureMessage(statusFailure ?? detailFailure, '工程状态暂时无法更新；最新保存及运行状态尚不能确认。请保留工程和已有媒体，检查服务及工程存储。') : null}
       />
       <ProjectShell
         parameterDirty={parameterDraftDirty}
@@ -3444,7 +3485,7 @@ export function StudioWorkspace({
         onRecoverService={() => setReconnectEpoch((value) => value + 1)}
         open
         diagnostics={diagnostics}
-        serviceError={commandFailure ?? status?.error ?? (boundaryError ? { code: 'E_STUDIO_SERVICE_UNAVAILABLE', message: boundaryError, related_run_ids: [] } : null)}
+        serviceError={status?.error ?? commandFailure ?? statusFailure ?? detailFailure ?? (boundaryError ? { code: 'E_STUDIO_SERVICE_UNAVAILABLE', message: boundaryError, related_run_ids: [] } : null)}
         hasOlderRuns={historyCursor !== null}
         historyBusy={historyBusy}
         onToggle={() => undefined}

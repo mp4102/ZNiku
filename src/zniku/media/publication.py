@@ -6,8 +6,11 @@
 
 from __future__ import annotations
 
+import ctypes
+import os
 import stat
-from collections.abc import Mapping
+import sys
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from .probe import MediaNodeError
@@ -99,4 +102,34 @@ def checked_output_target(
         ) from error
 
 
-__all__ = ["checked_output_target"]
+def no_replace_publisher() -> Callable[[Path, Path], None]:
+    """取得同卷无覆盖发布原语；不支持的平台失败关闭，不退化为先 exists 再覆盖。
+
+    Windows rename 原生拒绝已有目标；Linux 使用 renameat2(RENAME_NOREPLACE)。文件系统
+    能力仍可能在发布时拒绝，此时保留候选，绝不改用复制、硬链接或有覆盖语义的 rename。
+    """
+    if os.name == "nt":
+        return os.rename
+    if sys.platform == "linux":
+        library = ctypes.CDLL(None, use_errno=True)
+        rename = getattr(library, "renameat2", None)
+        if rename is not None:
+            rename.argtypes = [
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            rename.restype = ctypes.c_int
+
+            def publish(source: Path, target: Path) -> None:
+                if rename(-100, os.fsencode(source), -100, os.fsencode(target), 1) != 0:
+                    code = ctypes.get_errno()
+                    raise OSError(code, os.strerror(code), str(target))
+
+            return publish
+    raise MediaNodeError("E_FINAL_PUBLISH_PLATFORM_UNSUPPORTED", "当前平台不支持受控同卷无覆盖发布")
+
+
+__all__ = ["checked_output_target", "no_replace_publisher"]

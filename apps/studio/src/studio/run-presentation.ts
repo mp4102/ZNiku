@@ -47,11 +47,27 @@ const unknownBinding = copy('工作流引用已失效', '节点、版本或连�
 const order = copy('合并输入顺序需要修正', '多路输入的次序不完整或重复，当前不能运行。', '定位合并步骤，在输入列表中重新整理顺序；必要时移除错误连接后重新连接。')
 const outdated = copy('工程内容已变化', '当前页面与保存的工程或外部任务不再一致，操作已被拒绝。', '先保留未保存的编辑，再重新打开工程并查看当前任务；不要重复提交旧页面的操作。')
 const busy = copy('已有处理正在进行', '当前操作与正在执行的任务冲突，暂时不能开始。', '先查看当前处理进度或完成正在等待的外部任务，再重试。')
+const storagePreserved = '请保留 .zniku 工程及 .data 中的已有媒体，不要删除、移动或重新交付已完成产物；本提示不代表最近的状态已保存。'
+const storageRecovery = '先检查工程盘或共享目录的连接、写入权限、可用空间及配额。恢复可读写后，保留未保存编辑并重新打开工程；确认正式状态后，仅从失败步骤重跑，不要重做有效的已完成上游。'
+const storageRead = copy('暂时无法读取工程记录', '工程数据库或工作数据当前无法读取；这不等于工程丢失或数据库损坏，页面记录可能已过期。', storageRecovery, storagePreserved)
+const storageWrite = copy('工程记录未能保存', '工程数据库或工作数据写入失败，最近一次操作是否完整落盘尚不能确认。', storageRecovery, storagePreserved)
 const sourceCadence = copy('原片帧率或时间轴未通过检查',
   '原片的帧率、帧数或时间轴未通过一致性与稳定性检查，当前不能安全进行精确分章和补帧。',
   '先检查素材的帧率与时间轴，或寻求时间轴处理帮助；不要仅改文件后缀或重复交付修复文件来绕过检查。',
   '原片和已完成结果仍保留；应用不会自动改速、增加或删除帧。')
 const failures: Readonly<Record<string, FailurePresentation>> = {
+  E_PROJECT_SAVE_FAILED: storageWrite, E_PROJECT_STORAGE_WRITE: storageWrite,
+  E_PROJECT_LOAD_FAILED: storageRead, E_PROJECT_STORAGE_READ: storageRead,
+  E_RUNTIME_STORAGE_UNAVAILABLE: storageRead, E_RUNTIME_STORAGE_WRITE: storageWrite,
+  E_SERVICE_STORAGE_RECOVERY_REQUIRED: copy('处理已停止，工程状态待恢复',
+    '后台处理已停止，但失败状态未能写入工程；页面上的“正在处理”和百分比可能是旧记录，不能据此判断仍在运行或已经完成。',
+    storageRecovery, storagePreserved),
+  E_SERVICE_PROCESS_STOP_UNCONFIRMED: copy('尚不能确认处理进程已退出',
+    '服务未能确认处理进程是否已停止；当前显示的记录不能作为重跑依据。',
+    '先保留现场并确认原处理进程已退出，再恢复工程存储、重新打开工程并检查状态。不要立即重跑或重复提交。', storagePreserved),
+  E_PROJECT_SERVICE_PROJECT_NOT_FOUND: copy('未找到工程文件',
+    '最近列表只保存工程位置；当前服务无法在该位置找到 .zniku 文件，也可能是所在磁盘或共享目录暂时不可访问。',
+    '先确认工程盘或共享目录可访问；若文件确已移动，使用“打开已有工程”重新选择 .zniku 文件。', storagePreserved),
   E_AV27_SOURCE_FPS_AMBIGUOUS: sourceCadence,
   E_REQUIRED_INPUT_MISSING: missingInput, E_PARAMETERS_INVALID: parameters,
   E_NODE_DUPLICATE: unknownBinding, E_DEFINITION_UNKNOWN: unknownBinding,
@@ -76,6 +92,11 @@ const failures: Readonly<Record<string, FailurePresentation>> = {
 export function failurePresentation(code: string, message?: string): FailurePresentation {
   // 只翻译已知 validator 的稳定嵌套错误码；不从任意原始文本推导媒体结论或重试权限。
   if (code === 'validation_failed' && /^E_RUNNER_VALIDATION_REJECTED: E_AV27_SOURCE_FPS_AMBIGUOUS(?::|$)/.test(message ?? '')) return sourceCadence
+  // Runtime 已正式失败时，保留其执行失败分类，仅把已知存储前缀翻译成原因，不误报媒体工具问题。
+  if (code === 'execution_error') {
+    if (/^(E_RUNTIME_STORAGE_UNAVAILABLE|E_PROJECT_LOAD_FAILED|E_PROJECT_STORAGE_READ)(?::|$)/.test(message ?? '')) return storageRead
+    if (/^(E_RUNTIME_STORAGE_WRITE|E_PROJECT_SAVE_FAILED|E_PROJECT_STORAGE_WRITE)(?::|$)/.test(message ?? '')) return storageWrite
+  }
   return (Object.hasOwn(failures, code) ? failures[code] : undefined) ?? { known: false, title: '出现尚未识别的问题',
     cause: '当前无法可靠解释这个错误，不能据此认定操作成功或安全继续。',
     preserved: '原始错误信息已保留。界面不会因此改写运行状态或自动重试。',

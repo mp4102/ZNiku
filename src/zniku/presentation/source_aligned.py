@@ -2,6 +2,7 @@
 
 from zniku.chapter_batch.contracts import BATCH_PREFIX
 from zniku.chapter_batch.definitions import definition_role as batch_role
+from zniku.chapter_batch.final_publish import is_definition as is_final_publish
 from zniku.graph import NodeDefinition
 from zniku.source_admission.definitions import definition_role as admitted_role
 from zniku.source_aligned.definitions import definition_role
@@ -33,6 +34,16 @@ def metadata(
     role = role or batch_role(definition)
     if role is None:
         raise ValueError("原片规划 definition 与正式 exact identity/Schema/executor 不一致")
+    if is_final_publish(definition):
+        return (
+            "成片封装并发布",
+            "在成片目录的独占候选区封装原音轨，检查通过后发布；不再复制完整成片，也不移动上游。",
+            "overlap",
+            IconToken.MUX,
+            PaletteLevel.ADVANCED,
+            ("成片", "封装", "发布"),
+            ("target_path", "overwrite"),
+        )
     if role in {"source", "admission"}:
         return (
             "读取参考视频" if role == "source" else "参考视频准入",

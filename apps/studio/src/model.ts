@@ -14,6 +14,8 @@ export interface WorkflowProgressData {
   readonly fraction: number | null
   readonly measurement: NodeProgressProjectionWire | null
   readonly elapsed: string | null
+  /** 仅翻译当前正式执行器及参数；不改变执行方式、状态或资格。 */
+  readonly operation?: 'copy'
 }
 
 export interface WorkflowNodeData extends Record<string, unknown> {

@@ -56,7 +56,7 @@ from zniku.runtime import (
     RunnerInput,
     RuntimeService,
 )
-from zniku.runtime.runner import OutputTarget
+from zniku.runtime.runner import OutputTarget, RunnerProcessCleanupError
 
 ROOT = Path(__file__).parents[1]
 
@@ -459,7 +459,8 @@ def test_output_copy_timed_samples_and_source_drift_remain_strict(
 ) -> None:
     reporter = RecordingProgress()
     context = _progress_context(tmp_path, reporter)
-    times = iter((0.0, 0.1, 0.3, 0.4, 0.7))
+    # 包含每次 callback 完成后重新读取的时钟值。
+    times = iter((0.0, 0.0, 0.1, 0.3, 0.3, 0.4, 0.7))
     monkeypatch.setattr(media_adapters_module, "monotonic", lambda: next(times))
     payload = b"x" * (4 * 1024 * 1024 + 1)
     media_adapters_module._copy_stream_with_progress(
@@ -490,6 +491,46 @@ def test_output_copy_short_write_never_reports_success(tmp_path: Path) -> None:
             context, BytesIO(b"synthetic"), ShortWriter(), total=9
         )
     assert reporter.samples == []
+
+
+def test_slow_copy_progress_callback_does_not_report_every_megabyte(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """回调耗时远超采样窗口时，也不能把该耗时误认为下一次复制已经到期。"""
+
+    now = 0.0
+
+    class SlowProgress(RecordingProgress):
+        def report(
+            self,
+            *,
+            fraction: float,
+            current: int | float | None = None,
+            total: int | float | None = None,
+            unit: str | None = None,
+        ) -> None:
+            nonlocal now
+            super().report(fraction=fraction, current=current, total=total, unit=unit)
+            now += 0.4
+
+    class TimedSource(BytesIO):
+        def read(self, size: int | None = -1) -> bytes:
+            nonlocal now
+            now += 0.05
+            return super().read(size)
+
+    monkeypatch.setattr(media_adapters_module, "monotonic", lambda: now)
+    reporter = SlowProgress()
+    context = _progress_context(tmp_path, reporter)
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+    target = BytesIO()
+    media_adapters_module._copy_stream_with_progress(
+        context, TimedSource(payload), target, total=len(payload)
+    )
+    assert target.getvalue() == payload
+    assert len(reporter.samples) == 3
+    assert reporter.samples[0][1] == 1024 * 1024
+    assert reporter.samples[-1][1] == len(payload)
 
 
 def test_ffmpeg_reporter_failure_terminates_then_kills_stubborn_process(
@@ -623,12 +664,53 @@ def test_ffmpeg_cleanup_failure_preserves_original_cause_when_process_stays_aliv
         )
 
     assert captured.value.code == "E_MEDIA_FFMPEG_CLEANUP_FAILED"
+    assert isinstance(captured.value, RunnerProcessCleanupError)
     assert captured.value.__cause__ is original
     assert "kill" in str(captured.value)
     assert process.terminate_called is True
     assert process.kill_called is True
     assert process.poll_calls == 3
     assert process.wait_timeouts == [2, 2]
+
+
+@pytest.mark.parametrize(
+    "adapter_name", ["video_transform", "split_video", "merge_video", "encode_video", "mux_media"]
+)
+def test_adapter_preserves_partial_and_cleanup_marker_when_producer_exit_is_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, adapter_name: str
+) -> None:
+    """所有自动媒体包装层都必须先透传停机未确认，不能删仍可能在写的文件。"""
+
+    context = _progress_context(tmp_path, RecordingProgress())
+    context.node = SimpleNamespace(
+        parameters={
+            "operation": "identity",
+            "segments": [{"port_id": "video", "start_frame": 0, "end_frame": 10}],
+        }
+    )
+    input_port = "videos" if adapter_name == "merge_video" else "video"
+    output_port = "media" if adapter_name == "mux_media" else "video"
+    context.inputs = (RunnerInput(input_port, "input", "VideoFile", tmp_path / "input.mkv"),)
+    target = context.work_dir / "partial.mkv"
+    context.outputs = (OutputTarget(output_port, "VideoFile", target),)
+    original = media_adapters_module._ProcessCleanupError(
+        "E_MEDIA_FFMPEG_CLEANUP_FAILED", "synthetic producer still alive"
+    )
+
+    def failed_producer(*_args: Any, **_kwargs: Any) -> None:
+        target.write_bytes(b"partial-still-owned-by-producer")
+        raise original
+
+    def unavailable_cleanup(*_args: Any) -> None:
+        raise OSError("synthetic NAS unavailable during cleanup")
+
+    monkeypatch.setattr(media_adapters_module, "exact_video_frame_count", lambda _path: 10)
+    monkeypatch.setattr(media_adapters_module, "_run_ffmpeg", failed_producer)
+    monkeypatch.setattr(media_adapters_module, "_cleanup_outputs", unavailable_cleanup)
+    with pytest.raises(RunnerProcessCleanupError) as captured:
+        getattr(media_adapters_module, adapter_name)(context)
+    assert captured.value is original
+    assert target.read_bytes() == b"partial-still-owned-by-producer"
 
 
 def test_real_slow_ffmpeg_emits_multiple_machine_progress_samples(

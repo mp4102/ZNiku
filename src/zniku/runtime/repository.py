@@ -29,6 +29,7 @@ from zniku.graph import (
     GraphValidator,
     ManualExternalExecutorSpec,
     NodeDefinition,
+    NodeInstance,
     PythonExecutorSpec,
 )
 from zniku.project import (
@@ -353,9 +354,16 @@ class RuntimeRepository:
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self._store.path)
-        connection.row_factory = sqlite3.Row
+        """把连接及事务 I/O 故障收敛为公共错误，不让 HTTP 请求直接断开。
+
+        不重试写入，也不把 CANTOPEN 猜测为磁盘满；底层错误保留供操作者诊断。
+        IntegrityError 仍交由各写操作转换成既有冲突码。
+        """
+
+        connection: sqlite3.Connection | None = None
         try:
+            connection = sqlite3.connect(self._store.path)
+            connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("PRAGMA busy_timeout = 5000")
             application_id = cast(int, connection.execute("PRAGMA application_id").fetchone()[0])
@@ -370,8 +378,13 @@ class RuntimeRepository:
                     f"Project schema identity 无效：{application_id}/{schema_version}",
                 )
             yield connection
+        except sqlite3.IntegrityError:
+            raise
+        except sqlite3.Error as error:
+            raise RuntimeRepositoryError("E_RUNTIME_STORAGE_UNAVAILABLE", str(error)) from error
         finally:
-            connection.close()
+            if connection is not None:
+                connection.close()
 
     @contextmanager
     def _read_connection(self) -> Iterator[sqlite3.Connection]:
@@ -1270,7 +1283,11 @@ class RuntimeRepository:
         node_run_id: str,
         attempt: int,
     ) -> NodeRun:
-        """只读确认 reporter 仍绑定最新 ``running`` automatic attempt。"""
+        """只读确认最新 running automatic 绑定，不重复扫描全 Run 历史或媒体路径。
+
+        完整 Graph/Result 校验仍由创建、启动、正式读取和完成边界负责；每个展示样本只核对
+        本次 Run、当前 NodeRun、其精确定义和最新 attempt，不产生新的缓存 authority。
+        """
 
         with self._read_connection() as connection:
             current = self._read_node_run(connection, node_run_id)
@@ -1293,7 +1310,8 @@ class RuntimeRepository:
         """仅更新当前 running attempt 的单调进度，不创建额外持久状态。
 
         Runtime reporter 同时传入 ``run_id`` 与 ``attempt``，使 identity 与写入在同一事务校验；
-        可选值只保留既有 Repository 调用兼容。
+        可选值只保留既有 Repository 调用兼容。事务只写 progress，返回本事务已验证的记录；
+        不为展示采样重新加载整张图、全部历史结果或访问历史媒体目录。
         """
 
         progress = _validated_progress(progress)
@@ -1306,24 +1324,25 @@ class RuntimeRepository:
                     "E_PROGRESS_BINDING_PARTIAL",
                     "run_id 与 attempt 必须同时提供或同时省略",
                 )
-            if run_id is None or attempt is None:
-                run = self._read_run(connection, current.run_id)
-                if run.state is not RunState.RUNNING:
-                    raise RuntimeConflictError(
-                        "E_NODE_RUN_PARENT_NOT_RUNNING",
-                        "只有 running Run 的 NodeRun 可以更新进度",
-                    )
-                self._assert_latest_attempt(connection, current)
-                if current.state is not NodeRunState.RUNNING:
-                    connection.rollback()
-                    raise RuntimeConflictError("E_NODE_RUN_NOT_RUNNING", "只有 running 可更新进度")
-            else:
+            implicit_binding = run_id is None
+            try:
                 self._assert_progress_target(
                     connection,
                     current,
-                    run_id=run_id,
-                    attempt=attempt,
+                    run_id=current.run_id if run_id is None else run_id,
+                    attempt=current.attempt if attempt is None else attempt,
                 )
+            except RuntimeConflictError as error:
+                legacy_codes = {
+                    "E_PROGRESS_PARENT_NOT_RUNNING": "E_NODE_RUN_PARENT_NOT_RUNNING",
+                    "E_PROGRESS_ATTEMPT_SUPERSEDED": "E_NODE_RUN_ATTEMPT_SUPERSEDED",
+                    "E_PROGRESS_NOT_RUNNING": "E_NODE_RUN_NOT_RUNNING",
+                }
+                if implicit_binding and error.code in legacy_codes:
+                    raise RuntimeConflictError(
+                        legacy_codes[error.code], str(error).partition(": ")[2]
+                    ) from error
+                raise
             if current.progress is not None and progress < current.progress:
                 connection.rollback()
                 raise RuntimeConflictError("E_NODE_RUN_PROGRESS_REGRESSION", "progress 不得回退")
@@ -1334,9 +1353,21 @@ class RuntimeRepository:
                 raise RuntimeConflictError(
                     "E_NODE_RUN_PROGRESS_INVALID", str(model_error)
                 ) from model_error
-            self._update_node_run(connection, current, updated)
+            changed = connection.execute(
+                "UPDATE node_runs SET progress = ? "
+                "WHERE node_run_id = ? AND run_id = ? AND attempt = ? AND state = ?",
+                (
+                    progress,
+                    current.node_run_id,
+                    current.run_id,
+                    current.attempt,
+                    NodeRunState.RUNNING.value,
+                ),
+            ).rowcount
+            if changed != 1:
+                raise RuntimeConflictError("E_NODE_RUN_TRANSITION_RACE", "NodeRun 状态已被并发修改")
             connection.commit()
-        return self.get_node_run(node_run_id)
+        return updated
 
     def fail_node_run_before_start(
         self,
@@ -2675,7 +2706,11 @@ class RuntimeRepository:
         run_id: str,
         attempt: int,
     ) -> None:
-        """在一个 SQLite snapshot/事务内验证 reporter 的完整 authority binding。"""
+        """在同一 SQLite 视图内验证当前绑定；不递归验证全历史或访问文件系统。
+
+        Run snapshot 在正式启动时已完整验证且不可变。这里仍从 SQLite 实时读取本节点与
+        exact definition，不缓存校验结论；只省去与展示采样无关的其他节点、Artifact 和路径遍历。
+        """
 
         if (
             type(run_id) is not str
@@ -2689,8 +2724,14 @@ class RuntimeRepository:
                 "E_PROGRESS_BINDING",
                 "reporter 的 run_id/node_run_id/attempt 与持久 attempt 不一致",
             )
-        run = self._read_run(connection, run_id)
-        if run.state is not RunState.RUNNING:
+        row = connection.execute(
+            "SELECT state, graph_snapshot_json, definitions_snapshot_json "
+            "FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeNotFoundError("E_RUN_NOT_FOUND", f"Run 不存在：{run_id}")
+        if row["state"] != RunState.RUNNING.value:
             raise RuntimeConflictError(
                 "E_PROGRESS_PARENT_NOT_RUNNING",
                 "只有 running Run 的 attempt 可以接受 progress",
@@ -2708,6 +2749,46 @@ class RuntimeRepository:
             raise RuntimeConflictError(
                 "E_PROGRESS_NOT_RUNNING",
                 "只有最新 running attempt 可以接受 progress",
+            )
+        graph = _load_json(row["graph_snapshot_json"], context="progress graph snapshot")
+        definitions = _load_json(
+            row["definitions_snapshot_json"], context="progress definitions snapshot"
+        )
+        if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list):
+            raise RuntimeDataError("E_RUNTIME_DATA_CORRUPT", "Run snapshot 缺少 nodes array")
+        if not isinstance(definitions, list):
+            raise RuntimeDataError("E_RUNTIME_DATA_CORRUPT", "definitions snapshot 必须为 array")
+        matching_nodes = [
+            item
+            for item in graph["nodes"]
+            if isinstance(item, dict) and item.get("node_id") == node_run.node_id
+        ]
+        if len(matching_nodes) != 1:
+            raise RuntimeDataError(
+                "E_NODE_RUN_DEFINITION_CORRUPT", "当前 NodeRun 缺少唯一 snapshot 节点"
+            )
+        node = _decode_model(NodeInstance, matching_nodes[0], context="progress snapshot node")
+        matching_definitions = [
+            item
+            for item in definitions
+            if isinstance(item, dict)
+            and item.get("type_id") == node.type_id
+            and item.get("version") == node.definition_version
+        ]
+        if len(matching_definitions) != 1 or node.definition_version != node_run.definition_version:
+            raise RuntimeDataError(
+                "E_NODE_RUN_DEFINITION_CORRUPT", "当前 NodeRun 未绑定唯一 exact definition"
+            )
+        definition = _decode_model(
+            NodeDefinition, matching_definitions[0], context="progress exact definition"
+        )
+        if (
+            definition.execution_mode is not ExecutionMode.AUTOMATIC
+            or node_run.external_handoff is not None
+        ):
+            raise RuntimeDataError(
+                "E_NODE_RUN_EXECUTION_MODE_CORRUPT",
+                "running NodeRun 必须绑定 automatic definition 且无 handoff",
             )
 
     @staticmethod

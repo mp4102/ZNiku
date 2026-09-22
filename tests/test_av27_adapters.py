@@ -12,6 +12,7 @@ from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from pydantic import JsonValue
@@ -28,7 +29,7 @@ from zniku.avenhance_v27.probe import (
 )
 from zniku.graph import ExecutionMode, NodeDefinition, NodeInstance, PythonExecutorSpec
 from zniku.runtime import PythonAdapterContext, RunnerInput
-from zniku.runtime.runner import OutputTarget
+from zniku.runtime.runner import OutputTarget, RunnerProcessCleanupError
 
 
 def _video(
@@ -659,6 +660,63 @@ def test_merge_stream_copy_derives_exact_count_when_progress_omits_frame(
     assert len(calls) == 1
     assert calls[0][calls[0].index("-c:v") + 1] == "copy"
     assert result.producer_metadata == {"video": {"output_frames": 5}}
+
+
+def test_merge_preserves_cleanup_marker_and_partial_when_storage_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """停机未确认优先于后续 NAS 故障；不得误改成普通执行失败或清理活动输出。"""
+
+    context = _context(
+        tmp_path,
+        parameters={"expected_frames": 5},
+        inputs=(_input(tmp_path, "videos", "leaf", ordinal=0, media_info=_namespace(5)),),
+        outputs=(("video", "VideoFile", "merge/merge.mov"),),
+    )
+    original = adapters._ProcessCleanupError(
+        "E_AV27_FFMPEG_CLEANUP", "synthetic producer still alive"
+    )
+
+    def failed_producer(*_args: Any, **_kwargs: Any) -> None:
+        context.outputs[0].path.write_bytes(b"partial-still-owned-by-producer")
+        raise original
+
+    def unavailable_cleanup(*_args: Any) -> None:
+        raise OSError("synthetic NAS unavailable during cleanup")
+
+    monkeypatch.setattr(adapters, "_run_ffmpeg", failed_producer)
+    monkeypatch.setattr(adapters, "_cleanup_attempt_outputs", unavailable_cleanup)
+    with pytest.raises(RunnerProcessCleanupError) as captured:
+        adapters.merge_video(context)
+    assert captured.value is original
+    assert context.outputs[0].path.read_bytes() == b"partial-still-owned-by-producer"
+
+
+@pytest.mark.parametrize("poll_raises", [False, True])
+def test_terminate_cannot_infer_exit_from_wait_return_value(*, poll_raises: bool) -> None:
+    """wait 返回但 poll 无法确认退出时，kill 后仍失败关闭并保留通用停机标记。"""
+
+    stops: list[str] = []
+
+    class UnconfirmedProcess:
+        def poll(self) -> None:
+            if poll_raises:
+                raise OSError("synthetic poll unavailable")
+            return None
+
+        def terminate(self) -> None:
+            stops.append("terminate")
+
+        def kill(self) -> None:
+            stops.append("kill")
+
+        def wait(self, *, timeout: float) -> int:
+            assert timeout == 2
+            return 0
+
+    with pytest.raises(RunnerProcessCleanupError, match="E_AV27_FFMPEG_CLEANUP"):
+        adapters._terminate_process(UnconfirmedProcess())  # type: ignore[arg-type]
+    assert stops == ["terminate", "kill"]
 
 
 @pytest.mark.parametrize(

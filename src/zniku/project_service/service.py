@@ -1104,7 +1104,6 @@ class ProjectServiceApplication:
                     )
             if not isinstance(command, SaveProjectCommand):
                 self._assert_idle()
-            self._last_error = None
             try:
                 if isinstance(command, OpenProjectCommand):
                     self._open(command)
@@ -1132,7 +1131,7 @@ class ProjectServiceApplication:
                 raise
             except (Av27TemplateError, Av27MediaError) as failure:
                 translated = self._translate_av27_failure(failure)
-                self._last_error = ProjectServiceFailure(
+                self._last_error = self._last_error or ProjectServiceFailure(
                     code=translated.code,
                     message=translated.message,
                     related_run_ids=translated.related_run_ids,
@@ -1145,12 +1144,21 @@ class ProjectServiceApplication:
                 ValidationError,
             ) as failure:
                 translated = self._translate_failure(failure)
-                self._last_error = ProjectServiceFailure(
+                self._last_error = self._last_error or ProjectServiceFailure(
                     code=translated.code,
                     message=translated.message,
                     related_run_ids=translated.related_run_ids,
                 )
                 raise translated from failure
+            if isinstance(
+                command,
+                OpenProjectCommand
+                | CreateProjectCommand
+                | CreateAvEnhanceV27Command
+                | AbandonRunCommand,
+            ):
+                # 仅成功的新会话或明确结束运行才能清除旧错误；失败打开及自动保存不能抹去后台故障。
+                self._last_error = None
             # 回应仍持有同一会话锁，避免另一条 open/create 把命令响应换成不同工程。
             return self.inspect()
 
@@ -1218,8 +1226,9 @@ class ProjectServiceApplication:
         if storage is not None:
             prepare_storage_location(storage, current=None)
         store = ProjectStore.create(path, project, self._definition_catalog, storage=storage)
+        runtime = self._runtime_for(store)
         self._store = store
-        self._runtime = self._runtime_for(store)
+        self._runtime = runtime
         self._project_session_id = str(uuid4())
         self._active_run_id = None
 
@@ -1266,8 +1275,9 @@ class ProjectServiceApplication:
             build.definitions,
             storage=storage,
         )
+        runtime = self._runtime_for(store)
         self._store = store
-        self._runtime = self._runtime_for(store)
+        self._runtime = runtime
         self._project_session_id = str(uuid4())
         self._active_run_id = None
 
@@ -2060,6 +2070,8 @@ class ProjectServiceApplication:
     ) -> None:
         self._active_run_id = run_id
         self._active_operation = operation
+        # 新的明确执行已通过全部准入；不能在命令刚收到时提前清掉旧后台错误。
+        self._last_error = None
 
         def target() -> None:
             failure: ProjectServiceFailure | None = None
@@ -2239,6 +2251,13 @@ class ProjectServiceApplication:
             )
 
     def _assert_idle(self) -> None:
+        if (
+            self._last_error is not None
+            and self._last_error.code == "E_SERVICE_PROCESS_STOP_UNCONFIRMED"
+        ):
+            raise ProjectServiceError(
+                self._last_error.code, self._last_error.message, http_status=409
+            )
         if self._active_operation is not None:
             raise ProjectServiceError(
                 "E_PROJECT_SERVICE_BUSY",
@@ -2609,7 +2628,12 @@ class ProjectServiceApplication:
             status = 409 if error.code == "E_PROJECT_STORAGE_CONFLICT" else 422
         else:
             status = 500
-        return ProjectServiceError(code, str(error), http_status=status)
+        message = str(error)
+        # 只去掉与外层完全相同的码；映射后的通用 API 码仍须保留底层具体原因码。
+        prefix = f"{code}: "
+        while message.startswith(prefix):
+            message = message[len(prefix) :]
+        return ProjectServiceError(code, message, http_status=status)
 
 
 __all__ = ["ProjectServiceApplication", "ProjectServiceError"]

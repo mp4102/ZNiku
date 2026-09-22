@@ -7,6 +7,8 @@ from test_source_admitted_service import create
 from zniku.avenhance_v27.template import PublicationRequest
 from zniku.chapter_batch import definitions
 from zniku.chapter_batch.contracts import BATCH_PREFIX
+from zniku.chapter_batch.final_publish import TYPE_ID as FINAL_PUBLISH_TYPE_ID
+from zniku.chapter_batch.final_publish import definition as final_publication_definition
 from zniku.graph import GraphValidator
 from zniku.project import ProjectStore
 from zniku.source_admission.definitions import external_definition
@@ -63,6 +65,31 @@ def test_fifteen_leaves_three_real_batch_nodes_and_legacy_template_unchanged(
         assert len({edge.target_node_id for edge in outgoing}) == 1
         assert len(node.parameters["leaves"]) == 5  # type: ignore[arg-type]
     GraphValidator(build.definitions).validate(graph)
+    # 新默认入口显式选择新 exact；旧 builder 调用仍保留 final + copy 的原形状。
+    direct = build_source_aligned(
+        snapshot,
+        binding,
+        processing,
+        publication,
+        definition_factory=definitions.definition,
+        external_factory=external_definition,
+        publication_target=publication_target,
+        batch_enhancement=True,
+        final_publication_factory=final_publication_definition,
+    )
+    direct_nodes = {node.node_id: node for node in direct.project.graph.nodes}
+    old_nodes = {node.node_id: node for node in graph.nodes}
+    assert direct_nodes["overlap.final"].type_id == FINAL_PUBLISH_TYPE_ID
+    assert (
+        direct_nodes["overlap.final"].parameters["target_path"]
+        == direct.publication.output_target_path
+    )
+    assert direct_nodes["output"].parameters == {"mode": "reference", "overwrite": False}
+    assert old_nodes["overlap.final"].type_id == definitions.definition("final").type_id
+    assert old_nodes["output"].parameters["mode"] == "copy"
+    assert not Path(direct.publication.output_target_path).exists()
+    assert not list(tmp_path.glob(".zniku-publish-*.pending"))
+    GraphValidator(direct.definitions).validate(direct.project.graph)
     ProjectStore.open(path).save(build.project, build.definitions)
     assert ProjectStore.open(path).load().project.graph == graph
     assert source.read_bytes() == b"synthetic-source"

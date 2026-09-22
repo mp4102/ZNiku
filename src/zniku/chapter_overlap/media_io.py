@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Sequence
+from contextlib import suppress
 from fractions import Fraction
 from itertools import pairwise
 from pathlib import Path
@@ -252,7 +253,9 @@ def run_ffmpeg(
         if thread is not None:
             thread.join(timeout=2)
         if process is not None and process.stdout is not None:
-            process.stdout.close()
+            # 读端收尾不证明 producer 已退出；不能覆盖上面的停机未确认或原始媒体故障。
+            with suppress(OSError):
+                process.stdout.close()
     return measured
 
 

@@ -1,7 +1,7 @@
 /** 顶栏只呈现唯一主操作；服务诊断只读，执行资格与上下文仍由 Workspace 提供。 */
 import { useId } from 'react'
 import type { RunSummaryWire, StatusEnvelope } from '../contracts'
-import { runHistoryLabel, runTargetLabel } from '../run-presentation'
+import { failurePresentation, runHistoryLabel, runTargetLabel } from '../run-presentation'
 
 export interface ResourceHealthView { readonly stale: boolean; readonly lastSuccess: string | null }
 export type ResourceChannel = 'status' | 'detail' | 'readiness' | 'log'
@@ -22,6 +22,7 @@ export interface PrimaryRunActionProps {
 }
 export function PrimaryRunAction({ action, health, status }: PrimaryRunActionProps) {
   const reasonId = useId()
+  const serviceProblem = status?.error ? failurePresentation(status.error.code, status.error.message) : null
   return <div className="creator-run-center" aria-label="运行中心">
     <div className="creator-run-action">
       <button className="button button--primary" type="button" disabled={action.disabled}
@@ -29,8 +30,12 @@ export function PrimaryRunAction({ action, health, status }: PrimaryRunActionPro
       {action.disabled && <p id={reasonId} className="action-disabled-reason">{action.reason ?? '此操作暂不可用，请先检查当前工程状态。'}</p>}
       {action.disabled && action.onRecover && <button className="button button--ghost" type="button" onClick={action.onRecover}>{action.recoveryLabel ?? '查看恢复方法'}</button>}
     </div>
-    {health.status.stale && <p className="run-service-warning" role="status">连接已中断，显示的是上次状态。请确认本机服务仍在运行，连接恢复后再操作。</p>}
+    {health.status.stale && <p className="run-service-warning" role="status">工程状态暂时无法更新，显示的是上次状态，不代表处理仍在运行或已完成。请检查本机服务和工程存储，恢复后再操作。</p>}
     {!health.status.stale && health.detail.stale && <p className="run-service-warning" role="status">步骤详情暂未更新，仍保留上次可信状态。操作前请等待详情恢复。</p>}
+    {serviceProblem && status?.error && <div className="run-service-warning" role="alert" aria-label="工程服务问题">
+      <strong>{serviceProblem.title}</strong><p>{serviceProblem.cause}</p><p>{serviceProblem.recovery}</p>
+      <details><summary>高级详情</summary><p><code>{status.error.code}</code></p><pre>{status.error.message}</pre></details>
+    </div>}
     {status?.active_operation === 'import_external' && <p role="status">正在导入外部文件…请等待复制和验证完成。</p>}
   </div>
 }

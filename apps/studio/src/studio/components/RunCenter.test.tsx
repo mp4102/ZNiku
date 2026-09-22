@@ -64,6 +64,24 @@ describe('上下文主操作与只读服务诊断', () => {
     expect(screen.getByRole('status')).toHaveTextContent('步骤详情暂未更新，仍保留上次可信状态')
     expect(screen.getByRole('button', { name: '查看进度' })).toBeEnabled()
   })
+  it('后台存储失败在主操作旁显示，保留原始错误且不篡改旧运行状态或自动重试', () => {
+    const base = props(), action = vi.fn()
+    const status = { ...handoffEnvelope(), error: {
+      code: 'E_SERVICE_STORAGE_RECOVERY_REQUIRED', message: 'synthetic sqlite unable to open database file', related_run_ids: [],
+    } }
+    const before = JSON.stringify(status)
+    render(<PrimaryRunAction health={base.health} status={status} action={{ label: '查看进度', disabled: false, onAction: action }} />)
+    const warning = screen.getByRole('alert', { name: '工程服务问题' })
+    expect(warning).toHaveTextContent('处理已停止，工程状态待恢复')
+    expect(warning).toHaveTextContent('百分比可能是旧记录')
+    expect(warning).toHaveTextContent('重新打开工程')
+    expect(screen.getByText(status.error.message)).not.toBeVisible()
+    fireEvent.click(screen.getByText('高级详情'))
+    expect(screen.getByText(status.error.message)).toBeVisible()
+    expect(screen.getByText(status.error.code)).toBeVisible()
+    expect(action).not.toHaveBeenCalled()
+    expect(JSON.stringify(status)).toBe(before)
+  })
   it('高级诊断默认关闭、纯只读，原状态和精确身份按需可查', () => {
     const base = props(), status = handoffEnvelope()
     const { container, rerender } = render(<ServiceDiagnostics health={base.health} status={status} viewRunId={handoffSummary().run_id} />)

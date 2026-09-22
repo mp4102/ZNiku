@@ -78,6 +78,10 @@ def definition_role(value: NodeDefinition) -> str | None:
     """只认可完整精确定义，不从 type 前缀单独宣称能力。"""
     if value.version != VERSION:
         return None
+    from .final_publish import is_definition as is_final_publish
+
+    if is_final_publish(value):
+        return "final"
     if value.type_id.startswith(BATCH_PREFIX):
         count = len(value.output_ports)
         return (
@@ -92,23 +96,39 @@ def definition_role(value: NodeDefinition) -> str | None:
 
 
 def built_in_definitions(count: int = 1) -> tuple[NodeDefinition, ...]:
-    return (definition("enhancement", count), *(definition(role) for role in ROLE_TYPES))
+    from .final_publish import definition as final_publish_definition
+
+    return (
+        definition("enhancement", count),
+        *(definition(role) for role in ROLE_TYPES),
+        final_publish_definition(),
+    )
 
 
 def python_adapters() -> Mapping[str, PythonAdapter]:
+    from .final_publish import ADAPTER, execute
+
     module = import_module("zniku.chapter_batch.adapters")
     return {
-        f"zniku.chapter_batch.adapters:{role}": cast(PythonAdapter, getattr(module, role))
-        for role in ROLE_TYPES
-        if role != "fi"
+        ADAPTER: execute,
+        **{
+            f"zniku.chapter_batch.adapters:{role}": cast(PythonAdapter, getattr(module, role))
+            for role in ROLE_TYPES
+            if role != "fi"
+        },
     }
 
 
 def validators() -> Mapping[str, NodeValidator]:
+    from .final_publish import VALIDATOR, validate
+
     module = import_module("zniku.chapter_batch.validators")
     return {
-        f"zniku.chapter_batch.validators:validate_{role}": cast(
-            NodeValidator, getattr(module, f"validate_{role}")
-        )
-        for role in ("enhancement", *ROLE_TYPES)
+        VALIDATOR: validate,
+        **{
+            f"zniku.chapter_batch.validators:validate_{role}": cast(
+                NodeValidator, getattr(module, f"validate_{role}")
+            )
+            for role in ("enhancement", *ROLE_TYPES)
+        },
     }

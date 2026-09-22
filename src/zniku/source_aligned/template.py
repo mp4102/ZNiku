@@ -137,6 +137,7 @@ def build_source_aligned(
     external_factory: Callable[[DeclaredContainer], NodeDefinition] = external_definition,
     publication_target: Callable[..., Path] = canonical_publication_target,
     batch_enhancement: bool = False,
+    final_publication_factory: Callable[[], NodeDefinition] | None = None,
 ) -> SourceAlignedBuild:
     """仅扩展严格preparation；所有来源、区间、媒体尺寸均由已登记Artifact派生。"""
 
@@ -401,10 +402,21 @@ def build_source_aligned(
     )
     for ordinal, crop in enumerate(crops):
         edge(crop, "video", program, "chapters", ordinal)
+    publication_parameters = {
+        "target_path": str(target),
+        "overwrite": publication.overwrite,
+        "output_root": str(Path(publication.output_root).resolve(strict=True)),
+        "create_parent": publication.layout == "title_subdirectory",
+        "protected_paths": protected,
+    }
     final = node(
         "overlap.final",
-        selected("final"),
-        {"source": source_data, "mr_mode": processing.mr.mode},
+        final_publication_factory() if final_publication_factory is not None else selected("final"),
+        {
+            "source": source_data,
+            "mr_mode": processing.mr.mode,
+            **(publication_parameters if final_publication_factory is not None else {}),
+        },
         split_column + 7,
         80,
     )
@@ -414,13 +426,11 @@ def build_source_aligned(
     output = node(
         "output",
         output_file_definition("MediaFile"),
-        {
+        {"mode": "reference", "overwrite": False}
+        if final_publication_factory is not None
+        else {
             "mode": "copy",
-            "target_path": str(target),
-            "overwrite": publication.overwrite,
-            "output_root": str(Path(publication.output_root).resolve(strict=True)),
-            "create_parent": publication.layout == "title_subdirectory",
-            "protected_paths": protected,
+            **publication_parameters,
         },
         split_column + 8,
         80,

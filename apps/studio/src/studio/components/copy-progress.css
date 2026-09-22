@@ -1,0 +1,5 @@
+.copy-progress-summary { display: grid; gap: 3px; min-width: 0; margin-top: 5px; font-size: 12px; line-height: 18px; }
+.copy-progress-summary > progress { width: 100%; height: 8px; accent-color: #81dcff; }
+.copy-progress-summary > span { overflow-wrap: anywhere; }
+.runtime-progress-detail--copy { flex-wrap: wrap; }
+.runtime-progress-detail--copy > .copy-progress-summary { order: 1; flex-basis: 100%; }

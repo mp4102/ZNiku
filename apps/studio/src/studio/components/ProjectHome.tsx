@@ -164,14 +164,15 @@ export function ProjectHome({
             <span className="project-home-service-dot" />
             <div>
               <strong>本机服务暂时不可用</strong>
-              <p>{serviceMessage ?? '无法读取本机工程服务。工程和媒体都没有被修改。'}</p>
+              <p>{serviceMessage ?? '无法读取本机工程服务，最新保存及运行状态尚不能确认。请保留工程和已有媒体，恢复连接后重新检查。'}</p>
+              {serviceErrorDetails && <details><summary>高级 → 原始错误详情</summary><pre>{serviceErrorDetails}</pre></details>}
               <button className="button button--primary" disabled={busy} onClick={onRetryService} type="button">重新连接</button>
             </div>
           </section>
         ) : (
           <>
             {serviceMessage && <p className="project-home-inline-error" role="alert">{serviceMessage}</p>}
-            {serviceMessage && serviceErrorDetails && <details><summary>高级 → 选择窗口原始详情</summary><pre>{serviceErrorDetails}</pre></details>}
+            {serviceMessage && serviceErrorDetails && <details><summary>高级 → 原始错误详情</summary><pre>{serviceErrorDetails}</pre></details>}
             {!hostBridgeAvailable && (
               <section className="project-home-host-recovery" aria-live="polite">
                 <span>桌面文件选择器暂时不可用；仍可查看当前工程。</span>

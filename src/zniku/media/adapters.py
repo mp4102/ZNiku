@@ -38,7 +38,11 @@ from zniku.runtime import (
     RunnerInput,
 )
 from zniku.runtime.process_window import background_creation_flags
-from zniku.runtime.runner import OutputTarget
+from zniku.runtime.runner import OutputTarget, RunnerProcessCleanupError
+
+
+class _ProcessCleanupError(MediaNodeError, RunnerProcessCleanupError):
+    """保留媒体错误码，同时通知 Runtime producer 未确认退出。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +160,9 @@ def video_transform(context: PythonAdapterContext) -> PythonAdapterResult:
             ],
             progress_spec=progress_spec,
         )
+    except RunnerProcessCleanupError:
+        # producer 仍可能写入：保留现场，不删除输出，也不能让清理 I/O 覆盖停机故障。
+        raise
     except Exception:
         _cleanup_outputs(context.outputs)
         raise
@@ -221,6 +228,8 @@ def split_video(context: PythonAdapterContext) -> PythonAdapterResult:
                 )
         if sum(actual_counts.values()) != input_frames:
             raise MediaNodeError("E_MEDIA_SPLIT_CONSERVATION", "Split 输出总帧数不守恒")
+    except RunnerProcessCleanupError:
+        raise
     except Exception:
         _cleanup_outputs(context.outputs)
         raise
@@ -298,6 +307,8 @@ def merge_video(context: PythonAdapterContext) -> PythonAdapterResult:
             raise MediaNodeError(
                 "E_MEDIA_MERGE_CONSERVATION", "Merge 输出帧数不等于有序输入帧数总和"
             )
+    except RunnerProcessCleanupError:
+        raise
     except Exception:
         _cleanup_outputs(context.outputs)
         raise
@@ -361,6 +372,8 @@ def encode_video(context: PythonAdapterContext) -> PythonAdapterResult:
                 total=input_frames,
             ),
         )
+    except RunnerProcessCleanupError:
+        raise
     except Exception:
         _cleanup_outputs(context.outputs)
         raise
@@ -392,6 +405,8 @@ def mux_media(context: PythonAdapterContext) -> PythonAdapterResult:
     )
     try:
         _run_ffmpeg(context, argv)
+    except RunnerProcessCleanupError:
+        raise
     except Exception:
         _cleanup_outputs(context.outputs)
         raise
@@ -761,7 +776,7 @@ def _terminate_process(
         return
 
     detail = "; ".join(cleanup_errors) or "进程在 terminate/kill 后仍报告存活"
-    raise MediaNodeError(
+    raise _ProcessCleanupError(
         "E_MEDIA_FFMPEG_CLEANUP_FAILED",
         f"FFmpeg producer 无法确认回收：{detail}",
     ) from cause
@@ -778,6 +793,7 @@ def _copy_stream_with_progress(
 
     每个 callback 都会重验 attempt binding；不能让每 MiB 数据触发 SQLite 往返。这里只合并
     展示采样，不跳过任何复制检查、最终 probe 或 validator；首个样本和 EOF 核验后样本保留。
+    限频窗口从 callback 完成后重新计时，避免慢 SQLite/网络回调自身耗时触发下一块再次上报。
     """
 
     current = 0
@@ -792,7 +808,7 @@ def _copy_stream_with_progress(
         observed_at = monotonic()
         if current < total and (last_report_at is None or observed_at - last_report_at >= 0.25):
             _report_progress(context, current=current, total=total, unit="bytes")
-            last_report_at = observed_at
+            last_report_at = monotonic()
     if current != total:
         raise MediaNodeError("E_MEDIA_OUTPUT_SOURCE_CHANGED", "复制期间源文件大小减少")
     _report_progress(context, current=current, total=total, unit="bytes")

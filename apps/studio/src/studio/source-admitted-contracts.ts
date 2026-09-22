@@ -42,10 +42,11 @@ export interface SourceAdmittedFailureEnvelope extends Omit<SourceAlignedFailure
 
 export function sourceAdmittedCatalogAvailable(nodes: ReadonlyArray<{ readonly type_id: string; readonly definition_version: string }>): boolean {
   const published = new Set(nodes.filter((node) => node.definition_version === '0.3.5').map((node) => node.type_id))
+  // 新创建入口需要直接发布能力；旧 final 继续由正式 catalog 为历史工程提供，不能代替新能力。
   return ['zniku.avenhance.v27.source_program', 'zniku.avenhance.v27.source_admission',
     'zniku.overlap.split.leaves.1', 'zniku.source-admitted.enhancement-batch.1', 'zniku.source-admitted.chapter-batch.merge',
     'zniku.source-admitted.chapter-batch.context', 'zniku.source-admitted.chapter-batch.fi', 'zniku.source-admitted.chapter-batch.crop',
-    'zniku.source-admitted.chapter-batch.program', 'zniku.source-admitted.chapter-batch.final', 'zniku.source_aligned.external.mp4',
+    'zniku.source-admitted.chapter-batch.program', 'zniku.source-admitted.chapter-batch.final-publish', 'zniku.source_aligned.external.mp4',
     'zniku.source_aligned.external.mov', 'zniku.source_aligned.external.mkv'].every((id) => published.has(id))
 }
 const validators = new Map<string, ValidateFunction>()

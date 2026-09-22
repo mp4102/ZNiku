@@ -11,6 +11,7 @@ import shutil
 import subprocess
 from dataclasses import replace
 from fractions import Fraction
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ from zniku.graph import NodeInstance
 from zniku.media import source_media_definition
 from zniku.runtime import ProgressError, PythonAdapterContext
 from zniku.runtime.progress import ProgressUnit
+from zniku.runtime.runner import RunnerProcessCleanupError
 
 _remux = importlib.import_module("tools.check_overlap_remux")
 TOOLS = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
@@ -197,6 +199,39 @@ def test_no_output_heartbeat_cancel_reaps_process(
             expected_frames=60,
         )
     assert len(processes) == 1 and processes[0].poll() is not None
+
+
+def test_pipe_close_error_cannot_hide_unconfirmed_producer_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """读端关闭失败不能替换停机标记，否则 Runtime 会把仍可能活动的 producer 当作失败收口。"""
+
+    class FaultyPipe(BytesIO):
+        def close(self) -> None:
+            super().close()
+            raise OSError("synthetic pipe close failure")
+
+    class UnconfirmedProcess:
+        stdout = FaultyPipe(b"frame=invalid\n")
+
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            pass
+
+        def kill(self) -> None:
+            pass
+
+        def wait(self, *, timeout: float) -> int:
+            raise subprocess.TimeoutExpired("synthetic", timeout)
+
+    process = UnconfirmedProcess()
+    monkeypatch.setattr(media_io, "resolve_media_tool", lambda _name: "synthetic")
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
+    with pytest.raises(RunnerProcessCleanupError, match="E_AV27_FFMPEG_CLEANUP"):
+        media_io.run_ffmpeg(_context(tmp_path), ["-f", "null", "-"], expected_frames=3)
+    assert process.stdout.closed
 
 
 @pytest.mark.skipif(not TOOLS, reason="需要 FFmpeg/FFprobe")

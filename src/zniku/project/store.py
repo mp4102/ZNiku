@@ -700,11 +700,14 @@ class ProjectStore:
             return next_revision
         except ProjectStoreError:
             if connection is not None:
-                connection.rollback()
+                with suppress(sqlite3.Error):
+                    connection.rollback()
             raise
         except (OSError, sqlite3.Error) as error:
             if connection is not None:
-                connection.rollback()
+                # 存储失联时 rollback 也可能失败；不能用它覆盖真正的保存失败原因。
+                with suppress(sqlite3.Error):
+                    connection.rollback()
             raise ProjectStoreError("E_PROJECT_SAVE_FAILED", str(error)) from error
         finally:
             if connection is not None:
@@ -898,10 +901,12 @@ class ProjectStore:
     def _backup_before_studio_migration(self) -> None:
         """持有主库写锁时创建 SQLite 一致备份；目标排他创建且永不覆盖已有备份。"""
 
-        with closing(sqlite3.connect(self.path)) as version_connection:
-            version = version_connection.execute("PRAGMA user_version").fetchone()[0]
-        backup_path = self.path.with_name(f".zniku-schema{version}-backup-{uuid.uuid4().hex}.zniku")
         try:
+            with closing(sqlite3.connect(self.path)) as version_connection:
+                version = version_connection.execute("PRAGMA user_version").fetchone()[0]
+            backup_path = self.path.with_name(
+                f".zniku-schema{version}-backup-{uuid.uuid4().hex}.zniku"
+            )
             with backup_path.open("xb"):
                 pass
             with (
@@ -915,9 +920,9 @@ class ProjectStore:
             raise ProjectStoreError("E_PROJECT_MIGRATION_BACKUP", str(error)) from error
 
     def _assert_file_and_schema(self) -> None:
-        if not self.path.exists() or not self.path.is_file():
-            raise _format_error("E_PROJECT_NOT_FOUND", f"工程文件不存在：{self.path}")
         try:
+            if not self.path.exists() or not self.path.is_file():
+                raise _format_error("E_PROJECT_NOT_FOUND", f"工程文件不存在：{self.path}")
             with self.path.open("rb") as stream:
                 header = stream.read(len(_SQLITE_HEADER))
         except OSError as error:

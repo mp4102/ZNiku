@@ -19,6 +19,7 @@ from zniku.avenhance_v27.template import (
     validate_prepare_paths,
 )
 from zniku.chapter_batch.definitions import definition as batch_definition
+from zniku.chapter_batch.final_publish import definition as final_publication_definition
 from zniku.chapter_batch.presentation import chapter_views
 from zniku.chapter_overlap import ChapterPlanningError
 from zniku.chapter_overlap.context import ContextPlanningError
@@ -470,6 +471,7 @@ def full(
             external_factory=lambda _container: mosaic_restoration_definition(),
             publication_target=publication_target,
             batch_enhancement=True,
+            final_publication_factory=final_publication_definition,
         )
         if expand:
             store.save(

@@ -57,4 +57,31 @@ describe('运行展示词汇', () => {
     expect(failurePresentation(code)).toMatchObject({ known: false, title: '出现尚未识别的问题' })
     expect(failurePresentation(code).recovery).toContain('原始信息')
   })
+  it.each(['E_PROJECT_SAVE_FAILED', 'E_PROJECT_LOAD_FAILED', 'E_PROJECT_STORAGE_READ', 'E_PROJECT_STORAGE_WRITE', 'E_RUNTIME_STORAGE_UNAVAILABLE', 'E_RUNTIME_STORAGE_WRITE'])('存储错误 %s 不推断损坏或空间原因，提示保留媒体和有限恢复', (code) => {
+    const presentation = failurePresentation(code, 'unable to open database file')
+    expect(presentation.known).toBe(true)
+    expect(presentation.recovery).toContain('配额')
+    expect(presentation.recovery).toContain('重新打开工程')
+    expect(presentation.recovery).toContain('仅从失败步骤重跑')
+    expect(presentation.preserved).toContain('不代表最近的状态已保存')
+    expect(presentation.cause).not.toMatch(/磁盘已满|数据库已损坏|已全部保存/)
+  })
+  it('状态未能持久化只翻译服务结论，不把旧百分比当运行证明', () => {
+    const presentation = failurePresentation('E_SERVICE_STORAGE_RECOVERY_REQUIRED')
+    expect(presentation.title).toBe('处理已停止，工程状态待恢复')
+    expect(presentation.cause).toContain('百分比可能是旧记录')
+    expect(presentation.recovery).toContain('确认正式状态后')
+  })
+  it('已落盘 execution_error 的已知存储前缀翻译原因，不按任意消息猜测', () => {
+    expect(failurePresentation('execution_error', 'E_RUNTIME_STORAGE_UNAVAILABLE: synthetic read failure').title).toBe('暂时无法读取工程记录')
+    expect(failurePresentation('execution_error', 'E_PROJECT_SAVE_FAILED: synthetic write failure').title).toBe('工程记录未能保存')
+    for (const message of ['arbitrary E_RUNTIME_STORAGE_UNAVAILABLE: text', 'E_RUNTIME_STORAGE_UNAVAILABLE_OTHER: text']) {
+      expect(failurePresentation('execution_error', message).title).toBe('这一步处理失败')
+    }
+  })
+  it('未确认进程退出时不鼓励重新运行或重复提交', () => {
+    const presentation = failurePresentation('E_SERVICE_PROCESS_STOP_UNCONFIRMED')
+    expect(presentation.recovery).toContain('确认原处理进程已退出')
+    expect(presentation.recovery).toContain('不要立即重跑或重复提交')
+  })
 })

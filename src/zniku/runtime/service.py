@@ -25,7 +25,7 @@ from uuid import UUID
 from pydantic import JsonValue, ValidationError
 
 from zniku.graph import GraphValidationError, GraphValidator, NodeDefinition, NodeInstance
-from zniku.project import ProjectStore
+from zniku.project import ProjectStore, ProjectStoreError
 from zniku.project.storage_layout import AttemptNamingHint, safe_attempt_directory
 
 from .models import (
@@ -74,6 +74,7 @@ from .runner import (
     RunnerError,
     RunnerFailureReason,
     RunnerInput,
+    RunnerProcessCleanupError,
     RunnerResult,
     ValidatedOutput,
 )
@@ -700,34 +701,102 @@ class RuntimeService:
         reporter = self._progress_reporter(running)
         try:
             result = self._runner.run_automatic(request, progress=reporter)
-        except ProgressError as error:
-            sample = reporter.close()
-            self._fail_progress_node_run(running, error, progress=self._sample_fraction(sample))
-        except ProgressInfrastructureError as error:
+        except RunnerProcessCleanupError as error:
             reporter.close()
+            # 进程仍可能写入，不得发布终态后允许新 attempt 与旧 producer 并发。
+            raise RuntimeServiceError(
+                "E_SERVICE_PROCESS_STOP_UNCONFIRMED",
+                f"无法确认处理进程已退出；请先检查并停止遗留进程，再重启应用。原始错误：{error}",
+            ) from error
+        except ProgressInfrastructureError as error:
+            sample = reporter.close()
+            self._settle_automatic_failure(running, error.cause, self._sample_fraction(sample))
             self._raise_progress_infrastructure(error)
-        except RunnerError as error:
+        except (
+            ProgressError,
+            RunnerError,
+            RuntimeServiceError,
+            ProjectStoreError,
+            RuntimeRepositoryError,
+            OSError,
+        ) as error:
             sample = reporter.close()
-            self._fail_node_run(running, error, progress=self._sample_fraction(sample))
-        except RuntimeServiceError as error:
-            sample = reporter.close()
-            self._fail_service_node_run(
-                running,
-                error,
-                reason=FailureReason.EXECUTION_ERROR,
-                progress=self._sample_fraction(sample),
-            )
+            self._settle_automatic_failure(running, error, self._sample_fraction(sample))
+            if isinstance(error, ProjectStoreError | RuntimeRepositoryError | OSError):
+                raise
         else:
             sample = reporter.close()
             try:
                 self._register_runner_result(running, result)
-            except RuntimeServiceError as error:
-                self._fail_service_node_run(
-                    running,
-                    error,
-                    reason=FailureReason.EXECUTION_ERROR,
-                    progress=self._sample_fraction(sample),
-                )
+            except (
+                RuntimeServiceError,
+                ProjectStoreError,
+                RuntimeRepositoryError,
+                OSError,
+            ) as error:
+                failure = self._registration_failure(error, result)
+                failure.__cause__ = error
+                self._settle_automatic_failure(running, failure, self._sample_fraction(sample))
+                if not isinstance(error, RuntimeServiceError):
+                    raise failure from error
+
+    @staticmethod
+    def _registration_failure(
+        error: RuntimeServiceError | ProjectStoreError | RuntimeRepositoryError | OSError,
+        result: RunnerResult,
+    ) -> RuntimeServiceError | ProjectStoreError | RuntimeRepositoryError | OSError:
+        """登记异常不等于文件未生成，也不等于登记事务未提交。
+
+        只补充 Runner 已返回的产物路径，不探测或改动文件、不按媒体业务分类。保留原错误类别与码，
+        让调用者仍使用既有失败处理；原异常作为 cause 留给诊断。真正完成与否仍由 Repository 判定。
+        """
+
+        original = str(error)
+        if not isinstance(error, OSError):
+            original = original.removeprefix(f"{error.code}: ")
+        paths = "、".join(str(artifact.path) for artifact in result.artifacts) or "(无声明输出)"
+        message = (
+            "文件可能已产生，登记未确认；请先核对工程状态和文件，不要盲目覆盖重跑。"
+            f"原始错误：{original}；RunnerResult 产物路径：{paths}"
+        )
+        if isinstance(error, OSError):
+            return OSError(error.errno, message)
+        return type(error)(error.code, message)
+
+    def _settle_automatic_failure(
+        self, node_run: NodeRun, error: Exception, progress: float | None
+    ) -> None:
+        """producer 已返回/确认回收后尽力写失败；不重试执行、不伪造持久结果。
+
+        登记事务可能已提交而后续读取失败，因此先重读当前状态，绝不把 completed 改写成 failed。
+        若存储仍不可用，保留原始错误及收口错误，要求恢复存储后通过正式重新打开流程恢复遗留状态。
+        """
+
+        try:
+            current = self._repository.get_node_run(node_run.node_run_id)
+            if current.state in {NodeRunState.COMPLETED, NodeRunState.FAILED}:
+                return
+            reason = (
+                _failure_reason(error.reason, external_submission=False)
+                if isinstance(error, RunnerError)
+                else FailureReason.EXECUTION_ERROR
+            )
+            self._repository.transition_node_run(
+                node_run.node_run_id,
+                NodeRunState.FAILED,
+                occurred_at=utc_now(),
+                error=RuntimeFailure(reason=reason, message=str(error)[:4096]),
+                exit_code=error.exit_code if isinstance(error, RunnerError) else None,
+                log_path=node_run.log_path,
+                progress=progress,
+            )
+        except (ProjectStoreError, RuntimeRepositoryError, OSError) as closing_error:
+            raise RuntimeServiceError(
+                "E_SERVICE_STORAGE_RECOVERY_REQUIRED",
+                "当前自动处理已停止，但失败状态未能确认保存。请恢复工程存储可写后重新打开工程；"
+                "不要把旧进度当作仍在处理，也不要重复提交外部成果。"
+                f"原始错误：{error}；状态保存错误：{closing_error}",
+            ) from error
 
     def _progress_reporter(self, node_run: NodeRun) -> BoundProgressReporter:
         """为唯一 running automatic attempt 构造不暴露 Repository 的 reporter。"""

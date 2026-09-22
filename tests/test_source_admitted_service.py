@@ -20,7 +20,8 @@ from zniku.avenhance_v27 import av27_python_adapters, av27_validators
 from zniku.avenhance_v27.probe import Av27MediaError, probe_header
 from zniku.chapter_batch import definitions as chapter_batch
 from zniku.chapter_batch.contracts import NAMESPACE as BATCH_NAMESPACE
-from zniku.chapter_batch.contracts import BatchMetadata
+from zniku.chapter_batch.final_publish import TYPE_ID as FINAL_PUBLISH_TYPE_ID
+from zniku.chapter_batch.final_publish import Metadata as PublishedMetadata
 from zniku.media import media_python_adapters, media_validators
 from zniku.project import Project, ProjectStore, ProjectStoreError
 from zniku.project_service.models import StatusEnvelope
@@ -340,8 +341,10 @@ def test_real_short_source_preview_replace_new_reference_and_split(tmp_path: Pat
 
 
 @pytest.mark.skipif(not TOOLS, reason="requires ffmpeg/ffprobe")
-@pytest.mark.parametrize("mr", [False, True])
-def test_synthetic_manual_chain_to_final_preserves_three_chapters(tmp_path: Path, mr: bool) -> None:
+@pytest.mark.parametrize("mr,registration_failure", [(False, False), (True, False), (False, True)])
+def test_synthetic_manual_chain_to_final_preserves_three_chapters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mr: bool, registration_failure: bool
+) -> None:
     """合成替身仅证明媒体接线与帧守恒，不代表 Aion/Jasna 画质或相位验收。"""
     app, _source, _path = create(tmp_path, real=True)
     if not mr:
@@ -396,10 +399,27 @@ def test_synthetic_manual_chain_to_final_preserves_three_chapters(tmp_path: Path
     started = authoring_command(app, {"operation": "run_all"})
     assert started.active_run_id is not None
     _store, runtime = app._require_session()
+    register_result = runtime.repository.register_result
+
+    def register_or_fail(result: Any, **kwargs: Any) -> Any:
+        attempt = runtime.repository.get_node_run(result.node_run_id)
+        if registration_failure and attempt.node_id == "overlap.final":
+            assert len(result.outputs) == 1 and Path(result.outputs[0].path).is_file()
+            raise RuntimeRepositoryError(
+                "E_RUNTIME_STORAGE_UNAVAILABLE", "synthetic publication commit failure"
+            )
+        return register_result(result, **kwargs)
+
+    monkeypatch.setattr(runtime.repository, "register_result", register_or_fail)
     for _iteration in range(12):
         assert app.wait_until_idle(timeout=120)
         run = runtime.repository.get_run(started.active_run_id)
         if run.state is RunState.COMPLETED:
+            break
+        if registration_failure and any(
+            node.node_id == "overlap.final" and node.state is NodeRunState.FAILED
+            for node in run.node_runs
+        ):
             break
         assert not any(node.state is NodeRunState.FAILED for node in run.node_runs), [
             (n.node_id, n.error) for n in run.node_runs
@@ -470,12 +490,53 @@ def test_synthetic_manual_chain_to_final_preserves_three_chapters(tmp_path: Path
         )
     else:
         pytest.fail("合成链没有收敛到 Final")
+    if registration_failure:
+        failed = next(node for node in run.node_runs if node.node_id == "overlap.final")
+        final_node = next(
+            node for node in run.graph_snapshot.nodes if node.node_id == "overlap.final"
+        )
+        target = Path(str(final_node.parameters["target_path"]))
+        assert target.is_file() and probe_header(target).video.codec == "hevc"
+        assert failed.state is NodeRunState.FAILED and failed.output_artifact_ids == ()
+        assert (
+            failed.error is not None
+            and "synthetic publication commit failure" in failed.error.message
+        )
+        assert str(target) in failed.error.message
+        assert "登记未确认" in failed.error.message
+        assert "不要盲目覆盖重跑" in failed.error.message
+        assert runtime.repository.get_latest("overlap.final") is None
+        assert runtime.repository.get_latest("output") is None
+        service_error = app.inspect().error
+        assert service_error is not None
+        assert service_error.code == "E_RUNTIME_STORAGE_UNAVAILABLE"
+        assert str(target) in service_error.message
+        assert "登记未确认" in service_error.message
+        assert all(
+            node.state is NodeRunState.COMPLETED
+            for node in run.node_runs
+            if node.node_id not in {"overlap.final", "output"}
+        )
+        return
     final_result_id = runtime.repository.get_latest("overlap.final")
     assert final_result_id is not None
     final = runtime.repository.get_result(final_result_id.result_id).outputs[0]
     assert probe_header(Path(final.path), count_frames=True).video.frame_count == 120
     assert (
-        BatchMetadata.model_validate(final.media_info[BATCH_NAMESPACE]).producer_version == "0.3.5"
+        PublishedMetadata.model_validate(final.media_info[BATCH_NAMESPACE]).producer_version
+        == "0.3.5"
+    )
+    final_node = next(node for node in run.graph_snapshot.nodes if node.node_id == "overlap.final")
+    assert final_node.type_id == FINAL_PUBLISH_TYPE_ID
+    assert final.path == final_node.parameters["target_path"]
+    published_result_id = runtime.repository.get_latest("output")
+    assert published_result_id is not None
+    published = runtime.repository.get_result(published_result_id.result_id).outputs[0]
+    assert published.path == final.path
+    assert not any(
+        list(Path(attempt.work_dir).rglob("*.mkv"))
+        for attempt in run.node_runs
+        if attempt.node_id in {"overlap.final", "output"}
     )
     assert NAMESPACE not in final.media_info
     # 新默认每章恰好一个真实增强 NodeRun，三章分别完成，而不是仅隐藏逐叶卡片。
@@ -488,6 +549,17 @@ def test_synthetic_manual_chain_to_final_preserves_three_chapters(tmp_path: Path
     )
     assert len(probe_header(Path(final.path)).audios) == (0 if mr else 1)
     assert Path(request["publication"]["output_root"]).exists()
+    before_stat = Path(final.path).stat()
+    reused = runtime.run_until_blocked(runtime.create_run().run_id)
+    assert reused.state is RunState.COMPLETED
+    by_node = {attempt.node_id: attempt for attempt in reused.node_runs}
+    assert by_node["overlap.final"].reused_from_result_id == final_result_id.result_id
+    assert by_node["output"].reused_from_result_id == published_result_id.result_id
+    after_stat = Path(final.path).stat()
+    assert (after_stat.st_size, after_stat.st_mtime_ns) == (
+        before_stat.st_size,
+        before_stat.st_mtime_ns,
+    )
 
 
 @pytest.mark.parametrize("failure_step", ["abandon", "save"])

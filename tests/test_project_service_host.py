@@ -37,7 +37,7 @@ from zniku.project_service import (
     serve_project_service,
 )
 from zniku.project_service.host import _write_response_body
-from zniku.runtime import PythonAdapterContext, PythonAdapterResult
+from zniku.runtime import PythonAdapterContext, PythonAdapterResult, RuntimeService
 
 
 def _source_definition() -> NodeDefinition:
@@ -147,6 +147,28 @@ def test_default_project_service_port_avoids_windows_reserved_range() -> None:
     signature = inspect.signature(serve_project_service)
 
     assert signature.parameters["port"].default == 18765
+
+
+def test_sqlite_connection_failure_returns_structured_http_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """连接失败必须返回 JSON，不让浏览器只看到 Failed to fetch。"""
+
+    store = _store(tmp_path)
+    run = RuntimeService(store, tmp_path / "work").create_run()
+    application = ProjectServiceApplication(work_root=tmp_path / "work")
+    application.command({"operation": "open_project", "path": str(store.path)})
+
+    def unavailable(*_args: object, **_kwargs: object) -> sqlite3.Connection:
+        raise sqlite3.OperationalError("unable to open database file")
+
+    with _serve(application) as (base_url, _):
+        with monkeypatch.context() as fault:
+            fault.setattr(sqlite3, "connect", unavailable)
+            status, envelope, _ = _request(base_url, f"/api/studio/runs/{run.run_id}")
+        assert status == 500
+        assert envelope["error"]["code"] == "E_RUNTIME_STORAGE_UNAVAILABLE"
+        assert envelope["error"]["message"] == "unable to open database file"
 
 
 @pytest.mark.parametrize(

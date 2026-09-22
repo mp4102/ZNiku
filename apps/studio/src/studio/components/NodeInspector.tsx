@@ -26,6 +26,8 @@ import { elapsedLabel } from './HandoffCenter'
 import { creatorElapsedLabel, failurePresentation, nodeStateLabel } from '../run-presentation'
 import type { WorkflowProgressData } from '../../model'
 import { OrderedInputList } from './OrderedInputList'
+import { copyProgressPresentation } from '../copy-progress'
+import { CopyProgress } from './CopyProgress'
 
 export type InspectorTab = 'settings' | 'files' | 'diagnostics'
 
@@ -188,6 +190,7 @@ function NodeRuntimeSummary(props: NodeInspectorProps) {
   const stale = props.selectedLatestResult?.stale
   if (!nodeRun && !stale) return null
   const manual = props.selectedDefinition?.executor.kind === 'manual_external' || !!nodeRun?.external_handoff || nodeRun?.state === 'waiting_external'
+  const copyProgress = !manual && progress ? copyProgressPresentation(progress, nodeRun) : null
   const error = nodeRun?.error
   const problem = error ? failurePresentation(error.reason, error.message) : null
   return <section className="runtime-user-status" aria-label="步骤处理状态">
@@ -196,10 +199,11 @@ function NodeRuntimeSummary(props: NodeInspectorProps) {
     {nodeRun?.reused_from_result_id && <p className="runtime-preserved">已复用上次有效结果，本次没有重复处理。</p>}
     {problem && <div className="runtime-problem"><h4>{problem.title}</h4><p>{problem.cause}</p><p>{problem.preserved}</p><p>{problem.recovery}</p></div>}
     {manual && nodeRun?.state === 'waiting_external' && <p>{elapsedLabel(nodeRun.external_handoff?.created_at ?? nodeRun.started_at ?? nodeRun.created_at)}。{props.tab === 'files' ? '请在文件页完成检查与提交。' : <button type="button" onClick={() => props.onTabChange('files')}>查看外部文件</button>}</p>}
-    {!manual && nodeRun && progress && <div className="runtime-progress-detail" aria-label="步骤实测进度">
+    {!manual && nodeRun && progress && <div className={`runtime-progress-detail${copyProgress ? ' runtime-progress-detail--copy' : ''}`} aria-label="步骤实测进度">
       {progress.mode === 'determinate' && progress.fraction !== null && <span>{Math.round(progress.fraction * 100)}%</span>}
       {progress.mode === 'indeterminate' && <span>正在处理，暂时没有可计算的百分比。</span>}
-      {progress.measurement && progress.measurement.current !== null && progress.measurement.total !== null && <span>{progress.measurement.current} / {progress.measurement.total} {progress.measurement.unit === 'frames' ? '帧' : progress.measurement.unit}</span>}
+      {copyProgress && <CopyProgress value={copyProgress} />}
+      {!copyProgress && progress.measurement && progress.measurement.current !== null && progress.measurement.total !== null && <span>{progress.measurement.current} / {progress.measurement.total} {progress.measurement.unit === 'frames' ? '帧' : progress.measurement.unit}</span>}
       {progress.elapsed && <span>{props.advanced ? progress.elapsed : creatorElapsedLabel(progress.elapsed)}</span>}
     </div>}
     {props.tab !== 'files' && props.selectedOutputs.length > 0 && <button type="button" onClick={() => props.onTabChange('files')}>查看输出（{props.selectedOutputs.length}）</button>}

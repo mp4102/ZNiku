@@ -52,7 +52,12 @@ from zniku.runtime import (
     RunnerInput,
 )
 from zniku.runtime.process_window import background_creation_flags
-from zniku.runtime.runner import OutputTarget
+from zniku.runtime.runner import OutputTarget, RunnerProcessCleanupError
+
+
+class _ProcessCleanupError(Av27MediaError, RunnerProcessCleanupError):
+    """保留适配器错误码，同时通知 Runtime producer 未确认退出。"""
+
 
 _MIB: Final = 1024 * 1024
 _NVENC_FRAME_COLOR_FILTER: Final = (
@@ -301,6 +306,9 @@ def atomic_split(context: PythonAdapterContext) -> PythonAdapterResult:
                 )
                 producer_metadata[segment.port_id] = {"output_frames": source_frames}
             completed += source_frames
+    except RunnerProcessCleanupError:
+        # producer 仍可能写入：保留现场；不能让 NAS 清理错误覆盖停机未确认标记。
+        raise
     except BaseException:
         _cleanup_attempt_outputs(context)
         raise
@@ -352,6 +360,8 @@ def merge_video(context: PythonAdapterContext) -> PythonAdapterResult:
             ],
             progress=_ProgressContract(expected),
         )
+    except RunnerProcessCleanupError:
+        raise
     except BaseException:
         _cleanup_attempt_outputs(context)
         raise
@@ -449,6 +459,8 @@ def program_encode(context: PythonAdapterContext) -> PythonAdapterResult:
     )
     try:
         measured = _run_ffmpeg(context, argv, progress=_ProgressContract(cursor))
+    except RunnerProcessCleanupError:
+        raise
     except BaseException:
         _cleanup_attempt_outputs(context)
         raise
@@ -514,6 +526,8 @@ def final_mux(context: PythonAdapterContext) -> PythonAdapterResult:
             target=target.path,
             expected_frames=expected,
         )
+    except RunnerProcessCleanupError:
+        raise
     except BaseException:
         _cleanup_attempt_outputs(context)
         raise
@@ -961,22 +975,19 @@ def _report_progress(
 def _terminate_process(process: subprocess.Popen[bytes]) -> None:
     """确认 producer 终止；无法回收时失败关闭，避免误登记仍在写的输出。"""
 
-    if process.poll() is not None:
-        return
-    with suppress(OSError):
-        process.terminate()
-    try:
-        process.wait(timeout=2)
-    except (OSError, subprocess.TimeoutExpired):
+    # wait/kill 的返回值不单独证明 producer 已退出；poll 失败也按仍可能存活处理。
+    for stop in (process.terminate, process.kill):
         with suppress(OSError):
-            process.kill()
-        try:
+            if process.poll() is not None:
+                return
+        with suppress(OSError):
+            stop()
+        with suppress(OSError, subprocess.TimeoutExpired):
             process.wait(timeout=2)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            raise Av27MediaError(
-                "E_AV27_FFMPEG_CLEANUP",
-                "FFmpeg producer 无法确认回收",
-            ) from error
+    with suppress(OSError):
+        if process.poll() is not None:
+            return
+    raise _ProcessCleanupError("E_AV27_FFMPEG_CLEANUP", "FFmpeg producer 无法确认回收")
 
 
 def _read_segment_list(path: Path, stage_dir: Path, count: int) -> tuple[Path, ...]:

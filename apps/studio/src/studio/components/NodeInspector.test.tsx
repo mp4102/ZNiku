@@ -231,6 +231,17 @@ describe('创作者节点 Inspector 工作区', () => {
     expect(screen.queryByText('50%')).not.toBeInTheDocument()
     expect(screen.getByText('正在处理，暂时没有可计算的百分比。')).toBeVisible()
   })
+  it('选中复制步骤与节点卡使用同一字节摘要，缺少可信时间不显示速率', () => {
+    const value = props({ selectedDefinition: sourceDefinition, selectedNodeRun: { ...waiting, state: 'running', external_handoff: null, started_at: null }, selectedProgress: {
+      operation: 'copy', mode: 'determinate', fraction: .5, elapsed: null,
+      measurement: { node_run_id: waiting.node_run_id, fraction: .5, current: 1024 ** 3, total: 2 * 1024 ** 3, unit: 'bytes', observed_at: waiting.created_at },
+    } })
+    render(<NodeInspector {...value} />)
+    expect(screen.getByText('正在复制文件')).toBeVisible()
+    expect(screen.getByText('已复制 1.00 GiB / 2.00 GiB')).toBeVisible()
+    expect(screen.getByRole('progressbar', { name: '文件复制字节进度' })).toBeVisible()
+    expect(screen.queryByText(/步骤平均|MiB\/s|ETA/)).not.toBeInTheDocument()
+  })
 
   it('stale 与 reused 摘要正常可见，文件动作仍按原始 Artifact 身份发送', () => {
     const artifact = detail.artifacts[0]!

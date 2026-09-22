@@ -25,7 +25,7 @@ from zniku.graph import (
     PythonExecutorSpec,
     UiPosition,
 )
-from zniku.project import Project, ProjectStore
+from zniku.project import Project, ProjectStore, ProjectStoreError
 from zniku.project_service import (
     ProjectServiceApplication,
     ProjectServiceError,
@@ -38,7 +38,11 @@ from zniku.runtime import (
     PythonAdapterResult,
     Run,
     RunState,
+    RuntimeRepositoryError,
+    RuntimeService,
+    RuntimeServiceError,
 )
+from zniku.runtime.runner import RunnerProcessCleanupError
 
 
 def _data_output() -> tuple[PortSpec, ...]:
@@ -208,6 +212,103 @@ def _latest(run: Run, node_id: str) -> NodeRun:
         (item for item in run.node_runs if item.node_id == node_id),
         key=lambda item: item.attempt,
     )
+
+
+def test_background_storage_error_survives_save_and_failed_open_until_successful_reopen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """保存与失败命令不清掉后台错误；重新打开成功后才清除旧会话故障。"""
+
+    store = _store(tmp_path)
+    application = ProjectServiceApplication(work_root=tmp_path / "work")
+    application.command({"operation": "open_project", "path": str(store.path)})
+
+    def fail_worker(_self: RuntimeService, _run_id: str) -> Run:
+        raise RuntimeRepositoryError("E_RUNTIME_STORAGE_UNAVAILABLE", "No space left on device")
+
+    monkeypatch.setattr(RuntimeService, "run_until_blocked", fail_worker)
+    authoring_command(application, {"operation": "run_all"})
+    assert application.wait_until_idle(timeout=5)
+    previous = application.inspect().error
+    assert previous is not None
+    assert previous.code == "E_RUNTIME_STORAGE_UNAVAILABLE"
+    assert previous.message == "No space left on device"
+
+    saved = authoring_command(
+        application, {"operation": "save_project", "project": store.load().project}
+    )
+    assert saved.error == previous
+    with pytest.raises(ProjectServiceError):
+        application.command({"operation": "open_project", "path": str(tmp_path / "gone.zniku")})
+    assert application.inspect().error == previous
+    reopened = application.command({"operation": "open_project", "path": str(store.path)})
+    assert reopened.error is None
+
+
+def test_error_code_dedup_preserves_distinct_mapped_runtime_reason() -> None:
+    """同码仅展示一次；映射到通用API码时不能丢掉具体失败原因。"""
+
+    translated = ProjectServiceApplication._translate_failure(
+        RuntimeServiceError("E_SERVICE_HANDOFF_SUPERSEDED", "旧交接已被新 attempt 取代")
+    )
+    assert translated.code == "E_PROJECT_SERVICE_HANDOFF_NOT_ACTIONABLE"
+    assert translated.message.startswith("E_SERVICE_HANDOFF_SUPERSEDED:")
+
+
+def test_failed_new_project_runtime_does_not_replace_current_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """新文件已创建但 Runtime 初始化失败时，当前会话仍完整绑定原工程。"""
+
+    store = _store(tmp_path)
+    application = ProjectServiceApplication(work_root=tmp_path / "work")
+    before = application.command({"operation": "open_project", "path": str(store.path)})
+
+    def fail_runtime(_store: ProjectStore) -> RuntimeService:
+        raise ProjectStoreError("E_PROJECT_SAVE_FAILED", "unable to open database file")
+
+    monkeypatch.setattr(application, "_runtime_for", fail_runtime)
+    with pytest.raises(ProjectServiceError) as captured:
+        application.command({"operation": "create_project", "path": str(tmp_path / "new.zniku")})
+    assert captured.value.message == "unable to open database file"
+    assert str(captured.value).count("E_PROJECT_SAVE_FAILED") == 1
+    after = application.inspect()
+    assert after.project_path == before.project_path
+    assert after.project_session_id == before.project_session_id
+    assert after.snapshot == before.snapshot
+
+
+def test_unconfirmed_producer_stop_blocks_reopen_and_rerun_without_claiming_failure(
+    tmp_path: Path,
+) -> None:
+    """不能确认 producer 回收时保留运行记录，并禁止同会话创建并发新 attempt。"""
+
+    store = _store(tmp_path, source_outputs=())
+
+    def unreaped(_context: PythonAdapterContext) -> PythonAdapterResult:
+        raise RunnerProcessCleanupError("synthetic producer still running")
+
+    application = ProjectServiceApplication(
+        work_root=tmp_path / "work", python_adapters={"tests.phase3:source": unreaped}
+    )
+    application.command({"operation": "open_project", "path": str(store.path)})
+    authoring_command(application, {"operation": "run_all"})
+    assert application.wait_until_idle(timeout=5)
+    status = application.inspect()
+    assert status.error is not None
+    assert status.error.code == "E_SERVICE_PROCESS_STOP_UNCONFIRMED"
+    assert status.active_run_id is not None
+    detail = application.inspect_run_detail(status.active_run_id)
+    assert detail.run.node_runs[0].state is NodeRunState.RUNNING
+    assert detail.run.node_runs[0].output_artifact_ids == ()
+    for command in (
+        {"operation": "open_project", "path": str(store.path)},
+        {"operation": "run_all"},
+    ):
+        with pytest.raises(ProjectServiceError) as captured:
+            authoring_command(application, command)
+        assert captured.value.code == "E_SERVICE_PROCESS_STOP_UNCONFIRMED"
+    assert len(application.inspect_run_detail(status.active_run_id).run.node_runs) == 1
 
 
 @pytest.mark.parametrize(

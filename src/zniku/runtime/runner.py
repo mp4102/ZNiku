@@ -128,6 +128,14 @@ class RunnerInterrupted(Exception):
     """供受控进程包装器显式报告非正常中断。"""
 
 
+class RunnerProcessCleanupError(RuntimeError):
+    """受控 producer 尚未确认退出；不得把 attempt 宣告失败后立即允许重跑。
+
+    媒体包装器可以与自己的错误类型共同继承此标记，保留原有业务错误码。
+    Runtime 只识别进程安全边界，不识别媒体业务名称或特定工具错误码。
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class RunnerInput:
     """把 Repository 已登记 Artifact 的完整只读事实绑定到 input port。
@@ -1120,7 +1128,7 @@ class NodeRunner:
             )
         try:
             result = adapter(context)
-        except (ProgressError, ProgressInfrastructureError):
+        except (ProgressError, ProgressInfrastructureError, RunnerProcessCleanupError):
             # Progress 的稳定合同码与 Repository 失败语义必须穿过 adapter 边界。
             raise
         except (RunnerCancelled, RunnerInterrupted, asyncio.CancelledError, KeyboardInterrupt):

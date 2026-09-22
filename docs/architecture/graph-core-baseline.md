@@ -395,6 +395,13 @@ Output 只是普通 sink，可有多个。它可以复制或引用上游 Artifac
 首版不允许移动上游 Artifact，避免破坏其他分支和 completed 结果复用。Core 不强制 no-replace；UI 必须让
 覆盖行为清晰可见。
 
+2026-09-23 用户批准的成片发布增量见
+[`final-publication-performance-fix.md`](../final-publication-performance-fix.md)：新的专用生产节点可在用户
+明确选择的最终目录内生成本次独占临时候选，执行原媒体验收后按显式覆盖策略改名发布，再登记正式路径。
+它只发布本节点尚未登记的候选，不移动已登记上游 Artifact。默认模板可让下游 OutputFile 引用该成果，
+无需重复复制。旧 exact 定义、工程与运行快照不改写；文件发布和数据库登记不宣称跨系统原子，异常保留文件
+并报告真实状态，不增加节点内续跑或自动认领。
+
 ## 9. 最小媒体校验
 
 所有产生媒体输出的节点，包括 `manual_external` Submit，默认只要求：

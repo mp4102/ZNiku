@@ -17,6 +17,8 @@ from zniku.avenhance_v27.profiles import atomic_split_count_from_type_id, is_av2
 from zniku.avenhance_v27.template import excel_chapter_label
 from zniku.chapter_batch.contracts import BATCH_PREFIX, BatchParameters
 from zniku.chapter_batch.definitions import definition_role as batch_role
+from zniku.chapter_batch.final_publish import Parameters as FinalPublishParameters
+from zniku.chapter_batch.final_publish import is_definition as is_final_publish
 from zniku.chapter_overlap.definitions import definition_role
 from zniku.chapter_overlap.node_contracts import (
     PARAMETER_MODELS,
@@ -104,6 +106,14 @@ def _resolve_attempt_naming(
     names = _ENGLISH_NAMES if english else _OVERLAP_NAMES
     if (node.type_id, node.definition_version) != (definition.type_id, definition.version):
         return fallback
+    if is_final_publish(definition):
+        try:
+            FinalPublishParameters.model_validate(node.model_dump(mode="json")["parameters"])
+        except (ValidationError, ValueError):
+            return fallback
+        return AttemptNamingHint(
+            category="program", task_name="final-publish" if english else "成片封装发布"
+        )
     new_role = aligned_role(definition) or admitted_role(definition) or batch_role(definition)
     if new_role in {"source", "admission"}:
         return AttemptNamingHint(

@@ -27,6 +27,19 @@ function ports(count: number, direction: 'input' | 'output'): PortSpecWire[] {
     required: direction === 'input', cardinality: 'one' }))
 }
 describe('节点运行状态展示', () => {
+  it('复制节点显示容量、可信步骤均速与字节条，满量仍等待正式完成', () => {
+    const nodeRun = { ...handoffRun().node_runs[0]!, state: 'running' as const, started_at: '2026-09-01T00:00:00Z', ended_at: null }
+    const progress = { operation: 'copy' as const, mode: 'determinate' as const, fraction: .5, elapsed: 'elapsed 10s',
+      measurement: { node_run_id: nodeRun.node_run_id, current: 1024 ** 3, total: 2 * 1024 ** 3, fraction: .5, unit: 'bytes' as const, observed_at: '2026-09-01T00:00:10Z' } }
+    const { rerender } = render(<WorkflowNodeCard {...props({ nodeRun, progress })} />)
+    expect(screen.getByText('正在复制文件')).toBeVisible()
+    expect(screen.getByText('已复制 1.00 GiB / 2.00 GiB')).toBeVisible()
+    expect(screen.getByText('步骤平均 102.40 MiB/s')).toBeVisible()
+    expect(screen.getByRole('progressbar', { name: '文件复制字节进度' })).toHaveAttribute('value', String(1024 ** 3))
+    rerender(<WorkflowNodeCard {...props({ nodeRun, progress: { ...progress, fraction: 1, measurement: { ...progress.measurement, current: 2 * 1024 ** 3, fraction: 1 } } })} />)
+    expect(screen.getByText('字节已复制，等待完成确认')).toBeVisible()
+    expect(screen.queryByText('已完成')).not.toBeInTheDocument()
+  })
   it('参数摘要保留独立列表项，创作者耗时使用中文；高级仍保留原投影', () => {
     const progress = { mode: 'none' as const, fraction: null, measurement: null, elapsed: 'elapsed 28s' }
     const options = props({ summaries: ['synthetic tool', '模型 · synthetic model', '目标 · 4K'], progress })
