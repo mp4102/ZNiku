@@ -1,5 +1,8 @@
 # 成片直接发布与进度热路径修复
 
+发布收尾（2026-09-23）：操作者已确认完整真实流程及最终产物通过，并另行授权 tag/Release。
+统一交付见 [v0.3.5 发布记录](v0.3.5-release.md)；本文的“未 commit/push”等描述保留实施当时的授权事实。
+
 - 日期：2026-09-23；用户已批准实施。
 - 开发线：`codex/chapter-batch-enhancement`；保持产品版本 `0.3.5`。
 - 上位权威：[Graph Core](architecture/graph-core-baseline.md)；展示遵循

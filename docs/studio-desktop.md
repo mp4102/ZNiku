@@ -1,7 +1,9 @@
-# ZNIKU Studio Windows 桌面候选
+# ZNIKU Studio Windows 本机桌面包
 
-当前入口为 v0.3.5 单一源准入本机验收候选，复用 `0.2.0` Core 和同一 React production build；不是新 Runtime，
-也不是正式 Release。产品版本 `0.3.5`，通用 wire/Presentation/StudioState 保持 `0.3.0`，工程仍为 schema 4。
+v0.3.5 开发线已通过操作者完整流程验收；当前本机包完成了最后输出恢复，没有重做全部上游步骤。
+实现复用 `0.2.0` Core 和同一 React production build，不是新 Runtime。
+本版公开 Release 仅源码与 Python wheel，Windows 捆绑包仍不公开上传，完整边界和当前入口见
+[发布记录](v0.3.5-release.md)。产品版本 `0.3.5`，通用 wire/Presentation/StudioState 保持 `0.3.0`，工程仍为 schema 4。
 新模板专用 wire 为 `0.3.5`；旧工程不自动转换。实现与验收记录见[执行备忘录](v0.3.5-execution-memo.md)。
 
 ## 使用
@@ -31,9 +33,11 @@ loopback 端口，通过本实例健康检查后打开默认浏览器。再次�
 - `waiting_external` 可以退出，重开工程后继续检查和显式提交。不会自动提交外部文件。
 - 外部处理时先选中对应节点；右侧只显示这个任务。同名节点会加展示编号，请结合输入文件名和帧数要求
   认领任务，不要仅凭 `enhancement.mov` 这个通用文件名判断分段。
-- 外部软件的成品可以先保存在自己的目录，再点“选择处理好的文件”。确认页会写明文件和目标任务；已有
-  目标时须明确确认替换。导入复制原文件，先校验后发布，失败保留旧目标；不会移动原文件或自动继续运行。
-  导入后再点“检查输出”，检查通过后点“提交并继续”。也可以手动放到该任务的完整目标路径，再检查提交。
+- 新建 MR 任务可把任意名视频放到其 `incoming` 后刷新，或“选择处理好的文件”选原位置文件；选择不复制。
+  “检查并导入”通过后才收纳，外部原件保留，`incoming` 内文件规范更名；再“提交并继续”才推进节点。
+  已有目标须显式确认替换，失败保留文件。旧 exact 任务仍使用其原交回合同，不自动升级。
+- 章级批量增强支持多选或目录收件，确认每叶映射后接收，可分批补件；收齐后“检查本章全部输出”，
+  通过后“提交本章并继续”。收件和检查不等于提交，不要往 `outputs` 手工投放来件。
 - 意外结束应用时，Windows 只清理本实例自动处理进程树；再次打开工程继续采用 Core 的
   `running → failed(reason=interrupted)`，只能创建新 attempt 从头重跑。浏览器、Explorer 和系统播放器
   不属于此清理树，不会因退出被误杀。
@@ -73,11 +77,12 @@ uv run --locked --extra desktop python tools/build_desktop.py `
 HostBridge 继续使用冻结的六项能力与短时一次性动作票据。桌面生命周期/偏好/交接导入 API 不是新 HostCapability，
 不接收 executable、shell 或媒体 raw path。偏好中的最近工程路径仅用于显示和重新发起正式打开命令。
 
-外部产物导入使用独立的同源 `POST /api/studio/handoff-import/preview` 和 `/confirm`，沿用精确 Origin 与
+旧单输出交回兼容 API 使用同源 `POST /api/studio/handoff-import/preview` 和 `/confirm`，沿用精确 Origin 与
 Host token。preview 只接受原生选择句柄和当前工程/Run/NodeRun/handoff/port/ordinal，返回 300 秒一次性
 `import_id`、源名称/大小、目标和覆盖提示；confirm 只接受该票据及显式 `overwrite`。服务端最多保留 32 个
-未使用意图，选择与目标的身份/大小/修改时间变化即拒绝。当前导入只支持恰好声明一个单值输出的人工节点，
-多输出仍按各完整目标放置文件后统一检查；未知字段失败关闭。
+未使用意图，选择与目标的身份/大小/修改时间变化即拒绝。这个旧接口只支持恰好声明一个单值输出的人工节点；
+不是当前所有交回方式的能力上限。新版 MR 的选后检查收纳及章级批量接口分别见
+[MR 交回合同](mr-handoff-usability-plan.md)与[批量交回合同](chapter-batch-enhancement-plan.md)；未知字段均失败关闭。
 暂存限定在解析验证后的 attempt 内，拒绝链接/reparse 目标与被硬链接共享的目标；验证复用 Runtime 的
 同一 Node Runner，不在 TypeScript 再实现媒体合同。复制期间 status 仍可读取，切换工程、运行、提交及退出
 被同一 busy 门禁拒绝；界面不伪造百分比，网络结果不明不自动重试。内存票据不是新 Project/Runtime authority。
@@ -95,8 +100,9 @@ Artifact 登记条件，也不隐藏原有有界 stdout/stderr 日志。
 
 ## 当前验收边界
 
-当前 v0.3.5 候选的版本、构建与验证结果以[执行备忘录](v0.3.5-execution-memo.md)为准，操作入口和真实待验项
-见[本机验收说明](v0.3.5-acceptance.md)。旧包事实保存在 [Phase 5 验收记录](v0.3.0-phase5-acceptance.md)及
+当前 v0.3.5 的版本、构建与最终验收以[发布记录](v0.3.5-release.md)为准，操作入口
+见[本机使用说明](v0.3.5-acceptance.md)。[执行备忘录](v0.3.5-execution-memo.md)保留基点历史。
+旧包事实保存在 [Phase 5 验收记录](v0.3.0-phase5-acceptance.md)及
 [v0.3.1 批次 C 验收](v0.3.1-desktop-candidate-acceptance.md)，不是本版包位置权威。
 保留的 v0.3.1 首次用户五条 Journey、至少 5 名用户量化任务不由本次开发测试自动关闭；
 原任务仍使用[候选验收任务包](v0.3.1-creator-acceptance-kit.md)分别记录。此入口不提供 WebView2、NLE

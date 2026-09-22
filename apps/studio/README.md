@@ -1,4 +1,8 @@
-# ZNIKU Studio（v0.3.5 开发线）
+# ZNIKU Studio（v0.3.5）
+
+2026-09-23 完整真实流程已由操作者验收，当前源码发布、下载和保留限制见
+[v0.3.5 发布记录](../../docs/v0.3.5-release.md)。公开资产不包含 Windows 捆绑包，UX-001–003 暂缓。
+下面的 Phase 记录保留各阶段事实，不把单次作者/操作者验收视为所有首次用户或 4K 场景的验证。
 
 Studio 以一张自由媒体节点图同时承担编辑和 Runtime 状态展示。React 应用只维护未保存的画布 Draft；
 `.zniku` Project、Graph 校验、Run、Artifact、日志及 external handoff 的正式语义全部来自 Python Project

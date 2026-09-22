@@ -1,6 +1,9 @@
 # 外部马赛克修复交回体验增量
 
-- 状态：实现与本地自动化门禁完成，用户已授权 commit/push；真实 NAS 与操作者体验待验收。
+当前状态（2026-09-23）：外部 MR 交回已纳入操作者通过的完整真实流程；统一验收及源码 tag/Release
+见 [v0.3.5 发布记录](v0.3.5-release.md)。下文保留当时的候选、测试与授权范围，不改写旧等待任务。
+
+- 阶段结束时状态：实现与本地自动化门禁完成，用户已授权 commit/push；当时真实 NAS 与操作者体验待验收。
 - 日期：2026-09-16；产品版本保持 `0.3.5`。
 - 上位权威：[Graph Core](architecture/graph-core-baseline.md)；展示遵守
   [Studio UX](architecture/studio-ux-baseline.md)，目录遵守
