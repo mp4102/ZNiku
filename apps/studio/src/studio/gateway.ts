@@ -52,8 +52,11 @@ import {
   type SourceAdmittedCreateRequest, type SourceAdmittedReplaceRequest, type SourceAdmittedCancelRequest,
   type SourceAdmittedProcessingRequest, type SourceAdmittedProcessingEnvelope, type SourceAdmittedFullRequest, type SourceAdmittedFullEnvelope,
 } from './source-admitted-contracts'
+import { parseFusedFullRequest, parseFusedFullEnvelope, type FusedFullRequest, type FusedFullEnvelope } from './chapter-batch-fused-contracts'
 
 export interface StudioGateway {
+  previewFused?(request: FusedFullRequest): Promise<FusedFullEnvelope>
+  expandFused?(request: FusedFullRequest): Promise<StatusEnvelope>
   createSourceAdmitted?(request: SourceAdmittedCreateRequest): Promise<StatusEnvelope>
   replaceSourceAdmitted?(request: SourceAdmittedReplaceRequest): Promise<StatusEnvelope>
   cancelSourceAdmitted?(request: SourceAdmittedCancelRequest): Promise<StatusEnvelope>
@@ -218,6 +221,26 @@ export class FetchStudioGateway implements StudioGateway {
     return this.request(`/api/studio/templates/source-admitted-overlap/${action}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     }, parser, 'source-admitted')
+  }
+
+  async previewFused(request: FusedFullRequest): Promise<FusedFullEnvelope> {
+    const payload = parseFusedFullRequest(request)
+    const preview = await this.request('/api/studio/templates/chapter-batch-fused/full-preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parseFusedFullEnvelope, 'source-admitted')
+    if (preview.project_session_id !== payload.project_session_id || preview.storage_revision !== payload.expected_storage_revision ||
+        preview.preparation_run_id !== payload.preparation_run_id || preview.export_cropped_chapters !== payload.export_cropped_chapters ||
+        !sourceAlignedProcessingMatches(payload.processing, preview.processing)) throw new StudioContractError('融合候选预览与当前工程、分析记录或设置不一致')
+    return preview
+  }
+
+  async expandFused(request: FusedFullRequest): Promise<StatusEnvelope> {
+    const payload = parseFusedFullRequest(request)
+    const status = await this.request('/api/studio/templates/chapter-batch-fused/expand', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }, parseStatusEnvelope, 'source-admitted')
+    if (status.project_session_id !== payload.project_session_id || status.storage_revision !== payload.expected_storage_revision + 1) throw new StudioContractError('融合候选展开响应与当前工程或存储版本不一致')
+    return status
   }
 
   async previewSourceAlignedProcessing(request: SourceAlignedProcessingRequest): Promise<SourceAlignedProcessingEnvelope> {

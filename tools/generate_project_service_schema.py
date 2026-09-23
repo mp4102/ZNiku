@@ -25,6 +25,7 @@ from zniku.project_service.chapter_overlap import (
     ChapterOverlapProcessingEnvelope,
     ChapterOverlapProcessingRequest,
 )
+from zniku.project_service.fused_application import FusedFullEnvelope, FusedFullRequest
 from zniku.project_service.handoff_batch import (
     HandoffBatchBinding,
     HandoffBatchCheckEnvelope,
@@ -193,6 +194,7 @@ def render_schema() -> str:
     response_models = (
         SourceAdmittedProcessingEnvelope,
         SourceAdmittedFullEnvelope,
+        FusedFullEnvelope,
         SourceAdmittedFailureEnvelope,
         SourceAlignedFailureEnvelope,
         SourceAlignedFullEnvelope,
@@ -278,6 +280,7 @@ def render_schema() -> str:
         SourceAdmittedCancelRequest,
         SourceAdmittedProcessingRequest,
         SourceAdmittedFullRequest,
+        FusedFullRequest,
         ChapterOverlapPreviewRequest,
         ChapterOverlapProcessingRequest,
         ChapterOverlapFullRequest,

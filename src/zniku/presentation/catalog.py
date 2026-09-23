@@ -466,7 +466,7 @@ _ADVANCED_PARAMETERS = _BINDING_PARAMETERS | {
 
 def _builtin_metadata(definition: NodeDefinition) -> _NodeMetadata:
     key = (definition.type_id, definition.version)
-    if definition.version == "0.3.5":
+    if definition.version in {"0.3.5", "0.3.6"}:
         try:
             return _NodeMetadata(*aligned_presentation.metadata(definition))
         except ValueError as error:
@@ -606,7 +606,7 @@ def _parameter_presentations(
     overlap = definition.type_id.startswith(
         ("zniku.overlap.", "zniku.source_aligned.", "zniku.source-admitted.")
     )
-    aligned = overlap and definition.version in {"0.3.3", "0.3.5"}
+    aligned = overlap and definition.version in {"0.3.3", "0.3.5", "0.3.6"}
     from zniku.source_admission.mosaic_restoration import CONTAINER_HELP, is_definition
 
     automatic_container = is_definition(definition)

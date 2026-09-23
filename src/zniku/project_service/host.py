@@ -19,6 +19,8 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 from pydantic import BaseModel
 
 from .chapter_overlap import CHAPTER_OVERLAP_PREVIEW_ROUTE, ChapterOverlapPreviewError
+from .fused_application import ROUTES as FUSED_ROUTES
+from .fused_application import dispatch as fused_dispatch
 from .handoff_batch import HandoffBatchManager
 from .handoff_import import HandoffImportManager
 from .handoff_inbox import HandoffInboxManager
@@ -321,6 +323,7 @@ def make_project_service_handler(
                     SOURCE_ALIGNED_FULL_PREVIEW_ROUTE,
                     SOURCE_ALIGNED_EXPAND_ROUTE,
                     *SOURCE_ADMITTED_ROUTES,
+                    *FUSED_ROUTES,
                     "/api/studio/rerun-preview",
                 }
             ):
@@ -366,7 +369,9 @@ def make_project_service_handler(
                         http_status=422,
                     )
                 envelope: BaseModel
-                if parsed.path in SOURCE_ADMITTED_ROUTES:
+                if parsed.path in FUSED_ROUTES:
+                    envelope = fused_dispatch(application, parsed.path, payload)
+                elif parsed.path in SOURCE_ADMITTED_ROUTES:
                     envelope = source_admitted_dispatch(application, parsed.path, payload)
                 elif parsed.path == "/api/studio/templates/av-enhance-v27/preview":
                     envelope = application.preview_av_enhance_v27(payload)

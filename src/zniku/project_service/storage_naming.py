@@ -19,6 +19,7 @@ from zniku.chapter_batch.contracts import BATCH_PREFIX, BatchParameters
 from zniku.chapter_batch.definitions import definition_role as batch_role
 from zniku.chapter_batch.final_publish import Parameters as FinalPublishParameters
 from zniku.chapter_batch.final_publish import is_definition as is_final_publish
+from zniku.chapter_batch.fused import definition_role as fused_role
 from zniku.chapter_overlap.definitions import definition_role
 from zniku.chapter_overlap.node_contracts import (
     PARAMETER_MODELS,
@@ -106,7 +107,7 @@ def _resolve_attempt_naming(
     names = _ENGLISH_NAMES if english else _OVERLAP_NAMES
     if (node.type_id, node.definition_version) != (definition.type_id, definition.version):
         return fallback
-    if is_final_publish(definition):
+    if is_final_publish(definition) or fused_role(definition) == "final":
         try:
             FinalPublishParameters.model_validate(node.model_dump(mode="json")["parameters"])
         except (ValidationError, ValueError):
@@ -114,7 +115,12 @@ def _resolve_attempt_naming(
         return AttemptNamingHint(
             category="program", task_name="final-publish" if english else "成片封装发布"
         )
-    new_role = aligned_role(definition) or admitted_role(definition) or batch_role(definition)
+    new_role = (
+        aligned_role(definition)
+        or admitted_role(definition)
+        or batch_role(definition)
+        or fused_role(definition)
+    )
     if new_role in {"source", "admission"}:
         return AttemptNamingHint(
             category="common",

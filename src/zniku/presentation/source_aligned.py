@@ -3,6 +3,7 @@
 from zniku.chapter_batch.contracts import BATCH_PREFIX
 from zniku.chapter_batch.definitions import definition_role as batch_role
 from zniku.chapter_batch.final_publish import is_definition as is_final_publish
+from zniku.chapter_batch.fused import definition_role as fused_role
 from zniku.graph import NodeDefinition
 from zniku.source_admission.definitions import definition_role as admitted_role
 from zniku.source_aligned.definitions import definition_role
@@ -31,10 +32,20 @@ def metadata(
     role = (
         admitted_role(definition) if definition.version == "0.3.5" else definition_role(definition)
     )
-    role = role or batch_role(definition)
+    role = role or batch_role(definition) or fused_role(definition)
     if role is None:
         raise ValueError("原片规划 definition 与正式 exact identity/Schema/executor 不一致")
-    if is_final_publish(definition):
+    if fused_role(definition) == "program":
+        return (
+            "精确选帧并连续编码",
+            "融合候选：直接读取各章 FI raw，按责任区间选帧；不生成整套裁后 ProRes。",
+            "overlap",
+            IconToken.ENCODE,
+            PaletteLevel.ADVANCED,
+            ("融合", "裁边", "连续编码", "候选"),
+            (),
+        )
+    if is_final_publish(definition) or fused_role(definition) == "final":
         return (
             "成片封装并发布",
             "在成片目录的独占候选区封装原音轨，检查通过后发布；不再复制完整成片，也不移动上游。",

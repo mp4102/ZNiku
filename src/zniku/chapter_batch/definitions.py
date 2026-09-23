@@ -97,20 +97,27 @@ def definition_role(value: NodeDefinition) -> str | None:
 
 def built_in_definitions(count: int = 1) -> tuple[NodeDefinition, ...]:
     from .final_publish import definition as final_publish_definition
+    from .fused import definition as fused_definition
 
     return (
         definition("enhancement", count),
         *(definition(role) for role in ROLE_TYPES),
         final_publish_definition(),
+        fused_definition("program"),
+        fused_definition("final"),
     )
 
 
 def python_adapters() -> Mapping[str, PythonAdapter]:
     from .final_publish import ADAPTER, execute
+    from .fused import final as fused_final
+    from .fused import program as fused_program
 
     module = import_module("zniku.chapter_batch.adapters")
     return {
         ADAPTER: execute,
+        "zniku.chapter_batch.fused:program": fused_program,
+        "zniku.chapter_batch.fused:final": fused_final,
         **{
             f"zniku.chapter_batch.adapters:{role}": cast(PythonAdapter, getattr(module, role))
             for role in ROLE_TYPES
@@ -121,10 +128,13 @@ def python_adapters() -> Mapping[str, PythonAdapter]:
 
 def validators() -> Mapping[str, NodeValidator]:
     from .final_publish import VALIDATOR, validate
+    from .fused import validate_final, validate_program
 
     module = import_module("zniku.chapter_batch.validators")
     return {
         VALIDATOR: validate,
+        "zniku.chapter_batch.fused:validate_program": validate_program,
+        "zniku.chapter_batch.fused:validate_final": validate_final,
         **{
             f"zniku.chapter_batch.validators:validate_{role}": cast(
                 NodeValidator, getattr(module, f"validate_{role}")

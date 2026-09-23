@@ -20,6 +20,7 @@ import {
 import { AvEnhanceV27Wizard, type AvEnhanceV27WizardMode } from './AvEnhanceV27Wizard'
 import type { OverlapFullEnvelope, OverlapFullIntent, OverlapFullRequest, OverlapProcessingRequest } from './chapter-overlap-contracts'
 import { sourceAdmittedCatalogAvailable, type SourceAdmittedCreateRequest, type SourceAdmittedReplaceRequest, type SourceAdmittedFullEnvelope, type SourceAdmittedFullIntent, type SourceAdmittedFullRequest, type SourceAdmittedProcessingRequest } from './source-admitted-contracts'
+import { fusedCatalogAvailable, type FusedFullEnvelope, type FusedFullIntent, type FusedFullRequest } from './chapter-batch-fused-contracts'
 import { sourceAlignedCatalogAvailable, type SourceAlignedFullEnvelope, type SourceAlignedFullIntent, type SourceAlignedFullRequest, type SourceAlignedProcessingRequest } from './source-aligned-contracts'
 import type {
   WorkflowEdge,
@@ -117,7 +118,7 @@ import { RetryImpactDialog } from './components/RetryImpactDialog'
 import './workspace-shell.css'
 const failureBackoff = [750, 1_500, 3_000, 5_000] as const
 /** 仅用于复用 UI 请求互斥；expand_overlap 从不发送到旧 command wire。 */
-type WorkspaceOperation = StudioCommand | { readonly operation: 'expand_overlap'; readonly request: OverlapFullRequest | SourceAlignedFullRequest | SourceAdmittedFullRequest; readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope }
+type WorkspaceOperation = StudioCommand | { readonly operation: 'expand_overlap'; readonly request: OverlapFullRequest | SourceAlignedFullRequest | SourceAdmittedFullRequest | FusedFullRequest; readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope | FusedFullEnvelope }
   | { readonly operation: 'create_source_admitted'; readonly request: SourceAdmittedCreateRequest }
   | { readonly operation: 'replace_source_admitted'; readonly request: SourceAdmittedReplaceRequest }
 
@@ -625,7 +626,7 @@ export function StudioWorkspace({
     readonly envelope: AvEnhanceV27TemplatePreviewEnvelope
     readonly precondition: AuthoringPrecondition | null
   } | null>(null)
-  const latestOverlapPreviewRef = useRef<{ readonly intentJson: string; readonly request: OverlapFullRequest | SourceAlignedFullRequest | SourceAdmittedFullRequest; readonly envelope: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope; readonly precondition: AuthoringPrecondition } | null>(null)
+  const latestOverlapPreviewRef = useRef<{ readonly intentJson: string; readonly request: OverlapFullRequest | SourceAlignedFullRequest | SourceAdmittedFullRequest | FusedFullRequest; readonly envelope: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope | FusedFullEnvelope; readonly precondition: AuthoringPrecondition } | null>(null)
   const templateConnectionEpochRef = useRef(0)
   useEffect(() => {
     // 断线与显式重连撤销旧会话的预览资格，迟到响应也不能再次提升为 mutation authority。
@@ -1987,7 +1988,10 @@ export function StudioWorkspace({
             if (!effectiveGateway.replaceSourceAdmitted) throw new Error('当前服务没有外部修复候选接口。')
             next = await effectiveGateway.replaceSourceAdmitted(command.request)
           } else if (command.operation === 'expand_overlap') {
-            if (command.request.contract_version === '0.3.5') {
+            if (command.request.contract_version === '0.3.6') {
+              if (!effectiveGateway.expandFused) throw new Error('当前服务没有融合候选展开接口。')
+              next = await effectiveGateway.expandFused(command.request)
+            } else if (command.request.contract_version === '0.3.5') {
               if (!effectiveGateway.expandSourceAdmitted) throw new Error('当前服务没有单一源准入展开接口。')
               next = await effectiveGateway.expandSourceAdmitted(command.request)
             } else if (command.request.contract_version === '0.3.3') {
@@ -2252,6 +2256,21 @@ export function StudioWorkspace({
     return next !== null
   }, [executeCommands])
 
+  const previewFused = useCallback(async (intent: FusedFullIntent) => {
+    latestOverlapPreviewRef.current = null
+    if (!effectiveGateway.previewFused) throw new Error('当前服务没有融合候选预览接口。')
+    if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置。')
+    const connectionEpoch = templateConnectionEpochRef.current
+    const binding = await flushAuthoring()
+    if (connectionEpoch !== templateConnectionEpochRef.current || selectionGuardRef.current.parameterDraftDirty) throw new Error('保存期间连接或设置发生变化，请重新检查。')
+    const request: FusedFullRequest = { ...intent, ...binding }
+    const envelope = await effectiveGateway.previewFused(request)
+    if (connectionEpoch !== templateConnectionEpochRef.current || JSON.stringify(binding) !== JSON.stringify(precondition())) throw new Error('工程在预览期间发生变化，请重新预览。')
+    if (envelope.project_session_id !== binding.project_session_id || envelope.storage_revision !== binding.expected_storage_revision || envelope.preparation_run_id !== intent.preparation_run_id || envelope.export_cropped_chapters !== intent.export_cropped_chapters) throw new Error('融合候选预览与当前工程、分析记录或导出设置不一致。')
+    latestOverlapPreviewRef.current = { intentJson: JSON.stringify(intent), request, envelope, precondition: binding }
+    return envelope
+  }, [effectiveGateway, flushAuthoring, precondition])
+
   const replaceSourceAdmitted = useCallback(async (sourcePath: string): Promise<boolean> => {
     if (selectionGuardRef.current.parameterDraftDirty) throw new Error('请先应用或放弃未应用的节点设置。')
     const connectionEpoch = templateConnectionEpochRef.current
@@ -2272,7 +2291,7 @@ export function StudioWorkspace({
     acceptStatus(next, { replaceProject: false })
   }, [acceptStatus, effectiveGateway])
 
-  const expandOverlap = useCallback(async (intent: OverlapFullIntent | SourceAlignedFullIntent | SourceAdmittedFullIntent): Promise<boolean> => {
+  const expandOverlap = useCallback(async (intent: OverlapFullIntent | SourceAlignedFullIntent | SourceAdmittedFullIntent | FusedFullIntent): Promise<boolean> => {
     const current = latestOverlapPreviewRef.current
     if (!current || current.intentJson !== JSON.stringify(intent) || parameterDraftDirty || dirty || JSON.stringify(current.precondition) !== JSON.stringify(precondition())) {
       latestOverlapPreviewRef.current = null
@@ -2743,6 +2762,7 @@ export function StudioWorkspace({
   )
   const sourceAlignedSupported = presentationError === null && sourceAlignedCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
   const sourceAdmittedSupported = presentationError === null && sourceAdmittedCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
+  const fusedSupported = presentationError === null && fusedCatalogAvailable(presentationEnvelope?.catalog.nodes ?? [])
   const singleSelectedNodeId = selectedNodeIds.size === 1 ? selectedNode?.node_id ?? null : null
   const rerunId = currentRun?.run_id ?? null
   const rerunNodeIncluded = singleSelectedNodeId
@@ -3118,6 +3138,8 @@ export function StudioWorkspace({
         onPreviewSourceAdmittedProcessing={sourceAdmittedSupported && effectiveGateway.previewSourceAdmittedProcessing ? previewSourceAdmittedProcessing : undefined}
         onPreviewSourceAdmitted={sourceAdmittedSupported && effectiveGateway.previewSourceAdmitted ? previewSourceAdmitted : undefined}
         onExpandSourceAdmitted={sourceAdmittedSupported && effectiveGateway.expandSourceAdmitted ? expandOverlap : undefined}
+        onPreviewFused={fusedSupported && effectiveGateway.previewFused ? previewFused : undefined}
+        onExpandFused={fusedSupported && effectiveGateway.expandFused ? expandOverlap : undefined}
         onExpand={expandAvEnhanceV27}
         onLocateNode={locateTemplateNode}
         onOpenExternalTasks={openTemplateExternalTasks}

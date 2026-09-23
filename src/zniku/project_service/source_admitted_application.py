@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import stat
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
@@ -32,7 +32,7 @@ from zniku.source_admission.adapters import cancel_source
 from zniku.source_admission.contracts import SOURCE_NAMESPACE, VERSION
 from zniku.source_admission.mosaic_restoration import definition as mosaic_restoration_definition
 from zniku.source_admission.naming import publication_target
-from zniku.source_aligned.template import build_source_aligned
+from zniku.source_aligned.template import SourceAlignedBuild, build_source_aligned
 
 from .models import StatusEnvelope
 from .source_admitted import (
@@ -448,7 +448,11 @@ def resolve_binding(
 
 
 def full(
-    app: ProjectServiceApplication, request: SourceAdmittedFullRequest, *, expand: bool
+    app: ProjectServiceApplication,
+    request: SourceAdmittedFullRequest,
+    *,
+    expand: bool,
+    _build_transform: Callable[[SourceAlignedBuild], SourceAlignedBuild] | None = None,
 ) -> SourceAdmittedFullEnvelope | StatusEnvelope:
     with app._state:
         app._assert_idle()
@@ -473,6 +477,8 @@ def full(
             batch_enhancement=True,
             final_publication_factory=final_publication_definition,
         )
+        if _build_transform is not None:
+            build = _build_transform(build)
         if expand:
             store.save(
                 build.project,

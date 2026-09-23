@@ -15,6 +15,7 @@ import { ChapterOverlapDraftError, chapterSettingsIntent, initialChapterOverlapS
 import { OverlapContractError, type OverlapFullEnvelope, type OverlapFullIntent, type OverlapProcessing, type OverlapProcessingEnvelope, type OverlapProcessingRequest } from './chapter-overlap-contracts'
 import type { SourceAlignedFullEnvelope, SourceAlignedFullIntent, SourceAlignedProcessing, SourceAlignedProcessingEnvelope, SourceAlignedProcessingRequest } from './source-aligned-contracts'
 import type { SourceAdmittedCreateRequest, SourceAdmittedFullEnvelope, SourceAdmittedFullIntent, SourceAdmittedProcessingEnvelope, SourceAdmittedProcessingRequest } from './source-admitted-contracts'
+import type { FusedFullEnvelope, FusedFullIntent } from './chapter-batch-fused-contracts'
 import { formatHostBridgeError } from './host-error-presentation'
 import { failurePresentation } from './run-presentation'
 import type {
@@ -34,7 +35,7 @@ import type {
 
 type SelectorMode = AvEnhanceV27ChapterSelectorWire['mode']
 type WizardStep = 1 | 2 | 3 | 4 | 5
-type WorkflowProfile = 'av27' | 'overlap' | 'source-aligned' | 'source-admitted'
+type WorkflowProfile = 'av27' | 'overlap' | 'source-aligned' | 'source-admitted' | 'fused'
 type SettingsField = '片名' | '年份' | 'Chapter selector mode' | 'Exact chapter frames' | 'Exact chapter times'
   | 'Leaf duration minutes' | 'Enhancement model name' | 'Enhancement actual scale factor'
   | 'Enhancement model version' | 'FI model name' | 'FI model version' | 'Program encoder' | 'Publication output root' | '更改成片父目录'
@@ -69,6 +70,8 @@ export interface AvEnhanceV27WizardProps {
   readonly onPreviewSourceAdmittedProcessing?: (request: SourceAdmittedProcessingRequest) => Promise<SourceAdmittedProcessingEnvelope>
   readonly onPreviewSourceAdmitted?: (request: SourceAdmittedFullIntent) => Promise<SourceAdmittedFullEnvelope>
   readonly onExpandSourceAdmitted?: (request: SourceAdmittedFullIntent) => Promise<boolean>
+  readonly onPreviewFused?: (request: FusedFullIntent) => Promise<FusedFullEnvelope>
+  readonly onExpandFused?: (request: FusedFullIntent) => Promise<boolean>
   readonly projectIdFactory?: () => string
   readonly pickerAvailable?: boolean
   readonly onClose: () => void
@@ -189,6 +192,8 @@ export function AvEnhanceV27Wizard({
   onPreviewSourceAdmittedProcessing,
   onPreviewSourceAdmitted,
   onExpandSourceAdmitted,
+  onPreviewFused,
+  onExpandFused,
   projectIdFactory = defaultProjectId,
   pickerAvailable = false,
   onClose,
@@ -222,7 +227,7 @@ export function AvEnhanceV27Wizard({
   const chapterNameRefs = useRef<Array<HTMLInputElement | null>>([])
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const previewRequestRef = useRef<AvEnhanceV27TemplatePreviewRequestWire | null>(null)
-  const overlapRequestRef = useRef<OverlapFullIntent | SourceAlignedFullIntent | SourceAdmittedFullIntent | null>(null)
+  const overlapRequestRef = useRef<OverlapFullIntent | SourceAlignedFullIntent | SourceAdmittedFullIntent | FusedFullIntent | null>(null)
   const responseEpochRef = useRef(0)
   const pickerFlightRef = useRef(0)
   const expansionFlightRef = useRef<{ readonly runId: string; readonly token: symbol } | null>(null)
@@ -247,7 +252,8 @@ export function AvEnhanceV27Wizard({
   const [step, setStep] = useState<WizardStep>(1)
   const [dataParent, setDataParent] = useState<string | null>(null)
   const [preview, setPreview] = useState<AvEnhanceV27TemplatePreviewEnvelope | null>(null)
-  const [overlapPreview, setOverlapPreview] = useState<OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope | null>(null)
+  const [overlapPreview, setOverlapPreview] = useState<OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope | FusedFullEnvelope | null>(null)
+  const [exportCroppedChapters, setExportCroppedChapters] = useState(false)
   const [repairCandidate, setRepairCandidate] = useState<{ readonly path: string; readonly epoch: number } | null>(null)
   const [cancellingAnalysis, setCancellingAnalysis] = useState(false)
   const [workflowProfile, setWorkflowProfile] = useState<WorkflowProfile>('source-aligned')
@@ -311,12 +317,14 @@ export function AvEnhanceV27Wizard({
   const currentSourceMode = mode === 'resume'
     ? sourceModeFromSnapshot(currentSnapshot) ?? sourceMode
     : sourceMode
-  const sourceAdmittedEnabled = workflowProfile === 'source-admitted' && currentSourceMode === 'program'
+  const fusedEnabled = workflowProfile === 'fused' && currentSourceMode === 'program'
+  const sourceAdmittedEnabled = (workflowProfile === 'source-admitted' || fusedEnabled) && currentSourceMode === 'program'
   const sourceAlignedEnabled = (workflowProfile === 'source-aligned' || sourceAdmittedEnabled) && currentSourceMode === 'program'
   const overlapEnabled = workflowProfile !== 'av27' && currentSourceMode === 'program'
   const overlapAvailable = Boolean(onPreviewOverlapProcessing && onPreviewOverlap && onExpandOverlap)
   const sourceAlignedAvailable = Boolean(onPreviewSourceAlignedProcessing && onPreviewSourceAligned && onExpandSourceAligned)
   const sourceAdmittedAvailable = Boolean(onCreateSourceAdmitted && onPreviewSourceAdmittedProcessing && onPreviewSourceAdmitted && onExpandSourceAdmitted)
+  const fusedAvailable = sourceAdmittedAvailable && Boolean(onPreviewFused && onExpandFused)
   const preparedSourceAdmitted = Boolean(currentSnapshot?.project.graph.nodes.some((node) => node.type_id === 'zniku.avenhance.v27.source_program' && node.definition_version === '0.3.5'))
   const legacyMRNodes = currentSnapshot?.project.graph.nodes.filter((node) => node.type_id === legacyMRType) ?? []
   const legacyMRPrepared = preparationCreated && legacyMRNodes.length > 0
@@ -379,6 +387,7 @@ export function AvEnhanceV27Wizard({
       overlapRequestRef.current = null
       // 重开旧工程不推断新版本；只有新建且服务具备独立合同，默认使用原片规划。
       setWorkflowProfile(continuing ? preparedSourceAdmitted ? 'source-admitted' : 'av27' : sourceAdmittedAvailable ? 'source-admitted' : sourceAlignedAvailable ? 'source-aligned' : 'av27')
+      setExportCroppedChapters(false)
       setRepairCandidate(null)
       setCancellingAnalysis(false)
       setOverlapSettings(initialChapterOverlapSettings())
@@ -809,9 +818,13 @@ export function AvEnhanceV27Wizard({
     try {
       if (overlapEnabled) {
         validateSettings()
-        let request: OverlapFullIntent | SourceAlignedFullIntent | SourceAdmittedFullIntent
-        let next: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope
-        if (sourceAdmittedEnabled) {
+        let request: OverlapFullIntent | SourceAlignedFullIntent | SourceAdmittedFullIntent | FusedFullIntent
+        let next: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope | FusedFullEnvelope
+        if (fusedEnabled) {
+          if (!onPreviewFused) throw new Error('当前服务没有融合候选预览接口。')
+          request = { contract_version: '0.3.6', preparation_run_id: runId, processing: buildSourceAlignedProcessing(), publication: buildPublicationRequest(), export_cropped_chapters: exportCroppedChapters }
+          next = await onPreviewFused(request)
+        } else if (sourceAdmittedEnabled) {
           if (!onPreviewSourceAdmitted) throw new Error('当前服务没有单一源准入接口。')
           request = { contract_version: '0.3.5', preparation_run_id: runId, processing: buildSourceAlignedProcessing(), publication: buildPublicationRequest() }
           next = await onPreviewSourceAdmitted(request)
@@ -898,7 +911,7 @@ export function AvEnhanceV27Wizard({
   const chooseProfile = (next: WorkflowProfile) => {
     profileExplicitlyChosenRef.current = true
     setWorkflowProfile(next)
-    if (preparationCreated && next !== 'source-aligned' && next !== 'source-admitted') {
+    if (preparationCreated && next !== 'source-aligned' && next !== 'source-admitted' && next !== 'fused') {
       // 新 MR 是尚未应用的处理草稿；旧流程只能沿用真实 preparation，不能把新草稿显示成旧图已启用。
       const recorded = preparedMRRef.current
       setMrMode(recorded.mode)
@@ -908,12 +921,14 @@ export function AvEnhanceV27Wizard({
   }
   const profileChoice = <section className="creator-settings-group" aria-label="工作流版本">
     <h4>处理链</h4>
-    {sourceAdmittedEnabled && <p><strong>ZNIKU 标准视频流程 · 0.3.5</strong><br />使用 AV2.7 的源媒体准入，保留分章、分叶和重叠 FI。源不适用时可选择外部修复候选，重新检查后继续。</p>}
+    {sourceAdmittedEnabled && <p><strong>{fusedEnabled ? '0.3.6 融合编码候选（待验收）' : 'ZNIKU 标准视频流程 · 0.3.5'}</strong><br />使用 AV2.7 的源媒体准入，保留分章、分叶和重叠 FI。源不适用时可选择外部修复候选，重新检查后继续。</p>}
     <details open={sourceAdmittedEnabled ? undefined : true}><summary>工作流版本与旧工程兼容</summary><label>工作流方案<select aria-label="工作流方案" disabled={controlsDisabled || (preparationCreated && preparedSourceAdmitted)} value={currentSourceMode === 'program' ? workflowProfile : 'av27'} onChange={(event) => chooseProfile(event.target.value as WorkflowProfile)}>
       <option value="source-admitted" disabled={!sourceAdmittedAvailable || currentSourceMode !== 'program' || (preparationCreated && !preparedSourceAdmitted)}>ZNIKU 标准视频流程 · 0.3.5（推荐）</option>
+      <option value="fused" disabled={!fusedAvailable || currentSourceMode !== 'program' || preparationCreated}>0.3.6 融合编码候选（待验收）</option>
       <option value="source-aligned" disabled={!sourceAlignedAvailable || currentSourceMode !== 'program' || legacyMRPrepared}>ZNIKU 原片规划与重叠 FI · 0.3.3（兼容）</option><option value="overlap" disabled={!overlapAvailable || currentSourceMode !== 'program'}>ZNIKU 重叠 FI · 0.3.2 既有流程</option><option value="av27">AVEnhanceFlow v2.7.0 · 既有流程</option></select></label>
     {currentSourceMode === 'pre_chaptered' ? <p>已经分章的素材沿用既有流程，不会自动迁移为单一原片规划。</p> : sourceAdmittedEnabled ? <p>新建流程使用单一准入，不自动修改任何旧工程；更换候选不等于修改原文件。</p> : sourceAlignedEnabled ? <p>先分析原片，再确认完整处理链。可选外部修复不会阻塞原片分析；分章分叶、增强和重叠 FI 共用原片时间轴。</p> : overlapEnabled ? <p>保留 0.3.2 的分章和重叠 FI 合同；不自动迁移旧工程或结果。</p> : <p>保留既有分章和逐章补帧语义；不会自动升级已有工程或结果。</p>}
     </details>
+    {fusedEnabled && <div><p>将 FI 原始结果的精确有效区间直接送入连续编码，默认不再保存整章裁边副本。只用于新建工程，不迁移已有节点或结果。</p><label><input type="checkbox" checked={exportCroppedChapters} disabled={controlsDisabled} onChange={(event) => { setExportCroppedChapters(event.target.checked); invalidateExpansion() }} />同时导出裁后章节（额外占用空间与时间）</label><p>外部 FI 原始产物仍保留；融合候选尚待真实验收，默认仍使用 0.3.5。</p></div>}
     {legacyMRPrepared && <p>此工程已创建旧版外部修复任务，继续使用其原合同；不能改为原片规划或修改冻结的交付目标。</p>}
     {!sourceAlignedAvailable && currentSourceMode === 'program' && <p>当前连接未提供 0.3.3 接口；升级本机服务后才能选择原片规划。</p>}
   </section>
@@ -1275,7 +1290,7 @@ export function AvEnhanceV27Wizard({
     if (serviceControlsDisabled) return
     const epoch = responseEpochRef.current
     const authority = previewRequestRef.current
-    if (overlapEnabled ? !overlapPreview || !overlapRequestRef.current || (sourceAdmittedEnabled ? !onExpandSourceAdmitted : sourceAlignedEnabled ? !onExpandSourceAligned : !onExpandOverlap) : !preview?.profile.compatible || !authority || authority.action !== 'expand') {
+    if (overlapEnabled ? !overlapPreview || !overlapRequestRef.current || (fusedEnabled ? !onExpandFused : sourceAdmittedEnabled ? !onExpandSourceAdmitted : sourceAlignedEnabled ? !onExpandSourceAligned : !onExpandOverlap) : !preview?.profile.compatible || !authority || authority.action !== 'expand') {
       invalidateExpansion()
       setLocalError('当前设置没有可确认的 Python 工作流预览；请使用已完成的素材分析重新生成预览。')
       setStep(4)
@@ -1286,7 +1301,9 @@ export function AvEnhanceV27Wizard({
     try {
       mutationFlightRef.current = Symbol('expand-workflow')
       const overlapRequest = overlapRequestRef.current
-      const applied = sourceAdmittedEnabled && overlapRequest?.contract_version === '0.3.5' && onExpandSourceAdmitted
+      const applied = fusedEnabled && overlapRequest?.contract_version === '0.3.6' && onExpandFused
+        ? await onExpandFused(overlapRequest)
+        : sourceAdmittedEnabled && overlapRequest?.contract_version === '0.3.5' && onExpandSourceAdmitted
         ? await onExpandSourceAdmitted(overlapRequest)
         : sourceAlignedEnabled && overlapRequest?.contract_version === '0.3.3' && onExpandSourceAligned
         ? await onExpandSourceAligned(overlapRequest)

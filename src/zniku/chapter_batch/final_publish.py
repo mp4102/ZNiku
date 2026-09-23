@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
@@ -128,7 +128,15 @@ def _check_media(context: NodeValidatorContext, expected_name: str) -> NodeValid
     )
 
 
-def validate(context: NodeValidatorContext) -> NodeValidatorResult:
+def validate(
+    context: NodeValidatorContext,
+    *,
+    _contract_reader: Callable[
+        [str, tuple[RunnerInput, ...], Mapping[str, object]], contracts.NodeContract
+    ]
+    | None = None,
+    _media_checker: Callable[[NodeValidatorContext, str], NodeValidatorResult] | None = None,
+) -> NodeValidatorResult:
     """正式产物必须等于显式发布目标；候选路径不能直接登记为成片 Artifact。"""
 
     def unpublished_message(error: object) -> str:
@@ -140,7 +148,9 @@ def validate(context: NodeValidatorContext) -> NodeValidatorResult:
 
     try:
         params = Parameters.model_validate(contracts._plain(context.request.node.parameters))
-        preflight("final", context.request.inputs, context.request.node.parameters)
+        (_contract_reader or preflight)(
+            "final", context.request.inputs, context.request.node.parameters
+        )
         target = _target(params, context.request.inputs, allow_create=False)
         if (
             len(context.outputs) != 1
@@ -148,7 +158,7 @@ def validate(context: NodeValidatorContext) -> NodeValidatorResult:
             or context.outputs[0].path.resolve(strict=True) != target
         ):
             raise Av27MediaError("E_FINAL_PUBLISH_PATH", "正式输出没有绑定所选成片路径")
-        result = _check_media(context, target.name)
+        result = (_media_checker or _check_media)(context, target.name)
         return (
             result
             if result.passed
@@ -158,12 +168,21 @@ def validate(context: NodeValidatorContext) -> NodeValidatorResult:
         return NodeValidatorResult(passed=False, message=unpublished_message(error))
 
 
-def execute(context: PythonAdapterContext) -> PythonAdapterResult:
+def execute(
+    context: PythonAdapterContext,
+    *,
+    _definition_checker: Callable[[NodeDefinition], bool] | None = None,
+    _contract_reader: Callable[
+        [str, tuple[RunnerInput, ...], Mapping[str, object]], contracts.NodeContract
+    ]
+    | None = None,
+    _media_checker: Callable[[NodeValidatorContext, str], NodeValidatorResult] | None = None,
+) -> PythonAdapterResult:
     """先检查完整媒体再发布；失败不删除候选或现有成品，任何已有上游都不改名。"""
-    if not is_definition(context.definition):
+    if not (_definition_checker or is_definition)(context.definition):
         raise Av27MediaError("E_FINAL_PUBLISH_DEFINITION", "只允许完整新 exact 定义")
     params = Parameters.model_validate(contracts._plain(context.node.parameters))
-    contract = preflight("final", context.inputs, context.node.parameters)
+    contract = (_contract_reader or preflight)("final", context.inputs, context.node.parameters)
     publish = os.replace if params.overwrite else no_replace_publisher()
     target = _target(params, context.inputs, allow_create=True)
     if target.exists() and not params.overwrite:
@@ -204,7 +223,7 @@ def execute(context: PythonAdapterContext) -> PythonAdapterResult:
             context.inputs,
             work_dir=context.work_dir,
         )
-        validation = _check_media(
+        validation = (_media_checker or _check_media)(
             NodeValidatorContext(
                 request,
                 context.work_dir,

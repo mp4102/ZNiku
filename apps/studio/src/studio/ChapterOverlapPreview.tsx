@@ -3,9 +3,11 @@ import { useState } from 'react'
 import type { OverlapFullEnvelope } from './chapter-overlap-contracts'
 import type { SourceAlignedFullEnvelope } from './source-aligned-contracts'
 import type { SourceAdmittedFullEnvelope } from './source-admitted-contracts'
+import type { FusedFullEnvelope } from './chapter-batch-fused-contracts'
 
-export function ChapterOverlapPreview({ preview }: { readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope }) {
-  const sourceAdmitted = preview.contract_version === '0.3.5'
+export function ChapterOverlapPreview({ preview }: { readonly preview: OverlapFullEnvelope | SourceAlignedFullEnvelope | SourceAdmittedFullEnvelope | FusedFullEnvelope }) {
+  const fused = preview.contract_version === '0.3.6'
+  const sourceAdmitted = preview.contract_version === '0.3.5' || fused
   const sourceAligned = preview.contract_version === '0.3.3' || sourceAdmitted
   const mr = sourceAligned ? preview.processing.mr : undefined
   const [page, setPage] = useState(0)
@@ -14,7 +16,7 @@ export function ChapterOverlapPreview({ preview }: { readonly preview: OverlapFu
   const contexts = new Map(preview.contexts.chapters.map((item) => [item.chapter_id, item]))
   return <section className="creator-step creator-confirm" aria-label="确认重叠补帧工作流">
     <header><span>05</span><div><h3>确认重叠补帧工作流</h3><p>以下边界由 Python 根据这次素材分析计算；确认只创建普通节点图，不启动外部软件。</p></div></header>
-    <div className="creator-profile-result" role="status"><strong>{sourceAdmitted ? 'ZNIKU 标准视频流程 · 0.3.5 · 待真实验收' : sourceAligned ? 'ZNIKU 原片规划与重叠 FI · 0.3.3 · 待真实验收' : 'ZNIKU 重叠 FI 候选 · 待真实验收'}</strong><span>{preview.node_count} 个节点 · {preview.edge_count} 条连线 · {preview.plan.chapter_count} 章 · {preview.plan.leaf_count} 个处理段</span></div>
+    <div className="creator-profile-result" role="status"><strong>{fused ? '0.3.6 融合编码候选（待验收）' : sourceAdmitted ? 'ZNIKU 标准视频流程 · 0.3.5 · 待真实验收' : sourceAligned ? 'ZNIKU 原片规划与重叠 FI · 0.3.3 · 待真实验收' : 'ZNIKU 重叠 FI 候选 · 待真实验收'}</strong><span>{preview.node_count} 个节点 · {preview.edge_count} 条连线 · {preview.plan.chapter_count} 章 · {preview.plan.leaf_count} 个处理段</span></div>
     {sourceAdmitted && preview.warnings.length > 0 && <section aria-label="素材检查提示"><h4>检查提示（不阻止继续）</h4><ul>{preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></section>}
     <p>Aion · 软件 v1.0。当前是可执行候选，尚未完成真实模型边界验收；数学帧数正确不代表 AI 画质或全片像素一致。</p>
     <section className="creator-media-summary" aria-label="重叠流程素材摘要"><h4>素材与处理</h4><dl>
@@ -24,7 +26,7 @@ export function ChapterOverlapPreview({ preview }: { readonly preview: OverlapFu
       <div><dt>画质增强</dt><dd>{preview.processing.enhancement.model_name} · {preview.processing.enhancement.actual_scale_factor ?? 1} 倍</dd></div>
       <div><dt>最终编码帧数</dt><dd>{preview.contexts.encoded_frame_count} 帧 · 全片最后补 {preview.contexts.final_tail_clone_frames} 帧</dd></div>
     </dl></section>
-    <section className="creator-workflow-summary"><h4>处理顺序</h4><p>{mr?.mode === 'external' ? '外部马赛克修复 → ' : ''}分章与分叶 → {sourceAdmitted ? '章级批量增强' : '外部逐叶增强'} → 章内合并 → 收集相邻章节增强上下文 → 外部 Aion 补帧 → 精确裁边 → 连续编码与原音轨封装。</p>{sourceAdmitted && <p>每章一个真正的多输出增强节点；章内共用参数，可一次选择目录或多个文件并陆续补件。收齐后整章检查，再由你一次提交并继续。</p>}<p>上下文步骤需要所引用的相邻章节先完成增强。等待没有估算倒计时；外部原始结果会保留，裁边结果另存。</p>{sourceAligned && <p>确认后才把以上处理设置应用为普通节点图；现有素材分析和 Run snapshot 不会被修改。外部修复未提交时，不启动分章。</p>}</section>
+    <section className="creator-workflow-summary"><h4>处理顺序</h4><p>{mr?.mode === 'external' ? '外部马赛克修复 → ' : ''}分章与分叶 → {sourceAdmitted ? '章级批量增强' : '外部逐叶增强'} → 章内合并 → 收集相邻章节增强上下文 → 外部 Aion 补帧 → {fused ? '有效帧区间直接连续编码' : '精确裁边 → 连续编码'}与原音轨封装。</p>{sourceAdmitted && <p>每章一个真正的多输出增强节点；章内共用参数，可一次选择目录或多个文件并陆续补件。收齐后整章检查，再由你一次提交并继续。</p>}<p>上下文步骤需要所引用的相邻章节先完成增强。等待没有估算倒计时；外部原始结果会保留。{fused ? preview.export_cropped_chapters ? '已选择额外导出裁后章节，会增加读写与存储。' : '不导出整章裁边副本。' : '裁边结果另存。'}</p>{sourceAligned && <p>确认后才把以上处理设置应用为普通节点图；现有素材分析和 Run snapshot 不会被修改。外部修复未提交时，不启动分章。</p>}</section>
     <section aria-label="章节计划"><h4>章节与处理段</h4>
       <div className="chapter-cut-pagination" aria-label="章节预览分页"><button type="button" disabled={currentPage === 0} onClick={() => setPage(0)}>第一页</button><button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</button><span>第 {currentPage + 1} / {pageCount} 页</span><button type="button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}>下一页</button><button type="button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(pageCount - 1)}>最后一页</button></div>
       {preview.plan.chapters.slice(currentPage * 20, (currentPage + 1) * 20).map((chapter) => {
