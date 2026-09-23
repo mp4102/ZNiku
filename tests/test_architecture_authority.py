@@ -140,7 +140,7 @@ def test_active_guidance_preserves_core_authority_and_ux_subordination() -> None
     assert "目标版本：`ZNIKU Studio v0.3.3`" in readme
     assert "docs/v0.3.1-ui-optimization-plan.md" in agents
     assert "docs/v0.3.1-ui-optimization-plan.md" in readme
-    assert "当前实现版本 `0.3.5`" in readme
+    assert "当前实现版本 `0.3.6`" in readme
     assert "该基点实现版本：`0.3.3`" in readme
     assert "`v0.2.1` Phase 0\u20135 已完成" in readme
     assert "docs/architecture/studio-ux-baseline.md" in readme

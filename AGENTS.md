@@ -32,6 +32,14 @@
 
 ## 产品与领域边界
 
+- `v0.3.6` 已批准执行入口为 `docs/v0.3.6-optimization-execution-plan.md`：从正式 `v0.3.5` 建立
+  隔离分支，当前授权 Phase 0～4 及逐阶段 commit/push，不包括 Phase 5、真实清理、PR/merge/tag/Release。
+  上下文快路径只做合同等价优化；融合裁边的 Program 和受影响 Final 使用新 exact，旧工程不改图。
+  新模板先为候选，Phase 5 通过后才切默认；不降低画质、帧数/相位验证或外部显式 Submit。
+  数据维护只允许预览并确认删除本 attempt 内、未登记且无正式依赖的已知内部中转；所有已登记成果、
+  外部来件、未知文件默认保留。非权威 scratch 索引不能参与执行、验收或 reuse，不构成删除充分条件。
+  UX-001～003 不新增 Runtime 状态或前端业务权威；进度必须绑定正式任务，未获服务端事实只能显示请求中。
+
 - 用户已批准章级批量增强增量，入口为 `docs/chapter-batch-enhancement-plan.md`。新默认流程每章一个
   真正多输出人工增强节点；旧精确定义、工程、waiting handoff 不改写。分批收件不等于部分完成，
   整章全部检查通过后显式 Submit；正式失败仍整节点新 attempt。不得以批处理为由新增 Core

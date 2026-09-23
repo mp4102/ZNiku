@@ -12,7 +12,7 @@ def test_candidate_state_is_separate_from_legacy_studio(
 ) -> None:
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     root = application_data_root()
-    assert root == tmp_path / "ZNIKU" / "Studio-v0.3.5-candidate"
+    assert root == tmp_path / "ZNIKU" / "Studio-v0.3.6-candidate"
     assert root != tmp_path / "ZNIKU" / "Studio"
     assert not root.exists()
 

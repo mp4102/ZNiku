@@ -6,9 +6,17 @@
 
 ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用已完成结果的 GUI Studio。
 
-## v0.3.5 可用版本
+## v0.3.6 优化开发线
 
-当前实现版本 `0.3.5`。2026-09-23 操作者已确认完整真实流程及最终产物符合预期，本机可用目标已达成。
+当前实现版本 `0.3.6`，从正式 `v0.3.5@4d2fb2f` 建立隔离分支 `codex/v0.3.6`。
+用户批准 [优化执行方案](docs/v0.3.6-optimization-execution-plan.md) 的 Phase 0～4；
+真实媒体验收与 Windows 候选交付留在未授权的 Phase 5。本机状态使用独立 `Studio-v0.3.6-candidate`，
+不接管旧实例、不改旧工程、不自动清理媒体；新融合模板在 Phase 5 通过前不是默认方案。
+专项状态见 [Studio 优化记录](docs/studio-optimization-log.md)。
+
+## v0.3.5 可用版本（保留发布事实）
+
+已发布版本 `0.3.5`。2026-09-23 操作者已确认完整真实流程及最终产物符合预期，本机可用目标已达成。
 当前交付以 [v0.3.5 发布与验收收尾](docs/v0.3.5-release.md) 为准；
 [Release 下载](https://github.com/mp4102/ZNiku/releases/tag/v0.3.5) 提供源码、Python wheel 和校验文件。
 本次没有公开 Windows 一键包：现有捆绑包仍限本机使用，第三方分发审阅尚未闭环。
@@ -344,7 +352,7 @@ ZNiku/
 │   ├── v0.3.0-phase4-acceptance.md # v0.3.0 Phase 4 创作者运行与外部处理证据
 │   └── brand-baseline.md
 ├── AGENTS.md
-└── VERSION                      # 0.3.5 开发产品版本，独立于 wire/definition
+└── VERSION                      # 0.3.6 开发产品版本，独立于 wire/definition
 ```
 
 ## 本地运行与验证
