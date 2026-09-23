@@ -292,268 +292,6 @@
           "string"
         ],
         "local_refs": [
-          "#/$defs/ExactSeconds",
-          "#/$defs/PositiveInt",
-          "#/$defs/SourceExpectation"
-        ],
-        "schema_keywords": [
-          "$defs",
-          "$ref",
-          "$schema",
-          "additionalProperties",
-          "description",
-          "enum",
-          "exclusiveMinimum",
-          "maxLength",
-          "maximum",
-          "minLength",
-          "minimum",
-          "pattern",
-          "properties",
-          "required",
-          "title",
-          "type"
-        ]
-      },
-      "identity": {
-        "type_id": "zniku.source-admitted.chapter-batch.program-fused",
-        "version": "0.3.6"
-      },
-      "parameter_schema": {
-        "$defs": {
-          "ExactSeconds": {
-            "maxLength": 512,
-            "minLength": 3,
-            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
-            "type": "string"
-          },
-          "PositiveInt": {
-            "exclusiveMinimum": 0,
-            "type": "integer"
-          },
-          "SourceExpectation": {
-            "additionalProperties": false,
-            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
-            "properties": {
-              "admission_artifact_id": {
-                "maxLength": 36,
-                "minLength": 36,
-                "title": "Admission Artifact Id",
-                "type": "string"
-              },
-              "frame_count": {
-                "$ref": "#/$defs/PositiveInt"
-              },
-              "frame_rate": {
-                "$ref": "#/$defs/ExactSeconds"
-              },
-              "original_video_artifact_id": {
-                "maxLength": 36,
-                "minLength": 36,
-                "title": "Original Video Artifact Id",
-                "type": "string"
-              },
-              "source_media_artifact_id": {
-                "maxLength": 36,
-                "minLength": 36,
-                "title": "Source Media Artifact Id",
-                "type": "string"
-              }
-            },
-            "required": [
-              "original_video_artifact_id",
-              "admission_artifact_id",
-              "source_media_artifact_id",
-              "frame_count",
-              "frame_rate"
-            ],
-            "title": "SourceExpectation",
-            "type": "object"
-          }
-        },
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "description": "完整裁后章的单次连续编码，仅全局末尾补一帧。",
-        "properties": {
-          "chapter_count": {
-            "maximum": 1000,
-            "minimum": 1,
-            "title": "Chapter Count",
-            "type": "integer"
-          },
-          "encoder": {
-            "enum": [
-              "cpu",
-              "gpu"
-            ],
-            "title": "Encoder",
-            "type": "string"
-          },
-          "source": {
-            "$ref": "#/$defs/SourceExpectation"
-          }
-        },
-        "required": [
-          "source",
-          "chapter_count",
-          "encoder"
-        ],
-        "title": "ProgramParameters",
-        "type": "object"
-      }
-    },
-    {
-      "features": {
-        "json_types": [
-          "array",
-          "boolean",
-          "integer",
-          "object",
-          "string"
-        ],
-        "local_refs": [
-          "#/$defs/ExactSeconds",
-          "#/$defs/PositiveInt",
-          "#/$defs/SourceExpectation"
-        ],
-        "schema_keywords": [
-          "$defs",
-          "$ref",
-          "$schema",
-          "additionalProperties",
-          "default",
-          "description",
-          "enum",
-          "exclusiveMinimum",
-          "items",
-          "maxLength",
-          "minLength",
-          "pattern",
-          "properties",
-          "required",
-          "title",
-          "type"
-        ]
-      },
-      "identity": {
-        "type_id": "zniku.source-admitted.chapter-batch.final-publish-fused",
-        "version": "0.3.6"
-      },
-      "parameter_schema": {
-        "$defs": {
-          "ExactSeconds": {
-            "maxLength": 512,
-            "minLength": 3,
-            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
-            "type": "string"
-          },
-          "PositiveInt": {
-            "exclusiveMinimum": 0,
-            "type": "integer"
-          },
-          "SourceExpectation": {
-            "additionalProperties": false,
-            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
-            "properties": {
-              "admission_artifact_id": {
-                "maxLength": 36,
-                "minLength": 36,
-                "title": "Admission Artifact Id",
-                "type": "string"
-              },
-              "frame_count": {
-                "$ref": "#/$defs/PositiveInt"
-              },
-              "frame_rate": {
-                "$ref": "#/$defs/ExactSeconds"
-              },
-              "original_video_artifact_id": {
-                "maxLength": 36,
-                "minLength": 36,
-                "title": "Original Video Artifact Id",
-                "type": "string"
-              },
-              "source_media_artifact_id": {
-                "maxLength": 36,
-                "minLength": 36,
-                "title": "Source Media Artifact Id",
-                "type": "string"
-              }
-            },
-            "required": [
-              "original_video_artifact_id",
-              "admission_artifact_id",
-              "source_media_artifact_id",
-              "frame_count",
-              "frame_rate"
-            ],
-            "title": "SourceExpectation",
-            "type": "object"
-          }
-        },
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "description": "保留原 Final 输入合同，增加显式发布权限；不把 UI 命名变成另一套媒体合同。",
-        "properties": {
-          "create_parent": {
-            "default": false,
-            "title": "Create Parent",
-            "type": "boolean"
-          },
-          "mr_mode": {
-            "enum": [
-              "off",
-              "external"
-            ],
-            "title": "Mr Mode",
-            "type": "string"
-          },
-          "output_root": {
-            "minLength": 1,
-            "title": "Output Root",
-            "type": "string"
-          },
-          "overwrite": {
-            "default": false,
-            "title": "Overwrite",
-            "type": "boolean"
-          },
-          "protected_paths": {
-            "default": [],
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "title": "Protected Paths",
-            "type": "array"
-          },
-          "source": {
-            "$ref": "#/$defs/SourceExpectation"
-          },
-          "target_path": {
-            "minLength": 1,
-            "title": "Target Path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source",
-          "mr_mode",
-          "target_path",
-          "output_root"
-        ],
-        "title": "Parameters",
-        "type": "object"
-      }
-    },
-    {
-      "features": {
-        "json_types": [
-          "integer",
-          "object",
-          "string"
-        ],
-        "local_refs": [
           "#/$defs/ChapterBinding",
           "#/$defs/ExactSeconds",
           "#/$defs/Ordinal",
@@ -1570,6 +1308,268 @@
       "identity": {
         "type_id": "zniku.source-admitted.chapter-batch.final-publish",
         "version": "0.3.5"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "保留原 Final 输入合同，增加显式发布权限；不把 UI 命名变成另一套媒体合同。",
+        "properties": {
+          "create_parent": {
+            "default": false,
+            "title": "Create Parent",
+            "type": "boolean"
+          },
+          "mr_mode": {
+            "enum": [
+              "off",
+              "external"
+            ],
+            "title": "Mr Mode",
+            "type": "string"
+          },
+          "output_root": {
+            "minLength": 1,
+            "title": "Output Root",
+            "type": "string"
+          },
+          "overwrite": {
+            "default": false,
+            "title": "Overwrite",
+            "type": "boolean"
+          },
+          "protected_paths": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Protected Paths",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          },
+          "target_path": {
+            "minLength": 1,
+            "title": "Target Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "mr_mode",
+          "target_path",
+          "output_root"
+        ],
+        "title": "Parameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "maxLength",
+          "maximum",
+          "minLength",
+          "minimum",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source-admitted.chapter-batch.program-fused",
+        "version": "0.3.6"
+      },
+      "parameter_schema": {
+        "$defs": {
+          "ExactSeconds": {
+            "maxLength": 512,
+            "minLength": 3,
+            "pattern": "^(?:0|[1-9][0-9]*)/[1-9][0-9]*$",
+            "type": "string"
+          },
+          "PositiveInt": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "SourceExpectation": {
+            "additionalProperties": false,
+            "description": "设计时仅绑定已完成原片分析；不能预填未来外部结果的 UUID。",
+            "properties": {
+              "admission_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Admission Artifact Id",
+                "type": "string"
+              },
+              "frame_count": {
+                "$ref": "#/$defs/PositiveInt"
+              },
+              "frame_rate": {
+                "$ref": "#/$defs/ExactSeconds"
+              },
+              "original_video_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Original Video Artifact Id",
+                "type": "string"
+              },
+              "source_media_artifact_id": {
+                "maxLength": 36,
+                "minLength": 36,
+                "title": "Source Media Artifact Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "original_video_artifact_id",
+              "admission_artifact_id",
+              "source_media_artifact_id",
+              "frame_count",
+              "frame_rate"
+            ],
+            "title": "SourceExpectation",
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "完整裁后章的单次连续编码，仅全局末尾补一帧。",
+        "properties": {
+          "chapter_count": {
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Chapter Count",
+            "type": "integer"
+          },
+          "encoder": {
+            "enum": [
+              "cpu",
+              "gpu"
+            ],
+            "title": "Encoder",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/SourceExpectation"
+          }
+        },
+        "required": [
+          "source",
+          "chapter_count",
+          "encoder"
+        ],
+        "title": "ProgramParameters",
+        "type": "object"
+      }
+    },
+    {
+      "features": {
+        "json_types": [
+          "array",
+          "boolean",
+          "integer",
+          "object",
+          "string"
+        ],
+        "local_refs": [
+          "#/$defs/ExactSeconds",
+          "#/$defs/PositiveInt",
+          "#/$defs/SourceExpectation"
+        ],
+        "schema_keywords": [
+          "$defs",
+          "$ref",
+          "$schema",
+          "additionalProperties",
+          "default",
+          "description",
+          "enum",
+          "exclusiveMinimum",
+          "items",
+          "maxLength",
+          "minLength",
+          "pattern",
+          "properties",
+          "required",
+          "title",
+          "type"
+        ]
+      },
+      "identity": {
+        "type_id": "zniku.source-admitted.chapter-batch.final-publish-fused",
+        "version": "0.3.6"
       },
       "parameter_schema": {
         "$defs": {
