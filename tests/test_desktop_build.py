@@ -127,3 +127,57 @@ def test_metadata_collection_excludes_editable_source_paths_and_cache(
         "zniku-0.3.2.dist-info/top_level.txt",
     }
     assert all((metadata / name).is_file() for name in names)
+
+
+def test_getting_started_distinguishes_fused_candidate_from_unchanged_default() -> None:
+    """操作者须在建项前显式选候选，不能被旧说明误导为测试默认链即验收了融合链。"""
+
+    text = build_desktop.getting_started_text("0.3.6")
+    assert text.startswith("ZNIKU Studio v0.3.6 本地验收候选 (不是正式发行)")
+    for instruction in (
+        "新建独立测试工程",
+        "只复制 .zniku 不会隔离其媒体路径",
+        "在开始分析、创建分析工程之前",
+        "工作流版本与旧工程兼容",
+        "显式改为“0.3.6 融合编码候选（待验收）”",  # noqa: RUF001 - 检查界面原文。
+        "同时导出裁后章节（额外占用空间与时间）”默认关闭",  # noqa: RUF001
+        "默认流程仍是“ZNIKU 标准视频流程 · 0.3.5”",
+        "旧节点、等待任务和既有结果不自动改图或迁移",
+        "交回未经裁边的 fi-raw，不要自行删除上下文帧",
+        "默认不另存整章 fi 裁边文件",
+        "外部 fi-raw 会保留",
+    ):
+        assert instruction in text
+    assert "系统另存fi成品章" not in text
+
+
+def test_getting_started_preserves_explicit_handoff_and_safe_maintenance_boundary() -> None:
+    """收件、检查、提交和清理各自明示，不把状态提示、100%或文件出现视为成功。"""
+
+    text = build_desktop.getting_started_text("0.3.6")
+    for instruction in (
+        "系统按章号和叶号预选匹配",
+        "可以手动更改，冲突不强行匹配",
+        "出现文件、收件完成或检查通过都不等于已经提交",
+        "全局状态行、当前节点卡片、右侧节点详情",
+        "复制 100% 或媒体处理 100% 仍可能等待检查和登记",
+        "外部处理等待没有虚构倒计时",
+        "源、外部原件、正式成果和未知文件不会自动删除",
+        "未登记且无正式依赖的内部中转可选",
+        "旧工程无可靠记录的中转保留",
+        "本轮全流程测试无需执行真实清理",
+        "不是本候选已经完成真实 AI 测试的证明",
+        "公开再分发前仍需第三方许可审阅",
+    ):
+        assert instruction in text
+
+
+def test_getting_started_identifies_independent_channel_and_exit_rules() -> None:
+    """包说明准确指向当前产品通道，不建议只关标签页或接管旧版本实例。"""
+
+    text = build_desktop.getting_started_text("0.3.6")
+    assert "独立 Studio-v0.3.6-candidate 本机状态通道" in text
+    assert "不接管 0.3.5 旧实例" in text
+    assert "再次双击同一候选只打开已有实例的网页" in text
+    assert "只关闭浏览器标签页不会停止服务" in text
+    assert "等待外部处理时可以退出，重开后继续检查和显式提交" in text

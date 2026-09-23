@@ -33,7 +33,8 @@
 ## 产品与领域边界
 
 - `v0.3.6` 已批准执行入口为 `docs/v0.3.6-optimization-execution-plan.md`：从正式 `v0.3.5` 建立
-  隔离分支，当前授权 Phase 0～4 及逐阶段 commit/push，不包括 Phase 5、真实清理、PR/merge/tag/Release。
+  隔离分支，Phase 0～4 已实现；当前授权 Phase 5 本机启动包交付及 commit/push，真实全流程由用户测试。
+  不包括真实清理、自动操作旧工程、PR/merge/tag/Release 或公开上传 Windows 捆绑包。
   上下文快路径只做合同等价优化；融合裁边的 Program 和受影响 Final 使用新 exact，旧工程不改图。
   新模板先为候选，Phase 5 通过后才切默认；不降低画质、帧数/相位验证或外部显式 Submit。
   数据维护只允许预览并确认删除本 attempt 内、未登记且无正式依赖的已知内部中转；所有已登记成果、
