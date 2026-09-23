@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { HostBridgeError, type HostBridge, type StorageIndexResult, type StorageInspection, type StorageMigrationPreview } from '../host-bridge'
 import { formatHostBridgeError } from '../host-error-presentation'
 import { CanvasDialog } from './ConnectNodesDialog'
+import { ProjectScratchMaintenance } from './ProjectScratchMaintenance'
 import './ProjectStoragePanel.css'
 
 export interface ProjectStoragePanelProps {
@@ -180,6 +181,8 @@ export function ProjectStoragePanel({ bridge, projectSessionId, storageRevision,
           <div><dt>工程工作资产</dt><dd>{inspection.managed_file_count} 个文件 · {bytes(inspection.managed_bytes)} · {inspection.attempt_count} 次执行记录</dd></div>
         </dl>
         <p>上方大小只统计已登记文件，不是整个磁盘或数据文件夹的占用。迁移预览会另外统计该工程执行目录里的日志、收件和其他文件。</p>
+        <ProjectScratchMaintenance bridge={bridge} projectSessionId={projectSessionId} storageRevision={storageRevision}
+          disabled={isBusy} perform={perform} />
         <section aria-label="可读目录与文件索引"><h3>找文件与整理目录</h3>
           <p>新英文目录按任务、可选章节和处理轮次组织，例如 enhancement/A/round-001。incoming 是外部结果交回区，outputs 是任务输出区，logs 是处理记录；文件所在位置不代表验收通过，外部结果仍需检查并明确提交。</p>
           <p>round-001 表示该任务第 1 次处理，跨运行连续计数；复用已有结果不会新建媒体副本。旧工程保留原目录，同名任务和重试仍各自隔离，打开工程不会自动改名。</p>

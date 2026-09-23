@@ -73,6 +73,8 @@ _DATA_ROUTES: Final = frozenset(
                 "organize-preview",
                 "restore-preview",
                 "index",
+                "scratch-preview",
+                "scratch-confirm",
             )
         ],
     )

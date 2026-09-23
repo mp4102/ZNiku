@@ -519,6 +519,8 @@ export type ActiveStudioOperation =
   | 'submit_external'
   | 'import_external'
   | 'migrate_storage'
+  | 'scan_storage'
+  | 'cleanup_storage'
   | 'abandon_run'
 
 export interface StatusEnvelope {
@@ -666,7 +668,7 @@ export type StudioOperation =
   | 'create_av_enhance_v27'
   | 'expand_av_enhance_v27'
   | 'abandon_run'
-  | Exclude<ActiveStudioOperation, 'import_external' | 'migrate_storage'>
+  | Exclude<ActiveStudioOperation, 'import_external' | 'migrate_storage' | 'scan_storage' | 'cleanup_storage'>
 
 export type StudioCommand =
   | {
@@ -765,7 +767,7 @@ export function parseStatusEnvelope(value: unknown): StatusEnvelope {
   ) {
     throw new StudioContractError('Studio status Project 与 authoring binding 必须完整一致')
   }
-  if (status.active_operation !== null && status.active_operation !== 'migrate_storage' && status.active_run_id === null) {
+  if (status.active_operation !== null && !['migrate_storage', 'scan_storage', 'cleanup_storage'].includes(status.active_operation) && status.active_run_id === null) {
     throw new StudioContractError('Studio status active_operation 必须绑定 active_run_id')
   }
   if (status.studio_state !== null && status.snapshot !== null) {

@@ -1,14 +1,14 @@
 """把工程数据维护接到严格宿主 API，不允许浏览器直接指定待搬运路径。
 
 目标来自本次原生目录选择，或明确恢复工程旁默认位置。已运行工程必须走短期预览与确认；
-迁移互斥期间不启动节点、不修改 Graph，原位置始终保留。此模块不提供删除能力。
+维护互斥期间不启动节点、不修改 Graph；删除仅限服务器预览绑定的内部中转，不能接收路径。
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 
 from zniku.project.storage import ProjectStorage, new_project_storage
 
@@ -28,6 +28,7 @@ from .storage import (
 )
 from .storage_index import StorageIndexResult, export_storage_index
 from .storage_paths import prepare_storage_location
+from .storage_scratch import ScratchConfirmResult, ScratchManager, ScratchPreview
 
 if TYPE_CHECKING:
     from zniku.project import ProjectStore
@@ -60,6 +61,30 @@ class StorageMigrationConfirmRequest(StorageInspectRequest):
 
     expected_storage_revision: Annotated[int, Field(ge=0, le=9007199254740991)]
     ticket_id: HostRandomId
+
+
+class ScratchPreviewRequest(StorageIndexRequest):
+    """显式按需统计，绑定当前工程版本，不在普通状态轮询中扫描。"""
+
+
+class ScratchConfirmRequest(StorageIndexRequest):
+    """一次性预览内的候选身份与不可恢复确认；没有任何 raw path 字段。"""
+
+    ticket_id: HostRandomId
+    candidate_ids: Annotated[tuple[HostRandomId, ...], Field(min_length=1, max_length=4096)]
+    confirm_irreversible: Literal[True]
+
+    @field_validator("candidate_ids", mode="before")
+    @classmethod
+    def normalize_ids(cls, value: Any) -> Any:
+        return tuple(value) if isinstance(value, list) else value
+
+    @field_validator("confirm_irreversible", mode="before")
+    @classmethod
+    def require_explicit_true(cls, value: Any) -> Any:
+        if value is not True:
+            raise ValueError("清理必须明确确认不可恢复")
+        return value
 
 
 def _target(
@@ -103,6 +128,7 @@ class StorageApi:
 
     def __init__(self) -> None:
         self._migration = StorageMigrationManager()
+        self._scratch = ScratchManager()
 
     def invoke(
         self,
@@ -111,10 +137,39 @@ class StorageApi:
         *,
         session: HostBridgeSession,
         application: ProjectServiceApplication,
-    ) -> StorageInspection | StorageMigrationPreview | StorageIndexResult:
+    ) -> (
+        StorageInspection
+        | StorageMigrationPreview
+        | StorageIndexResult
+        | ScratchPreview
+        | ScratchConfirmResult
+    ):
         """同一 facade 互斥保护路径切换，并把严格模型错误转为稳定用户失败。"""
 
         try:
+            if action == "scratch-preview":
+                scan = ScratchPreviewRequest.model_validate(payload, strict=True)
+                with application.storage_authority(
+                    scan.project_session_id, maintenance="scan_storage"
+                ) as (store, legacy):
+                    return self._scratch.preview(
+                        store,
+                        legacy_root=legacy,
+                        project_session_id=scan.project_session_id,
+                        expected_storage_revision=scan.expected_storage_revision,
+                    )
+            if action == "scratch-confirm":
+                cleanup = ScratchConfirmRequest.model_validate(payload, strict=True)
+                with application.storage_authority(
+                    cleanup.project_session_id, maintenance="cleanup_storage"
+                ) as (store, _legacy):
+                    return self._scratch.confirm(
+                        store,
+                        project_session_id=cleanup.project_session_id,
+                        expected_storage_revision=cleanup.expected_storage_revision,
+                        ticket_id=cleanup.ticket_id,
+                        candidate_ids=cleanup.candidate_ids,
+                    )
             if action == "inspect":
                 inspect = StorageInspectRequest.model_validate(payload, strict=True)
                 with application.storage_authority(inspect.project_session_id) as (store, legacy):
@@ -190,4 +245,16 @@ class StorageApi:
         except ValidationError as error:
             raise HostBridgeFailure(
                 "E_PROJECT_STORAGE_REQUEST", "工程数据请求字段或类型无效", http_status=422
+            ) from error
+        except OSError as error:
+            raise HostBridgeFailure(
+                "E_PROJECT_STORAGE_IO",
+                "无法读取工程数据，请检查磁盘、权限和网络；不会自动重试",
+                http_status=409,
+            ) from error
+        except ValueError as error:
+            raise HostBridgeFailure(
+                "E_PROJECT_STORAGE_PATH",
+                "工程数据路径或文件身份无法核实，未执行清理",
+                http_status=409,
             ) from error

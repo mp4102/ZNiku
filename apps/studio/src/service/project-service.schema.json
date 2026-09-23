@@ -8,6 +8,8 @@
         "submit_external",
         "import_external",
         "migrate_storage",
+        "scan_storage",
+        "cleanup_storage",
         "abandon_run"
       ],
       "type": "string"
@@ -13454,6 +13456,399 @@
         "message"
       ],
       "title": "RuntimeFailure",
+      "type": "object"
+    },
+    "ScratchCategory": {
+      "enum": [
+        "archive",
+        "registered_recreatable",
+        "internal_scratch",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "ScratchCategorySummary": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "title": "Byte Count",
+          "type": "integer"
+        },
+        "category": {
+          "$ref": "#/$defs/ScratchCategory"
+        },
+        "file_count": {
+          "title": "File Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "category",
+        "file_count",
+        "byte_count"
+      ],
+      "title": "ScratchCategorySummary",
+      "type": "object"
+    },
+    "ScratchConfirmRequest": {
+      "additionalProperties": false,
+      "description": "一次性预览内的候选身份与不可恢复确认；没有任何 raw path 字段。",
+      "properties": {
+        "candidate_ids": {
+          "items": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "maxItems": 4096,
+          "minItems": 1,
+          "title": "Candidate Ids",
+          "type": "array"
+        },
+        "confirm_irreversible": {
+          "const": true,
+          "title": "Confirm Irreversible",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "ticket_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Ticket Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_session_id",
+        "expected_storage_revision",
+        "ticket_id",
+        "candidate_ids",
+        "confirm_irreversible"
+      ],
+      "title": "ScratchConfirmRequest",
+      "type": "object"
+    },
+    "ScratchConfirmResult": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "deleted_bytes": {
+          "title": "Deleted Bytes",
+          "type": "integer"
+        },
+        "deletion_count": {
+          "title": "Deletion Count",
+          "type": "integer"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/ScratchDeletionEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "expected_storage_revision": {
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "project_session_id": {
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "ticket_id": {
+          "title": "Ticket Id",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "project_session_id",
+        "expected_storage_revision",
+        "ticket_id",
+        "entries",
+        "deleted_bytes",
+        "deletion_count",
+        "complete",
+        "warnings"
+      ],
+      "title": "ScratchConfirmResult",
+      "type": "object"
+    },
+    "ScratchDeletionEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "title": "Byte Count",
+          "type": "integer"
+        },
+        "candidate_id": {
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "deleted",
+            "skipped",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "path",
+        "byte_count",
+        "status",
+        "message"
+      ],
+      "title": "ScratchDeletionEntry",
+      "type": "object"
+    },
+    "ScratchFileEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Attempt"
+        },
+        "byte_count": {
+          "title": "Byte Count",
+          "type": "integer"
+        },
+        "candidate_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Id"
+        },
+        "category": {
+          "$ref": "#/$defs/ScratchCategory"
+        },
+        "chapter_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Chapter Label"
+        },
+        "node_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Node Id"
+        },
+        "node_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Node Run Id"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "round_label": {
+          "title": "Round Label",
+          "type": "string"
+        },
+        "task_label": {
+          "title": "Task Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "category",
+        "byte_count",
+        "node_id",
+        "node_run_id",
+        "attempt",
+        "task_label",
+        "chapter_label",
+        "round_label",
+        "role",
+        "reason",
+        "candidate_id"
+      ],
+      "title": "ScratchFileEntry",
+      "type": "object"
+    },
+    "ScratchPreview": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/ScratchFileEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "expected_storage_revision": {
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "expires_in_seconds": {
+          "const": 300,
+          "default": 300,
+          "title": "Expires In Seconds",
+          "type": "integer"
+        },
+        "project_session_id": {
+          "title": "Project Session Id",
+          "type": "string"
+        },
+        "summary": {
+          "items": {
+            "$ref": "#/$defs/ScratchCategorySummary"
+          },
+          "title": "Summary",
+          "type": "array"
+        },
+        "ticket_id": {
+          "title": "Ticket Id",
+          "type": "string"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "ticket_id",
+        "project_session_id",
+        "expected_storage_revision",
+        "expires_in_seconds",
+        "summary",
+        "entries",
+        "warnings",
+        "truncated"
+      ],
+      "title": "ScratchPreview",
+      "type": "object"
+    },
+    "ScratchPreviewRequest": {
+      "additionalProperties": false,
+      "description": "显式按需统计，绑定当前工程版本，不在普通状态轮询中扫描。",
+      "properties": {
+        "contract_version": {
+          "const": "0.3.0",
+          "default": "0.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "expected_storage_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Storage Revision",
+          "type": "integer"
+        },
+        "project_session_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Project Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_session_id",
+        "expected_storage_revision"
+      ],
+      "title": "ScratchPreviewRequest",
       "type": "object"
     },
     "SourceAdmittedCancelRequest": {

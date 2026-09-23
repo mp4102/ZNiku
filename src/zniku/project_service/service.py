@@ -284,9 +284,13 @@ class ProjectServiceApplication:
 
     @contextmanager
     def storage_authority(
-        self, project_session_id: str, *, modifying: bool = False
+        self,
+        project_session_id: str,
+        *,
+        modifying: bool = False,
+        maintenance: Literal["scan_storage", "cleanup_storage"] | None = None,
     ) -> Iterator[tuple[ProjectStore, Path]]:
-        """把数据检查/迁移绑定当前工程；复制期可轮询，但不能切工程、运行或退出。"""
+        """维护期可轮询，但禁止切工程、运行、收件或退出；中转维护不重建 Runtime。"""
 
         with self._state:
             self._assert_idle()
@@ -298,8 +302,11 @@ class ProjectServiceApplication:
                 raise ProjectServiceError(
                     "E_PROJECT_SERVICE_NO_PROJECT", "尚未打开 .zniku Project", http_status=409
                 )
-            if modifying:
-                self._active_operation = "migrate_storage"
+            if modifying or maintenance is not None:
+                self._active_operation = maintenance or "migrate_storage"
+            previous_run_id = self._active_run_id
+            if maintenance is not None:
+                self._active_run_id = None
         try:
             yield store, self._work_root
             with self._state:
@@ -309,9 +316,11 @@ class ProjectServiceApplication:
         except ProjectStoreError as error:
             raise self._translate_failure(error) from error
         finally:
-            if modifying:
+            if modifying or maintenance is not None:
                 with self._state:
                     self._active_operation = None
+                    if maintenance is not None:
+                        self._active_run_id = previous_run_id
                     self._state.notify_all()
 
     def storage_index_path(self, project_session_id: str) -> Path:
@@ -2626,7 +2635,16 @@ class ProjectServiceApplication:
         elif isinstance(error, RuntimeConflictError | RuntimeServiceError):
             status = 409
         elif isinstance(error, ProjectStoreError):
-            status = 409 if error.code == "E_PROJECT_STORAGE_CONFLICT" else 422
+            status = (
+                409
+                if error.code
+                in {
+                    "E_PROJECT_STORAGE_CONFLICT",
+                    "E_PROJECT_STORAGE_SCRATCH_TICKET",
+                    "E_PROJECT_STORAGE_SCRATCH_CHANGED",
+                }
+                else 422
+            )
         else:
             status = 500
         message = str(error)

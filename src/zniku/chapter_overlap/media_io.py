@@ -26,6 +26,7 @@ from typing import BinaryIO
 from zniku.avenhance_v27.adapters import _encoder_options, _terminate_process
 from zniku.avenhance_v27.probe import probe_header, rates_equivalent
 from zniku.media.probe import resolve_media_tool
+from zniku.media.scratch import record_internal_scratch
 from zniku.runtime import PythonAdapterContext
 from zniku.runtime.process_window import background_creation_flags
 
@@ -352,6 +353,7 @@ def _timescale_copy(
     video = probe_header(target).video
     if video.frame_count != count or video.time_base != Fraction(1, rate.numerator):
         raise OverlapMediaError("E_OVERLAP_TIMESCALE_COPY", "timescale stage 数量或时基不符")
+    record_internal_scratch(context, target, "timescale")
     return target
 
 
@@ -479,6 +481,8 @@ def copy_prores_range(
         stage=stage,
     )
     verify_mov(target, rate, count)
+    # 只为 known-exact 的 context-parts 记录维护提示；正式输出和未知调用自动拒绝。
+    record_internal_scratch(context, target, "context_part")
     return count
 
 

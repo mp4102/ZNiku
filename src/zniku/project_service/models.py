@@ -55,6 +55,8 @@ type ActiveProjectOperation = Literal[
     "submit_external",
     "import_external",
     "migrate_storage",
+    "scan_storage",
+    "cleanup_storage",
     "abandon_run",
 ]
 type RunTargetMode = Literal["all", "selected"]
@@ -261,9 +263,13 @@ class StatusEnvelope(ProjectServiceModel):
 
     @model_validator(mode="after")
     def validate_active_binding(self) -> StatusEnvelope:
-        """后台 operation 存在时必须同时给出其 Run binding。"""
+        """运行操作必须绑定 Run；工程维护只绑定会话，不冒充某个媒体节点。"""
 
-        if self.active_operation not in {None, "migrate_storage"} and self.active_run_id is None:
+        if (
+            self.active_operation
+            not in {None, "migrate_storage", "scan_storage", "cleanup_storage"}
+            and self.active_run_id is None
+        ):
             raise ValueError("E_STATUS_ACTIVE_RUN_MISSING: active operation 必须绑定 Run")
         fields = (
             self.project_path,

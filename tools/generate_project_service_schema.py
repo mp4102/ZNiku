@@ -108,12 +108,15 @@ from zniku.project_service.storage import (
     StoragePathMapping,
 )
 from zniku.project_service.storage_api import (
+    ScratchConfirmRequest,
+    ScratchPreviewRequest,
     StorageIndexRequest,
     StorageInspectRequest,
     StorageLocationRequest,
     StorageMigrationConfirmRequest,
 )
 from zniku.project_service.storage_index import StorageIndexResult
+from zniku.project_service.storage_scratch import ScratchConfirmResult, ScratchPreview
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "apps" / "studio" / "src" / "service" / "project-service.schema.json"
@@ -233,6 +236,8 @@ def render_schema() -> str:
         StorageMigrationPreview,
         StoragePathMapping,
         StorageIndexResult,
+        ScratchPreview,
+        ScratchConfirmResult,
         MediaPreviewEnvelope,
         DesktopSessionEnvelope,
         DesktopCloseEnvelope,
@@ -307,6 +312,8 @@ def render_schema() -> str:
         StorageIndexRequest,
         StorageLocationRequest,
         StorageMigrationConfirmRequest,
+        ScratchPreviewRequest,
+        ScratchConfirmRequest,
         DesktopCloseRequest,
         DesktopPreferencesRequest,
     )

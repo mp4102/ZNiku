@@ -14,6 +14,8 @@ import { assertIntakeBinding, type HandoffIntakeObserveEnvelope, type HandoffInt
 import { assertBatchObservation, type HandoffBatchBinding, type HandoffBatchObserveEnvelope,
   type HandoffBatchPreviewRequest, type HandoffBatchPreviewEnvelope, type HandoffBatchConfirmRequest,
   type HandoffBatchConfirmEnvelope, type HandoffBatchCheckRequest, type HandoffBatchCheckEnvelope } from './handoff-batch-contracts'
+import { assertScratchBinding, type ScratchPreviewRequest, type ScratchPreviewEnvelope,
+  type ScratchConfirmRequest, type ScratchConfirmEnvelope } from './storage-scratch-contracts'
 
 export type HostCapability =
   | 'open_file'
@@ -116,6 +118,8 @@ export interface HostBridge {
   previewStorageRestore?(request: StorageLocationRequest): Promise<StorageMigrationPreview>
   confirmStorageMigration?(request: StorageMigrationConfirmRequest): Promise<StorageInspection>
   generateStorageIndex?(request: StorageIndexRequest): Promise<StorageIndexResult>
+  previewStorageScratch?(request: ScratchPreviewRequest): Promise<ScratchPreviewEnvelope>
+  confirmStorageScratch?(request: ScratchConfirmRequest): Promise<ScratchConfirmEnvelope>
   inspectDesktop?(): Promise<DesktopSessionEnvelope>
   closeDesktop?(instanceId: string): Promise<void>
   saveDesktopPreferences?(instanceId: string, preferences: DesktopPreferences): Promise<void>
@@ -455,6 +459,7 @@ export class FetchHostBridge implements HostBridge {
   private readonly intakeReady = new Map<string, HandoffIntakeSelectEnvelope>()
   private readonly batchPreviews = new Map<string, HandoffBatchPreviewEnvelope>()
   private readonly storagePreviews = new Map<string, StorageMigrationPreview>()
+  private readonly scratchPreviews = new Map<string, ScratchPreviewEnvelope>()
 
   constructor(bootstrap: HostBridgeBootstrap | undefined = window.__ZNIKU_HOST_BRIDGE__) {
     let baseUrl: string | null = null
@@ -794,6 +799,38 @@ export class FetchHostBridge implements HostBridge {
       (result.storage.data_id ?? null) !== (preview.target.data_id ?? null)) {
       throw new HostBridgeError('迁移响应与已确认位置不一致，请刷新检查实际工程。')
     }
+    return result
+  }
+
+  async previewStorageScratch(request: ScratchPreviewRequest): Promise<ScratchPreviewEnvelope> {
+    const result = await this.dataPost<ScratchPreviewEnvelope>('storage/scratch-preview', request,
+      'ScratchPreviewRequest', 'ScratchPreview')
+    assertScratchBinding(request, result)
+    this.scratchPreviews.set(result.ticket_id, result)
+    if (this.scratchPreviews.size > 32) this.scratchPreviews.delete(this.scratchPreviews.keys().next().value!)
+    return result
+  }
+
+  async confirmStorageScratch(request: ScratchConfirmRequest): Promise<ScratchConfirmEnvelope> {
+    const preview = this.scratchPreviews.get(request.ticket_id)
+    if (!preview) throw new HostBridgeError('维护预览已失效，请重新扫描；没有自动重试删除。')
+    assertScratchBinding(request, preview)
+    const candidates = new Map(preview.entries.filter((item) => item.category === 'internal_scratch' && item.candidate_id !== null)
+      .map((item) => [item.candidate_id!, item]))
+    if (!request.confirm_irreversible || request.candidate_ids.length === 0 || new Set(request.candidate_ids).size !== request.candidate_ids.length ||
+      request.candidate_ids.some((id) => !candidates.has(id))) throw new HostBridgeError('只允许确认本次预览中的唯一内部中转候选。')
+    this.scratchPreviews.delete(request.ticket_id)
+    const result = await this.dataPost<ScratchConfirmEnvelope>('storage/scratch-confirm', request,
+      'ScratchConfirmRequest', 'ScratchConfirmResult')
+    assertScratchBinding(request, result)
+    if (result.ticket_id !== request.ticket_id || result.entries.length !== request.candidate_ids.length ||
+      new Set(result.entries.map((item) => item.candidate_id)).size !== result.entries.length || result.entries.some((item) => {
+        const expected = candidates.get(item.candidate_id)
+        return !request.candidate_ids.includes(item.candidate_id) || !expected || expected.path !== item.path || expected.byte_count !== item.byte_count
+      })) throw new HostBridgeError('清理结果与已确认的内部文件不一致，请重新扫描核对，不会自动重试。')
+    const removed = result.entries.filter((item) => item.status === 'deleted')
+    if (result.deletion_count !== removed.length || result.deleted_bytes !== removed.reduce((sum, item) => sum + item.byte_count, 0) ||
+      result.complete !== result.entries.every((item) => item.status === 'deleted')) throw new HostBridgeError('清理结果统计不一致，结果待确认。')
     return result
   }
 
