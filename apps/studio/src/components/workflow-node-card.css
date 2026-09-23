@@ -89,3 +89,4 @@
   .workflow-node-card .node-port-type { color: CanvasText; }
   .workflow-node-card .node-port-label:focus-visible { outline-color: Highlight; }
 }
+.node-real-progress { width: 100%; height: .4rem; accent-color: var(--cyan); }

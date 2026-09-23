@@ -13,6 +13,44 @@ function controller(): HandoffBatchController { return { phase: 'idle', busy: fa
 function props(value = controller()) { return { controller: value, disabled: false, canPickFiles: true, canPickDirectory: true, canReveal: true,
   checked: false, submitting: false, submitReason: '请检查', readiness: null, failure: null, onReveal: vi.fn(), onCopyPath: vi.fn(), onSubmit: vi.fn() } }
 describe('章级批量UI', () => {
+  it('5份乱序外部后缀的服务建议直接选满，仍只在点击后提交映射', () => {
+    const order = [10, 2, 4, 1, 3]
+    const rows = [1, 2, 3, 4, 10].map((leaf) => ({ ...batchPreview.rows[0]!, port_id: `leaf-${leaf}`, display_label: `A 章 · 第 ${leaf} 段`, target_name: `Synthetic.A.leaf-${String(leaf).padStart(4, '0')}.enhancement.mov` }))
+    const candidates = order.map((leaf) => ({ ...batchPreview.candidates[0]!, candidate_handle: `candidate-${leaf}`, name: `Synthetic.A.leaf-${String(leaf).padStart(4, '0')}_slp.mov` }))
+    const matches = rows.map((row) => ({ port_id: row.port_id, candidate_handle: `candidate-${row.port_id.slice(5)}`, state: 'matched' as const, basis: 'chapter_leaf' as const, reason: '服务唯一章叶建议' }))
+    const control = { ...controller(), phase: 'preview' as const, preview: { ...batchPreview, rows, candidates, matches } }
+    render(<ol><HandoffBatch {...props(control)} /></ol>)
+    const dialog = screen.getByRole('dialog', { name: '确认本章收件匹配' })
+    const selectors = within(dialog).getAllByRole('combobox')
+    rows.forEach((row, index) => expect(selectors[index]).toHaveValue(matches[index]!.candidate_handle))
+    expect(control.confirm).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认收件' }))
+    expect(control.confirm).toHaveBeenCalledExactlyOnceWith(matches.map((match) => ({ port_id: match.port_id, candidate_handle: match.candidate_handle, overwrite: false })))
+  })
+  it('服务建议直接预选，手动改选不会被同票据重绘覆盖；路径折叠且角色明确', () => {
+    const control = { ...controller(), phase: 'preview' as const, preview: batchPreview }
+    const view = render(<ol><HandoffBatch {...props(control)} /></ol>)
+    const dialog = screen.getByRole('dialog', { name: '确认本章收件匹配' })
+    const selects = within(dialog).getAllByRole('combobox')
+    expect(selects[0]).toHaveValue(batchPreview.candidates[0]!.candidate_handle)
+    expect(within(dialog).getByText('A 章 · 第 1 段')).toBeVisible()
+    expect(within(dialog).getAllByText(/复制到本章收件位置，保留所选原件/)).toHaveLength(2)
+    expect(within(dialog).getAllByText('查看文件位置与角色')[0]!.closest('details')).not.toHaveAttribute('open')
+    fireEvent.change(selects[0]!, { target: { value: '' } })
+    view.rerender(<ol><HandoffBatch {...props({ ...control })} /></ol>)
+    expect(within(dialog).getAllByRole('combobox')[0]).toHaveValue('')
+    expect(within(dialog).getByText('已手动调整，请核对')).toBeVisible()
+    expect(control.confirm).not.toHaveBeenCalled()
+  })
+  it('服务明确原位同一收件时不要求覆盖，也不声称会复制', () => {
+    const preview = { ...batchPreview, rows: batchPreview.rows.map((row) => ({ ...row, collected: true })), complete: true,
+      candidates: batchPreview.candidates.map((item, index) => ({ ...item, unchanged_port_ids: [batchPreview.rows[index]!.port_id] })) }
+    render(<ol><HandoffBatch {...props({ ...controller(), phase: 'preview', preview })} /></ol>)
+    const dialog = screen.getByRole('dialog', { name: '确认本章收件匹配' })
+    expect(within(dialog).getAllByText(/文件已在本行收件位置，不复制、不移动/)).toHaveLength(2)
+    expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: '确认收件' })).toBeEnabled()
+  })
   it('主界面提供多文件/目录/整章目录发现，不提供逐叶Submit', () => {
     const value = props()
     render(<ol><HandoffBatch {...value} /></ol>)

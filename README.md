@@ -9,10 +9,12 @@ ZNIKU 是一个自由编排媒体处理节点、执行本地工作流并复用�
 ## v0.3.6 优化开发线
 
 当前实现版本 `0.3.6`，从正式 `v0.3.5@4d2fb2f` 建立隔离分支 `codex/v0.3.6`。
-用户批准 [优化执行方案](docs/v0.3.6-optimization-execution-plan.md) 的 Phase 0～4；
+用户批准的 [优化执行方案](docs/v0.3.6-optimization-execution-plan.md) Phase 0～4 已实现并通过本机自动化；
 真实媒体验收与 Windows 候选交付留在未授权的 Phase 5。本机状态使用独立 `Studio-v0.3.6-candidate`，
 不接管旧实例、不改旧工程、不自动清理媒体；新融合模板在 Phase 5 通过前不是默认方案。
-专项状态见 [Studio 优化记录](docs/studio-optimization-log.md)。
+已实现上下文有界取边、裁边融合连续编码候选、显式内部中转维护，以及章级自动预选与一致进度提示。
+专项状态见 [Studio 优化记录](docs/studio-optimization-log.md)，门禁与实测边界见
+[v0.3.6 自动化验证记录](docs/v0.3.6-validation-record.md)。
 
 ## v0.3.5 可用版本（保留发布事实）
 

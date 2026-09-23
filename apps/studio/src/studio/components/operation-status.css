@@ -1,0 +1,14 @@
+.operation-status { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; min-width: 0; max-width: 100%; font-size: .78rem; }
+.operation-status-text { min-width: 0; overflow-wrap: anywhere; }
+.operation-status progress { width: 100%; height: .4rem; accent-color: #65bfa3; }
+.operation-status--compact { flex-wrap: nowrap; }
+.operation-status--compact .operation-status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.operation-status-time { font-variant-numeric: tabular-nums; }
+.operation-status--compact .operation-status-time { flex-shrink: 0; white-space: nowrap; }
+.operation-status--compact progress { width: clamp(3rem, 9vw, 8rem); flex-shrink: 0; }
+.operation-status--needs_user { color: #ddbf81; }
+.operation-status--uncertain { color: #e7a68e; }
+.operation-status-pulse { width: .45rem; height: .45rem; border-radius: 100%; background: currentColor; flex-shrink: 0; animation: operation-pulse 1.5s ease-in-out infinite alternate; }
+@keyframes operation-pulse { to { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .operation-status-pulse { animation: none; } }
+@media (max-width: 700px) { .task-drawer-counts, .task-drawer-other { display: none; } }

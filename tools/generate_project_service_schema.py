@@ -128,10 +128,14 @@ def require_serialized_properties(schema: object) -> None:
     if isinstance(schema, dict):
         properties = schema.get("properties")
         if isinstance(properties, dict):
-            schema["required"] = list(properties)
-            if schema.get("title") == "NodeProgressProjection":
-                # 新阶段只是可选展示；旧0.3.0响应未提供时不能因此拒绝有效进度。
-                schema["required"] = [name for name in properties if name != "stage"]
+            # 仅新增的展示/建议字段允许旧0.3.0响应缺省；其余字段保持完整输出约束。
+            compatible_optional = {
+                "NodeProgressProjection": {"stage"},
+                "HandoffBatchRow": {"display_label"},
+                "HandoffBatchCandidate": {"path", "unchanged_port_ids"},
+                "HandoffBatchMatch": {"basis", "reason"},
+            }.get(str(schema.get("title")), set())
+            schema["required"] = [name for name in properties if name not in compatible_optional]
         for value in tuple(schema.values()):
             require_serialized_properties(value)
     elif isinstance(schema, list):

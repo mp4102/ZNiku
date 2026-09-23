@@ -426,6 +426,12 @@ describe('Studio Project Service 0.3.0 contract', () => {
       ],
     }
     expect(parseRunDetailEnvelope(valid).progress_samples[0]?.current).toBe(80)
+    for (const stage of [null, '检查 FI 输出', '🎞'.repeat(96)]) {
+      expect(parseRunDetailEnvelope({ ...valid, progress_samples: [{ ...valid.progress_samples[0], stage }] }).progress_samples[0]?.stage).toBe(stage)
+    }
+    for (const stage of ['', '前后空格 ', '\u0085', '零\u200b宽', '\u00a0', '\ue000', '🎞'.repeat(97)]) {
+      expect(() => parseRunDetailEnvelope({ ...valid, progress_samples: [{ ...valid.progress_samples[0], stage }] })).toThrow(StudioContractError)
+    }
 
     const outsideParent = {
       ...valid,

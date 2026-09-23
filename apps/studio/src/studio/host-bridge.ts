@@ -685,6 +685,10 @@ export class FetchHostBridge implements HostBridge {
     const ports = new Set(result.rows.map((row) => row.port_id))
     const assigned = result.matches.flatMap((match) => match.candidate_handle === null ? [] : [match.candidate_handle])
     if (handles.size !== result.candidates.length || result.matches.length !== ports.size ||
+        result.candidates.some((candidate) => {
+          const unchanged = candidate.unchanged_port_ids ?? []
+          return new Set(unchanged).size !== unchanged.length || unchanged.some((port) => !result.rows.some((row) => row.port_id === port && row.incoming_path === candidate.path))
+        }) ||
         new Set(result.matches.map((match) => match.port_id)).size !== ports.size ||
         new Set(assigned).size !== assigned.length || result.matches.some((match) => !ports.has(match.port_id) ||
           (match.state === 'matched') !== (match.candidate_handle !== null) ||
@@ -702,7 +706,7 @@ export class FetchHostBridge implements HostBridge {
     if (!preview) throw new HostBridgeError('批量收件预览已失效，请重新选择文件。')
     if (request.items.length === 0 || new Set(request.items.map((item) => item.port_id)).size !== request.items.length ||
         new Set(request.items.map((item) => item.candidate_handle)).size !== request.items.length || request.items.some((item) =>
-          !preview.rows.some((row) => row.port_id === item.port_id && (!row.collected || item.overwrite)) ||
+          !preview.rows.some((row) => row.port_id === item.port_id && (!row.collected || item.overwrite || preview.candidates.some((candidate) => candidate.candidate_handle === item.candidate_handle && candidate.unchanged_port_ids?.includes(item.port_id)))) ||
           !preview.candidates.some((candidate) => candidate.candidate_handle === item.candidate_handle))) {
       throw new HostBridgeError('请逐项确认唯一文件与目标，覆盖已有收件必须明确允许。')
     }

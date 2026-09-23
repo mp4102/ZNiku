@@ -8,6 +8,7 @@ import { creatorElapsedLabel, failurePresentation, nodeStateLabel } from '../stu
 import { copyProgressPresentation } from '../studio/copy-progress'
 import { CopyProgress } from '../studio/components/CopyProgress'
 import { progressStageLabel } from '../studio/progress-stage'
+import { OperationStatus } from '../studio/components/OperationStatus'
 import './workflow-node-card.css'
 
 const statusLabels = {
@@ -107,9 +108,11 @@ export const WorkflowNodeCard = memo(function WorkflowNodeCard({ id, data, selec
           {stale && <span className="run-chip run-chip--stale">{advanced ? 'Stale' : nodeStateLabel('stale')}</span>}
         </div>
         {problem && <span className="node-card-problem" role="note" title={problem} aria-label={`需要处理：${problem}`}>! {problem}</span>}
+        {data.activity && <OperationStatus value={data.activity} />}
         {!manual && data.progress.mode === 'determinate' && data.progress.fraction !== null && <span className="node-progress">{Math.round(data.progress.fraction * 100)}%</span>}
         {!manual && data.progress.mode === 'indeterminate' && <span className="node-progress node-progress--indeterminate" aria-label="进度不确定"><i aria-hidden="true" /> {advanced ? 'Working…' : '正在处理…'}</span>}
         {copyProgress && <CopyProgress value={copyProgress} />}
+        {!manual && !copyProgress && data.progress.mode === 'determinate' && data.progress.fraction !== null && <progress className="node-real-progress" aria-label="节点实测进度条" max={1} value={data.progress.fraction} />}
         {stage && <span className="node-progress-detail" title={stage}>{stage}</span>}
         {((!manual && data.progress.measurement) || data.progress.elapsed) && <span className="node-progress-detail">
           {!manual && !copyProgress && data.progress.measurement && <span>{data.progress.measurement.current} / {data.progress.measurement.total}{' '}

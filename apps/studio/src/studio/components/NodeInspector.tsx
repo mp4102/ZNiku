@@ -29,6 +29,8 @@ import { OrderedInputList } from './OrderedInputList'
 import { copyProgressPresentation } from '../copy-progress'
 import { CopyProgress } from './CopyProgress'
 import { progressStageLabel } from '../progress-stage'
+import type { OperationView } from '../operation-presentation'
+import { OperationStatus } from './OperationStatus'
 
 export type InspectorTab = 'settings' | 'files' | 'diagnostics'
 
@@ -60,6 +62,7 @@ export interface NodeInspectorProps {
   readonly advancedDetailsOpen?: boolean
   readonly onToggleDiagnostics?: (open: boolean) => void
   readonly selectedProgress: WorkflowProgressData | null
+  readonly activity?: OperationView | null
   readonly selectedLog: NodeLogWire | null
   readonly logStale: boolean
   readonly readinessStale: boolean
@@ -195,6 +198,7 @@ function NodeRuntimeSummary(props: NodeInspectorProps) {
   const error = nodeRun?.error
   const problem = error ? failurePresentation(error.reason, error.message) : null
   return <section className="runtime-user-status" aria-label="步骤处理状态">
+    {props.activity && <OperationStatus value={props.activity} />}
     {nodeRun && <div className={`runtime-status runtime-status--${nodeRun.state}`}>{nodeStateLabel(nodeRun.state)}</div>}
     {stale && <p className="runtime-preserved">当前工程的此步骤需要重新处理：设置、输入或输出有效性已变化。历史文件保留，但不能直接作为当前结果使用。</p>}
     {nodeRun?.reused_from_result_id && <p className="runtime-preserved">已复用上次有效结果，本次没有重复处理。</p>}
@@ -204,6 +208,7 @@ function NodeRuntimeSummary(props: NodeInspectorProps) {
       {progress.mode === 'determinate' && progress.fraction !== null && <span>{Math.round(progress.fraction * 100)}%</span>}
       {progress.mode === 'indeterminate' && <span>正在处理，暂时没有可计算的百分比。</span>}
       {copyProgress && <CopyProgress value={copyProgress} />}
+      {!copyProgress && progress.mode === 'determinate' && progress.fraction !== null && <progress aria-label="步骤实测进度条" max={1} value={progress.fraction} />}
       {progressStageLabel(progress, nodeRun) && <span>{progressStageLabel(progress, nodeRun)}</span>}
       {!copyProgress && progress.measurement && progress.measurement.current !== null && progress.measurement.total !== null && <span>{progress.measurement.current} / {progress.measurement.total} {progress.measurement.unit === 'frames' ? '帧' : progress.measurement.unit}</span>}
       {progress.elapsed && <span>{props.advanced ? progress.elapsed : creatorElapsedLabel(progress.elapsed)}</span>}

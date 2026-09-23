@@ -4,6 +4,8 @@ import type { NodeRunWire, RunSummaryWire } from '../contracts'
 import { nodeStateLabel, runHistoryLabel, runTargetLabel } from '../run-presentation'
 import { focusIfAvailable } from './focus-management'
 import './task-drawer.css'
+import type { OperationView } from '../operation-presentation'
+import { OperationStatus } from './OperationStatus'
 
 export type TaskDrawerTab = 'current' | 'history' | 'problems'
 const tabs: ReadonlyArray<readonly [TaskDrawerTab, string]> = [
@@ -41,12 +43,13 @@ export interface TaskDrawerProps {
   readonly abandonDisabled?: boolean
   readonly abandonDisabledReason?: string
   readonly returnFocusRef?: RefObject<HTMLElement | null>
+  readonly activity?: OperationView | null
 }
 
 export function TaskDrawer({ open, tab, onOpenChange, onTabChange, summaries, selectedRunId, selectedSummary,
   nodeRuns, nodeLabel, onSelectRun, onLocateNode, nextRunCursor = null, historyBusy = false, onLoadOlder,
   diagnostics, problemCount, otherWaitingCount = 0, outputs, outputCount, currentGraphActions, showingSnapshot = false,
-  onReturnToEditing, onAbandon, abandonDisabled = false, abandonDisabledReason, returnFocusRef }: TaskDrawerProps) {
+  onReturnToEditing, onAbandon, abandonDisabled = false, abandonDisabledReason, returnFocusRef, activity }: TaskDrawerProps) {
   const id = useId()
   const triggerRef = useRef<HTMLButtonElement>(null)
   const tabRefs = useRef(new Map<TaskDrawerTab, HTMLButtonElement>())
@@ -108,7 +111,7 @@ export function TaskDrawer({ open, tab, onOpenChange, onTabChange, summaries, se
     <div className="task-drawer-summary" aria-label="任务摘要">
       <button ref={triggerRef} className="task-drawer-trigger" type="button" aria-expanded={open}
         aria-controls={`${id}-content`} aria-label={open ? '收起任务区' : '展开任务区'} onClick={() => onOpenChange(!open)}>
-        <span aria-hidden="true">{open ? '⌄' : '⌃'}</span><span>{summaryText}</span>
+        <span aria-hidden="true">{open ? '⌄' : '⌃'}</span>{activity ? <OperationStatus value={activity} compact live /> : <span>{summaryText}</span>}
       </button>
       <span className="task-drawer-counts">{waitingCount} 项等待外部处理 · {problems} 项问题</span>
       {otherWaitingCount > 0 && <span className="task-drawer-other">当前另有 {otherWaitingCount} 项任务待操作</span>}

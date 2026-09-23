@@ -107,11 +107,15 @@ def validate_batch(context: NodeValidatorContext) -> NodeValidatorResult:
 
 def create_fixture(root: Path) -> tuple[ProjectServiceApplication, Path]:
     """从真实 Source 节点开始执行至 waiting，不注入已完成状态或 Artifact。"""
-    for directory in ("complete", "invalid"):
+    for directory in ("complete", "invalid", "suffixed"):
         (root / directory).mkdir()
     for index, count in enumerate(COUNTS):
         generate(root / f"input-{index + 1}.mkv", count)
         generate(root / "complete" / NAMES[index], count)
+    for name in reversed(NAMES):
+        shutil.copyfile(
+            root / "complete" / name, root / "suffixed" / name.replace(".mov", "_slp.mov")
+        )
     generate(root / "invalid" / NAMES[1], 3)
     definition = NodeDefinition(
         type_id=TYPE_ID,
@@ -231,7 +235,7 @@ class BatchPlatform:
         if capability == "open_files":
             return next(self.files, None)
         if capability == "select_directory":
-            return (str(self.root / "complete"),)
+            return (str(self.root / "suffixed"),)
         if capability == "open_file" and arguments.extensions == (".zniku",):
             return (str(self.project),)
         return None

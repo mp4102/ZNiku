@@ -2,6 +2,7 @@
 
 import type { Edge, Node } from '@xyflow/react'
 import type { GeometryRoute, Point } from './studio/geometry/types'
+import type { OperationView } from './studio/operation-presentation'
 import type {
   LatestResultWire,
   NodeProgressProjectionWire,
@@ -44,6 +45,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   readonly groupLabel?: string
   readonly groupColorToken?: string
   readonly problemSummary?: string
+  readonly activity?: OperationView | null
 }
 
 export type WorkflowNode = Node<WorkflowNodeData, 'workflow'>

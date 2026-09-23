@@ -164,9 +164,17 @@ test('B 整理取消 / 单步撤销 / SQLite 重开 / 同 ID 历史视图不改�
   const detail = async (): Promise<RunDetailEnvelope> => (await page.request.get(`${service.origin}/api/studio/runs/${runId}`)).json() as Promise<RunDetailEnvelope>
   const completed = await detail()
   expect(completed.artifacts.length).toBeGreaterThan(0)
+  // 服务已完成不等于轮询已进入画布；迟到的 running→completed 几何变化会正确取消旧布局预览。
+  // 先等两张实际卡片消费完成状态，再测试整理，不 force-click 或重试被失效的预览。
+  expect(completed.run.node_runs.filter((node) => node.state === 'completed')).toHaveLength(2)
+  for (const node of completed.run.node_runs) {
+    await expect(page.locator(`.react-flow__node[data-id="${node.node_id}"] .workflow-node.status-completed`)).toHaveCount(1)
+  }
+  await waitGeometry(page)
   // 创建 Run 会明确进入其只读快照；布局编辑要先由用户返回当前编辑图。
   await page.locator('.canvas-context').getByRole('button', { name: '返回当前编辑', exact: true }).click()
   await expect(page.locator('.context-mode')).toHaveText('当前编辑')
+  await waitGeometry(page)
   const saves: string[] = []
   page.on('request', (request) => {
     if (request.method() === 'POST' && [`${service.origin}/api/studio/command`, `${service.origin}/api/studio/graph-save`].includes(request.url()))

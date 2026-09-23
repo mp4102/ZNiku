@@ -4,5 +4,5 @@ import type { NodeRunWire } from './contracts'
 
 export function progressStageLabel(progress: WorkflowProgressData | null, nodeRun: NodeRunWire | null): string | null {
   if (!progress || nodeRun?.state !== 'running') return null
-  return progress.stage ?? (progress.fraction === 1 ? '媒体处理已到总量，等待完成确认' : null)
+  return progress.fraction === 1 ? `${progress.stage ?? '媒体处理已到总量'}，等待完成确认` : progress.stage ?? null
 }

@@ -38,6 +38,25 @@ function secondSummary(): RunSummaryWire {
 }
 
 describe('占位任务抽屉', () => {
+  it('全局活动不借用被查看历史的名称或完成数；百分比不进入实时播报', () => {
+    const activity = { phase: 'running' as const, label: '实际任务 A', message: '检查 FI 输出', fraction: .5, elapsed: '已用时 5 秒（服务起时）' }
+    const options = props({ open: true, selectedSummary: { ...handoffSummary(), state_counts: { ...handoffSummary().state_counts, completed: 99 } }, activity })
+    const view = render(<TaskDrawer {...options} />)
+    const summary = screen.getByLabelText('任务摘要')
+    expect(summary).toHaveTextContent('实际任务 A · 检查 FI 输出')
+    expect(summary).not.toHaveTextContent('已完成 99')
+    expect(within(summary).getByRole('progressbar')).toHaveAttribute('value', '0.5')
+    const live = summary.querySelector('[aria-live="polite"]')!
+    const text = live.textContent
+    expect(live).not.toHaveTextContent('50%')
+    expect(live).not.toHaveTextContent('已用时')
+    expect(summary).toHaveTextContent(activity.elapsed)
+    view.rerender(<TaskDrawer {...options} activity={{ ...activity, fraction: .8, elapsed: '已用时 6 秒（服务起时）' }} />)
+    expect(live.textContent).toBe(text)
+    expect(within(summary).getByRole('progressbar')).toHaveAttribute('value', '0.8')
+    expect(summary).toHaveTextContent('已用时 6 秒（服务起时）')
+    expect(options.onSelectRun).not.toHaveBeenCalled()
+  })
   it.each(['disabled', 'hidden'] as const)('原入口变为 %s 后收起抽屉，焦点退回可用的任务摘要', async (unavailable) => {
     const options = props()
     function Example() {

@@ -10,6 +10,20 @@ const items = batchPreview.matches.map((match) => ({ port_id: match.port_id, can
 const received = { ...batchObservation, complete: true, rows: batchObservation.rows.map((row) => ({ ...row, collected: true, size: 1000 })) }
 
 describe('章级收件 HTTP 合同', () => {
+  it('原位同一收件按服务关联无需覆盖；伪造或未知无操作关联拒绝', async () => {
+    const preview = { ...batchPreview, ...received, candidates: batchPreview.candidates.map((item, index) => ({ ...item,
+      path: received.rows[index]!.incoming_path, unchanged_port_ids: [received.rows[index]!.port_id] })) }
+    const fetch = vi.fn().mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(response({ ...received, batch_id: preview.batch_id,
+      results: items.map((item) => ({ port_id: item.port_id, status: 'collected', message: null })) }))
+    vi.stubGlobal('fetch', fetch)
+    const bridge = host()
+    await bridge.previewHandoffBatch({ ...batchBinding, selection_handles: [] })
+    await expect(bridge.confirmHandoffBatch({ contract_version: '0.3.0', batch_id: preview.batch_id, items })).resolves.toMatchObject({ complete: true })
+    for (const invalid of [['unknown'], ['leaf-1', 'leaf-1'], ['leaf-2']]) {
+      fetch.mockResolvedValueOnce(response({ ...preview, candidates: [{ ...preview.candidates[0]!, unchanged_port_ids: invalid }, preview.candidates[1]] }))
+      await expect(host().previewHandoffBatch({ ...batchBinding, selection_handles: [] })).rejects.toThrow('重复或未知')
+    }
+  })
   it('observe/preview 只传签发句柄，confirm单次复制绑定完整目标', async () => {
     const fetch = vi.fn().mockResolvedValueOnce(response(batchObservation)).mockResolvedValueOnce(response(batchPreview)).mockResolvedValueOnce(response({ ...received,
       batch_id: batchPreview.batch_id, results: items.map((item) => ({ port_id: item.port_id, status: 'collected', message: null })) }))

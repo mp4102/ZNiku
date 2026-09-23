@@ -884,7 +884,8 @@ function validateProgressSamples(detail: RunDetailEnvelope): void {
   const seen = new Set<string>()
 
   for (const sample of detail.progress_samples) {
-    if (sample.stage != null && (sample.stage.length === 0 || sample.stage.length > 96 || sample.stage.trim() !== sample.stage || /[\u0000-\u001f\u007f]/.test(sample.stage))) {
+    // Python len/isprintable 按 Unicode 码点计数；ASCII 空格可用，其他分隔/控制/格式字符不可用。
+    if (sample.stage != null && ([...sample.stage].length === 0 || [...sample.stage].length > 96 || sample.stage.trim() !== sample.stage || [...sample.stage].some((char) => char !== ' ' && /[\p{C}\p{Z}]/u.test(char)))) {
       progressContractError('stage 必须为不含控制字符的有界纯文本')
     }
     if (seen.has(sample.node_run_id)) {

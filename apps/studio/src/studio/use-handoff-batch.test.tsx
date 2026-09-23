@@ -23,11 +23,22 @@ function setup() {
     observeHandoffBatch: vi.fn(async () => observation), previewHandoffBatch: preview, confirmHandoffBatch: confirm, checkHandoffBatch: check }
   const options = { hostBridge: bridge, projectSessionId: batchBinding.project_session_id, nodeRun: batchNodeRun,
     scope: 'first', operationRef: { current: null as symbol | null }, canStart: () => true, isCurrent: () => true,
-    onBusyChange: vi.fn(), onChanged: vi.fn(), onChecked: vi.fn() }
+    onBusyChange: vi.fn(), onChanged: vi.fn(), onChecked: vi.fn(), onActivity: vi.fn(), taskLabel: 'A 章增强' }
   return { options, pick, preview, confirm, check }
 }
 
 describe('章级收件交互状态机', () => {
+  it('确认收件重新记录请求起时，不把用户阅读预览的时间计入服务等待', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(10_000)
+    try {
+      const fixture = setup(), { result } = renderHook(() => useHandoffBatch(fixture.options))
+      await act(() => result.current.choose('inbox'))
+      expect(fixture.options.onActivity.mock.calls[0]?.[0]).toMatchObject({ phase: 'requesting', requestedAt: 10_000 })
+      clock.mockReturnValue(70_000)
+      await act(() => result.current.confirm(items))
+      expect(fixture.options.onActivity.mock.calls.find(([value]) => value.message.startsWith('正在请求收件'))?.[0]).toMatchObject({ phase: 'requesting', requestedAt: 70_000 })
+    } finally { clock.mockRestore() }
+  })
   it('多文件选择→部分收件→补齐→完整检查，任何阶段均不包含自动Submit', async () => {
     const fixture = setup(), { result } = renderHook(() => useHandoffBatch(fixture.options))
     await waitFor(() => expect(result.current.observation).not.toBeNull())
@@ -64,8 +75,10 @@ describe('章级收件交互状态机', () => {
     let choosing!: Promise<void>
     await act(async () => { choosing = result.current.choose('inbox'); await Promise.resolve() })
     rerender({ ...fixture.options, scope: 'other-project' })
+    expect(fixture.options.onActivity).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'needs_user', label: 'A 章增强', message: expect.stringContaining('未收件') }), false)
     await act(async () => { late.resolve(batchPreview); await choosing })
     expect(result.current.preview).toBeNull()
+    expect(fixture.options.onActivity).not.toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'requesting' }), expect.anything())
     await act(() => result.current.confirm(items))
     expect(fixture.confirm).not.toHaveBeenCalled()
   })
@@ -76,13 +89,15 @@ describe('章级收件交互状态机', () => {
     await act(() => result.current.choose('inbox'))
     let copying!: Promise<void>
     await act(async () => { copying = result.current.confirm(items); await Promise.resolve() })
+    expect(fixture.options.onActivity).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'requesting', label: 'A 章增强', nodeRun: batchNodeRun, message: expect.stringContaining('等待服务响应') }), false)
     act(() => result.current.cancel())
     expect(fixture.options.operationRef.current).not.toBeNull()
-    rerender({ ...fixture.options, scope: 'other-node' })
+    rerender({ ...fixture.options, scope: 'other-node', taskLabel: 'B 章增强' })
     expect(result.current.preview).toBeNull()
     await act(async () => { late.resolve({ ...batchObservation, batch_id: batchPreview.batch_id, results: [] }); await copying })
     expect(fixture.options.operationRef.current).toBeNull()
     expect(fixture.options.onChecked).not.toHaveBeenCalled()
+    expect(fixture.options.onActivity).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'uncertain', label: 'A 章增强', nodeRun: batchNodeRun }), false)
   })
   it('预览错目标失败关闭；完整检查失败只保留等待提示', async () => {
     const fixture = setup(), { result } = renderHook(() => useHandoffBatch(fixture.options))

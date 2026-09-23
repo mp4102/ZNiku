@@ -123,6 +123,25 @@ def _check(
     )
 
 
+def test_reselecting_exact_received_file_reports_no_op_without_overwrite(tmp_path: Path) -> None:
+    """相同收件原位选回仅展示无操作，不要求假覆盖，也不重新复制文件。"""
+    value = _batch(tmp_path)
+    manager = HandoffBatchManager()
+    received = _confirm(
+        manager, value, _preview(manager, value, _sources(value, tmp_path / "external"))
+    )
+    path = Path(received.rows[0].incoming_path)
+    before = path.stat()
+    preview = _preview(manager, value, (path,))
+    candidate = preview.candidates[0]
+    assert candidate.path == str(path)
+    assert candidate.unchanged_port_ids == (received.rows[0].port_id,)
+    assert preview.rows[0].display_label
+    _confirm(manager, value, preview)
+    assert path.stat().st_ino == before.st_ino
+    assert path.stat().st_mtime_ns == before.st_mtime_ns
+
+
 @pytest.mark.parametrize("readable", [False, True])
 def test_partial_collection_stays_waiting_and_full_check_precedes_single_submit(
     tmp_path: Path, readable: bool

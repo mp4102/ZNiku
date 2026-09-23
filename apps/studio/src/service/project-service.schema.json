@@ -3845,10 +3845,35 @@
           "title": "Name",
           "type": "string"
         },
+        "path": {
+          "anyOf": [
+            {
+              "maxLength": 32767,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
         "size": {
           "exclusiveMinimum": 0,
           "title": "Size",
           "type": "integer"
+        },
+        "unchanged_port_ids": {
+          "default": [],
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
+            "type": "string"
+          },
+          "title": "Unchanged Port Ids",
+          "type": "array"
         }
       },
       "required": [
@@ -4191,6 +4216,22 @@
     "HandoffBatchMatch": {
       "additionalProperties": false,
       "properties": {
+        "basis": {
+          "anyOf": [
+            {
+              "enum": [
+                "canonical_name",
+                "chapter_leaf"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Basis"
+        },
         "candidate_handle": {
           "anyOf": [
             {
@@ -4210,6 +4251,11 @@
           "minLength": 1,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$",
           "title": "Port Id",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
           "type": "string"
         },
         "state": {
@@ -4468,6 +4514,11 @@
         "collected": {
           "title": "Collected",
           "type": "boolean"
+        },
+        "display_label": {
+          "default": "",
+          "title": "Display Label",
+          "type": "string"
         },
         "incoming_path": {
           "maxLength": 32767,

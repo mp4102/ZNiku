@@ -21,6 +21,7 @@ import { AvEnhanceV27Wizard, type AvEnhanceV27WizardMode } from './AvEnhanceV27W
 import type { OverlapFullEnvelope, OverlapFullIntent, OverlapFullRequest, OverlapProcessingRequest } from './chapter-overlap-contracts'
 import { sourceAdmittedCatalogAvailable, type SourceAdmittedCreateRequest, type SourceAdmittedReplaceRequest, type SourceAdmittedFullEnvelope, type SourceAdmittedFullIntent, type SourceAdmittedFullRequest, type SourceAdmittedProcessingRequest } from './source-admitted-contracts'
 import { fusedCatalogAvailable, type FusedFullEnvelope, type FusedFullIntent, type FusedFullRequest } from './chapter-batch-fused-contracts'
+import { boundActivity, localActivityView, runtimeOperation, type ActivityListener, type LocalActivity, type OperationView } from './operation-presentation'
 import { sourceAlignedCatalogAvailable, type SourceAlignedFullEnvelope, type SourceAlignedFullIntent, type SourceAlignedFullRequest, type SourceAlignedProcessingRequest } from './source-aligned-contracts'
 import type {
   WorkflowEdge,
@@ -505,6 +506,9 @@ export function StudioWorkspace({
   const [busy, setBusy] = useState(false)
   const [storageOpen, setStorageOpen] = useState(false)
   const [dataBusy, setDataBusy] = useState(false)
+  const [localActivity, setLocalActivity] = useState<LocalActivity | null>(null)
+  // 复用既有状态/进度刷新；全局、节点、右侧使用同一秒，不新增计时或请求循环。
+  const activityNow = localActivity && ['requesting', 'running', 'settling'].includes(localActivity.phase) ? Math.floor(Date.now() / 1_000) * 1_000 : 0
   const [inboxBusy, setInboxBusy] = useState(false)
   const [inboxSubmissionFences, setInboxSubmissionFences] = useState<ReadonlySet<string>>(new Set())
   const inboxSubmissionFencesRef = useRef<ReadonlySet<string>>(new Set())
@@ -570,6 +574,10 @@ export function StudioWorkspace({
   const [fitViewEpoch, setFitViewEpoch] = useState(0)
 
   const statusRef = useRef<StatusEnvelope | null>(null)
+  const recordActivity = useCallback<ActivityListener>((activity, replace = false) => {
+    if (activity.projectSessionId !== statusRef.current?.project_session_id) return
+    setLocalActivity((before) => replace || before?.token === activity.token ? activity : before)
+  }, [])
   const detailRef = useRef<RunDetailEnvelope | null>(null)
   const viewRunIdRef = useRef<string | null>(null)
   const historySummariesRef = useRef<ReadonlyArray<RunSummaryWire>>([])
@@ -1462,6 +1470,7 @@ export function StudioWorkspace({
             node.parameters,
           ),
           latestResult: latestResults.get(node.node_id) ?? null,
+          activity: boundActivity(localActivity, status?.project_session_id ?? null, nodeRun, activityNow),
         }
         return [
           {
@@ -1492,6 +1501,9 @@ export function StudioWorkspace({
       selectedNodeIds,
       diagnostics,
       showRunSnapshot,
+      localActivity,
+      activityNow,
+      status?.project_session_id,
     ],
   )
 
@@ -2505,6 +2517,8 @@ export function StudioWorkspace({
     isCurrent: (nodeRun) => !health.status.stale && !health.detail.stale && selectionGuardRef.current.nodeIds.size === 1 &&
       selectionGuardRef.current.nodeIds.has(nodeRun.node_id) && handoffIsCurrent(nodeRun, generationRef.current),
     onBusyChange: setExternalFileBusy,
+    onActivity: recordActivity,
+    taskLabel: selectedNodeRun ? nodeLabels.get(selectedNodeRun.node_id) ?? selectedNodeRun.node_id : undefined,
     onChanged: (nodeRun) => {
       const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, nodeRun.external_handoff!.handoff_id)
       // 使已发出的被动观察失效，不能让复制前的迟到 stat 覆盖新的整章检查结果。
@@ -2523,6 +2537,8 @@ export function StudioWorkspace({
 
   const handoffIntake = useHandoffIntake({
     hostBridge: effectiveHostBridge,
+    onActivity: recordActivity,
+    taskLabel: selectedNodeRun ? nodeLabels.get(selectedNodeRun.node_id) ?? '外部处理' : '外部处理',
     projectSessionId: status?.project_session_id ?? null,
     nodeRun: selectedNodeRun && isIntakeHandoff(selectedNodeRun, currentDetail) ? selectedNodeRun : null,
     scope: JSON.stringify([status?.project_session_id, viewRunId, [...selectedNodeIds].sort(), showRunSnapshot,
@@ -2595,6 +2611,11 @@ export function StudioWorkspace({
         health.status.stale || health.detail.stale || !handoffIsCurrent(nodeRun, generation)) return
     const token = Symbol('check-output')
     handoffActionRef.current = token
+    const activity: LocalActivity = { token, projectSessionId: statusRef.current!.project_session_id!, nodeRun,
+      requestedAt: Date.now(),
+      label: nodeLabels.get(nodeRun.node_id) ?? nodeRun.node_id, phase: 'requesting', message: '正在请求输出检查，等待服务响应' }
+    recordActivity(activity, true)
+    let activityMessage = '检查未确认通过，请查看问题后再操作'
     setCheckingNodeRunId(nodeRun.node_run_id)
     const key = handoffResourceKey(nodeRun.run_id, nodeRun.node_run_id, nodeRun.external_handoff.handoff_id)
     updateCheckedOutputs((current) => { const next = new Map(current); next.delete(key); return next })
@@ -2606,11 +2627,13 @@ export function StudioWorkspace({
         return
       }
       updateCheckedOutputs((current) => new Map(current).set(key, checked))
+      activityMessage = '输出检查通过，等待你提交并继续'
       setClientHint('输出检查通过。确认外部工具已完成写入后，可点击“提交并继续”。')
     } finally {
+      recordActivity({ ...activity, phase: 'needs_user', message: activityMessage })
       if (handoffActionRef.current === token) { handoffActionRef.current = null; setCheckingNodeRunId(null) }
     }
-  }, [handoffIsCurrent, health.detail.stale, health.status.stale, loadReadiness, updateCheckedOutputs])
+  }, [handoffIsCurrent, health.detail.stale, health.status.stale, loadReadiness, updateCheckedOutputs, nodeLabels, recordActivity])
 
   const submitOutput = useCallback(async (nodeRun: NodeRunWire) => {
     const generation = generationRef.current
@@ -2622,6 +2645,12 @@ export function StudioWorkspace({
     if (!previous || !isFullCheck(previous, nodeRun)) { setClientHint('请先检查输出，再显式提交。'); return }
     const token = Symbol('submit-output')
     handoffActionRef.current = token
+    const activity: LocalActivity = { token, projectSessionId: statusRef.current!.project_session_id!, nodeRun,
+      requestedAt: Date.now(),
+      label: nodeLabels.get(nodeRun.node_id) ?? nodeRun.node_id, phase: 'requesting', message: '正在请求提交并复检，等待服务响应；请勿重复操作' }
+    recordActivity(activity, true)
+    let activityPhase: LocalActivity['phase'] = 'needs_user'
+    let activityMessage = '本次未提交，请查看检查提示后再操作'
     setSubmittingNodeRunId(nodeRun.node_run_id)
     try {
       const resourceKey = nodeRunResourceKey(nodeRun.run_id, nodeRun.node_run_id)
@@ -2652,13 +2681,17 @@ export function StudioWorkspace({
       const fences = new Set(inboxSubmissionFencesRef.current).add(key)
       inboxSubmissionFencesRef.current = fences
       setInboxSubmissionFences(fences)
-      await executeCommands([{ operation: 'submit_external', run_id: nodeRun.run_id,
+      activityPhase = 'uncertain'
+      activityMessage = '提交结果尚未确认，请刷新核对正式状态，不自动重试'
+      const submitted = await executeCommands([{ operation: 'submit_external', run_id: nodeRun.run_id,
         node_run_id: nodeRun.node_run_id, handoff_id: handoff.handoff_id }])
+      if (submitted) { activityPhase = 'needs_user'; activityMessage = '提交响应已返回，请以当前正式节点状态继续' }
       updateCheckedOutputs((current) => { const next = new Map(current); next.delete(key); return next })
     } finally {
+      recordActivity({ ...activity, phase: activityPhase, message: activityMessage })
       if (handoffActionRef.current === token) { handoffActionRef.current = null; setSubmittingNodeRunId(null) }
     }
-  }, [executeCommands, handoffIsCurrent, health.detail.stale, health.readiness.stale, health.status.stale, loadReadiness, updateCheckedOutputs])
+  }, [executeCommands, handoffIsCurrent, health.detail.stale, health.readiness.stale, health.status.stale, loadReadiness, updateCheckedOutputs, nodeLabels, recordActivity])
 
   const requestRerun = useCallback(async (nodeId: string, runId: string) => {
     if (busyRef.current || selectionGuardRef.current.parameterDraftDirty) {
@@ -2915,6 +2948,44 @@ export function StudioWorkspace({
   const nodeLabel = (nodeId: string): string => {
     return nodeLabels.get(nodeId) ?? (advanced ? nodeId : '历史步骤')
   }
+  const globalActivity: OperationView | null = (() => {
+    const session = status?.project_session_id ?? null
+    const sameSession = localActivity?.projectSessionId === session ? localActivity : null
+    const currentAttempt = sameSession && currentRun?.run_id === sameSession.nodeRun.run_id && !health.detail.stale
+      ? runLatestAttempts.get(sameSession.nodeRun.node_id) : null
+    const reconciled = sameSession && sameSession.phase !== 'requesting' && !health.status.stale && (
+      allSummaries.some((item) => item.run_id === sameSession.nodeRun.run_id && ['completed', 'abandoned'].includes(item.state)) ||
+      currentAttempt && (currentAttempt.node_run_id !== sameSession.nodeRun.node_run_id || currentAttempt.state !== 'waiting_external')
+    )
+    const local = reconciled ? null : sameSession
+    if (health.status.stale && (local || status?.active_operation)) return { phase: 'uncertain', label: local?.label ?? '本机服务', message: '连接暂不可用，当前结果未确认；不要重复提交，恢复后核对正式状态', fraction: null }
+    // 请求仍绑定发起时的任务，切换选区不能把它改名或借用新选区百分比。
+    if (local && ['requesting', 'running', 'settling'].includes(local.phase)) return localActivityView(local, activityNow)
+    const maintenance = status?.active_operation
+    if (maintenance && ['scan_storage', 'cleanup_storage', 'migrate_storage'].includes(maintenance)) return {
+      phase: 'running', label: '工程数据维护', fraction: null,
+      message: maintenance === 'scan_storage' ? '服务正在扫描与分类，请稍候' : maintenance === 'cleanup_storage' ? '服务正在处理明确选择的内部中转，请稍候' : '服务正在迁移工程数据，请稍候',
+    }
+    if (status?.active_run_id && operationActive) {
+      if (!health.detail.stale && currentRun?.run_id === status.active_run_id) {
+        const running = [...runLatestAttempts.values()].find((node) => node.state === 'running')
+        if (running) {
+          const node = currentRun.graph_snapshot.nodes.find((item) => item.node_id === running.node_id)
+          const definition = node && definitionForNode(node, currentRun.definitions_snapshot)
+          return runtimeOperation(running, definition ? nodeProgressView(running, definition, progressSamplesByNodeRun.get(running.node_run_id) ?? null, node?.parameters) : null, nodeLabel(running.node_id))
+        }
+      }
+      return { phase: 'running', label: '实际活动任务', message: currentRun?.run_id !== status.active_run_id ? '另一个处理记录正在运行；当前查看内容不是活动任务' : '服务正在处理，等待当前步骤状态', fraction: null }
+    }
+    if (local && (local.phase === 'uncertain' || currentRun?.run_id !== local.nodeRun.run_id)) return localActivityView(local, activityNow)
+    if (local) {
+      const bound = boundActivity(local, session, runLatestAttempts.get(local.nodeRun.node_id) ?? null, activityNow)
+      if (bound) return bound
+    }
+    if (handoffImport.busy || handoffIntake.busy || inboxBusy || dataBusy || busy) return { phase: 'requesting', label: '本机操作', message: '请求正在等待服务响应，请勿重复操作', fraction: null }
+    const waiting = activeSummaries.reduce((count, summary) => count + summary.state_counts.waiting_external, 0)
+    return waiting ? { phase: 'needs_user', label: `${waiting} 项外部任务`, message: '等待你交回处理结果、检查并提交', fraction: null } : null
+  })()
   const launchHandoff = async (nodeRun: NodeRunWire, capability: HostSystemCapability,
     selector: Extract<HostPathReference, { readonly kind: 'handoff' }>['selector']) => {
     if (!nodeRun.external_handoff || !handoffIsCurrent(nodeRun, generationRef.current)) return
@@ -3331,6 +3402,7 @@ export function StudioWorkspace({
         requestAnimationFrame(() => document.getElementById('workflow-canvas')?.focus())
       }}>返回画布</button>
       <NodeInspector
+        activity={boundActivity(localActivity, status?.project_session_id ?? null, selectedNodeRun, activityNow)}
         tab={inspectorTab}
         onTabChange={setInspectorTab}
         selectedNodeCount={selectedNodeIds.size}
@@ -3462,6 +3534,7 @@ export function StudioWorkspace({
       </div>
 
       <TaskDrawer
+        activity={globalActivity}
         open={bottomOpen} tab={taskTab} onOpenChange={setBottomOpen} onTabChange={setTaskTab}
         summaries={allSummaries} selectedRunId={viewRunId} selectedSummary={viewedSummary}
         nodeRuns={[...runLatestAttempts.values()].map((nodeRun) => {

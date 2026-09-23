@@ -9,11 +9,12 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import shutil
 import tempfile
 import threading
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, defaultdict
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -92,6 +93,7 @@ class HandoffBatchRow(HostBridgeModel):
     collected: bool
     target_exists: bool
     size: Annotated[int, Field(ge=0)] | None
+    display_label: str = ""
 
 
 class HandoffBatchObserveEnvelope(HandoffBatchBinding):
@@ -111,12 +113,16 @@ class HandoffBatchCandidate(HostBridgeModel):
     name: FileName
     size: Annotated[int, Field(gt=0)]
     action: Literal["copy", "move"]
+    path: HostLocalPath | None = None
+    unchanged_port_ids: tuple[HostIdentifier, ...] = ()
 
 
 class HandoffBatchMatch(HostBridgeModel):
     port_id: HostIdentifier
     candidate_handle: HostOpaqueId | None
     state: Literal["matched", "missing", "ambiguous"]
+    basis: Literal["canonical_name", "chapter_leaf"] | None = None
+    reason: str = ""
 
 
 class HandoffBatchPreviewEnvelope(HandoffBatchObserveEnvelope):
@@ -198,6 +204,85 @@ def _binding(value: HandoffBatchBinding) -> HandoffBatchBinding:
     )
 
 
+_LEAF_NAME = re.compile(
+    r"(?P<title>.+)\.(?P<chapter>[A-Z]{1,3})\.leaf-(?P<leaf>[0-9]{4,5})"
+    r"(?P<role>\.enhancement)?(?P<suffix>_slp)?\.mov",
+    re.IGNORECASE,
+)
+
+
+def _leaf_identity(name: str, *, target: bool = False) -> tuple[str, str, int] | None:
+    """只接受明确的片名、章节及 leaf 语法；数字、年份、排序与大小均不用于猜测。"""
+    match = _LEAF_NAME.fullmatch(name)
+    if not match or name.casefold().count(".leaf-") != 1:
+        return None
+    if target and (not match["role"] or match["suffix"]):
+        return None
+    leaf = int(match["leaf"])
+    if not 1 <= leaf <= MAX_BATCH_TARGETS:
+        return None
+    return match["title"].casefold(), match["chapter"].casefold(), leaf
+
+
+def _suggest_matches(
+    rows: tuple[HandoffBatchRow, ...], candidates: dict[str, _Candidate]
+) -> tuple[HandoffBatchMatch, ...]:
+    """建议只是默认选区；重复身份一律留空，后续完整媒体验证与显式提交不变。"""
+    names = Counter(row.target_name.casefold() for row in rows)
+    identities = Counter(_leaf_identity(row.target_name, target=True) for row in rows)
+    by_name: dict[str, list[str]] = defaultdict(list)
+    by_leaf: dict[tuple[str, str, int], list[str]] = defaultdict(list)
+    for candidate_handle, candidate in candidates.items():
+        by_name[candidate.path.name.casefold()].append(candidate_handle)
+        if key := _leaf_identity(candidate.path.name):
+            by_leaf[key].append(candidate_handle)
+    result = []
+    for row in rows:
+        target_key = _leaf_identity(row.target_name, target=True)
+        exact = by_name.get(row.target_name.casefold(), [])
+        compatible = by_leaf.get(target_key, []) if target_key is not None else []
+        selected = sorted(set(exact + compatible))
+        ambiguous = (
+            len(selected) > 1
+            or names[row.target_name.casefold()] > 1
+            or (target_key is not None and identities[target_key] > 1)
+        )
+        handle = selected[0] if len(selected) == 1 and not ambiguous else None
+        basis: Literal["canonical_name", "chapter_leaf"] | None = (
+            None if handle is None else "canonical_name" if handle in exact else "chapter_leaf"
+        )
+        result.append(
+            HandoffBatchMatch(
+                port_id=row.port_id,
+                candidate_handle=handle,
+                state="ambiguous" if ambiguous else "matched" if handle else "missing",
+                basis=basis,
+                reason="同一处理段存在多个候选或目标，请手动选择"
+                if ambiguous
+                else "规范名唯一对应"
+                if basis == "canonical_name"
+                else "片名、章节与分叶序号唯一对应 (支持 _slp 后缀)"
+                if basis
+                else "没有唯一对应；跨章、无明确编号或未知后缀不自动匹配",
+            )
+        )
+    # 不允许一个候选同时作为多行的自动建议，即使碰到非标准目标名也保守留空。
+    used = Counter(item.candidate_handle for item in result if item.candidate_handle)
+    return tuple(
+        item.model_copy(
+            update={
+                "candidate_handle": None,
+                "state": "ambiguous",
+                "basis": None,
+                "reason": "同一候选对应多个目标，请手动选择",
+            }
+        )
+        if item.candidate_handle and used[item.candidate_handle] > 1
+        else item
+        for item in result
+    )
+
+
 def _inbox(authority: ImportAuthority) -> Path:
     work = _safe_path(Path(authority.node_run.work_dir))
     directory = _safe_path(work / "incoming")
@@ -216,7 +301,7 @@ def _observe(
     binding: HandoffBatchBinding, authorities: tuple[ImportAuthority, ...]
 ) -> HandoffBatchObserveEnvelope:
     rows = []
-    for authority in authorities:
+    for index, authority in enumerate(authorities):
         target = _target_path(authority)
         incoming = _incoming(authority)
         received = _identity(incoming, allow_missing=True, target=True)
@@ -230,6 +315,11 @@ def _observe(
                 collected=received is not None and received.size > 0,
                 target_exists=published is not None and published.size > 0,
                 size=received.size if received else published.size if published else None,
+                display_label=(
+                    f"{key[1].upper()} 章 · 第 {key[2]} 段"
+                    if (key := _leaf_identity(target.name, target=True))
+                    else f"第 {index + 1} 项 (共 {len(authorities)} 项)"
+                ),
             )
         )
     return HandoffBatchObserveEnvelope(
@@ -351,23 +441,7 @@ class HandoffBatchManager:
                     if action == "move" and source.stat().st_nlink != 1:
                         raise _failure("PATH", "原位收纳候选不得与其他文件共享硬链接", 422)
                     candidates[secrets.token_urlsafe(24)] = _Candidate(source, identity, action)
-            # 大小、时间和排序只供展示，自动建议只接受唯一规范名。
-            target_names = Counter(row.target_name.casefold() for row in observed.rows)
-            matches = []
-            for row in observed.rows:
-                exact = [
-                    key
-                    for key, candidate in candidates.items()
-                    if candidate.path.name.casefold() == row.target_name.casefold()
-                ]
-                ambiguous = len(exact) > 1 or target_names[row.target_name.casefold()] > 1
-                matches.append(
-                    HandoffBatchMatch(
-                        port_id=row.port_id,
-                        candidate_handle=exact[0] if len(exact) == 1 and not ambiguous else None,
-                        state="ambiguous" if ambiguous else "matched" if exact else "missing",
-                    )
-                )
+            matches = _suggest_matches(observed.rows, candidates)
             identifier = secrets.token_urlsafe(24)
             ticket = _Ticket(
                 binding,
@@ -407,6 +481,12 @@ class HandoffBatchManager:
                         name=value.path.name,
                         size=value.identity.size,
                         action=value.action,
+                        path=str(value.path),
+                        unchanged_port_ids=tuple(
+                            row.port_id
+                            for row in observed.rows
+                            if value.path == Path(row.incoming_path)
+                        ),
                     )
                     for key, value in candidates.items()
                 ),

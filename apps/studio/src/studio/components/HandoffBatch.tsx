@@ -39,7 +39,7 @@ export function HandoffBatch(props: Props) {
       <h4>按章交回处理好的文件</h4>
       <p>本章使用一套增强参数。可一次选择多个文件或一个目录，也可陆续补件。外部文件复制并保留原件；直接导出到本章收件目录的文件会在确认后原位收纳，不保留原名副本。</p>
       <p className="handoff-batch-count" role="status">{rows.length ? `已收 ${received}/${rows.length}` : '正在读取本章待交回清单'}</p>
-      {controller.phase === 'selecting' && <p role="status">正在读取选择并准备匹配预览；尚未收件。</p>}
+      {controller.phase === 'selecting' && <p role="status">请完成文件选择；正在等待预览响应，尚未收件。</p>}
       <div className="handoff-check-actions">
         <button type="button" disabled={disabled || !props.canPickFiles} onClick={() => void controller.choose('open_files')}>选择本章多个文件</button>
         <button type="button" disabled={disabled || !props.canPickDirectory} onClick={() => void controller.choose('select_directory')}>选择本章文件目录</button>
@@ -48,13 +48,14 @@ export function HandoffBatch(props: Props) {
         <button type="button" disabled={disabled} onClick={() => void controller.refresh()}>刷新收件状态</button>
       </div>
       {!controller.available && <p role="alert">当前服务不支持章级收件，请同步更新桌面应用与服务。此节点不会退回逐叶提交。</p>}
-      <p>目录只读取第一层。请按下方规范名导出；不匹配、重名或目标已存在时，必须在预览中逐项确认。</p>
+      <p>目录只读取第一层。系统会建议唯一的规范名或明确章叶编号匹配；无需提前改名。冲突和未匹配项目由你选择，现有文件不会被静默替换。</p>
       <ul className="handoff-batch-targets" aria-label="本章待交回清单">
         {rows.slice(currentPage * 40, currentPage * 40 + 40).map((row) => <li key={row.port_id}>
-          <strong>{row.target_name}</strong>
+          <strong>{row.display_label || row.target_name}</strong>
+          <span>接收后名称：{row.target_name}</span>
           <span>{row.collected ? '已收件，待整章检查' : row.target_exists ? '目标已存在，待检查或已检查' : '待交回'}</span>
           <button type="button" onClick={() => props.onCopyPath(row.target_name)}>复制规范名</button>
-          <details><summary>目标路径</summary><code>{row.target_path}</code><button type="button" onClick={() => props.onCopyPath(row.target_path)}>复制目标路径</button></details>
+          <details><summary>收件与检查通过后的位置</summary><p>待检查收件位置</p><code>{row.incoming_path}</code><p>检查通过后的章节增强成果（不是最终成片）</p><code>{row.target_path}</code><button type="button" onClick={() => props.onCopyPath(row.target_path)}>复制目标路径</button></details>
         </li>)}
       </ul>
       {pageCount > 1 && <div className="handoff-check-actions" aria-label="收件清单分页"><button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页目标</button><span>{currentPage + 1}/{pageCount}</span><button type="button" disabled={currentPage + 1 === pageCount} onClick={() => setPage(currentPage + 1)}>下一页目标</button></div>}
@@ -80,10 +81,10 @@ export function HandoffBatch(props: Props) {
           setOverwritePorts(new Set())
           void controller.check(allowed)
         }}>
-          {controller.phase === 'checking' ? '正在检查整章…' : '检查本章全部输出'}
+          {controller.phase === 'checking' ? '等待检查响应…' : '检查本章全部输出'}
         </button>
         <button className="button button--primary" type="button" disabled={props.submitReason !== null || controller.busy || !props.checked} onClick={props.onSubmit}>
-          {props.submitting ? '正在提交整章…' : '提交本章并继续'}
+          {props.submitting ? '等待提交响应…' : '提交本章并继续'}
         </button>
       </div>
       <p className="handoff-disabled-reason">{props.checked ? '整章检查通过，等待你提交。' : !controller.observation?.complete ? '请先收齐本章全部文件。' : conflicts.some((row) => !overwritePorts.has(row.port_id)) ? '请逐项确认正式目标覆盖，再检查。' : '请先检查本章全部输出。'}</p>
@@ -96,6 +97,7 @@ export function HandoffBatch(props: Props) {
 function BatchPreview({ preview, controller }: { readonly preview: HandoffBatchPreviewEnvelope; readonly controller: HandoffBatchController }) {
   const [mapping, setMapping] = useState<ReadonlyMap<string, string>>(() => new Map(preview.matches.map((match) => [match.port_id, match.candidate_handle ?? ''])))
   const [overwrite, setOverwrite] = useState<ReadonlySet<string>>(new Set())
+  const [adjusted, setAdjusted] = useState<ReadonlySet<string>>(new Set())
   const [page, setPage] = useState(0)
   const pageCount = Math.max(1, Math.ceil(preview.rows.length / 20))
   const matches = new Map(preview.matches.map((match) => [match.port_id, match]))
@@ -104,27 +106,34 @@ function BatchPreview({ preview, controller }: { readonly preview: HandoffBatchP
     return candidate ? [{ port_id: row.port_id, candidate_handle: candidate, overwrite: overwrite.has(row.port_id) }] : []
   })
   const duplicate = new Set(selected.map((item) => item.candidate_handle)).size !== selected.length
-  const needsOverwrite = selected.some((item) => preview.rows.some((row) => row.port_id === item.port_id && row.collected) && !item.overwrite)
+  const unchanged = (port: string, candidate: string) => preview.candidates.find((item) => item.candidate_handle === candidate)?.unchanged_port_ids?.includes(port) ?? false
+  const needsOverwrite = selected.some((item) => preview.rows.some((row) => row.port_id === item.port_id && row.collected) && !item.overwrite && !unchanged(item.port_id, item.candidate_handle))
   const copying = controller.phase === 'copying'
   return <CanvasDialog title="确认本章收件匹配" onClose={controller.cancel}>
-    <p>来源 → 本章目标。本次接收已选中的 {selected.length} 个文件；外部文件复制保留原件，本章目录来件原位收纳后不保留原名。未选择的目标可稍后补件；取消不复制或移动。</p>
+    <p>为每一段选择对应的处理结果。本次接收已选中的 {selected.length} 个文件；确认只收件，整章检查通过后仍由你提交并继续。未选择的段可稍后补件，取消不会复制或移动。</p>
     <div className="handoff-batch-matches">
       {preview.rows.slice(page * 20, page * 20 + 20).map((row) => {
         const match = matches.get(row.port_id)
+        const candidate = preview.candidates.find((item) => item.candidate_handle === mapping.get(row.port_id))
+        const noOp = candidate?.unchanged_port_ids?.includes(row.port_id) ?? false
         return <div className="handoff-batch-match" key={row.port_id}>
-          <label>来源文件 → {row.target_name}
+          <strong>{row.display_label || `待交回项目：${row.target_name}`}</strong>
+          <label>选用处理好的文件
             <select disabled={copying} value={mapping.get(row.port_id) ?? ''} onChange={(event) => {
               const value = event.target.value
               setMapping((before) => new Map(before).set(row.port_id, value))
+              setAdjusted((before) => new Set(before).add(row.port_id))
               setOverwrite((before) => { const next = new Set(before); next.delete(row.port_id); return next })
             }}>
               <option value="">本次不收件（稍后补件）</option>
               {preview.candidates.map((candidate) => <option key={candidate.candidate_handle} value={candidate.candidate_handle}>{candidate.name} · {candidate.size.toLocaleString()} 字节 · {candidate.action === 'move' ? '原位收纳，不保留原名' : '复制，保留原件'}</option>)}
             </select>
           </label>
-          <span>{match?.state === 'matched' ? 'Python 已按规范名匹配，请确认' : match?.state === 'ambiguous' ? '同名候选冲突，请明确选择' : '未自动匹配，请核对或稍后补件'}</span>
-          <code>{row.target_path}</code>
-          {row.collected && mapping.get(row.port_id) && <label className="handoff-batch-overwrite"><input type="checkbox" checked={overwrite.has(row.port_id)} disabled={copying} onChange={(event) => {
+          <span>{adjusted.has(row.port_id) ? '已手动调整，请核对' : match?.state === 'matched' ? '已自动匹配，请确认' : match?.state === 'ambiguous' ? '候选冲突，请明确选择' : '未自动匹配，请核对或稍后补件'}{!adjusted.has(row.port_id) && match?.reason ? ` · ${match.reason}` : ''}</span>
+          <p>接收后名称：<strong>{row.target_name}</strong></p>
+          <p>本次操作：{!candidate ? '本次不收件' : noOp ? '文件已在本行收件位置，不复制、不移动' : candidate.action === 'move' ? '在本章收件目录内整理名称，不保留原名副本' : '复制到本章收件位置，保留所选原件'}</p>
+          <details><summary>查看文件位置与角色</summary><p>所选处理结果（来源）</p><code>{candidate?.path ?? (candidate ? '来源位置由本次选择绑定' : '尚未选择')}</code><p>确认后的待检查收件位置</p><code>{row.incoming_path}</code><p>整章检查通过后的章节增强成果（不是最终成片）</p><code>{row.target_path}</code></details>
+          {row.collected && mapping.get(row.port_id) && !noOp && <label className="handoff-batch-overwrite"><input type="checkbox" checked={overwrite.has(row.port_id)} disabled={copying} onChange={(event) => {
             const checked = event.target.checked
             setOverwrite((before) => { const next = new Set(before); if (checked) next.add(row.port_id); else next.delete(row.port_id); return next })
           }} />允许替换已收件：{row.target_name}</label>}
@@ -137,7 +146,7 @@ function BatchPreview({ preview, controller }: { readonly preview: HandoffBatchP
     {needsOverwrite && <p>请逐项允许替换已有收件，或取消该项选择。</p>}
     <div className="handoff-check-actions">
       <button type="button" disabled={copying} onClick={controller.cancel}>取消，不复制</button>
-      <button type="button" disabled={copying || !selected.length || duplicate || needsOverwrite} onClick={() => void controller.confirm(selected)}>{copying ? '正在收件…' : '确认收件'}</button>
+      <button type="button" disabled={copying || !selected.length || duplicate || needsOverwrite} onClick={() => void controller.confirm(selected)}>{copying ? '等待收件响应…' : '确认收件'}</button>
     </div>
   </CanvasDialog>
 }

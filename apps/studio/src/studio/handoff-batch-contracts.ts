@@ -17,6 +17,7 @@ export interface HandoffBatchRow {
   readonly collected: boolean
   readonly target_exists: boolean
   readonly size: number | null
+  readonly display_label?: string
 }
 export interface HandoffBatchObserveEnvelope extends HandoffBatchBinding {
   readonly inbox_path: string
@@ -28,8 +29,8 @@ export interface HandoffBatchPreviewRequest extends HandoffBatchBinding {
 }
 export interface HandoffBatchPreviewEnvelope extends HandoffBatchObserveEnvelope {
   readonly batch_id: string
-  readonly candidates: ReadonlyArray<{ readonly candidate_handle: string; readonly name: string; readonly size: number; readonly action: 'copy' | 'move' }>
-  readonly matches: ReadonlyArray<{ readonly port_id: string; readonly candidate_handle: string | null; readonly state: 'matched' | 'missing' | 'ambiguous' }>
+  readonly candidates: ReadonlyArray<{ readonly candidate_handle: string; readonly name: string; readonly size: number; readonly action: 'copy' | 'move'; readonly path?: string | null; readonly unchanged_port_ids?: ReadonlyArray<string> }>
+  readonly matches: ReadonlyArray<{ readonly port_id: string; readonly candidate_handle: string | null; readonly state: 'matched' | 'missing' | 'ambiguous'; readonly basis?: 'canonical_name' | 'chapter_leaf' | null; readonly reason?: string }>
   readonly expires_in_seconds: 300
 }
 export interface HandoffBatchConfirmRequest {
