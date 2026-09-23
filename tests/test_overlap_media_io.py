@@ -43,6 +43,7 @@ class Samples:
         current: int | None = None,
         total: int | None = None,
         unit: ProgressUnit | None = None,
+        stage: str | None = None,
     ) -> None:
         if self.cancel_after is not None and len(self.values) >= self.cancel_after:
             raise ProgressError("E_PROGRESS_TERMINAL", "测试取消")

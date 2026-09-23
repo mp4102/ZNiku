@@ -45,6 +45,7 @@ from zniku.project.paths import MEDIA_BASENAME_MAX_UNITS, validate_filename_comp
 from zniku.project.studio import StorageRevision
 from zniku.runtime import Artifact, LatestNodeResult, Run, RuntimeFailure
 from zniku.runtime.models import RandomId, UtcTimestamp
+from zniku.runtime.progress import validate_progress_stage
 
 PROJECT_SERVICE_CONTRACT_VERSION: Literal["0.3.0"] = "0.3.0"
 type ActiveProjectOperation = Literal[
@@ -163,6 +164,17 @@ class NodeProgressProjection(ProjectServiceModel):
     total: Annotated[int, Field(gt=0)] | None = None
     unit: ProgressUnit | None = None
     observed_at: UtcTimestamp
+    stage: Annotated[str, StringConstraints(min_length=1, max_length=96)] | None = None
+
+    @field_validator("stage")
+    @classmethod
+    def validate_stage(cls, value: str | None) -> str | None:
+        """阶段纯展示，与自动节点状态或完成判定无关。"""
+        try:
+            validate_progress_stage(value)
+        except RuntimeError as error:
+            raise ValueError(str(error)) from error
+        return value
 
     @model_validator(mode="after")
     def validate_measurement(self) -> NodeProgressProjection:

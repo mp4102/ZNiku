@@ -2397,6 +2397,7 @@ class ProjectServiceApplication:
                     total=sample.total,
                     unit=sample.unit,
                     observed_at=sample.observed_at,
+                    stage=sample.stage,
                 )
             )
         return tuple(projected)

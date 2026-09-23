@@ -7,6 +7,7 @@ import type { PortSpecWire } from '../studio/contracts'
 import { creatorElapsedLabel, failurePresentation, nodeStateLabel } from '../studio/run-presentation'
 import { copyProgressPresentation } from '../studio/copy-progress'
 import { CopyProgress } from '../studio/components/CopyProgress'
+import { progressStageLabel } from '../studio/progress-stage'
 import './workflow-node-card.css'
 
 const statusLabels = {
@@ -28,6 +29,7 @@ export const WorkflowNodeCard = memo(function WorkflowNodeCard({ id, data, selec
   const advanced = data.advanced !== false
   const manual = data.executorKind === 'manual_external' || state === 'waiting_external'
   const copyProgress = manual ? null : copyProgressPresentation(data.progress, data.nodeRun)
+  const stage = manual ? null : progressStageLabel(data.progress, data.nodeRun)
   const summaries = data.summaries.slice(0, 3)
   const problem = data.problemSummary ?? (data.nodeRun?.error
     ? failurePresentation(data.nodeRun.error.reason).title : null)
@@ -108,6 +110,7 @@ export const WorkflowNodeCard = memo(function WorkflowNodeCard({ id, data, selec
         {!manual && data.progress.mode === 'determinate' && data.progress.fraction !== null && <span className="node-progress">{Math.round(data.progress.fraction * 100)}%</span>}
         {!manual && data.progress.mode === 'indeterminate' && <span className="node-progress node-progress--indeterminate" aria-label="进度不确定"><i aria-hidden="true" /> {advanced ? 'Working…' : '正在处理…'}</span>}
         {copyProgress && <CopyProgress value={copyProgress} />}
+        {stage && <span className="node-progress-detail" title={stage}>{stage}</span>}
         {((!manual && data.progress.measurement) || data.progress.elapsed) && <span className="node-progress-detail">
           {!manual && !copyProgress && data.progress.measurement && <span>{data.progress.measurement.current} / {data.progress.measurement.total}{' '}
             {advanced ? data.progress.measurement.unit : data.progress.measurement.unit === 'frames' ? '帧' : data.progress.measurement.unit === 'bytes' ? '字节' : data.progress.measurement.unit === 'items' ? '项' : data.progress.measurement.unit === 'microseconds' ? '微秒' : ''}</span>}

@@ -29,6 +29,8 @@ from zniku.media.probe import resolve_media_tool
 from zniku.runtime import PythonAdapterContext
 from zniku.runtime.process_window import background_creation_flags
 
+from .mov_index import indexed_mov_fallback_reason
+
 
 class OverlapMediaError(RuntimeError):
     """本 attempt 的媒体前检、进程或输出事实不满足合同，禁止登记部分产物。"""
@@ -130,6 +132,7 @@ def run_ffmpeg(
     progress_total: int | None = None,
     progress_offset: int = 0,
     timeout_seconds: float = 24 * 60 * 60,
+    stage: str | None = None,
 ) -> int:
     """受控单进程执行，真实帧计数不得超过合同；取消即终止并回收 producer。
 
@@ -162,7 +165,9 @@ def run_ffmpeg(
     def report() -> None:
         if context.progress is not None:
             current = progress_offset + measured
-            context.progress.report(current / total, current=current, total=total, unit="frames")
+            context.progress.report(
+                current / total, current=current, total=total, unit="frames", stage=stage
+            )
 
     try:
         report()
@@ -308,6 +313,7 @@ def _timescale_copy(
     total: int,
     offset: int,
     selector: str | None = None,
+    stage: str | None = None,
 ) -> Path:
     """先复制包到目标 timescale，再单独 setts；规避不同输入时基被二次缩放。
 
@@ -341,6 +347,7 @@ def _timescale_copy(
         expected_frames=count,
         progress_total=total,
         progress_offset=offset,
+        stage=stage,
     )
     video = probe_header(target).video
     if video.frame_count != count or video.time_base != Fraction(1, rate.numerator):
@@ -360,8 +367,14 @@ def copy_prores_range(
     progress_offset: int = 0,
     source_frame_count: int | None = None,
     allow_equivalent_rate: bool = False,
+    allow_indexed_seek: bool = False,
+    stage: str | None = None,
 ) -> int:
-    """以 source-local 半开帧区间复制 ProRes，不 seek 近似边界、不重新编码。"""
+    """复制 source-local 半开区间；已证明的常量 MOV 索引才允许有界 seek。
+
+    快路径定位到首帧前半周期，用原始整数 PTS 再筛选，并以实际输出包数明确停止。
+    不可证明索引时保留原包序过滤，不用近似 seek 偷换精确帧语义。
+    """
 
     if not 0 <= start < end or rate <= 0:
         raise OverlapMediaError("E_OVERLAP_COPY_RANGE", "copy 必须是非空合法帧区间")
@@ -386,6 +399,36 @@ def copy_prores_range(
     if not rates_match:
         raise OverlapMediaError("E_OVERLAP_COPY_FPS", "源 exact FPS 与 copy 合同不一致")
     selector = f"noise=amount=0:drop='lt(n,{start})+gte(n,{end})'"
+    seek_options: list[str] = []
+    stop_options: list[str] = []
+    if allow_indexed_seek:
+        reason = indexed_mov_fallback_reason(source, rate, known_count)
+        if reason is None:
+            # 相邻帧中点远离微秒舍入边界；copyts 保留源整数 PTS，过滤不靠浮点。
+            seek = Fraction(max(0, 2 * start - 1), 2) / rate
+            micros = seek.numerator * 1_000_000 // seek.denominator
+            duration = Fraction(4 * end - 1, 4) / rate - Fraction(micros, 1_000_000)
+            duration_micros = duration.numerator * 1_000_000 // duration.denominator
+            seek_options = [
+                "-copyts",
+                "-seek_timestamp",
+                "1",
+                "-ss",
+                f"{micros // 1_000_000}.{micros % 1_000_000:06d}",
+                "-t",
+                f"{duration_micros // 1_000_000}.{duration_micros % 1_000_000:06d}",
+            ]
+            selector = (
+                f"noise=amount=0:drop='lt(pts,{start * rate.denominator})"
+                f"+gte(pts,{end * rate.denominator})'"
+            )
+            stop_options = ["-frames:v", str(end - start)]
+        with context.stdout_log_path.open("a", encoding="utf-8") as log:
+            log.write(
+                "overlap range route: "
+                + ("indexed-bounded" if reason is None else "sequential-fallback (" + reason + ")")
+                + "\n"
+            )
     if video.time_base != Fraction(1, rate.numerator):
         total = (
             progress_total if progress_total is not None else 2 * (end - start) + progress_offset
@@ -399,6 +442,7 @@ def copy_prores_range(
             total=total,
             offset=progress_offset,
             selector=selector,
+            stage=stage,
         )
         progress_offset += end - start
         progress_total = total
@@ -406,6 +450,7 @@ def copy_prores_range(
     count = run_ffmpeg(
         context,
         [
+            *seek_options,
             "-i",
             str(source),
             "-map",
@@ -421,6 +466,7 @@ def copy_prores_range(
             "copy",
             "-bsf:v",
             (selector + "," if selector else "") + clock_filter(rate),
+            *stop_options,
             "-video_track_timescale",
             str(rate.numerator),
             "-f",
@@ -430,6 +476,7 @@ def copy_prores_range(
         expected_frames=end - start,
         progress_total=progress_total,
         progress_offset=progress_offset,
+        stage=stage,
     )
     verify_mov(target, rate, count)
     return count
@@ -463,6 +510,7 @@ def concat_prores(
     progress_total: int | None = None,
     progress_offset: int = 0,
     source_frame_counts: Sequence[int] | None = None,
+    stage: str | None = None,
 ) -> int:
     """按普通 ordered_many 输入顺序无损合并；不会启动每章一个 decoder。"""
 
@@ -505,6 +553,7 @@ def concat_prores(
                 count,
                 total=total,
                 offset=progress_offset,
+                stage=stage,
             )
             progress_offset += count
         normalized.append(path)
@@ -540,6 +589,7 @@ def concat_prores(
         expected_frames=expected_frames,
         progress_total=total,
         progress_offset=progress_offset,
+        stage=stage,
     )
     verify_mov(target, rate, count)
     return count

@@ -28,6 +28,7 @@ from zniku.chapter_overlap.media_io import (
     run_ffmpeg,
     source_path,
 )
+from zniku.chapter_overlap.mov_index import indexed_mov_fallback_reason
 from zniku.runtime import (
     FrameRange,
     ProducedOutput,
@@ -275,7 +276,7 @@ def merge_video(
 def fi_context(
     context: PythonAdapterContext, *, _contract: NodeContract | None = None
 ) -> PythonAdapterResult:
-    """逐个读取真实显式邻章交集并复制包，再按源顺序合并为带上下文 MOV。"""
+    """完整且符合窄索引门槛的增强章直接参与组装，只物化必要邻章边界。"""
 
     contract = _contract or preflight("context", context.inputs, context.node.parameters)
     target = _targets(context, contract)["video"]
@@ -284,7 +285,23 @@ def fi_context(
     assert binding is not None
     inputs = _inputs(context, "chapters")
     paths = {item.artifact_id: source_path(item.path) for item in inputs}
-    estimate = sum(
+    rate = Fraction(metadata.frame_rate)
+    headers = {identifier: probe_header(path).video for identifier, path in paths.items()}
+    references = tuple(
+        part.start_frame == part.chapter.start_frame
+        and part.end_frame == part.chapter.end_frame
+        and headers[part.artifact_id].codec == "prores"
+        and headers[part.artifact_id].avg_frame_rate == rate
+        and headers[part.artifact_id].r_frame_rate == rate
+        and headers[part.artifact_id].time_base == Fraction(1, rate.numerator)
+        and headers[part.artifact_id].frame_count == part.end_frame - part.start_frame
+        and indexed_mov_fallback_reason(
+            paths[part.artifact_id], rate, part.end_frame - part.start_frame
+        )
+        is None
+        for part in binding.parts
+    )
+    part_sizes = tuple(
         (
             paths[part.artifact_id].stat().st_size * (part.end_frame - part.start_frame)
             + part.chapter.end_frame
@@ -294,19 +311,31 @@ def fi_context(
         // (part.chapter.end_frame - part.chapter.start_frame)
         for part in binding.parts
     )
+    passes = tuple(
+        0
+        if reference
+        else (1 + int(headers[part.artifact_id].time_base != Fraction(1, rate.numerator)))
+        for part, reference in zip(binding.parts, references, strict=True)
+    )
+    estimate = sum(part_sizes)
     capacity = capacity_check(
         context,
         output_bytes=estimate,
-        staging_bytes=estimate,
+        staging_bytes=sum(size * copies for size, copies in zip(part_sizes, passes, strict=True)),
         input_bytes=sum(path.stat().st_size for path in paths.values()),
         input_frames=sum(item.frame_count for item in contract.input_metadata),
         output_frames=binding.input_frame_count,
     )
-    rate = Fraction(metadata.frame_rate)
     pieces: list[Path] = []
     completed = 0
-    total = 2 * binding.input_frame_count
+    total = binding.input_frame_count + sum(
+        (part.end_frame - part.start_frame) * copies
+        for part, copies in zip(binding.parts, passes, strict=True)
+    )
     for ordinal, part in enumerate(binding.parts):
+        if references[ordinal]:
+            pieces.append(paths[part.artifact_id])
+            continue
         piece = context.work_dir / "context-parts" / f"part-{ordinal:04d}.mov"
         actual = copy_prores_range(
             context,
@@ -317,8 +346,15 @@ def fi_context(
             rate,
             progress_total=total,
             progress_offset=completed,
+            allow_indexed_seek=True,
+            stage=(
+                "准备 FI 上下文输入"
+                if (part.start_frame, part.end_frame)
+                == (part.chapter.start_frame, part.chapter.end_frame)
+                else "读取相邻章节边界"
+            ),
         )
-        completed += actual
+        completed += actual * passes[ordinal]
         pieces.append(piece)
     actual = concat_prores(
         context,
@@ -328,7 +364,13 @@ def fi_context(
         binding.input_frame_count,
         progress_total=total,
         progress_offset=completed,
+        source_frame_counts=tuple(part.end_frame - part.start_frame for part in binding.parts),
+        stage="组装 FI 上下文",
     )
+    if context.progress is not None:
+        context.progress.report(
+            1.0, current=total, total=total, unit="frames", stage="检查 FI 上下文输出"
+        )
     return _result("video", target, actual, capacity)
 
 

@@ -1061,7 +1061,7 @@ def test_project_service_exposes_only_live_unpersisted_projection(tmp_path: Path
         assert context.progress is not None
         context.progress.report(0.2)
         clocks.advance(0.1)
-        context.progress.report(0.205)
+        context.progress.report(0.205, stage="检查输出")
         entered.set()
         if not release.wait(timeout=10):
             raise RuntimeError("synthetic progress adapter timeout")
@@ -1088,6 +1088,7 @@ def test_project_service_exposes_only_live_unpersisted_projection(tmp_path: Path
     assert len(live.progress_samples) == 1
     assert live.progress_samples[0].node_run_id == running.node_run_id
     assert live.progress_samples[0].fraction == 0.205
+    assert live.progress_samples[0].stage == "检查输出"
     assert live.progress_samples[0].fraction >= running.progress
 
     release.set()
@@ -1096,6 +1097,24 @@ def test_project_service_exposes_only_live_unpersisted_projection(tmp_path: Path
     assert terminal.run.state is RunState.COMPLETED
     assert terminal.run.node_runs[0].progress == 1.0
     assert terminal.progress_samples == ()
+
+
+def test_display_stage_can_change_without_nas_persistence_or_progress_increase() -> None:
+    reporter, _validated, persisted, published, _removed = _reporter(_Clocks())
+    reporter.report(1.0, stage="组装媒体")
+    reporter.report(1.0, stage="检查媒体输出")
+    assert len(persisted) == 1 and len(published) == 2
+    assert reporter.last_sample is not None
+    assert reporter.last_sample.stage == "检查媒体输出"
+    assert not reporter.terminal
+
+
+@pytest.mark.parametrize("stage", ("", " too long ", "x" * 97, "line\nbreak", "\x00", 4))
+def test_invalid_display_stage_is_rejected_before_publish(stage: Any) -> None:
+    reporter, validated, persisted, published, _removed = _reporter(_Clocks())
+    with pytest.raises(ProgressError, match="E_PROGRESS_STAGE_INVALID"):
+        reporter.report(0.0, stage=stage)
+    assert not validated and not persisted and not published
 
 
 def test_explicit_recovery_closes_reporter_and_removes_projection(tmp_path: Path) -> None:

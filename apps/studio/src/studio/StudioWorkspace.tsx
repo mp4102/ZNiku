@@ -345,6 +345,7 @@ function nodeProgressView(
         operation: copyProgressOperation(definition, parameters),
         fraction: projection.fraction,
         measurement: projection.current === null ? null : projection,
+        stage: projection.stage ?? null,
         elapsed,
       }
     }

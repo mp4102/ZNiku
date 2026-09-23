@@ -502,6 +502,8 @@ export interface NodeProgressProjectionWire {
   readonly total: number | null
   readonly unit: 'frames' | 'bytes' | 'microseconds' | 'items' | null
   readonly observed_at: string
+  /** Python 提供的纯展示阶段，不决定运行状态或完成结论。 */
+  readonly stage?: string | null
 }
 
 export interface StudioServiceError {
@@ -880,6 +882,9 @@ function validateProgressSamples(detail: RunDetailEnvelope): void {
   const seen = new Set<string>()
 
   for (const sample of detail.progress_samples) {
+    if (sample.stage != null && (sample.stage.length === 0 || sample.stage.length > 96 || sample.stage.trim() !== sample.stage || /[\u0000-\u001f\u007f]/.test(sample.stage))) {
+      progressContractError('stage 必须为不含控制字符的有界纯文本')
+    }
     if (seen.has(sample.node_run_id)) {
       progressContractError(`node_run_id ${sample.node_run_id} 重复`)
     }

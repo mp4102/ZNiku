@@ -28,6 +28,7 @@ import type { WorkflowProgressData } from '../../model'
 import { OrderedInputList } from './OrderedInputList'
 import { copyProgressPresentation } from '../copy-progress'
 import { CopyProgress } from './CopyProgress'
+import { progressStageLabel } from '../progress-stage'
 
 export type InspectorTab = 'settings' | 'files' | 'diagnostics'
 
@@ -203,6 +204,7 @@ function NodeRuntimeSummary(props: NodeInspectorProps) {
       {progress.mode === 'determinate' && progress.fraction !== null && <span>{Math.round(progress.fraction * 100)}%</span>}
       {progress.mode === 'indeterminate' && <span>正在处理，暂时没有可计算的百分比。</span>}
       {copyProgress && <CopyProgress value={copyProgress} />}
+      {progressStageLabel(progress, nodeRun) && <span>{progressStageLabel(progress, nodeRun)}</span>}
       {!copyProgress && progress.measurement && progress.measurement.current !== null && progress.measurement.total !== null && <span>{progress.measurement.current} / {progress.measurement.total} {progress.measurement.unit === 'frames' ? '帧' : progress.measurement.unit}</span>}
       {progress.elapsed && <span>{props.advanced ? progress.elapsed : creatorElapsedLabel(progress.elapsed)}</span>}
     </div>}

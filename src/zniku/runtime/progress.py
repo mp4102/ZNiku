@@ -50,6 +50,18 @@ class ProgressInfrastructureError(RuntimeError):
         super().__init__(str(cause) or type(cause).__name__)
 
 
+def validate_progress_stage(stage: str | None) -> None:
+    """阶段只是有限纯文本展示；不参与状态、完成、复用或持久化 authority。"""
+
+    if stage is not None and (
+        not isinstance(stage, str)
+        or not 1 <= len(stage) <= 96
+        or stage.strip() != stage
+        or not stage.isprintable()
+    ):
+        raise ProgressError("E_PROGRESS_STAGE_INVALID", "stage 必须为 1..96 字符的单行纯文本")
+
+
 @dataclass(frozen=True, slots=True)
 class ProgressSample:
     """一个已通过合同校验、绑定到唯一 automatic attempt 的进程内 sample。"""
@@ -62,6 +74,7 @@ class ProgressSample:
     total: int | None
     unit: ProgressUnit | None
     observed_at: datetime
+    stage: str | None = None
 
 
 class ProgressReporter(Protocol):
@@ -74,6 +87,7 @@ class ProgressReporter(Protocol):
         current: int | None = None,
         total: int | None = None,
         unit: ProgressUnit | None = None,
+        stage: str | None = None,
     ) -> None:
         """上报一个 determinate 测量值。"""
 
@@ -169,6 +183,7 @@ class BoundProgressReporter:
         current: int | None = None,
         total: int | None = None,
         unit: ProgressUnit | None = None,
+        stage: str | None = None,
     ) -> None:
         """接受一个可信测量值，并按冻结的时间/增量门槛持久化。
 
@@ -183,6 +198,7 @@ class BoundProgressReporter:
                     "attempt 已进入终态边界，迟到 callback 不得改变任何状态",
                 )
             normalized = self._validate_measurement(fraction, current, total, unit)
+            validate_progress_stage(stage)
             if self._last_sample is not None and normalized[0] < self._last_sample.fraction:
                 raise ProgressError("E_PROGRESS_REGRESSION", "同一 attempt 的 fraction 不得回退")
 
@@ -198,6 +214,7 @@ class BoundProgressReporter:
                 total=normalized[2],
                 unit=normalized[3],
                 observed_at=observed_at,
+                stage=stage,
             )
             should_persist = self._should_persist(sample.fraction, observed_monotonic)
 

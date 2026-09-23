@@ -10719,6 +10719,20 @@
           "title": "Observed At",
           "type": "string"
         },
+        "stage": {
+          "anyOf": [
+            {
+              "maxLength": 96,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stage"
+        },
         "total": {
           "anyOf": [
             {

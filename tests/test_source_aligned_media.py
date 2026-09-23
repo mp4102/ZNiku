@@ -363,6 +363,7 @@ def test_automatic_timeline_cancellation_reaps_probe_process(
             current: int | None = None,
             total: int | None = None,
             unit: ProgressUnit | None = None,
+            stage: str | None = None,
         ) -> None:
             assert fraction == 0.0
             raise RunnerCancelled("synthetic cancellation")
