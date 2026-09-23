@@ -3,6 +3,7 @@
 复用 AV27 的 header 值对象与解析器，仅共享信息结构；新的准入由本模块独立检查。
 允许 AVEnhanceFlow 2.7 的有理帧率等价、缺失信号解释及 DTS 优先时间线，不加入逐帧
 raw PTS 等于 best-effort PTS、音频 priming 清零或完整内容证明等额外前置条件。
+向下游传递已经用于闭合验收的视频时长，不将容器总时长冒充视频时长。
 """
 
 from __future__ import annotations
@@ -67,7 +68,7 @@ class SourceAdmission:
             "rotation": self.signal["rotation"],
             "signal": dict(self.signal),
             "chroma_location": self.signal["chroma_location"],
-            "duration_seconds": video.duration_seconds or self.header.duration_seconds,
+            "duration_seconds": self.cadence["duration_seconds"],
             "container": {
                 "format_name": self.header.format_name,
                 "chapter_count": self.header.chapter_count,

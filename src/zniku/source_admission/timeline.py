@@ -3,6 +3,7 @@
 每次只完整读取一次 packet，DTS 覆盖不足才读取 decoded best-effort 时间线。N 始终来自
 packet，header nb_frames 不再成为第二权威。只将浮点相邻差值写入自动关闭的 TemporaryFile，
 结束后回读差值以复现先确定 cadence 再统计比例的规则；RAM 恒定，不保留逐包 PTS 账本。
+视频流未声明时长时，使用同次扫描的完整展示端点，不能用可能由音轨决定的容器时长代替。
 """
 
 from __future__ import annotations
@@ -56,6 +57,24 @@ class _Clock:
     delta_count: int = 0
     positive_count: int = 0
     max_delta: float | None = None
+    presentation_count: int = 0
+    presentation_start: float | None = None
+    presentation_last: float | None = None
+    terminal_duration: float | None = None
+
+    def add_presentation(self, timestamp: float | None, duration: float | None) -> None:
+        """只累计展示范围；B 帧的包顺序并非展示顺序，不能取最后读取的包作为尾帧。"""
+        if timestamp is None:
+            return
+        self.presentation_count += 1
+        self.presentation_start = (
+            timestamp
+            if self.presentation_start is None
+            else min(self.presentation_start, timestamp)
+        )
+        if self.presentation_last is None or timestamp >= self.presentation_last:
+            self.presentation_last = timestamp
+            self.terminal_duration = duration
 
     def add(self, timestamp: float | None) -> None:
         if timestamp is None:
@@ -90,6 +109,38 @@ def _consume(clock: _Clock, rows: Iterable[Mapping[str, object]], *, decoded: bo
         if _timestamp(row.get("pts_time")) is not None:
             clock.pts_count += 1
         clock.add(_timestamp(row.get("best_effort_timestamp_time" if decoded else "dts_time")))
+        clock.add_presentation(
+            _timestamp(row.get("best_effort_timestamp_time" if decoded else "pts_time")),
+            _timestamp(row.get("duration_time", row.get("pkt_duration_time"))),
+        )
+
+
+def _video_duration(
+    header: Av27MediaHeader, clock: _Clock, *, packet_count: int, analysis_clock: str
+) -> tuple[float, str]:
+    """缺少流时长才采用实测展示跨度；缺失证据失败，不用 N/FPS 自证闭合。
+
+    必须覆盖完整视频，且尾帧有正的实测持续时间。减去首 PTS 避免将非零起点算进时长。
+    既有流时长继续独立接受闭合检查，不以实测端点掩盖已声明的异常。
+    """
+    if header.video.duration_seconds is not None:
+        return header.video.duration_seconds, "video_stream"
+    if (
+        clock.presentation_count != packet_count
+        or clock.presentation_count != clock.total
+        or clock.presentation_start is None
+        or clock.presentation_last is None
+        or clock.terminal_duration is None
+        or clock.terminal_duration <= 0
+    ):
+        raise Av27MediaError(
+            "E_AV27_SOURCE_FPS_AMBIGUOUS",
+            "Source 视频流未声明时长，且完整视频展示端点或尾帧持续时间不可用；"
+            "不能用容器 (可能含更长音轨) 时长代替",
+        )
+    duration = clock.presentation_last - clock.presentation_start + clock.terminal_duration
+    source = "packet_presentation" if analysis_clock == "dts" else "decoded_presentation"
+    return duration, source
 
 
 def _cadence(
@@ -104,8 +155,10 @@ def _cadence(
     heartbeat: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     rate = canonical_source_rate(header.video)
-    duration = header.video.duration_seconds or header.duration_seconds
-    if duration is None or not math.isfinite(duration) or duration <= 0 or packet_count <= 1:
+    duration, duration_source = _video_duration(
+        header, clock, packet_count=packet_count, analysis_clock=analysis_clock
+    )
+    if not math.isfinite(duration) or duration <= 0 or packet_count <= 1:
         raise Av27MediaError("E_AV27_SOURCE_FPS_AMBIGUOUS", "Source 无法形成有效 N/FPS/时长")
     span_fps = (
         (clock.sample_count - 1) / (clock.last - clock.first)
@@ -174,6 +227,7 @@ def _cadence(
             "E_AV27_SOURCE_FPS_AMBIGUOUS",
             "Source N/FPS/duration 无法闭合："
             f"N={packet_count}，FPS={canonical_fraction(rate)}，duration={duration}，"
+            f"时长来源={duration_source}，"
             f"允许时长误差={duration_tolerance:.6f} 秒",
         )
     warnings: list[str] = []
@@ -192,6 +246,8 @@ def _cadence(
         "analysis_clock": analysis_clock,
         "confidence": confidence,
         "effective_frame_rate": canonical_fraction(cadence_rate),
+        "duration_seconds": duration,
+        "duration_source": duration_source,
         "packet_count": packet_count,
         "clock_sample_count": clock.sample_count,
         "pts_ratio": pts_count / packet_count,
@@ -259,6 +315,7 @@ def scan_source_timeline(
     心跳保持已测量值以响应 Runtime 取消，不随等待时长虚构增长。
     """
     executable = ffprobe_executable or resolve_media_tool("ffprobe")
+    # 容器时长只估算 UI 扫描进度，不参与 N/FPS/视频时长验收。
     duration = header.video.duration_seconds or header.duration_seconds or 0
     fraction = 0.0
 
@@ -269,7 +326,11 @@ def scan_source_timeline(
 
     def rows(*, decoded: bool) -> Iterable[Mapping[str, object]]:
         nonlocal fraction
-        entries = "frame=best_effort_timestamp_time" if decoded else "packet=pts_time,dts_time"
+        entries = (
+            "frame=best_effort_timestamp_time,duration_time,pkt_duration_time"
+            if decoded
+            else "packet=pts_time,dts_time,duration_time"
+        )
         argv = [
             executable,
             "-v",
